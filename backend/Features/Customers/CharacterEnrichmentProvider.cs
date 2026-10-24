@@ -10,7 +10,7 @@ namespace Kufr.Backend.Features.Customers;
 
 internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentProvider, IDisposable
 {
-    internal const string PromptVersion = "customer-character-v1";
+    internal const string PromptVersion = "customer-character-v2";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly string? key;
     private readonly string model;
@@ -65,15 +65,19 @@ internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentPr
             + "Put playful proposals only in conversationIdeas, separately from sourced facts. "
             + "If search is unavailable or returns no usable evidence, leave facts empty, explain the limitation in ambiguities, "
             + "and use only the supplied description and explicitly speculative conversation ideas. "
-            + "Do not rewrite userInput. Return JSON with recognizedName, world, summary, facts:[{text,sourceUrls:[url]}], "
+            + "Do not rewrite userInput. Return one valid JSON object only, without Markdown fences or text outside it. "
+            + "Use recognizedName, world, summary, facts:[{text,sourceUrls:[url]}], "
             + "conversationIdeas:[string], ambiguities:[string], needsClarification:boolean. "
             + "Use at most 6 facts, 5 ideas, 5 ambiguities, 1000 summary characters and 400 characters per list item. Input: " + input;
         return JsonSerializer.Serialize(new
         {
             model, store = false, max_output_tokens = 2400, max_tool_calls = 2,
+            reasoning = new { effort = "low" },
             tools = webSearch ? new object[] { new { type = "web_search", search_context_size = "low" } } : [],
             include = webSearch ? new[] { "web_search_call.action.sources" } : [],
-            input = prompt, text = new { format = new { type = "json_object" } }
+            // Hosted search rejects JSON mode. Keep the same JSON-only contract
+            // in the prompt, then enforce shape and citation evidence locally.
+            input = prompt, text = new { format = new { type = webSearch ? "text" : "json_object" } }
         }, Json);
     }
 

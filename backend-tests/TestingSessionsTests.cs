@@ -191,7 +191,7 @@ internal static class TestingSessionsTests
                 job.UserInput.World,"Clock repairer",[],[],[],false,[],"controlled-character-double","test-v1",DateTimeOffset.UtcNow.ToUnixTimeSeconds(),job.Revision,"synthetic"));
         }
     }
-    private sealed class WandDouble:IWandGenerationProvider
+    internal sealed class WandDouble:IWandGenerationProvider
     {
         public Task<WandCandidateContent[]> GenerateAsync(WandGenerationJob job,CancellationToken token)=>Task.FromResult(
             WandGenerationValidation.Slots(job.Request.ReadyMask).Select(slot=>new WandCandidateContent(job.Request.Profile.UserInput.Name+" — Astrální ozvěna "+

@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--bounded-sdk-transport"]) { await BoundedSdkTransportTests.RunAsync(); return; }
 if (args is ["--tester-identity"]) { await AccountIdentityTests.RunTesterIdentityAsync(); return; }
 if (args is ["--passkey-labels"]) { await AccountIdentityTests.RunPasskeyLabelsAsync(); return; }
 if (args is ["--testing-hardware"]) { await TestingHardwareTests.RunAsync(); return; }
@@ -188,6 +189,7 @@ CharacterDirectorTests.Run();
 CharacterOperationTests.Run();
 await AutonomousLiveTests.RunCharacterAsync();
 await CostumeImageTests.RunAsync();
+await BoundedSdkTransportTests.RunAsync();
 await RealtimeTests.RunAsync();
 await GptLiveTests.RunAsync();
 await DeviceMediaTransportTests.RunAsync();

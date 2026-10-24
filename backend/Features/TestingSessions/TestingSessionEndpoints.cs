@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.ClientModel;
 using System.Text.Json;
 using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Customers;
@@ -50,6 +51,7 @@ internal static class TestingSessionEndpoints
             catch(DuelException e){return ApiProblem.Create(http,e.Status,e.Code);}
             catch(JsonException){return ApiProblem.Create(http,400,"invalid_test_request");}
             catch(FormatException){return ApiProblem.Create(http,400,"invalid_test_request");}
+            catch(ClientResultException e){return ApiProblem.Create(http,502,CharacterProviderFailure.Code(e));}
             catch(OperationCanceledException) when (!http.RequestAborted.IsCancellationRequested){return ApiProblem.Create(http,408,"test_operation_cancelled");}
             catch(HttpRequestException){return ApiProblem.Create(http,502,"test_provider_transport_error");}
             catch(InvalidDataException){return ApiProblem.Create(http,502,"test_provider_invalid_response");}
