@@ -180,6 +180,13 @@ internal static class CustomerProfileTests
         using var requestDocument = JsonDocument.Parse(request);
         Check(requestDocument.RootElement.GetProperty("include")[0].GetString() == "web_search_call.action.sources",
             "structured character research requests provider-returned source evidence");
+        Check(requestDocument.RootElement.GetProperty("text").GetProperty("format").GetProperty("type").GetString() == "text"
+            && requestDocument.RootElement.GetProperty("reasoning").GetProperty("effort").GetString() == "low",
+            "hosted search uses a supported text format and bounded lookup reasoning");
+        using var withoutSearch = JsonDocument.Parse(OpenAiCharacterEnrichmentProvider.BuildRequest(job, "server-model", false));
+        Check(withoutSearch.RootElement.GetProperty("text").GetProperty("format").GetProperty("type").GetString() == "json_object"
+            && withoutSearch.RootElement.GetProperty("tools").GetArrayLength() == 0,
+            "JSON mode remains enabled when hosted search is disabled");
         var source = new CharacterSource("Official fiction source", "https://example.com/character");
         var result = Result(job) with
         {

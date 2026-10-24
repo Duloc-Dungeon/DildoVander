@@ -35,6 +35,12 @@ jako neplatný výstup postavy. Trvalé chyby 400/401/403 se automaticky neopaku
 408/429/5xx používají existující omezené opakování úlohy. Starší záznam
 `character_provider_invalid_response` sám nerozlišuje tyto příčiny.
 
+Dohledání postavy s webovým hledáním nepoužívá JSON mode: provider tuto kombinaci
+odmítá HTTP 400. Výstup vyžaduje JSON-only prompt `customer-character-v2` a
+kontrolují jej stejné lokální validace tvaru, mezí a providerem doložených citací.
+Bez webového hledání zůstává JSON mode zapnutý. Samotný HTTP úspěch nepotvrzuje
+přijetí postavy; musí projít i těmito validacemi.
+
 ## Lokální SSH a cloudové prostředí
 
 Majitel autorizoval přístup na VPS přes existující Windows OpenSSH agent:
