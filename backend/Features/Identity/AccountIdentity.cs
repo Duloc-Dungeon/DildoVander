@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Globalization;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
@@ -49,6 +50,7 @@ internal sealed record AccountConfiguration(bool Enabled, string DataRoot, strin
 
 internal static class AccountIdentity
 {
+    internal const string PollingRateLimitPolicy = "account-poll";
     internal const string SessionClaim = "dv:account-session";
     internal const string CeremonyCookie = "__Host-dv-ceremony";
     internal static readonly CookieOptions CeremonyCookieOptions = new()
@@ -70,9 +72,26 @@ internal static class AccountIdentity
         });
         services.AddAuthorization();
         var requestsPerMinute = Math.Clamp(configuration.GetValue("ApplicationIdentity:RequestsPerMinute", 40), 10, 120);
-        services.AddRateLimiter(options => options.AddPolicy("account", context =>
-            RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = requestsPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 })));
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = async (rejection, cancellationToken) =>
+            {
+                var retryAfter = rejection.Lease.TryGetMetadata(MetadataName.RetryAfter, out var delay)
+                    ? Math.Max(1, (int)Math.Ceiling(delay.TotalSeconds)) : 60;
+                rejection.HttpContext.Response.Headers.RetryAfter = retryAfter.ToString(CultureInfo.InvariantCulture);
+                await ApiProblem.Create(rejection.HttpContext, StatusCodes.Status429TooManyRequests, "rate_limited")
+                    .ExecuteAsync(rejection.HttpContext);
+            };
+            options.AddPolicy("account", context =>
+                RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions { PermitLimit = requestsPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            // Testing views poll several resources. Keep those reads bounded without
+            // spending the command/sign-in allowance for everyone behind this IP.
+            options.AddPolicy(PollingRateLimitPolicy, context =>
+                RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions { PermitLimit = 240, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        });
         // Register schemes even when disabled so existing callers remain anonymous.
         services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
         services.ConfigureApplicationCookie(options =>

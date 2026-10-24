@@ -10,6 +10,13 @@ from the authenticated principal; no caller-provided owner or preview role grant
 production authority. Unowned resources fail without exposing private content.
 Owner/Administrator are not implicit test identities.
 
+Testing-session GETs have a separate per-IP fixed-window allowance of 240 requests
+per minute. Mutations retain the existing account request allowance. Middleware
+rate-limit rejections return HTTP 429 with the standard problem body, code
+`rate_limited`, the request `traceId` and an integer-seconds `Retry-After` header.
+Clients pause polling until that delay expires and never automatically replay a
+rejected mutation.
+
 Session IDs are server-generated 32-character hexadecimal identifiers; the
 virtual hardware identity is exactly `test-<session-id>`. Creation uses a stable
 client operation UUID and validates engine, input mode, OpenAI consent and saved

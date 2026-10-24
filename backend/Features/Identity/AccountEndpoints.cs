@@ -126,6 +126,9 @@ internal static partial class AccountEndpoints
         var expiresAt = user is null ? (long?)null : await db.Sessions
             .Where(session => session.Id == sessionId && session.UserId == user.Id)
             .Select(session => (long?)session.ExpiresAt).SingleOrDefaultAsync();
+        // Match antiforgery's required headers before it issues the token.
+        context.Response.Headers.CacheControl = "no-cache, no-store";
+        context.Response.Headers.Pragma = "no-cache";
         return Results.Ok(new
         {
             enabled = true,

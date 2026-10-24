@@ -20,6 +20,7 @@ internal static partial class AccountEndpoints
             users = result,
             grants = await db.ResourceGrants.OrderBy(x => x.Id).Take(1000).ToArrayAsync(),
             invitations = await db.Invitations.Where(x => x.Purpose != "bootstrap" && !x.Consumed && x.ExpiresAt > Now())
+                .OrderBy(x => x.ExpiresAt).ThenBy(x => x.TokenHash)
                 .Select(x => new { x.Purpose, x.Role, x.UserId, x.ExpiresAt }).Take(100).ToArrayAsync()
         });
     }

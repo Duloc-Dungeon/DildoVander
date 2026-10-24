@@ -19,9 +19,9 @@ const browser=await chromium.launch(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? {ex
 try{
  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});page=await context.newPage();page.setDefaultTimeout(10000);
  await context.addInitScript(()=>{window.microphoneRequests=0;Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:()=>{window.microphoneRequests++;throw new Error('No microphone in text-only test');}}});});
- page.on('pageerror',e=>failures.push(e.message));page.on('websocket',socket=>socketUrls.push(socket.url()));page.on('console',message=>{if(message.type()==='error' && !/status of (503|504)/.test(message.text()))failures.push(message.text());});
+ page.on('pageerror',e=>failures.push(e.message));page.on('websocket',socket=>socketUrls.push(socket.url()));page.on('console',message=>{if(message.type()==='error' && !/status of (429|503|504)/.test(message.text()))failures.push(message.text());});
  const owner={id:'tester-browser',displayName:'Testovací účet',roles:['Tester']};const createdAt='2026-10-24T11:00:00Z';
- let characters=[];let list=[];let detail=null;let rejectProvider=false;let rejectStatus=false;let chatRequests=0;let socketTurns=0;let textSocketTicket=false;
+ let characters=[];let list=[];let detail=null;let rejectProvider=false;let rejectStatus=false;let rejectCharacterSave=true;let chatRequests=0;let socketTurns=0;let textSocketTicket=false;
  const hardware=()=>({connected:true,ready:true,state:'ready',compartments:Array.from({length:6},(_,index)=>({slot:index+1,state:'retracted',wandName:null})),selectedCompartment:null,currentAction:'idle',ledPattern:'idle',servoCommand:null,vibrationCommand:null,cameraAvailable:true,events:[]});
  const conversation=id=>({id,ownerId:owner.id,label:'Hardware-free browser test',engine:'gpt-live-1',scenarioId:'first-visit',fixtureId:'empty',platform:'web',createdAt,endedAt:null,status:'open',recordContent:true,config:{id:'baseline',name:'Production baseline',engine:'gpt-live-1',voice:'cedar'},turns:[],events:[]});
  await context.route('**/*',async route=>{
@@ -31,6 +31,7 @@ try{
   if(p==='/app/v1/archive/collection')return json({schemaVersion:1,items:[],nextCursor:null});
   if(p==='/app/v1/testing-sessions/catalog')return json({engines:['gpt-live-1','gpt-realtime-2.1'],capabilities:{text:true,voice:true,hybrid:true}});
   if(p==='/app/v1/testing-sessions/characters'){
+    if(m==='POST' && rejectCharacterSave){rejectCharacterSave=false;return route.fulfill({status:429,contentType:'application/problem+json',headers:{'Retry-After':'1','X-Request-Id':'01234567-89ab-4cde-8f01-23456789abcd'},body:JSON.stringify({code:'rate_limited',traceId:'01234567-89ab-4cde-8f01-23456789abcd'})});}
     if(m==='POST'){const input=body();const c={id:`character-${characters.length+1}`,longTermConsent:input.longTermConsent,profile:{profileId:`profile-${characters.length+1}`,revision:1,userInput:input.userInput,status:'ready',enrichment:{recognizedName:input.userInput.name,summary:'Řízená syntetická odpověď integračního testu.',model:'controlled-provider-double',evidenceKind:'fixture',conversationIdeas:[],ambiguities:[]}}};characters.push(c);return json(c);}return json(characters);
   }
   if(p==='/app/v1/testing-sessions'){
@@ -70,11 +71,21 @@ try{
  assert.equal(await page.evaluate(()=>window.microphoneRequests),0);
  await page.locator('.testing-setup input[type=checkbox]').check();await page.getByRole('button',{name:'Založit test a vybrat postavu',exact:true}).click();await page.locator('#testing-character-name').waitFor();
  assert.equal(await page.locator('.testing-conversation').isVisible(),false);
- await page.locator('#testing-character-name').fill('Alena');await page.locator('#testing-character-world').fill('Knihovna měsíce');await page.getByRole('button',{name:'Uložit a dohledat postavu'}).click();await page.getByRole('heading',{name:'Alena',exact:true}).waitFor();assert.equal(characters[0].profile.userInput.description,'');
+ await page.locator('#testing-character-name').fill('Alena');await page.locator('#testing-character-world').fill('Knihovna měsíce');await page.getByRole('button',{name:'Uložit a dohledat postavu'}).click();
+ await page.getByText('Požadavek byl odmítnut',{exact:true}).first().waitFor();
+ await page.getByText('ID požadavku: 01234567-89ab-4cde-8f01-23456789abcd',{exact:true}).first().waitFor();
+ const rateLimitedCalls=calls.length;await page.waitForTimeout(300);assert.equal(calls.length,rateLimitedCalls);assert.equal(characters.length,0);
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(captures,'mobile-rate-limited.png'),fullPage:true});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ await page.getByRole('button',{name:'Obnovit stav',exact:true}).first().waitFor();
+ await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(button=>button.textContent.trim()==='Obnovit stav')?.disabled);
+ await page.getByRole('button',{name:'Uložit a dohledat postavu'}).click();await page.getByRole('heading',{name:'Alena',exact:true}).waitFor();assert.equal(characters[0].profile.userInput.description,'');
+ assert.equal(calls.filter(call=>call.path==='/app/v1/testing-sessions/characters' && call.method==='POST').length,2);
  // A failed list poll must retain the selected character and recover through
  // reads alone. Use the canonical GUID shape emitted by server middleware.
  const mutationsBeforeRecovery=calls.filter(call=>call.method!=='GET').length;
  rejectStatus=true;
+ await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
  await page.getByText('ID požadavku: 01234567-89ab-4cde-8f01-23456789abcd',{exact:true}).first().waitFor();
  await page.getByRole('heading',{name:'Alena',exact:true}).waitFor();
  await page.setViewportSize({width:390,height:844});

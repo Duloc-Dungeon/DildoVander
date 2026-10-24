@@ -4,7 +4,7 @@ import { account, accountOrigin } from '../identity/session';
 import { PersonaLabClient } from '../persona-lab/client';
 import { LabVoice, type VoicePhase } from '../persona-lab/voice';
 import type { LabEngine, LabSession } from '../persona-lab/contracts';
-import { TestingSessionsClient } from './client';
+import { TestingError, TestingSessionsClient } from './client';
 import { diagnosticRequestId } from '../../application/requestDiagnostics';
 import type { CharacterInput, InputMode, TestCharacter, TestSession, TestSessionDetail } from './contracts';
 
@@ -16,6 +16,7 @@ export function useTestingSessions() {
   const selected = shallowRef<TestSessionDetail | null>(null);
   const error = ref(''); const notice = ref(''); const busy = ref(false); const loading = ref(false); const stale = ref(false);
   const errorRequestId = ref('');
+  const errorRejected = ref(false); const clock = ref(Date.now());
   let errorFromRefresh = false;
   const engine = ref<LabEngine>('gpt-live-1'); const inputMode = ref<InputMode>('text'); const consent = ref(false);
   const text = ref(''); const outputEnabled = ref(false); const captureEnabled = ref(false); const voicePhase = ref<VoicePhase>('idle');
@@ -24,7 +25,8 @@ export function useTestingSessions() {
   const voiceActive = computed(() => ['connecting', 'waiting', 'listening', 'speaking'].includes(voicePhase.value));
   const open = computed(() => selected.value?.session.status === 'open');
   let epoch = 0; let readEpoch = 0; let disposed = false;
-  let refreshPending: { epoch: number; request: number; promise: Promise<void> } | undefined;
+  let refreshPending: { epoch: number; request: number; collections: boolean; promise: Promise<void> } | undefined;
+  let nextCollectionRefreshAt = 0;
   let operationId: string | null = null; let pendingSpokenText = ''; let retiringSessionId:string|null=null;
   let voice = makeVoice();
   function makeVoice(): LabVoice {
@@ -49,10 +51,10 @@ export function useTestingSessions() {
     if (selected.value?.conversation.id === conversation.id) selected.value = { ...selected.value, conversation };
   }
   function stopVoice(): void { if(voiceActive.value && selected.value)retiringSessionId=selected.value.session.id; pendingSpokenText = ''; spokenBusy.value = false; providerConfirmed.value = false; voice.dispose(); captureEnabled.value = false; voicePhase.value = 'idle'; partial.value = { user: '', assistant: '' }; }
-  function invalidate(): void {
-    epoch++; readEpoch++; client.invalidate(); lab.invalidate(); stopVoice();
+  function invalidate(identityChanged = false): void {
+    epoch++; readEpoch++; client.invalidate(identityChanged); lab.invalidate(); stopVoice();
     selected.value = null; sessions.value = []; characters.value = []; error.value = ''; notice.value = '';
-    errorRequestId.value = ''; errorFromRefresh = false; stale.value = false;
+    errorRequestId.value = ''; errorRejected.value = false; errorFromRefresh = false; stale.value = false;
     text.value = ''; busy.value = false; loading.value = false; operationId = null; retiringSessionId=null; consent.value = false;
   }
   function message(cause: unknown): string {
@@ -62,16 +64,17 @@ export function useTestingSessions() {
   }
   function recordError(cause: unknown, fromRefresh = false): void {
     error.value = message(cause); errorFromRefresh = fromRefresh;
+    errorRejected.value = !fromRefresh && cause instanceof TestingError && (cause.status === 429 || cause.code === 'rate_limited');
     errorRequestId.value = cause && typeof cause === 'object' && 'requestId' in cause
       ? diagnosticRequestId(cause.requestId) ?? '' : '';
   }
   function clearError(): void {
-    error.value = ''; errorRequestId.value = ''; errorFromRefresh = false;
+    error.value = ''; errorRequestId.value = ''; errorRejected.value = false; errorFromRefresh = false;
   }
   async function run(action: () => Promise<void>): Promise<void> {
     if (busy.value || !permitted.value) return;
     const current = epoch; ++readEpoch; busy.value = true; error.value = ''; notice.value = '';
-    errorRequestId.value = ''; errorFromRefresh = false;
+    errorRequestId.value = ''; errorRejected.value = false; errorFromRefresh = false;
     try { await action(); }
     catch (cause) { if (current === epoch && !(cause instanceof DOMException && cause.name === 'AbortError')) recordError(cause); }
     finally {
@@ -89,13 +92,24 @@ export function useTestingSessions() {
     ++readEpoch;
     return refreshState();
   }
-  function refreshState(): Promise<void> {
+  function refreshState(includeCollections = true): Promise<void> {
     if (!permitted.value || disposed) return Promise.resolve();
-    if (refreshPending?.epoch === epoch && refreshPending.request === readEpoch) return refreshPending.promise;
+    if (client.cooldownRemainingMs() > 0) return Promise.resolve();
+    if (refreshPending?.epoch === epoch) {
+      const coversRequest = refreshPending.collections || !includeCollections;
+      return refreshPending.request === readEpoch && coversRequest
+        ? refreshPending.promise
+        : refreshPending.promise.then(() => refreshState(includeCollections));
+    }
     const current = epoch; const request = ++readEpoch; const id = selected.value?.session.id;
-    const pending = { epoch: current, request, promise: Promise.resolve() };
+    if (includeCollections) nextCollectionRefreshAt = Date.now() + 30000;
+    const pending = { epoch: current, request, collections: includeCollections, promise: Promise.resolve() };
     pending.promise = (async () => {
-      const [list, people, detail] = await Promise.allSettled([client.sessions(), client.characters(), id ? client.session(id) : Promise.resolve(null)]);
+      const [list, people, detail] = await Promise.allSettled([
+        includeCollections ? client.sessions() : Promise.resolve(sessions.value),
+        includeCollections ? client.characters() : Promise.resolve(characters.value),
+        id ? client.session(id) : Promise.resolve(null),
+      ]);
       if (epoch !== current || request !== readEpoch) return;
       if (list.status === 'fulfilled') sessions.value = list.value;
       if (people.status === 'fulfilled') characters.value = people.value;
@@ -105,7 +119,7 @@ export function useTestingSessions() {
       if (failure?.status === 'rejected') {
         if (!(failure.reason instanceof DOMException && failure.reason.name === 'AbortError') && (!error.value || errorFromRefresh)) recordError(failure.reason, true);
       } else if (errorFromRefresh) {
-        error.value = ''; errorRequestId.value = ''; errorFromRefresh = false;
+        error.value = ''; errorRequestId.value = ''; errorRejected.value = false; errorFromRefresh = false;
       }
     })().finally(() => { if (refreshPending === pending) refreshPending = undefined; });
     refreshPending = pending;
@@ -259,14 +273,20 @@ export function useTestingSessions() {
     const id = route.query.session;
     if (typeof id === 'string') await resume(id);
   }
-  watch(identity, () => { invalidate(); void load(); }, { immediate: true });
+  watch(identity, () => { invalidate(true); void load(); }, { immediate: true });
   watch(outputEnabled, value => voice.setOutputEnabled(value));
-  const refreshTimer = setInterval(() => { if (!document.hidden && !busy.value) void refresh(); }, 3000);
+  const refreshTimer = setInterval(() => {
+    if (document.hidden || busy.value || client.cooldownRemainingMs() > 0) return;
+    const includeCollections = Date.now() >= nextCollectionRefreshAt;
+    void refreshState(includeCollections);
+  }, 10000);
+  const clockTimer = setInterval(() => { clock.value = Date.now(); }, 1000);
   const hidden = () => { if (document.hidden) stopVoice(); else void refresh(); };
   const online = () => void refresh();
   document.addEventListener('visibilitychange', hidden); window.addEventListener('online', online);
-  onBeforeUnmount(() => { disposed = true; invalidate(); clearInterval(refreshTimer); document.removeEventListener('visibilitychange', hidden); window.removeEventListener('online', online); });
-  return { account, permitted, sessions, characters, selected, error, errorRequestId, notice, busy, loading, stale, engine, inputMode, consent,
+  onBeforeUnmount(() => { disposed = true; invalidate(); clearInterval(refreshTimer); clearInterval(clockTimer); document.removeEventListener('visibilitychange', hidden); window.removeEventListener('online', online); });
+  const retrySeconds = computed(() => Math.ceil(Math.max(0, client.cooldownUntil() - clock.value) / 1000));
+  return { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, engine, inputMode, consent,
     text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, open, client, run, refresh, refreshAfterCommand, resume, start, saveCharacter, selectCharacter,
     enrich, send, selectWand, generate, fault, startVoice, startSpokenText, stopVoice, changeMode, end, cancel, remove, interrupt: () => voice.interrupt() };
 }

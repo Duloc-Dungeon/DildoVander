@@ -30,6 +30,20 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); });
 
 describe('testing status recovery', () => {
+  it('coalesces simultaneous refreshes into one read batch', async () => {
+    await render();
+    const before = transport.mock.calls.length;
+    let release!: (response: Response) => void;
+    const healthy = transport.getMockImplementation()!;
+    transport.mockImplementation((path: string) => path.endsWith('/test')
+      ? new Promise<Response>(resolve => { release = resolve; })
+      : healthy(path));
+    const first = test.refresh();
+    const second = test.refresh();
+    expect(transport.mock.calls).toHaveLength(before + 3);
+    release(Response.json(detail()));
+    await Promise.all([first, second]);
+  });
   it('keeps successful reads during a partial failure, correlates the error and clears it on recovery without replaying commands', async () => {
     await render(); revision = 2;
     const healthy = transport.getMockImplementation()!;
