@@ -16,7 +16,7 @@ import { prepareLabImage } from '../persona-lab/image';
 import { requestDiagnostics } from '../../application/requestDiagnostics';
 import type { CharacterInput, InputMode } from './contracts';
 const test = useTestingSessions();
-const { account, permitted, sessions, characters, selected, error, errorRequestId, notice, busy, loading, stale, engine, inputMode, consent,
+const { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, engine, inputMode, consent,
   text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, open } = test;
 const characterDeleteConfirmed = ref(false);
 const longTermConsent = ref(false); const photoConsent = ref(false); const photoFile = ref<File | null>(null); const photoKeepsake = ref('');
@@ -37,6 +37,7 @@ const characterPending = computed(() => ['queued', 'running'].includes(selectedC
 const errorMessage = computed(() => {
   if (error.value === 'account_required') return 'Přihlášení vypršelo. Přihlaste se znovu a obnovte stav testu.';
   if (error.value === 'csrf_required') return 'Ověření stránky vypršelo. Obnovte stránku a zkontrolujte stav před opakováním akce.';
+  if (error.value === 'rate_limited') return 'Server dočasně omezuje počet požadavků.';
   if (/^lab_|^transport_error$/.test(error.value)) return describeLabFailure(classifyLabFailure(error.value, 0));
   if (/timeout|unavailable|testing_request_failed|Failed to fetch|NetworkError/i.test(error.value)) {
     return 'Požadavek se nepodařilo potvrdit. Obnovte stav a zkontrolujte, zda se operace dokončila.';
@@ -44,6 +45,7 @@ const errorMessage = computed(() => {
   if (/active|busy|in_progress/i.test(error.value)) return 'Předchozí požadavek ještě probíhá. Vyčkejte a obnovte stav.';
   return error.value;
 });
+const errorTitle = computed(() => errorRejected.value ? 'Požadavek byl odmítnut' : stale.value ? 'Stav se nepodařilo obnovit' : 'Operace nebyla potvrzena');
 async function goToStep(value: TestStep): Promise<void> {
   const sessionId = selected.value?.session.id;
   if (value >= 3 && step.value < 3 && open.value && selectedCharacter.value && !selected.value?.conversation.turns.length) {
@@ -120,7 +122,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
         </button>
       </nav>
       <h2 id="testing-step-title" tabindex="-1">{{ step }}. {{ steps[step - 1] }}</h2>
-      <AwNotice v-if="error && step !== 3" tone="danger" title="Operace nebyla potvrzena"><p>{{ errorMessage }}</p><small v-if="errorMessage !== error">{{ error }}</small><p v-if="errorRequestId" class="testing-code">ID požadavku: {{ errorRequestId }}</p> <AwButton :disabled="busy" @click="test.refresh">Obnovit stav</AwButton></AwNotice>
+      <AwNotice v-if="error && step !== 3" tone="danger" :title="errorTitle"><p>{{ errorMessage }}</p><p v-if="errorRejected">Server akci odmítl před jejím zpracováním. Počkejte alespoň {{ retrySeconds }} s před dalším pokusem.</p><small v-if="errorMessage !== error">{{ error }}</small><p v-if="errorRequestId" class="testing-code">ID požadavku: {{ errorRequestId }}</p> <AwButton :disabled="busy || retrySeconds > 0" @click="test.refresh">Obnovit stav</AwButton></AwNotice>
       <AwNotice v-if="notice" tone="info">{{ notice }}</AwNotice>
       <AwNotice v-if="stale" tone="warning">Stav je zastaralý. Obnovení spojení nevytváří nový rozhovor ani neopakuje příkazy.</AwNotice>
       <section v-show="step === 1" class="testing-setup" aria-labelledby="testing-start-title">
@@ -196,7 +198,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
           <section v-show="step === 3" class="testing-conversation" aria-labelledby="testing-conversation-title">
             <div class="testing-section-heading"><h2 id="testing-conversation-title">Rozhovor s DildoVanderem</h2><AwStatus>{{ inputMode }}</AwStatus></div>
             <p v-if="selectedCharacter" class="aw-muted">{{ selectedCharacter.profile.userInput.name }} · {{ selectedCharacter.profile.userInput.world }}</p>
-            <AwNotice v-if="error" tone="danger" title="Operace nebyla potvrzena"><p>{{ errorMessage }}</p><small v-if="errorMessage !== error">{{ error }}</small><p v-if="errorRequestId" class="testing-code">ID požadavku: {{ errorRequestId }}</p><p>Zpráva se sama znovu neodešle.</p><AwButton :disabled="busy" @click="test.refresh">Obnovit stav</AwButton></AwNotice>
+            <AwNotice v-if="error" tone="danger" :title="errorTitle"><p>{{ errorMessage }}</p><p v-if="errorRejected">Server akci odmítl před jejím zpracováním. Počkejte alespoň {{ retrySeconds }} s před dalším pokusem.</p><small v-if="errorMessage !== error">{{ error }}</small><p v-if="errorRequestId" class="testing-code">ID požadavku: {{ errorRequestId }}</p><p>Zpráva se sama znovu neodešle.</p><AwButton :disabled="busy || retrySeconds > 0" @click="test.refresh">Obnovit stav</AwButton></AwNotice>
             <p v-if="busy || spokenBusy || (selected.conversationActive && !voiceActive)" role="status">DildoVander připravuje odpověď…</p>
             <p v-if="!selected.conversation.turns.length" class="aw-muted">Napište první zprávu. Textový režim nikdy nevyžaduje mikrofon.</p>
             <ol class="testing-chat" aria-label="Uložený rozhovor"><li v-for="turn in selected.conversation.turns" :key="turn.id" :class="`testing-turn-${turn.role}`">

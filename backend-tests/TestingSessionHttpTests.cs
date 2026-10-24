@@ -1,4 +1,5 @@
 using System.Net;
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Kufr.Backend.Features.GptLive;
@@ -7,11 +8,13 @@ using Kufr.Backend.Features.PersonaLab;
 using Kufr.Backend.Features.Realtime;
 using Kufr.Backend.Features.TestingSessions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 internal static partial class AccountIdentityTests
 {
     internal static async Task RunTestingSessionHttpAsync()
     {
+        var warnings = new IdentityWarningCapture();
         await using var fixture = await Fixture.StartAsync(configureEndpoints: app =>
         {
             app.MapPersonaLab(); app.MapTestingSessions();
@@ -22,6 +25,7 @@ internal static partial class AccountIdentityTests
             services.AddSingleton(new GptLiveOptions());
             services.AddSingleton<GptLiveClient>(); services.AddSingleton<OpenAiRealtimeClient>();
             services.AddPersonaLab(); services.AddTestingSessions();
+            services.AddSingleton<ILoggerProvider>(warnings);
         });
         _ = fixture.App.Services.GetRequiredService<TestingSessionService>();
         using var anonymous = fixture.Client();
@@ -111,6 +115,8 @@ internal static partial class AccountIdentityTests
             "deleted session cannot be resumed");
         Check((await JsonAsync(await owner.GetAsync("/app/v1/admin/users"))).GetProperty("users").GetArrayLength()==5,
             "test resource deletion preserves production account records");
+        await VerifyPollingLimitsAsync(tester);
+        Check(warnings.Events.IsEmpty, "session tokens and invitation listing do not emit cache-header or unordered-query warnings");
         Console.WriteLine("Testing-session HTTPS: real passkey invitations/authentication, CSRF, hardware-free start, isolated ownership, lifecycle, resume, deletion and production authorization passed (no provider calls).");
 
         async Task InviteAndEnroll(HttpClient client,VirtualPasskey key,string role)
@@ -118,6 +124,69 @@ internal static partial class AccountIdentityTests
             await CsrfAsync(owner);
             var invitation=await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",new {role,recoveryUserId=(string?)null}));
             await EnrollAsync(client,key,invitation.GetProperty("token").GetString()!,role);await CsrfAsync(client);
+        }
+    }
+
+    private static async Task VerifyPollingLimitsAsync(HttpClient tester)
+    {
+        // This represents more than a minute of the original polling fan-out.
+        // It must not spend the account allowance used by commands and sign-in.
+        for (var index = 0; index < 125; index++)
+        {
+            using var response = await tester.GetAsync("/app/v1/testing-sessions/characters");
+            Check(response.IsSuccessStatusCode, "routine polling has a separate bounded allowance");
+        }
+        using var saved = await tester.PostAsJsonAsync("/app/v1/testing-sessions/characters", new
+        {
+            userInput = new { name = "Clockmaker", world = "Original fiction" },
+            openAiConsent = false, longTermConsent = false, expectedRevision = 0
+        });
+        Check(saved.IsSuccessStatusCode, "polling cannot reject an explicit character save");
+        using var session = await tester.GetAsync("/app/v1/session");
+        Check(session.IsSuccessStatusCode, "polling cannot exhaust the account session check");
+
+        var limited = false;
+        for (var index = 0; index < 240; index++)
+        {
+            using var response = await tester.GetAsync("/app/v1/testing-sessions/characters");
+            if (response.StatusCode != HttpStatusCode.TooManyRequests)
+            {
+                Check(response.IsSuccessStatusCode, "polling remains healthy before its own limit");
+                continue;
+            }
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Check(problem.GetProperty("code").GetString() == "rate_limited"
+                && !string.IsNullOrEmpty(problem.GetProperty("traceId").GetString()),
+                "limiter rejection uses the diagnostic problem contract");
+            Check(response.Headers.RetryAfter?.Delta is { TotalSeconds: >= 1 and <= 60 },
+                "limiter rejection tells clients when reads may resume");
+            limited = true;
+            break;
+        }
+        Check(limited, "polling still has a finite request limit");
+        using var command = await tester.PostAsJsonAsync("/app/v1/testing-sessions/missing/end", new { });
+        Check(command.StatusCode == HttpStatusCode.NotFound, "even an exhausted polling bucket leaves commands available");
+    }
+
+    private sealed class IdentityWarningCapture : ILoggerProvider
+    {
+        internal ConcurrentQueue<int> Events { get; } = new();
+        public ILogger CreateLogger(string categoryName) => new WarningLogger(categoryName, Events);
+        public void Dispose() { }
+
+        private sealed class WarningLogger(string category, ConcurrentQueue<int> events) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+                Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                if (IsEnabled(logLevel) && (category == "Microsoft.AspNetCore.Antiforgery.DefaultAntiforgery" && eventId.Id == 8
+                    || category == "Microsoft.EntityFrameworkCore.Query" && eventId.Id == 10102))
+                {
+                    events.Enqueue(eventId.Id);
+                }
+            }
         }
     }
 }

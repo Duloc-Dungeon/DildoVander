@@ -6,6 +6,13 @@ an ordinary single-use Tester invitation in account administration; enrollment,
 passkeys, persistent sessions and account deletion use the existing identity
 implementation. Owner/Administrator/Operator roles do not imply Tester.
 
+The view polls active session/duel details every 10 seconds and session/character
+collections every 30 seconds. Refreshes coalesce while a read is in flight.
+Testing-session GETs use a separate bounded rate limit so polling cannot spend
+the account command/sign-in allowance. HTTP 429 pauses reads and commands for the
+server's `Retry-After` delay; the view shows an explicit rejection with a retry
+hint and keeps the request ID. Refresh never repeats a mutation.
+
 ## Architecture assessment and integration
 
 The existing Persona Lab already called the real Live and Realtime adapters for
