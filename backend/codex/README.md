@@ -29,6 +29,12 @@ technickou příčinu bez ukládání provider odpovědi. `openai_http_N` zachov
 HTTP stav. Tyto kódy ani úspěšná lokální simulace samy nepotvrzují konkrétní
 produkční incident; porovnej je s logem a verzí nasazení.
 
+Odpovědi provideru HTTP 4xx/5xx zachovávají stav v `openai_http_N`; transport
+zahodí původní chybové tělo před předáním SDK. Chyba HTTP se proto neoznačuje
+jako neplatný výstup postavy. Trvalé chyby 400/401/403 se automaticky neopakují;
+408/429/5xx používají existující omezené opakování úlohy. Starší záznam
+`character_provider_invalid_response` sám nerozlišuje tyto příčiny.
+
 ## Lokální SSH a cloudové prostředí
 
 Majitel autorizoval přístup na VPS přes existující Windows OpenSSH agent:

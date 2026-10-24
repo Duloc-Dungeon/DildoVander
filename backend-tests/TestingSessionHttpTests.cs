@@ -9,22 +9,28 @@ using Kufr.Backend.Features.Realtime;
 using Kufr.Backend.Features.TestingSessions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 
 internal static partial class AccountIdentityTests
 {
     internal static async Task RunTestingSessionHttpAsync()
     {
         var warnings = new IdentityWarningCapture();
+        var providerFailure = await BoundedSdkTransportTests.FailureAsync(503);
         await using var fixture = await Fixture.StartAsync(configureEndpoints: app =>
         {
             app.MapPersonaLab(); app.MapTestingSessions();
         }, configureServices: services =>
         {
-            // Fixture configuration clears inherited environment sources. No key,
-            // provider fake or physical-device grant is used for these HTTP tests.
+            // Offline wand candidates let the request reach the failing decision
+            // double; no provider key or physical grant is used.
             services.AddSingleton(new GptLiveOptions());
             services.AddSingleton<GptLiveClient>(); services.AddSingleton<OpenAiRealtimeClient>();
             services.AddPersonaLab(); services.AddTestingSessions();
+            services.AddSingleton<TestingResources>(provider => new TestingResources(
+                provider.GetRequiredService<IConfiguration>(), provider.GetRequiredService<TimeProvider>(),
+                new TestingSessionsTests.WandDouble(), null, null,
+                new WandDecisionService((_, _) => Task.FromException<WandDecisionResult>(providerFailure))));
             services.AddSingleton<ILoggerProvider>(warnings);
         });
         _ = fixture.App.Services.GetRequiredService<TestingSessionService>();
@@ -76,6 +82,15 @@ internal static partial class AccountIdentityTests
         }));
         var characterId=character.GetProperty("id").GetString()!;
         await JsonAsync(await tester.PostAsJsonAsync("/app/v1/testing-sessions/"+id+"/character",new { characterId,expectedRevision=created.GetProperty("revision").GetInt32() }));
+        using (var rejectedDecision = await tester.PostAsJsonAsync("/app/v1/testing-sessions/" + id + "/select", new { }))
+        {
+            Check(rejectedDecision.StatusCode == HttpStatusCode.BadGateway,
+                "an upstream SDK HTTP failure is a handled provider error, not an unhandled server failure");
+            var problem = await rejectedDecision.Content.ReadFromJsonAsync<JsonElement>();
+            Check(problem.GetProperty("code").GetString() == "openai_http_503"
+                && !string.IsNullOrEmpty(problem.GetProperty("traceId").GetString()),
+                "provider rejection keeps its safe code and request correlation at the testing HTTP boundary");
+        }
         using var other = fixture.Client(); using var otherKey = new VirtualPasskey();
         await InviteAndEnroll(other,otherKey,AccountRoles.Tester);
         Check((await other.GetAsync("/app/v1/testing-sessions/"+id)).StatusCode==HttpStatusCode.NotFound,
