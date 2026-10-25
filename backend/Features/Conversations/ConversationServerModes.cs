@@ -51,6 +51,7 @@ internal sealed partial class ConversationStore
                 }
                 catch (InvalidOperationException) { return new(400, null, "invalid_character_policy"); }
             }
+            nextCharacter = ((liveOptions ?? new()) with { Character = nextCharacter }).EffectiveCharacter;
             var current = ServerModesSnapshot();
             if (requestedPersonality == personalityId && nextCharacter == characterPolicy && !request.ResetCharacterVariety)
             {

@@ -80,7 +80,8 @@ internal static class PersonalityTests
 
                 Require(journal.ReadPersonality() == PersonalityCatalog.DefaultId,
                     "a persisted historical personality never overrides new DV01 sessions");
-                var store = new ConversationStore(TimeProvider.System, journal);
+                var store = new ConversationStore(TimeProvider.System, journal,
+                    liveOptions: new GptLiveOptions { AdultLanguage = false });
                 var modes = store.ReadServerModes();
                 Require(modes.PersonalityId == PersonalityCatalog.DefaultId,
                     "new conversation configuration resolves to DV01");
@@ -88,6 +89,9 @@ internal static class PersonalityTests
                     && modes.Engines.Engines.Count == 1
                     && modes.Engines.Engines[0].Engine == "gpt-live",
                     "capabilities expose GPT-Live as the only active dialogue engine");
+                var restricted = store.ChangeServerModes(new(modes.Revision, CharacterTone: "Chaos"));
+                Require(restricted.Status == 200 && restricted.State?.CharacterTone == "Dry",
+                    "runtime admin tone changes cannot override the legacy conservative language ceiling");
 
                 var denied = store.ChangeServerModes(new(modes.Revision,
                     PersonalityId: PersonalityCatalog.LegacyOllivanderId));

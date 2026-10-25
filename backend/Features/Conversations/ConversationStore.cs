@@ -29,7 +29,7 @@ internal sealed partial class ConversationStore(
     Kufr.Backend.Features.Wands.WandGenerationStore? wands = null)
 {
     private readonly Lock gate = new();
-    private CharacterPolicy characterPolicy = liveOptions?.Character ?? new();
+    private CharacterPolicy characterPolicy = liveOptions?.EffectiveCharacter ?? new();
     private readonly Dictionary<string, ConversationEntry> conversations = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TurnOperation> operations = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PaidCall> activePaidCalls = new(StringComparer.Ordinal);
