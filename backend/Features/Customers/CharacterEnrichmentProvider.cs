@@ -4,6 +4,7 @@ using System.Text.Json;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.OpenAi;
 using OpenAI.Responses;
+using Kufr.Backend.Features.Observability;
 
 #pragma warning disable OPENAI001
 namespace Kufr.Backend.Features.Customers;
@@ -33,24 +34,45 @@ internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentPr
 
     public async Task<CharacterEnrichment> EnrichAsync(CharacterJob job, CancellationToken cancellationToken)
     {
-        if (!await store.CanDispatchAsync(job, cancellationToken)) { throw new CharacterException("openai_consent_required", 409); }
-        if (string.IsNullOrWhiteSpace(key)) { throw new CharacterException("character_provider_unavailable", 503); }
-        using var bounded = BoundedSdkTransport.Create(http, 131_072, ["application/json"]);
-        var client = new ResponsesClient(new ApiKeyCredential(key), new ResponsesClientOptions
+        using var telemetry = GenAiOperation.Start("responses", model);
+        try
         {
-            Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
-        });
-        using var body = BinaryContent.Create(BinaryData.FromString(BuildRequest(job, model, webSearch)));
-        var response = await client.CreateResponseAsync(body, new RequestOptions { CancellationToken = cancellationToken });
-        using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
-        if (document.RootElement.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
-        {
-            var actualModel = document.RootElement.TryGetProperty("model", out var modelValue)
-                ? modelValue.GetString() ?? model : model;
-            await store.RecordProviderUsageAsync(job.Id, actualModel,
-                usage.GetProperty("input_tokens").GetInt32(), usage.GetProperty("output_tokens").GetInt32());
+            if (!await store.CanDispatchAsync(job, cancellationToken)) { throw new CharacterException("openai_consent_required", 409); }
+            if (string.IsNullOrWhiteSpace(key)) { throw new CharacterException("character_provider_unavailable", 503); }
+            using var bounded = BoundedSdkTransport.Create(http, 131_072, ["application/json"]);
+            var client = new ResponsesClient(new ApiKeyCredential(key), new ResponsesClientOptions
+            {
+                Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
+            });
+            using var body = BinaryContent.Create(BinaryData.FromString(BuildRequest(job, model, webSearch)));
+            var response = await client.CreateResponseAsync(body, new RequestOptions { CancellationToken = cancellationToken });
+            using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
+            telemetry.ReadUsage(document.RootElement);
+            if (document.RootElement.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+            {
+                var actualModel = document.RootElement.TryGetProperty("model", out var modelValue)
+                    ? modelValue.GetString() ?? model : model;
+                await store.RecordProviderUsageAsync(job.Id, actualModel,
+                    usage.GetProperty("input_tokens").GetInt32(), usage.GetProperty("output_tokens").GetInt32());
+            }
+            using var parsing = BackendTelemetry.StartOperation("character.enrichment.validate");
+            try
+            {
+                var result = Parse(document.RootElement, job.Revision, model);
+                BackendTelemetry.Completed(parsing);
+                return result;
+            }
+            catch (Exception error)
+            {
+                BackendTelemetry.Failed(parsing, error, cancellationToken);
+                throw;
+            }
         }
-        return Parse(document.RootElement, job.Revision, model);
+        catch (Exception error)
+        {
+            telemetry.Fail(error, cancellationToken);
+            throw;
+        }
     }
 
     internal static string BuildRequest(CharacterJob job, string model, bool webSearch)

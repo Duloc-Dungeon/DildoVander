@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.Observability;
 using System.Buffers.Binary;
 using System.ClientModel;
 using System.ClientModel.Primitives;
@@ -110,23 +111,33 @@ internal sealed class CostumeImageClient(HttpClient httpClient, string apiKey, s
 
     internal async Task<CostumeImageResponse> AnalyzeAsync(byte[] jpeg, CancellationToken cancellationToken)
     {
-        if (!CostumeJpeg.IsValid(jpeg)) { throw new ArgumentException("Invalid costume image."); }
-        using var payload = BuildPayload(jpeg);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(45));
-        using var bounded = BoundedSdkTransport.Create(httpClient, 16_384);
-        var client = new ResponsesClient(new ApiKeyCredential(apiKey), new ResponsesClientOptions
-        {
-            Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
-        });
+        using var telemetry = GenAiOperation.Start("responses", model);
         try
         {
-            using var content = BinaryContent.Create(BinaryData.FromBytes(payload.GetBuffer().AsMemory(0, (int)payload.Length)));
-            var response = await client.CreateResponseAsync(content, new RequestOptions { CancellationToken = deadline.Token });
-            using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
-            return Parse(document.RootElement, model);
+            if (!CostumeJpeg.IsValid(jpeg)) { throw new ArgumentException("Invalid costume image."); }
+            using var payload = BuildPayload(jpeg);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(TimeSpan.FromSeconds(45));
+            using var bounded = BoundedSdkTransport.Create(httpClient, 16_384);
+            var client = new ResponsesClient(new ApiKeyCredential(apiKey), new ResponsesClientOptions
+            {
+                Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
+            });
+            try
+            {
+                using var content = BinaryContent.Create(BinaryData.FromBytes(payload.GetBuffer().AsMemory(0, (int)payload.Length)));
+                var response = await client.CreateResponseAsync(content, new RequestOptions { CancellationToken = deadline.Token });
+                using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
+                telemetry.ReadUsage(document.RootElement);
+                return Parse(document.RootElement, model);
+            }
+            finally { CryptographicOperations.ZeroMemory(payload.GetBuffer()); }
         }
-        finally { CryptographicOperations.ZeroMemory(payload.GetBuffer()); }
+        catch (Exception telemetryError)
+        {
+            telemetry.Fail(telemetryError, cancellationToken);
+            throw;
+        }
     }
 
     private MemoryStream BuildPayload(byte[] jpeg)

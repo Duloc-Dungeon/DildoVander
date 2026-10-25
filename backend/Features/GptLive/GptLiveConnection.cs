@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.Observability;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -22,15 +23,31 @@ internal sealed class GptLiveClient(IConfiguration configuration) : IDisposable
     }
     private async Task<WebSocket> ConnectSocketAsync(CancellationToken token)
     {
-        if (connectOverride is not null) { return await connectOverride(token); }
-        var socket = new ClientWebSocket();
-        socket.Options.SetRequestHeader("Authorization", "Bearer " + configuration["OPENAI_API_KEY"]);
+        using var telemetry = GenAiOperation.Start("live.connect", GptLiveProtocol.Model);
+        telemetry.SetPhase(GenAiPhase.Connecting);
         try
         {
-            await socket.ConnectAsync(new Uri("wss://api.openai.com/v1/live/sessions"), transport, token);
-            return socket;
+            if (connectOverride is not null)
+            {
+                var overridden = await connectOverride(token);
+                telemetry.SetPhase(GenAiPhase.Ready);
+                return overridden;
+            }
+            var socket = new ClientWebSocket();
+            socket.Options.SetRequestHeader("Authorization", "Bearer " + configuration["OPENAI_API_KEY"]);
+            try
+            {
+                await socket.ConnectAsync(new Uri("wss://api.openai.com/v1/live/sessions"), transport, token);
+                telemetry.SetPhase(GenAiPhase.Ready);
+                return socket;
+            }
+            catch { socket.Dispose(); throw; }
         }
-        catch { socket.Dispose(); throw; }
+        catch (Exception telemetryError)
+        {
+            telemetry.Fail(telemetryError, token);
+            throw;
+        }
     }
     public void Dispose() => transport.Dispose();
 }
@@ -40,6 +57,7 @@ internal sealed class GptLiveConnection(WebSocket socket, Func<CancellationToken
     private readonly SemaphoreSlim writes = new(1, 1);
     private bool closing;
     private int disposed;
+    private int reconnectAttempts;
     private long inputPcmBytes;
     private Action<byte[]>? inputObserver;
     internal long InputPcmBytes => Interlocked.Read(ref inputPcmBytes);
@@ -100,21 +118,34 @@ internal sealed class GptLiveConnection(WebSocket socket, Func<CancellationToken
 
     internal async Task RestartAsync(long generation, CancellationToken token)
     {
-        if (reconnect is null) { throw new InvalidOperationException("Live provider reconnect unavailable."); }
-        await writes.WaitAsync(token);
+        using var telemetry = GenAiOperation.Start("live.reconnect", GptLiveProtocol.Model);
+        telemetry.SetPhase(GenAiPhase.Reconnecting);
+        telemetry.SetAttempt(Interlocked.Increment(ref reconnectAttempts));
+        telemetry.Disconnect(GenAiDisconnectCause.VisualRevoked);
         try
         {
-            ProviderSessionId = null;
-            Interlocked.Increment(ref inputGeneration);
-            var previousReady = ready;
-            ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            previousReady.TrySetResult();
-            socket.Abort(); socket.Dispose();
-            socket = await reconnect(token);
-            closing = false;
-            VisualGeneration = generation;
+            if (reconnect is null) { throw new InvalidOperationException("Live provider reconnect unavailable."); }
+            await writes.WaitAsync(token);
+            try
+            {
+                ProviderSessionId = null;
+                Interlocked.Increment(ref inputGeneration);
+                var previousReady = ready;
+                ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                previousReady.TrySetResult();
+                socket.Abort(); socket.Dispose();
+                socket = await reconnect(token);
+                closing = false;
+                VisualGeneration = generation;
+            }
+            finally { writes.Release(); }
+            telemetry.SetPhase(GenAiPhase.Ready);
         }
-        finally { writes.Release(); }
+        catch (Exception error)
+        {
+            telemetry.Fail(error, token);
+            throw;
+        }
     }
 
     internal async Task<JsonDocument> ReceiveAsync(CancellationToken token)
@@ -144,11 +175,22 @@ internal sealed class GptLiveConnection(WebSocket socket, Func<CancellationToken
     {
         if (Interlocked.Exchange(ref disposed, 1) == 0)
         {
+            using var telemetry = GenAiOperation.Start("live.disconnect", GptLiveProtocol.Model);
+            telemetry.SetPhase(GenAiPhase.Closing);
+            telemetry.Disconnect(GenAiDisconnectCause.Disposed);
             // Startup failure can leave uploads waiting for session.started.
             // Teardown owns those waiters even when their request token survives.
-            ready.TrySetCanceled();
-            socket.Abort();
-            socket.Dispose();
+            try
+            {
+                ready.TrySetCanceled();
+                socket.Abort();
+                socket.Dispose();
+            }
+            catch (Exception error)
+            {
+                telemetry.Fail(error, CancellationToken.None);
+                throw;
+            }
         }
         return ValueTask.CompletedTask;
     }

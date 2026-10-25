@@ -165,7 +165,9 @@ describe('real archive SFC routes', () => {
     await wrapper.findAll('input[type=checkbox]').at(-1)!.setValue(true); expect(fetchMock).toHaveBeenCalledTimes(1);
     await create.trigger('click'); await flushPromises();
     const upload = fetchMock.mock.calls.find(([path]) => path.endsWith('portrait-uploads'))!;
-    expect(upload[1]?.body).toBe(file); expect(upload[1]?.headers).toMatchObject({ 'X-DV10-Consent': '7', 'Content-Type': 'image/png', 'X-DV10-CSRF': 'csrf' });
+    expect(upload[1]?.body).toBe(file);
+    const uploadHeaders = new Headers(upload[1]?.headers);
+    expect(uploadHeaders.get('X-DV10-Consent')).toBe('7'); expect(uploadHeaders.get('Content-Type')).toBe('image/png'); expect(uploadHeaders.get('X-DV10-CSRF')).toBe('csrf');
     const generation = fetchMock.mock.calls.find(([path]) => path.endsWith('/portraits'))!;
     expect(JSON.parse(generation[1]!.body as string)).toMatchObject({ uploadId: secondId, editionId: id, consentVersion: 7, variant: 'portrait_only' });
     expect(wrapper.find('img[alt="Místní náhled vybrané fotografie"]').exists()).toBe(false);

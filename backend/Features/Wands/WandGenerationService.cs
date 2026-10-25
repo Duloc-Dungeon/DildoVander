@@ -7,6 +7,8 @@ internal sealed class WandGenerationService(WandGenerationStore store, IWandGene
     internal async Task<WandGenerationSession> GenerateAsync(string accountId, string operationId,
         Func<CancellationToken, Task<bool>> authority, CancellationToken token = default, bool retry = false, IReadOnlyList<string>? evidence = null)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("wand.generate");
+        activity?.SetTag("app.operation_id", operationId);
         token.ThrowIfCancellationRequested();
         if (evidence?.Count > 32 || evidence?.Any(text => !WandGenerationValidation.Text(text, 1000)) == true)
             throw new WandGenerationException("invalid_wand_evidence", 400);
@@ -25,18 +27,22 @@ internal sealed class WandGenerationService(WandGenerationStore store, IWandGene
             if (!await authority(timeout.Token) || !store.CanDispatch(job))
                 throw new WandGenerationException("wand_generation_stale");
             store.Complete(job, candidates);
+            Kufr.Backend.Features.Observability.BackendTelemetry.Completed(activity);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException exception)
         {
+            Kufr.Backend.Features.Observability.BackendTelemetry.Failed(activity, exception, token);
             store.Fail(job, token.IsCancellationRequested ? "generation_cancelled" : "generation_timeout");
             token.ThrowIfCancellationRequested();
         }
         catch (WandGenerationException exception)
         {
+            Kufr.Backend.Features.Observability.BackendTelemetry.Failed(activity, exception, token);
             store.Fail(job, exception.Code);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            Kufr.Backend.Features.Observability.BackendTelemetry.Failed(activity, exception, token);
             // Provider payloads and personal context must not appear in errors.
             store.Fail(job, exception is InvalidDataException or System.Text.Json.JsonException
                 ? "generation_invalid_output" : "generation_provider_unavailable");

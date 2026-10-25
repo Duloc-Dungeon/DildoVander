@@ -12,6 +12,8 @@ using Kufr.Backend.Features.Show;
 using Kufr.Backend.Features.Wands;
 using Microsoft.AspNetCore.DataProtection;
 
+using Kufr.Backend.Features.Observability;
+
 namespace Kufr.Backend.Features.TestingSessions;
 
 // Composition boundary, not an alternate implementation of the product. Every
@@ -156,10 +158,12 @@ internal sealed class TestingResources : IDisposable
             var store = profileStoresByPath.GetOrAdd(directory, path => new CharacterProfileStore(path));
             var job = await store.ClaimAsync(token);
             if (job is null) continue;
+            using var jobTrace = new JobTelemetry("testing.character.enrichment.process", job.Id, job.Attempt, job.TraceParent, job.CreatedAt);
             logs?.Write("info", "testing_character_job_started", operationId: Guid.Parse(job.Id).ToString(), attempt: job.Attempt);
 
             if (job.Attempt > 3)
             {
+                jobTrace.Activity?.SetTag("app.outcome", "attempt_limit");
                 await store.CompleteAsync(job, null, "character_job_interrupted", token);
                 logs?.Write("warning", "testing_character_job_failed", operationId: Guid.Parse(job.Id).ToString(), code: "character_job_interrupted", attempt: job.Attempt);
                 return true;
@@ -170,12 +174,15 @@ internal sealed class TestingResources : IDisposable
             try
             {
                 using var provider = characterOverride is null ? new OpenAiCharacterEnrichmentProvider(Configuration, store) : null;
-                if (!await store.CanDispatchAsync(job, timeout.Token)) return true;
+                if (!await store.CanDispatchAsync(job, timeout.Token))
+                { jobTrace.Activity?.SetTag("app.outcome", "discarded"); return true; }
+                jobTrace.Activity?.SetTag("app.phase", "provider");
                 Task<CharacterEnrichment>? pending = null;
                 var dispatched = sessionStore.TryStartUnlessFenced(job.AccountId,
                     () => pending = (characterOverride ?? provider!).EnrichAsync(job, timeout.Token));
                 if (!dispatched)
                 {
+                    jobTrace.Activity?.SetTag("app.outcome", "discarded");
                     await store.FenceAccountDeletionAsync(job.AccountId, CancellationToken.None);
                     return true;
                 }
@@ -183,23 +190,30 @@ internal sealed class TestingResources : IDisposable
                 timeout.Token.ThrowIfCancellationRequested();
                 if (sessionStore.IsFenced(job.AccountId))
                 {
+                    jobTrace.Activity?.SetTag("app.outcome", "discarded");
                     await store.FenceAccountDeletionAsync(job.AccountId, CancellationToken.None);
                     return true;
                 }
+                jobTrace.Activity?.SetTag("app.phase", "persistence");
                 var completed = await store.CompleteAsync(job, enrichment, null, timeout.Token);
+                jobTrace.Activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
                 logs?.Write("info", completed ? "testing_character_job_completed" : "testing_character_job_discarded",
                     operationId: Guid.Parse(job.Id).ToString(), attempt: job.Attempt);
             }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            catch (OperationCanceledException error) when (token.IsCancellationRequested)
             {
+                BackendTelemetry.Failed(jobTrace.Activity, error, token);
                 throw;
             }
             catch (Exception error) when (error is not OutOfMemoryException)
             {
+                BackendTelemetry.Failed(jobTrace.Activity, error, token);
                 var code = CharacterProviderFailure.Code(error);
+                jobTrace.Activity?.SetTag("app.failure_code", code);
                 if (CharacterProviderFailure.IsTransient(error) && job.Attempt < 3)
                 {
                     var retried = await store.RetryAsync(job, token);
+                    jobTrace.Activity?.SetTag("app.outcome", retried ? "retry_scheduled" : "discarded");
                     logs?.Write("warning", retried ? "testing_character_job_retry_scheduled" : "testing_character_job_discarded",
                         status: CharacterProviderFailure.Status(error), operationId: Guid.Parse(job.Id).ToString(), code: code, attempt: job.Attempt);
                 }

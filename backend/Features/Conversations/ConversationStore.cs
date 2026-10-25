@@ -62,6 +62,7 @@ internal sealed partial class ConversationStore(
     public CreateResult Create(string deviceId, Guid key, ReadOnlySpan<byte> requestBody, CreateConversationRequest request, LabHardwareContext? labHardware = null,
         string? customerSessionId = null, CustomerConversationPreferenceSnapshot? customerPreferences = null)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("conversation.initialize");
         var now = clock.GetUtcNow();
         var bodyHash = Convert.ToHexString(SHA256.HashData(requestBody));
 
@@ -863,6 +864,8 @@ internal sealed partial class ConversationStore(
 
     public MutationResult EndConversation(string deviceId, string conversationId, Guid key)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("conversation.terminate");
+        activity?.SetTag("app.conversation_id", conversationId);
         lock (gate)
         {
             var route = $"DELETE:/v1/conversations/{conversationId}";

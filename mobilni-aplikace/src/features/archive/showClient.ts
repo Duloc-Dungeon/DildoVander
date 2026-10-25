@@ -1,5 +1,6 @@
 import { GuestError, isUuid } from './client';
 import { secureUuid } from '../../application/identifiers.mjs';
+import { backendFetch } from '../../application/requestCorrelation.mjs';
 import { projectDuel, type DuelAccess, type DuelAction, type Duel } from './showContracts';
 
 /** Duel grants never use owner cookies, account credentials or bootstrap. */
@@ -7,7 +8,7 @@ export class DuelClient {
   private generation = 0;
   private controller = new AbortController();
   private operations = new Map<string, string>();
-  constructor(private transport: typeof fetch = (input, init) => fetch(input, init), private accountHistory: () => boolean = () => false) {}
+  constructor(private transport: typeof fetch = backendFetch, private accountHistory: () => boolean = () => false) {}
   invalidate() { this.generation++; this.controller.abort(); this.controller = new AbortController(); this.operations.clear(); }
   capture() {
     const generation = this.generation;

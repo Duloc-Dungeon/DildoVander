@@ -58,6 +58,7 @@ enum AccountTransportPolicy {
     }
 
     static func accountHeaderAllowed(path: String, method: String, name: String, value: String) -> Bool {
+        if name.lowercased() == "traceparent" { return validTraceparent(value) }
         guard name.lowercased() == "x-dv10-consent" else { return true }
         guard accountArchivePortraitUpload(path: path, method: method),
               value.utf8.count <= 10, value.allSatisfy({ $0.isASCII && $0.isNumber }),
@@ -301,6 +302,7 @@ enum AccountTransportPolicy {
     static func guestHeader(path: String, method: String, name: String, value: String) -> Bool {
         guard value.utf8.count <= 1024, !value.contains("\r"), !value.contains("\n") else { return false }
         let key = name.lowercased()
+        if key == "traceparent" { return validTraceparent(value) }
         if !guestUsesCookies(path: path) {
             if ["accept", "content-type"].contains(key) { return true }
             return key == "authorization" && method == "POST" && (path.hasSuffix("/choices") || path.hasSuffix("/join"))
@@ -308,6 +310,19 @@ enum AccountTransportPolicy {
                 && value.dropFirst(7).allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
         }
         return ["accept", "content-type", "x-dv10-csrf", "idempotency-key", "x-dv10-consent"].contains(key)
+    }
+
+    static func validTraceparent(_ value: String) -> Bool {
+        guard value.utf8.count == 55,
+              value.range(of: "^00-[0-9a-f]{32}-[0-9a-f]{16}-00$", options: .regularExpression) != nil else { return false }
+        let parts = value.split(separator: "-")
+        return parts[1].contains { $0 != "0" } && parts[2].contains { $0 != "0" }
+    }
+
+    static func newTraceparent() -> String {
+        let trace = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let parent = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().suffix(16)
+        return "00-\(trace)-\(parent)-00"
     }
 
     static func device(path: String, method: String, query: [URLQueryItem]) -> Bool {

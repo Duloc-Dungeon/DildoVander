@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.Observability;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text;
@@ -31,28 +32,38 @@ internal sealed class OpenAiWandGenerationProvider : IWandGenerationProvider, ID
 
     public async Task<WandCandidateContent[]> GenerateAsync(WandGenerationJob job, CancellationToken cancellationToken)
     {
-        if (!store.CanDispatch(job)) throw new WandGenerationException("openai_consent_required");
-        if (string.IsNullOrWhiteSpace(key)) throw new WandGenerationException("generation_provider_unavailable", 503);
-        await concurrency.WaitAsync(cancellationToken);
+        using var telemetry = GenAiOperation.Start("responses", model);
         try
         {
-            if (!store.CanDispatch(job)) throw new WandGenerationException("wand_generation_stale");
-            using var bounded = BoundedSdkTransport.Create(http, 131_072, ["application/json"]);
-            var client = new ResponsesClient(new ApiKeyCredential(key), new ResponsesClientOptions
-            { Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0) });
-            using var body = BinaryContent.Create(BinaryData.FromString(BuildRequest(job.Request, model)));
-            store.RecordUsage(job, model, PromptVersion, 0, 0, usageReported: false);
-            var response = await client.CreateResponseAsync(body, new RequestOptions { CancellationToken = cancellationToken });
-            using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
-            var root = document.RootElement;
-            // Account usage before semantic parsing so invalid model output is
-            // still audited, even if this operation was revoked while in flight.
-            if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
-                store.RecordUsage(job, root.TryGetProperty("model", out var actual) ? actual.GetString() ?? model : model,
-                    PromptVersion, usage.GetProperty("input_tokens").GetInt32(), usage.GetProperty("output_tokens").GetInt32());
-            return Parse(root, job.Request.ReadyMask);
+            if (!store.CanDispatch(job)) throw new WandGenerationException("openai_consent_required");
+            if (string.IsNullOrWhiteSpace(key)) throw new WandGenerationException("generation_provider_unavailable", 503);
+            await concurrency.WaitAsync(cancellationToken);
+            try
+            {
+                if (!store.CanDispatch(job)) throw new WandGenerationException("wand_generation_stale");
+                using var bounded = BoundedSdkTransport.Create(http, 131_072, ["application/json"]);
+                var client = new ResponsesClient(new ApiKeyCredential(key), new ResponsesClientOptions
+                { Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0) });
+                using var body = BinaryContent.Create(BinaryData.FromString(BuildRequest(job.Request, model)));
+                store.RecordUsage(job, model, PromptVersion, 0, 0, usageReported: false);
+                var response = await client.CreateResponseAsync(body, new RequestOptions { CancellationToken = cancellationToken });
+                using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
+                telemetry.ReadUsage(document.RootElement);
+                var root = document.RootElement;
+                // Account usage before semantic parsing so invalid model output is
+                // still audited, even if this operation was revoked while in flight.
+                if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+                    store.RecordUsage(job, root.TryGetProperty("model", out var actual) ? actual.GetString() ?? model : model,
+                        PromptVersion, usage.GetProperty("input_tokens").GetInt32(), usage.GetProperty("output_tokens").GetInt32());
+                return Parse(root, job.Request.ReadyMask);
+            }
+            finally { concurrency.Release(); }
         }
-        finally { concurrency.Release(); }
+        catch (Exception telemetryError)
+        {
+            telemetry.Fail(telemetryError, cancellationToken);
+            throw;
+        }
     }
 
     internal static string BuildRequest(WandGenerationRequest request, string model)

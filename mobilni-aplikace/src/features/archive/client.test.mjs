@@ -6,7 +6,8 @@ const identifiers = await readFile(new URL('../../application/identifiers.mjs', 
 const identifiersUrl = `data:text/javascript;base64,${Buffer.from(identifiers).toString('base64')}`;
 const wandSource = await readFile(new URL('./generatedWand.ts', import.meta.url), 'utf8');
 const wandUrl = `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(wandSource, { mode: 'transform' })).toString('base64')}`;
-const source = (await readFile(new URL('./client.ts', import.meta.url), 'utf8')).replace('../../application/identifiers.mjs', identifiersUrl).replace('./generatedWand', wandUrl);
+const source = (await readFile(new URL('./client.ts', import.meta.url), 'utf8')).replace('../../application/identifiers.mjs', identifiersUrl)
+  .replace('../../application/requestCorrelation.mjs', new URL('../../application/requestCorrelation.mjs', import.meta.url).href).replace('./generatedWand', wandUrl);
 const clientModule = await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(source, { mode: 'transform' })).toString('base64')}`);
 const { ArchiveClient, projectGallery, guestPath, parseClaim, safeIssuedLink, downloadName, parseArchiveReadiness, generationLabel, deletionLabel } = clientModule;
 const id = '11111111-1111-4111-8111-111111111111';

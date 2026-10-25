@@ -49,6 +49,8 @@ internal sealed partial class TestingSessionService
     }
     internal TestingSession Create(string owner,TestingSessionRequest request)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("testing.session.create");
+        activity?.SetTag("app.operation_id", request.OperationId);
         if(!LabContract.Engine(request.Engine)||request.InputMode is not("text" or "voice" or "hybrid")
             ||request.Platform is not("web" or "ios")||!Guid.TryParse(request.OperationId,out _))
             throw new TestingException(400,"invalid_test_session");
