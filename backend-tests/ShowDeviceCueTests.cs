@@ -327,7 +327,7 @@ internal static class ShowDeviceCueTests
             fixture.Clock.Advance(TimeSpan.FromSeconds(3));
             store.Tick();
         }
-        Check(store.Read(duel.Id) is { State: "Completed", Result: not null, NarrationStatus: "web_only_no_spoken_confirmation" }
+        Check(store.Read(duel.Id) is { State: "Completed", Result: not null, NarrationStatus: "text_only_duel" }
             && fixture.Show.Read(Device).OccupiedBy is null && fixture.Calls == 0
             && fixture.Sql("SELECT count(*) FROM turn_operations WHERE kind='speech'") == 0
             && fixture.Poll().Cue is null,
