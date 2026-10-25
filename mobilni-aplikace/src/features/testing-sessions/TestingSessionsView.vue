@@ -37,6 +37,9 @@ const latestCharacter = computed(() => selected.value?.latestCharacter
   ?? characters.value.find(character => character.id === selected.value?.session.characterId)
   ?? selected.value?.character ?? null);
 const conversationSnapshot = computed(() => selected.value?.characterSnapshot ?? null);
+const snapshotExcludesLatest = computed(() => !!latestCharacter.value && !!conversationSnapshot.value
+  && (latestCharacter.value.profile.revision > conversationSnapshot.value.revision
+    || (!!latestCharacter.value.profile.enrichment && !conversationSnapshot.value.enrichment)));
 const characterInspection = computed(() => ({
   latestProfile: latestCharacter.value?.profile ?? null,
   conversationSnapshot: conversationSnapshot.value,
@@ -44,7 +47,7 @@ const characterInspection = computed(() => ({
 type TestStep = 1 | 2 | 3 | 4;
 const step = ref<TestStep>(1);
 const steps = ['Sezení', 'Postava', 'Rozhovor', 'Výsledek'];
-const characterPending = computed(() => ['queued', 'running'].includes(selectedCharacter.value?.profile.status ?? ''));
+const characterPending = computed(() => ['queued', 'running'].includes(latestCharacter.value?.profile.status ?? ''));
 const conversationReadiness = computed(() => {
   if (stale.value) return 'Obnovuji stav rozhovoru';
   const phase = selected.value?.conversationOperation?.phase;
@@ -243,14 +246,21 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
                 </section>
                 <section aria-label="Neměnný snímek konverzace">
                   <h3>Kontext zmrazený při zahájení rozhovoru</h3>
-                  <template v-if="conversationSnapshot"><p>Profil {{ conversationSnapshot.profileId }}, revize {{ conversationSnapshot.revision }} · zachyceno {{ new Date(conversationSnapshot.capturedAt * 1000).toLocaleString() }}.</p><p>Jméno: {{ conversationSnapshot.userInput.name }} · svět: {{ conversationSnapshot.userInput.world }}</p><p>Obohacení při zahájení: {{ conversationSnapshot.enrichment ? 'bylo dostupné' : 'nebylo dostupné' }}.</p><p>Dostupná pole při zahájení: jméno, svět, verze, dodaný popis<template v-if="conversationSnapshot.enrichment">, obohacený profil</template>.</p><details v-if="conversationSnapshot.context"><summary>Skutečný kontext předaný rozhovoru</summary><pre class="testing-json">{{ conversationSnapshot.context }}</pre></details><p v-if="latestCharacter && latestCharacter.profile.revision > conversationSnapshot.revision" class="aw-muted">Existuje novější revize profilu. Tento rozhovor ji nepoužívá; jeho kontext zůstává neměnný.</p></template>
+                  <template v-if="conversationSnapshot">
+                    <p>Profil {{ conversationSnapshot.profileId }}, revize {{ conversationSnapshot.revision }} · zachyceno {{ new Date(conversationSnapshot.capturedAt * 1000).toLocaleString() }}.</p>
+                    <p>Jméno: {{ conversationSnapshot.userInput.name }} · svět: {{ conversationSnapshot.userInput.world }}</p>
+                    <p>Obohacení při zahájení: {{ conversationSnapshot.enrichment ? 'bylo dostupné' : 'nebylo dostupné' }}.</p>
+                    <p>Dostupná pole při zahájení: jméno, svět<template v-if="conversationSnapshot.userInput.version">, verze</template><template v-if="conversationSnapshot.userInput.description">, dodaný popis</template><template v-if="conversationSnapshot.enrichment">, obohacený profil</template>.</p>
+                    <details v-if="conversationSnapshot.context"><summary>Skutečný kontext předaný rozhovoru</summary><pre class="testing-json">{{ conversationSnapshot.context }}</pre></details>
+                    <p v-if="snapshotExcludesLatest" class="aw-muted">Existuje novější verze profilu nebo obohacení. Tento rozhovor ji nepoužívá; jeho kontext zůstává neměnný.</p>
+                  </template>
                   <p v-else class="aw-muted">Backend neposkytl uložená metadata snímku konverzace.</p>
                 </section>
                 <details><summary>Strukturovaná data uložená backendem</summary><pre class="testing-json">{{ JSON.stringify(characterInspection, null, 2) }}</pre><AwButton @click="copyCharacterInspection">Kopírovat JSON postavy</AwButton><p v-if="characterCopyStatus" role="status">{{ characterCopyStatus }}</p></details>
                 <AwButton v-if="open" :disabled="busy || !consent || voiceActive || characterPending" @click="test.enrich">Spustit skutečné AI obohacení</AwButton>
               </details>
             </template>
-            <AwButton v-if="selectedCharacter && !showCharacterForm" variant="primary" :disabled="busy || characterPending" @click="goToStep(3)">Pokračovat k rozhovoru</AwButton>
+            <AwButton v-if="selectedCharacter && !showCharacterForm" variant="primary" :disabled="busy || (characterPending && !selected?.conversation.turns.length)" @click="goToStep(3)">Pokračovat k rozhovoru</AwButton>
           </section>
           <section v-show="step === 3" class="testing-conversation" aria-labelledby="testing-conversation-title">
             <div class="testing-section-heading"><h2 id="testing-conversation-title">Rozhovor s DildoVanderem</h2><AwStatus>{{ inputMode }}</AwStatus></div>

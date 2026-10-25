@@ -5,7 +5,7 @@ import UIKit
 public final class KufrDiagnosticExportPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "KufrDiagnosticExportPlugin"
     public let jsName = "KufrDiagnosticExport"
-    public let pluginMethods = [CAPPluginMethod(name: "export", returnType: CAPPluginReturnPromise)]
+    public let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "export", returnType: CAPPluginReturnPromise)]
 
     @objc func export(_ call: CAPPluginCall) {
         DispatchQueue.main.async {

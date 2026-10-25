@@ -137,6 +137,19 @@ describe('hardware-free testing journey', () => {
     expect(wrapper.get('.testing-conversation [role="status"]').text()).toContain('Čekám na odpověď poskytovatele');
     expect(button(wrapper, 'Odeslat skutečnému AI').attributes('disabled')).toBeDefined();
   });
+  it('explains enrichment completed after capture at the same input revision without blocking an existing chat', async () => {
+    detail.latestCharacter = person;
+    detail.characterSnapshot = { profileId: 'profile-1', revision: 1, capturedAt: 1792836000,
+      userInput: { name: 'Alena', world: 'Library' }, enrichment: null, context: '{"enrichment":null}' };
+    detail.conversation.turns.push({ id: 'old-user', role: 'user', text: 'Existing conversation', createdAt: '2026-10-24T10:00:00Z' });
+    const { wrapper } = await render();
+    await wrapper.get('.testing-steps button:nth-child(2)').trigger('click'); await flushPromises();
+    expect(wrapper.get('.testing-character').text()).toContain('Tento rozhovor ji nepoužívá');
+    expect(wrapper.get('.testing-character').text()).toContain('Dostupná pole při zahájení: jméno, svět.');
+    detail.latestCharacter = { ...person, profile: { ...person.profile, status: 'running' } };
+    await button(wrapper, 'Obnovit stav').trigger('click'); await flushPromises();
+    expect(button(wrapper, 'Pokračovat k rozhovoru').attributes('disabled')).toBeUndefined();
+  });
   it('exports app build and sanitized enrichment status without character content', async () => {
     detail.latestCharacter = { ...person, enrichmentOperationId: 'enrich-op-1', profile: { ...person.profile, errorCode: 'character_provider_unavailable' } };
     const { wrapper } = await render();
