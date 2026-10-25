@@ -118,7 +118,7 @@ internal sealed partial class ConversationStore
             }
             var memory = hardware is null ? eveningMemory?.ReadContext(deviceId, conversationId, request.Text) : null;
             var turn = new RealtimeTurnContext(
-                request,
+                conversation.CustomerKeepsakes ? request with { ReadyMask = CustomerWandSelection.KeepsakeReadyMask } : request,
                 conversation.CompletedQuestions < PersonalityCatalog.MinimumQuestions(conversation.PersonalityId),
                 memory?.Transcript ?? "",
                 conversation.History.ToArray(),
