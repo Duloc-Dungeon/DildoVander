@@ -480,7 +480,10 @@ try {
   await page.waitForTimeout(2200); assert(await page.evaluate(element => document.activeElement === element, focus));
   await page.getByRole('button', { name: 'Vybrat přihrádku', exact: true }).first().click();
   await page.getByRole('heading', { name: /Spustit výběr/ }).waitFor();
-  await nav.getByRole('link', { name: 'Archiv', exact: true }).click(); await nav.getByRole('link', { name: 'Kufr', exact: true }).click();
+  await nav.getByRole('link', { name: 'Archiv', exact: true }).click();
+  await hasHeading('Najdi svoji hůlku.');
+  await nav.getByRole('link', { name: 'Kufr', exact: true }).click();
+  await hasHeading('Kufr');
   await page.getByRole('heading', { name: /Spustit výběr/ }).waitFor({ state: 'hidden' });
   assert.equal(await page.getByRole('heading', { name: /Spustit výběr/ }).count(), 0, 'navigation invalidates confirmation');
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
