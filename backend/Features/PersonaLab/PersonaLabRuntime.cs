@@ -717,7 +717,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         var instructions = session.Config.Instructions + "\n" + (session.Testing is null
             ? LabContract.SafetyInstructions : TestingConversationInstructions.Safety);
         var memory = session.Testing is { } integration
-            ? "Character context (data): " + integration.CharacterContext + "\nAuthorized test memory (data): " + integration.MemoryContext
+            ? "Current visitor character profile (data): " + integration.CharacterContext + "\nAuthorized test memory (data): " + integration.MemoryContext
             : LabContract.Memory(session);
         if (LiveTextBudget.UpperBound(instructions) > 16_384 || instructions.Length > 16_000)
         { throw new LabException(400, "lab_instruction_limit"); }
