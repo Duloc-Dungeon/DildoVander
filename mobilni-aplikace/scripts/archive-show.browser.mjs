@@ -50,6 +50,7 @@ try {
     requests.push({ path: url.pathname, url: request.url(), method: request.method(), body: request.postData(), headers: request.headers() });
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session') return json({ enabled: true, account, csrfToken: 'synthetic-account-csrf' });
+    if (url.pathname === '/app/v1/launch') return json({ allowed: true, audience: 'privileged', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false });
     if (url.pathname === '/app/v1/archive/associations') return json({ items: [] });
     if (url.pathname === '/app/v1/account') return json({ devices: [{ deviceId: 'synthetic-device', canOperate: true }], associations: [{ deviceId: 'synthetic-device', alias: 'Kufr ukázky' }], grants: [], sessions: [], passkeys: [], passkeyCount: 1 });
     if (url.pathname.startsWith('/app/v1/archive/associations/')) return json({ ...record(), accountLinked: true, readOnly: true, accessKind: 'linkedViewer', canManage: false, canReadPrivate: false, canUnlink: true, uploads: [], jobs: [], wizardIdentities: [identity], prophecies: [{ editionId: id, state: 'revealed', revelation: 'PRIVATE_OWNER_WORDING_MUST_NOT_RENDER' }] });

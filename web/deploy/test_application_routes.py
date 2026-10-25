@@ -33,7 +33,7 @@ class ApplicationRoutingTests(unittest.TestCase):
         config = proxy.render_compatibility('keepsake.example.invalid')
         pages = set(re.findall(r'location = ([^ ]+) \{\n(?:(?!\n}).)*?try_files /index.html =404;', config, re.DOTALL))
         for route in ('/', '/suitcase', '/suitcase/diagnostics', '/suitcase/director', '/connections', '/workshop',
-                      '/archive', '/archive/duel', '/archive/chronicle', '/signin', '/settings', '/settings/admin', '/persona-lab', '/keepsake/', '/keepsake/evening/'):
+                      '/archive', '/archive/duel', '/archive/chronicle', '/signin', '/launch', '/settings', '/settings/admin', '/persona-lab', '/keepsake/', '/keepsake/evening/'):
             self.assertIn(route, pages)
         for route in ('/app/index.html', '/companion/index.html', '/simulator/index.html',
                       '/workshop/index.html', '/workshop/viewer.html', '/keepsake/index.html', '/keepsake/evening/index.html',
@@ -56,7 +56,7 @@ class ApplicationRoutingTests(unittest.TestCase):
 
     def test_customer_pages_are_private_get_only_and_do_not_catch_apis(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
-        for route in ('/account-deletion', '/me', '/me/', '/me/character', '/me/conversation', '/me/keepsakes', '/me/account', '/tonight', '/admin/customer-sessions', '/testing-sessions'):
+        for route in ('/launch', '/settings/admin/launch', '/account-deletion', '/me', '/me/', '/me/character', '/me/conversation', '/me/keepsakes', '/me/account', '/tonight', '/admin/customer-sessions', '/testing-sessions'):
             with self.subTest(route=route):
                 block = config.split('location = ' + route + ' {', 1)[1].split('\n}', 1)[0]
                 for value in ('GET|HEAD', 'no-store', 'no-referrer', 'noindex, nofollow', 'access_log off;', 'try_files /index.html =404;'):
@@ -98,10 +98,27 @@ class ApplicationRoutingTests(unittest.TestCase):
         config = Path(__file__).with_name('site-locations.conf').read_text()
         for route in ('/assets/', '/models/bundles/'):
             block = config.split('location ^~ ' + route, 1)[1].split('\n}', 1)[0]
-            self.assertIn('immutable', block)
+            self.assertIn('immutable' if route == '/assets/' else 'private, no-store', block)
             self.assertIn('try_files $uri =404;', block)
         self.assertIn('location = /models/active.json', config)
         self.assertNotIn('location / {', config)
+
+    def test_geometry_and_source_downloads_share_uncached_launch_authorization(self):
+        config = Path(__file__).with_name('site-locations.conf').read_text()
+        launch = config.split('location = /launch {', 1)[1].split('\n}', 1)[0]
+        self.assertIn('X-Robots-Tag "noindex, nofollow"', launch)
+        authorizer = config.split('location = /_dv_launch_access {', 1)[1].split('\n}', 1)[0]
+        for directive in ('internal;', 'proxy_method GET;', 'proxy_pass_request_body off;', 'proxy_cache off;',
+                          'proxy_pass http://127.0.0.1:5080/app/v1/launch/resource-access;',
+                          'proxy_set_header Cookie $http_cookie;'):
+            self.assertIn(directive, authorizer)
+        for marker in ('location = /models/active.json', 'location ^~ /models/bundles/',
+                       'location = /downloads/index.json', 'location ~ "^/downloads/releases/',
+                       'location ~ "^/workshop/'):
+            block = config.split(marker, 1)[1].split('\n}', 1)[0]
+            self.assertIn('auth_request /_dv_launch_access;', block)
+            self.assertIn('no-store', block)
+            self.assertNotIn('public, max-age', block)
 
     def test_normalized_api_paths_cannot_become_page_fallback(self):
         config = proxy.render_compatibility('keepsake.example.invalid')

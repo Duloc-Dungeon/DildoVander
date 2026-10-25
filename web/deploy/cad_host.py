@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import stat
@@ -126,8 +127,14 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def http_bytes(url, maximum):
+    headers = {"Cache-Control": "no-cache"}
+    token = os.environ.get("KUFR_MODEL_READBACK_TOKEN")
+    if token:
+        if not url.startswith("https://") or not 32 <= len(token) <= 256 or any(c.isspace() for c in token):
+            raise ValueError("Model readback credential requires canonical HTTPS and a valid token")
+        headers["Authorization"] = "Bearer " + token
     opener = urllib.request.build_opener(NoRedirect)
-    with opener.open(urllib.request.Request(url, headers={"Cache-Control": "no-cache"}), timeout=20) as response:
+    with opener.open(urllib.request.Request(url, headers=headers), timeout=20) as response:
         data = response.read(maximum + 1)
         if len(data) > maximum:
             raise ValueError("Oversized deployment readback")

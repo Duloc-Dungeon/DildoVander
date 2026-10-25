@@ -5,9 +5,11 @@ import { nextTick } from 'vue';
 import SignInView from './SignInView.vue';
 import { account } from './session';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
+import { launchAllowed } from '../../application/launchAccess';
 
 const api = vi.hoisted(() => ({
   authenticate: vi.fn(),
+  signOut: vi.fn(),
   enrollment: null as { kind: 'invite' | 'recovery'; token: string } | null,
 }));
 
@@ -21,6 +23,7 @@ vi.mock('./session', async () => {
     signingOut: ref(false),
     refreshIdentity: vi.fn(),
     authenticatePasskey: api.authenticate,
+    signOut: api.signOut,
   };
 });
 vi.mock('../../application/guestClaim', () => ({
@@ -53,11 +56,20 @@ beforeEach(() => {
   interfaceLanguagePreference.setScope(null);
   interfaceLanguagePreference.setLanguage('cs');
   account.value = null;
+  launchAllowed.value = true;
   api.authenticate.mockReset();
+  api.signOut.mockReset();
   api.enrollment = null;
 });
 
 describe('sign-in destinations', () => {
+  it('hides customer feature descriptions and public signup while launch access is unknown', async () => {
+    launchAllowed.value = null;
+    const { wrapper } = await mountSignIn();
+    expect(wrapper.text()).not.toMatch(/suitcase|workshop|archive|kufr|dílna|archiv|konverzac|památk/i);
+    expect(wrapper.text()).not.toContain('Vytvořit zákaznický účet');
+    wrapper.unmount();
+  });
   it.each([
     ['invitation_expired_or_used', 'Pozvánka už není platná.', 'This invitation has expired or was already used.'],
     ['ceremony_expired_or_used', 'Ověření vypršelo.', 'Verification expired.'],
@@ -137,6 +149,18 @@ describe('sign-in destinations', () => {
     expect(wrapper.find('details').exists()).toBe(false);
     expect(wrapper.get('#account-invite').attributes('type')).toBe('password');
     expect(wrapper.text()).toContain('Kód získáte soukromě od vlastníka.');
+    wrapper.unmount();
+  });
+
+  it('lets an authenticated visitor switch accounts while preserving the invitation token', async () => {
+    api.enrollment = { kind: 'invite', token: 'private-invitation-code' };
+    account.value = { id: 'existing', displayName: 'Existing', roles: ['Customer'] };
+    api.signOut.mockImplementation(async () => { account.value = null; });
+    const { wrapper } = await mountSignIn();
+    await wrapper.findAll('button').find(button => button.text().includes('pozvánkou'))!.trigger('click'); await flushPromises();
+    expect(api.signOut).toHaveBeenCalledOnce();
+    expect(wrapper.find('#account-invite').exists()).toBe(true);
+    expect((wrapper.get('#account-invite').element as HTMLInputElement).value).toBe('private-invitation-code');
     wrapper.unmount();
   });
 

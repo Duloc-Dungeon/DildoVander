@@ -98,7 +98,7 @@ try {
       logoutDeadline = setTimeout(() => reject(new Error('Current-session logout did not use the serialized logout route.')), 15000);
     })]);
   } finally { clearTimeout(logoutDeadline); }
-  await viewer.page.locator('.application-header').getByRole('link', { name: 'Přihlásit se', exact: true }).click();
+  await viewer.page.waitForURL(url => url.pathname === '/signin');
   const signIn = viewer.page.getByRole('button', { name: 'Přihlásit přístupovým klíčem', exact: true });
   await signIn.waitFor(); assert(await signIn.isDisabled());
   assert.equal(signInOptions, 0, 'no new cookie ceremony while logout response is pending');
@@ -109,7 +109,8 @@ try {
   const logoutCompleted = viewer.page.waitForResponse(response => response.url() === origin.origin + '/app/v1/session' && response.request().method() === 'DELETE');
   await viewer.page.getByRole('button', { name: 'Odhlásit toto zařízení', exact: true }).click();
   await logoutCompleted;
-  await viewer.page.getByRole('link', { name: 'Přihlásit se', exact: true }).last().waitFor();
+  await viewer.page.waitForURL(url => url.pathname === '/signin');
+  await signIn.waitFor({ state: 'visible' });
   const signedOut = await viewer.context.request.get(origin.origin + '/app/v1/session');
   assert.equal((await signedOut.json()).account, null);
   await viewer.page.goto(origin.origin + '/signin?return=%2Farchive');

@@ -58,6 +58,7 @@ try {
     if (pathname === manifestPath) return json(manifest);
     if (pathname === manifestPath.replace('model-bundle.json', 'model.json')) return route.fulfill({ status: 200, contentType: 'application/json', body: modelBytes });
     if (pathname === '/app/v1/session') return json({ enabled: true, account: { id: 'synthetic-owner', displayName: 'Syntetický testovací vlastník', roles: ['Owner'] }, csrfToken: 'synthetic-csrf', origin });
+    if (pathname === '/app/v1/launch') return json({ allowed: true, audience: 'privileged', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false });
     if (!pathname.startsWith('/v1/twin/') && pathname !== '/app/v1/workshop/sim-integration/engines') return route.continue();
     requests.push({ path: pathname, method: request.method(), body: request.postDataBuffer(), headers: request.headers() });
     if (pathname === '/v1/twin/instances') return json({ instances: [{ instanceId: 'sim-integration', mode: 'simulation', profile: 'integration', canControl: true }] });

@@ -141,6 +141,15 @@ describe('native account archive transport limits', () => {
     const asset = await identity.accountTransport(`/app/v1/archive/owned/${archiveId}/assets/${archiveId}`);
     expect((await asset.arrayBuffer()).byteLength).toBe(1024 * 1024 + 1);
   });
+
+  it('admits bounded prelaunch portrait images only for the exact versioned route', async () => {
+    const identity = await import('./session');
+    const path = '/app/v1/prelaunch/character/portrait?revision=12';
+    expect(identity.accountTransportResponseLimit(path, 'GET')).toBe(8 * 1024 * 1024);
+    expect(identity.accountTransportResponseLimit(path + '&other=1', 'GET')).toBe(1024 * 1024);
+    expect(identity.accountTransportResponseLimit(path, 'POST')).toBe(1024 * 1024);
+  });
+
 });
 
 describe('native account data export', () => {
@@ -379,7 +388,7 @@ describe('durable account deletion', () => {
     const identity = await signedIn();
     const confirmation = vi.fn().mockReturnValue(false); vi.stubGlobal('confirm', confirmation);
     await expect(identity.deleteAccount('current')).rejects.toThrow('nebyla potvrzena');
-    expect(confirmation).toHaveBeenCalledWith(expect.stringContaining('Trvale smazat můj účet?'));
+    expect(confirmation).toHaveBeenCalledWith(expect.stringContaining('přidružený soukromý obsah'));
     expect(request).toHaveBeenCalledTimes(1);
     expect(identity.account.value?.id).toBe('current');
   });
@@ -390,7 +399,7 @@ describe('durable account deletion', () => {
     const identity = await signedIn();
     const confirmation = vi.fn().mockReturnValue(false); vi.stubGlobal('confirm', confirmation);
     await expect(identity.deleteAccount('current')).rejects.toThrow('not confirmed');
-    expect(confirmation).toHaveBeenCalledWith(expect.stringContaining('Permanently delete my account?'));
+    expect(confirmation).toHaveBeenCalledWith(expect.stringContaining('associated private content'));
     expect(identity.account.value?.id).toBe('current');
   });
 

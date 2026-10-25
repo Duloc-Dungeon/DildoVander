@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import AccountDeletion from './AccountDeletion.vue';
 import { account } from './session';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
+import { launchAllowed } from '../../application/launchAccess';
 
 const api = vi.hoisted(() => ({ authenticate: vi.fn(), deleteAccount: vi.fn(), status: vi.fn() }));
 vi.mock('./session', async () => {
@@ -14,6 +15,7 @@ beforeEach(() => {
   interfaceLanguagePreference.setScope(null);
   interfaceLanguagePreference.setLanguage('cs');
   account.value = { ...current };
+  launchAllowed.value = true;
   api.authenticate.mockReset().mockResolvedValue(undefined);
   api.deleteAccount.mockReset();
   api.status.mockReset().mockResolvedValue('deletion_requested');

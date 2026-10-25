@@ -7,14 +7,35 @@ import { canonicalManifest, loadPublishedBundle, sha256 } from './model-bundle.m
 const bridge = vi.hoisted(() => ({ native: true, publicOrigin: vi.fn(), publicResource: vi.fn(), cancelPublicResource: vi.fn(), accountTransport: vi.fn(), request: vi.fn() }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => bridge.native }, registerPlugin: () => bridge }));
 import { nativePublicReader, publicResourceClient, publicResourcePath, validatePublicOrigin } from './public-resources';
+import { account, accountOrigin } from '../identity/session';
 
 const origin = 'https://models.example';
 const encode = (value: string) => btoa(Array.from(new TextEncoder().encode(value), byte => String.fromCharCode(byte)).join(''));
 const response = (value: string) => ({ status: 200, headers: { 'content-type': 'application/json' }, bodyBase64: encode(value) });
-beforeEach(() => { vi.clearAllMocks(); bridge.native = true; bridge.publicOrigin.mockResolvedValue({ origin }); bridge.cancelPublicResource.mockResolvedValue(undefined); });
+beforeEach(() => { vi.clearAllMocks(); bridge.native = true; bridge.publicOrigin.mockResolvedValue({ origin }); bridge.cancelPublicResource.mockResolvedValue(undefined); account.value = null; accountOrigin.value = ''; });
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('native public Workshop resources', () => {
+  it('uses the bounded cookie-authenticated native reader for signed-in resources', async () => {
+    account.value = { id: 'fixture-account', displayName: 'Tester', roles: ['Customer'] };
+    accountOrigin.value = origin;
+    bridge.publicResource.mockResolvedValue(response('{}'));
+    const client = await publicResourceClient(new AbortController().signal);
+    await client.read(origin + '/models/active.json', 100, new AbortController().signal);
+    expect(bridge.publicResource).toHaveBeenCalledWith(expect.objectContaining({ path: '/models/active.json', authenticated: true }));
+    expect(bridge.accountTransport).not.toHaveBeenCalled();
+    expect(bridge.publicOrigin).toHaveBeenCalledOnce();
+  });
+
+  it('uses same-origin credentials for authenticated web resources', async () => {
+    bridge.native = false;
+    account.value = { id: 'fixture-account', displayName: 'Customer', roles: ['Customer'] };
+    const fetcher = vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetcher);
+    const client = await publicResourceClient(new AbortController().signal);
+    await client.read(new URL('/models/active.json', client.origin), 100, new AbortController().signal);
+    expect(fetcher).toHaveBeenCalledWith('/models/active.json', expect.objectContaining({ credentials: 'same-origin', redirect: 'error' }));
+  });
   it('loads with legacy cancellation and securely generates request IDs when randomUUID is unavailable', async () => {
     const nativeCrypto = crypto;
     const random = vi.fn((bytes: Uint8Array<ArrayBuffer>) => nativeCrypto.getRandomValues(bytes));
@@ -105,7 +126,7 @@ describe('native public Workshop resources', () => {
     bridge.native = false; vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')));
     const client = await publicResourceClient(new AbortController().signal);
     await client.read(new URL('/downloads/index.json', client.origin), 262144, new AbortController().signal);
-    expect(fetch).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({ credentials: 'omit', redirect: 'error' }));
+    expect(fetch).toHaveBeenCalledWith('/downloads/index.json', expect.objectContaining({ credentials: 'omit', redirect: 'error' }));
     expect(bridge.publicOrigin).not.toHaveBeenCalled(); expect(bridge.publicResource).not.toHaveBeenCalled();
   });
 });

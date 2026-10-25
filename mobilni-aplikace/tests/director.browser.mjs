@@ -24,6 +24,7 @@ try{
   const request=route.request(),url=new URL(request.url());
   if(url.origin!==origin){external.push(request.url());await route.abort();return;}
   if(url.pathname==='/app/v1/session'){await json(route,{enabled:true,account:{id:'synthetic-owner',displayName:'Obsluha fixture',roles:['Owner']},csrfToken:'synthetic-csrf',origin});return;}
+  if(url.pathname==='/app/v1/launch'){await json(route,{allowed:true,audience:'privileged',launchAt:null,serverNow:Date.now(),teaser:'',initialLoadingMessage:'',personalizedLoadingEnabled:false});return;}
   if(url.pathname==='/app/v1/account'){await json(route,details);return;}
   if(!url.pathname.startsWith('/v1/show/devices/fixture-device')){await route.continue();return;}
   const suffix=url.pathname.slice('/v1/show/devices/fixture-device'.length);

@@ -185,6 +185,11 @@ numbers and credentials belong only in Apple's private review fields.
 
 Before submission, resolve these existing product requirements:
 
+The [launch access runbook](prelaunch-access.md) describes beta/production gates,
+the existing Tester entitlement for a dedicated review account, and a review-note
+template. Verify that account's complete application access while both ordinary
+audiences remain gated; a TestFlight installation does not grant an entitlement.
+
 - Test account deletion from customer and staff settings. Fresh passkey assertion
   and explicit confirmation precede durable acceptance; the account loses access
   immediately and local content cleanup retries after failures/restarts. A separate
