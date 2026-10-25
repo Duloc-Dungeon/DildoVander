@@ -48,8 +48,21 @@ type TestStep = 1 | 2 | 3 | 4;
 const step = ref<TestStep>(1);
 const steps = ['Sezení', 'Postava', 'Rozhovor', 'Výsledek'];
 const characterPending = computed(() => ['queued', 'running'].includes(latestCharacter.value?.profile.status ?? ''));
+const inputModes = [
+  { value: 'text', label: 'Text — bez mikrofonu' },
+  { value: 'voice', label: 'Živý mikrofon — GPT Live / Realtime' },
+  { value: 'hybrid', label: 'Hybrid — text a živý mikrofon' },
+] as const;
 const conversationReadiness = computed(() => {
   if (stale.value) return 'Obnovuji stav rozhovoru';
+  if (captureEnabled.value) {
+    switch (voicePhase.value) {
+      case 'connecting': return 'Připojuji živý mikrofon a poskytovatele';
+      case 'listening': return 'Mikrofon je aktivní — můžete mluvit';
+      case 'waiting': return 'Čekám na hlasovou odpověď';
+      case 'speaking': return 'DildoVander mluví — odpověď se přehrává průběžně';
+    }
+  }
   const phase = selected.value?.conversationOperation?.phase;
   if (phase === 'admitting') return 'Ověřuji požadavek';
   if (phase === 'preparing_context') return 'Načítám kontext postavy a rozhovoru';
@@ -181,7 +194,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
           </select></AwField>
           </div>
           <AwField id="testing-input" label="Vstup"><select id="testing-input" :value="inputMode" class="aw-select" :disabled="busy" @change="switchMode">
-            <option value="text">Text — bez mikrofonu</option><option value="voice">Hlas</option><option value="hybrid">Hybrid — text a hlas</option>
+            <option v-for="mode in inputModes" :key="mode.value" :value="mode.value">{{ mode.label }}</option>
           </select></AwField>
 
         </div>
@@ -265,22 +278,28 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
           <section v-show="step === 3" class="testing-conversation" aria-labelledby="testing-conversation-title">
             <div class="testing-section-heading"><h2 id="testing-conversation-title">Rozhovor s DildoVanderem</h2><AwStatus>{{ inputMode }}</AwStatus></div>
             <p v-if="selectedCharacter" class="aw-muted">{{ selectedCharacter.profile.userInput.name }} · {{ selectedCharacter.profile.userInput.world }}</p>
+            <AwField v-if="open" id="testing-conversation-input" label="Režim rozhovoru">
+              <select id="testing-conversation-input" :value="inputMode" class="aw-select" :disabled="busy || uncertainTurn || (selected.conversationActive && !voiceActive)" @change="switchMode">
+                <option v-for="mode in inputModes" :key="mode.value" :value="mode.value">{{ mode.label }}</option>
+              </select>
+            </AwField>
             <AwNotice v-if="error" tone="danger" :title="errorTitle"><p>{{ errorMessage }}</p><p v-if="errorRejected">Server akci odmítl před jejím zpracováním. Počkejte alespoň {{ retrySeconds }} s před dalším pokusem.</p><small v-if="errorMessage !== error">{{ error }}</small><p v-if="errorRequestId" class="testing-code">ID požadavku: {{ errorRequestId }}</p><p>Zpráva se sama znovu neodešle.</p><AwButton :disabled="busy || retrySeconds > 0" @click="test.refresh">Obnovit stav</AwButton></AwNotice>
             <p role="status" aria-live="polite">{{ conversationReadiness }}<span v-if="selected.conversationOperation"> · {{ selected.conversationOperation.elapsedMs }} ms · operace {{ selected.conversationOperation.operationId }}</span></p>
-            <p v-if="!selected.conversation.turns.length" class="aw-muted">Napište první zprávu. Textový režim nikdy nevyžaduje mikrofon.</p>
+            <p v-if="!selected.conversation.turns.length" class="aw-muted">{{ inputMode === 'text' ? 'Napište první zprávu. Textový režim nikdy nevyžaduje mikrofon.' : 'Zapněte mikrofon a začněte mluvit. Spojení zůstane otevřené pro další odpovědi.' }}</p>
             <ol class="testing-chat" aria-label="Uložený rozhovor"><li v-for="turn in selected.conversation.turns" :key="turn.id" :class="`testing-turn-${turn.role}`">
               <strong>{{ turn.role === 'user' ? selectedCharacter?.profile.userInput.name ?? 'Vy' : 'DildoVander' }}</strong><p>{{ turn.text || 'Text není uložený.' }}</p><small v-if="turn.latencyMs != null">{{ turn.latencyMs }} ms · skutečný backend</small>
             </li></ol>
             <p v-if="partial.user" class="testing-partial">Vy · {{ partial.user }}</p><p v-if="partial.assistant" class="testing-partial">DildoVander · {{ partial.assistant }}</p>
             <form v-if="open && inputMode !== 'voice'" class="testing-chat-form" @submit.prevent="test.send">
+              <p v-if="inputMode === 'hybrid'" class="aw-muted">Odeslání psané zprávy vypne mikrofon. Pro pokračování hlasem ho znovu zapněte tlačítkem.</p>
               <AwField id="testing-message" label="Vaše zpráva"><textarea id="testing-message" v-model="text" class="aw-input" rows="3" maxlength="4000" :disabled="!selectedCharacter || (voiceActive && captureEnabled && inputMode !== 'hybrid')" /></AwField>
               <AwButton type="submit" variant="primary" :busy="busy || spokenBusy" :disabled="busy || uncertainTurn || !text.trim() || !selectedCharacter || !consent || stale || (selected.conversationActive && !voiceActive)">Odeslat skutečnému AI</AwButton>
             </form>
             <label v-if="open" class="testing-consent"><input v-model="outputEnabled" type="checkbox" /> Přehrávat skutečný hlas asistenta (také pro psané zprávy, bez mikrofonu)</label>
             <template v-if="open && inputMode !== 'text'">
-              <p class="aw-muted">Mikrofon se aktivuje až tlačítkem. Přepnutí do textu uzavře audio spojení a zachová uloženou historii.</p>
+              <p class="aw-muted">{{ selected.session.engine === 'gpt-realtime-2.1' ? 'Realtime 2.1' : 'GPT Live' }} · Živý rozhovor s průběžným přenosem mikrofonu, hlasové odpovědi a přepisu. Mikrofon i přehrávání se zapnou až tlačítkem. Přepnutí do textu uzavře audio spojení a zachová uloženou historii.</p>
 
-              <div class="testing-actions"><AwButton v-if="!voiceActive" variant="primary" :disabled="busy || !selectedCharacter || !consent || stale" @click="test.startVoice">Zapnout mikrofon a hlasové spojení</AwButton>
+              <div class="testing-actions"><AwButton v-if="!voiceActive" variant="primary" :disabled="busy || uncertainTurn || selected.conversationActive || !selectedCharacter || !consent || stale" @click="test.startVoice">Zapnout mikrofon a hlasové spojení</AwButton>
                 <AwButton v-if="voiceActive" @click="test.interrupt">Přerušit odpověď</AwButton><AwButton v-if="voiceActive" @click="test.stopVoice">{{ captureEnabled ? 'Vypnout mikrofon' : 'Odpojit hlasový výstup' }}</AwButton></div>
             </template>
             <p v-if="inputMode === 'text'" class="aw-muted">Mikrofon se neaktivuje. Se zapnutým hlasovým výstupem zpráva použije stejný skutečný model a jeho audio spojení; po přepnutí se obnoví skutečně uložená historie.</p><div v-if="inputMode === 'text' && voiceActive" class="testing-actions"><AwButton @click="test.interrupt">Přerušit hlasovou odpověď</AwButton><AwButton @click="test.stopVoice">Odpojit hlasový výstup</AwButton></div>

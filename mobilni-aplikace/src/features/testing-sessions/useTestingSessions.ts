@@ -302,10 +302,11 @@ export function useTestingSessions() {
     });
   }
   async function startVoice(): Promise<void> {
-    if (!selected.value || !open.value || !consent.value || inputMode.value === 'text' || busy.value) return;
+    if (!selected.value || !open.value || !consent.value || inputMode.value === 'text' || busy.value || stale.value || uncertainTurn.value) return;
     const hadConnection=voiceActive.value || retiringSessionId===selected.value.session.id;stopVoice();
     if(hadConnection){try{await awaitRetired(selected.value.session.id);}catch(cause){recordError(cause);return;}}
-    captureEnabled.value = true; voice = makeVoice(); voice.setOutputEnabled(outputEnabled.value); clearError();
+    outputEnabled.value = true;
+    captureEnabled.value = true; voice = makeVoice(); voice.setOutputEnabled(true); clearError();
     const id = selected.value.conversation.id;
     await voice.connect(() => lab.ticket(id, voicePhase.value === 'error'), id, accountOrigin.value || window.location.origin);
   }
