@@ -5,15 +5,9 @@ import { debugBridge, nativeDebug as debug } from './nativeDebug';
 import { deviceSession as device } from './deviceSession';
 import { phoneError } from './phoneErrors';
 import { deviceAssociation as cloud } from './deviceAssociation';
-import { engineLabels, enginePreferenceKey, migrateConversationEngine, parseEngineCapabilities, validGuestMemoryId,
-  type ConversationEngine, type GuestMemoryBinding } from '../debug/conversationCapabilities';
+import { parseEngineCapabilities, validGuestMemoryId, type GuestMemoryBinding } from '../debug/conversationCapabilities';
 const status = debug.status;
-let stored: string | null = null;
-try { stored = window.localStorage.getItem(enginePreferenceKey); } catch { /* Optional preference only. */ }
-const migration = migrateConversationEngine(stored);
-const engine = ref<ConversationEngine | ''>(migration.engine ?? '');
-const migrationMessage = ref(migration.message ?? '');
-const voice = ref(''); const speed = ref(1);
+const engine = 'gpt-live' as const;
 const ready = ref([1, 2, 3, 4, 5, 6]);
 const costume = ref(''); const consent = ref(false); const photoDraft = ref<string>();
 const guestConfirmed = ref(false);
@@ -23,22 +17,14 @@ const photoMessage = ref('Bez fotky. Rozhovor ji nepotřebuje.');
 const photoUsed = ref(false);
 let photoSequence = 0; let viewEpoch = 0; let photoTimer: ReturnType<typeof setTimeout> | undefined;
 const inventory = computed(() => parseEngineCapabilities(status.value.engines ?? status.value.server?.engines));
-const capability = computed(() => inventory.value?.engines.find(item => item.engine === engine.value));
+const capability = computed(() => inventory.value?.engines.find(item => item.engine === 'gpt-live'));
 const accountAccess = computed(() => status.value.accessMode !== 'account' ||
   (!!cloud.account.value && cloud.canOperate.value && status.value.deviceId === device.savedDevice.value.deviceId));
 const guestValid = computed(() => !guestId.value.trim() || canBindGuest.value && guestConfirmed.value && validGuestMemoryId(guestId.value.trim()) && identityVerified.value && (!cloudExportAllowed.value || longTermAllowed.value));
-const canAI = computed(() => accountAccess.value && debug.idle.value && capability.value?.ready && capability.value.inputModes.includes('audio')
-  && capability.value.voices.includes(voice.value) && Number.isFinite(speed.value) && speed.value >= capability.value.speed.min && speed.value <= capability.value.speed.max && guestValid.value);
-const photoCapability = computed(() => inventory.value?.engines.find(item => item.engine === (status.value.session ? status.value.effectiveEngine ?? engine.value : engine.value)));
+const canAI = computed(() => accountAccess.value && debug.idle.value && capability.value?.ready && capability.value.inputModes.includes('audio') && guestValid.value);
+const photoCapability = computed(() => inventory.value?.engines.find(item => item.engine === 'gpt-live'));
 const cameraAvailable = computed(() => !!photoCapability.value?.cameraSources.includes('phone') && accountAccess.value);
 const canPhoto = computed(() => device.native && status.value.configured && !debug.pending.value && !status.value.cameraActive && cameraAvailable.value);
-watch(() => JSON.stringify({ engine: engine.value, voices: capability.value?.voices, speed: capability.value?.speed }), () => {
-  const value = capability.value;
-  if (!value) { voice.value = ''; return; }
-  if (!value.voices.includes(voice.value)) voice.value = value.voices[0] ?? '';
-  speed.value = value.speed.default;
-}, { immediate: true });
-watch(engine, value => { migrationMessage.value = ''; if (value) { try { window.localStorage.setItem(enginePreferenceKey, value); } catch { /* Optional preference. */ } } });
 watch(longTermAllowed, value => { if (!value) cloudExportAllowed.value = false; });
 watch(identityVerified, value => { if (!value) { longTermAllowed.value = false; cloudExportAllowed.value = false; } });
 watch(guestId, () => { identityVerified.value = false; longTermAllowed.value = false; cloudExportAllowed.value = false; guestConfirmed.value = false; }, { flush: 'sync' });
@@ -89,8 +75,7 @@ async function attach(): Promise<void> {
   });
 }
 async function start(): Promise<void> {
-  if (!canAI.value || !engine.value) return;
-  const selectedEngine = engine.value; const selectedVoice = voice.value; const selectedSpeed = speed.value;
+  if (!canAI.value) return;
   const draft = photoDraft.value; const epoch = viewEpoch;
   const description = costume.value.trim() || undefined;
   const guestMemory: GuestMemoryBinding | undefined = guestId.value.trim() ? { guestId: guestId.value.trim(), identityVerified: identityVerified.value,
@@ -99,7 +84,7 @@ async function start(): Promise<void> {
   clearDraft(); clearGuest(); photoUsed.value = false;
   await debug.run(async () => {
     await debugBridge.startConversation({ expectedMode: 'openai', readyMask, costumeDescription: description,
-      voice: selectedVoice, speed: selectedSpeed, engine: selectedEngine, ...(guestMemory ? { guestMemory, confirmGuestMemory: true as const } : {}) });
+      engine, voice: 'marin', speed: 1, ...(guestMemory ? { guestMemory, confirmGuestMemory: true as const } : {}) });
     if (draft && epoch === viewEpoch) {
       try { await debugBridge.attachCostumePhoto({ draftId: draft }); if (epoch === viewEpoch) photoUsed.value = true; }
       catch { if (epoch === viewEpoch) photoMessage.value = 'Fotku se nepodařilo připojit. Hlas pokračuje bez ní.'; }
@@ -116,13 +101,10 @@ function speak(): void { void debug.run(() => debugBridge.speakSystem()); }
     <p>Telefon používá trvalé autentizované spojení s backendem. Dostupnost přihrádek je simulovaná; návrh nespouští pohony kufru. Rozhovor může čerpat OpenAI účet.</p>
     <p v-if="!device.native" class="aw-notice">Nativní mikrofon, hlas a fotoaparát vyžadují aplikaci na iPhonu. Web je neověřuje.</p>
     <fieldset :disabled="!debug.idle.value || !accountAccess"><legend>Nový testovací rozhovor</legend>
-      <div class="phone-fields"><label class="aw-field">Konverzační engine<select v-model="engine" class="aw-input" data-engine><option value="" disabled>Vyberte podporovaný engine</option><option v-for="(label, key) in engineLabels" :key="key" :value="key">{{ label }}</option></select></label>
-        <label class="aw-field">Hlas<select v-model="voice" class="aw-input" data-voice><option v-for="item in capability?.voices ?? []" :key="item" :value="item">{{ item }}</option></select></label>
-        <label class="aw-field">Tempo<input v-model.number="speed" type="number" class="aw-input" :min="capability?.speed.min" :max="capability?.speed.max" step="0.05" :disabled="!capability?.speed.supported" data-speed></label></div>
-      <p v-if="migrationMessage" role="status">{{ migrationMessage }}</p>
+      <p>Konverzační model a hlas DV01: GPT Live · konfigurace spravovaná serverem.</p>
       <p v-if="!inventory" role="status">Obnovte stav serveru. Je vyžadován kontrakt enginů v1.</p>
-      <p v-else-if="!capability?.ready" role="status">Zvolený engine není dostupný. Ověřte konfiguraci a přístup k modelu; jiný engine se sám nezvolí.</p>
-      <p v-else>Konfigurace {{ capability.model }} připravena. Přístup k modelu ověří první spojení. {{ capability.speed.supported ? 'Tempo nastavuje zvolený engine.' : 'Engine používá pevné tempo.' }}</p>
+      <p v-else-if="!capability?.ready" role="status">GPT Live není dostupný. Ověřte konfiguraci a přístup k modelu; nový rozhovor se nespustí náhradním enginem.</p>
+      <p v-else>Konfigurace {{ capability.model }} připravena. Hlas ověří první spojení.</p>
       <fieldset><legend>Dostupné přihrádky pouze pro test</legend><label v-for="number in [1, 2, 3, 4, 5, 6]" :key="number" class="ready-option"><input v-model="ready" type="checkbox" :value="number"> {{ number }}</label></fieldset>
       <fieldset v-if="canBindGuest"><legend>Identita a souhlas nového hosta</legend><p>Bez ID začne anonymní host. Identitu ověřuje obsluha; fotografie ani odhad jména ji neověřují. Volba se neukládá do telefonu a po startu se vymaže.</p>
         <label class="aw-field">Stálé ID hosta (volitelné)<input v-model="guestId" class="aw-input" maxlength="80" autocomplete="off" data-guest-id></label>

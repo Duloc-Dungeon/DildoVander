@@ -60,8 +60,8 @@ int main() {
   const std::string common = "\"protocolVersion\":1,\"messageId\":\"fcfaaf2b-7825-4b9e-a229-e7d8e642f705\",\"deviceId\":\"kufr-001\",\"bootId\":\"c85743d5-1b72-41b8-8500-ae3c102b27d6\"";
   LocalControlMessage message;
   std::string json = "{" + common + ",\"type\":\"voice.configure\",\"mode\":\"realtime\",\"voice\":\"cedar\"}";
-  assert(ParseLocalControlMessage(json.data(), json.size(), message));
-  assert(message.kind == LocalControlMessageKind::VoiceConfigure && message.voice == "cedar");
+  assert(!ParseLocalControlMessage(json.data(), json.size(), message));
+  // The retained Realtime codecs do not make its production mode executable.
   json = "{" + common + ",\"type\":\"voice.configure\",\"mode\":\"gpt-live\",\"voice\":\"marin\"}";
   assert(ParseLocalControlMessage(json.data(), json.size(), message));
   assert(message.voiceMode == "gpt-live");

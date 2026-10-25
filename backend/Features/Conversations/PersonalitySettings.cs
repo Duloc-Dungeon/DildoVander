@@ -21,13 +21,9 @@ internal sealed partial class OperationJournal
     }
     internal string ReadPersonality()
     {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT value FROM server_settings WHERE name = 'personality'";
-        var id = command.ExecuteScalar() as string ?? PersonalityCatalog.DefaultId;
-        if (!PersonalityCatalog.Contains(id))
-            throw new InvalidOperationException("Stored personality is not in the inventory.");
-        return id;
+        // The persisted field is retained for compatibility and historical diagnostics.
+        // It no longer controls the production suitcase identity.
+        return PersonalityCatalog.DefaultId;
     }
 
     internal void WritePersonality(string id)

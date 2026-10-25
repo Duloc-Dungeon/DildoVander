@@ -37,7 +37,7 @@ internal static class GptLiveTests
             Check(start.RootElement.GetProperty("session").GetProperty("model").GetString() == "gpt-live-1",
                 "startup identifies the exact requested engine");
             var instructions = start.RootElement.GetProperty("session").GetProperty("instructions").GetString()!;
-            Check(instructions.Contains("green cloak") && instructions.Contains("Běžné repliky tvoříš sám"),
+            Check(instructions.Contains("green cloak") && instructions.Contains("DV01 adult v1"),
                 "retained Live actor receives visual context and authors ordinary conversation");
         }
         VerifyCustomerPreferences(options, request);

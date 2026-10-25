@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
-import { metricLabels, type Metric } from './contracts';
+import { isExecutableDv01Revision, metricLabels, type Metric } from './contracts';
 import { usePersonaLab } from './usePersonaLab';
 import { assertionLabel, observedTokens } from './observations';
 import { chooseComparison, compareSessions } from './comparison';
@@ -79,10 +79,6 @@ function selectExisting(event: Event): void {
   const session = lab.sessions.find(item => item.id === (event.target as HTMLSelectElement).value);
   if (session) lab.selectSession(session);
 }
-function chooseImage(event: Event): void {
-  const input = event.target as HTMLInputElement; const file = input.files?.[0]; input.value = '';
-  if (file) void lab.chooseImage(file);
-}
 </script>
 
 <template>
@@ -118,7 +114,7 @@ function chooseImage(event: Event): void {
       <AwNotice v-if="lab.notice" :tone="lab.noticeTone">{{ lab.notice }}</AwNotice>
       <div v-if="lab.selected?.status === 'open' && (lab.voiceActive || lab.conversationPending || lab.recoveryPending || lab.hardware.active)" class="aw-card lab-livebar" role="region" aria-label="Probíhající test">
         <div><strong>{{ lab.selected.label }}</strong><p>{{ lab.hardware.active ? 'Skutečný kufr · stav backendu není fyzické potvrzení' : lab.recoveryPending ? 'Čekám na obnovu s novým kontextem' : lab.conversationPending ? 'Model zpracovává text' : phaseLabels[lab.voicePhase] }} · {{ lab.sessionAgeSeconds }} s od přípravy</p></div>
-        <div class="lab-actions"><AwButton v-if="lab.voiceActive || lab.recoveryPending" @click="lab.stopVoice()">{{ lab.recoveryPending ? 'Zrušit obnovu' : 'Vypnout hlas' }}</AwButton><AwButton variant="danger" @click="lab.end">Ukončit test</AwButton></div>
+        <div class="lab-actions"><AwButton v-if="lab.voiceActive || lab.recoveryPending" @click="lab.stopVoice()">{{ lab.recoveryPending ? 'Zrušit obnovu' : 'Vypnout hlas' }}</AwButton><AwButton v-if="lab.selectedEngineReady || lab.hardware.bound" variant="danger" @click="lab.end">Ukončit test</AwButton></div>
       </div>
       <p v-if="lab.loading" role="status">Načítám verze a vaše výsledky…</p>
       <div class="lab-toolbar">
@@ -139,14 +135,10 @@ function chooseImage(event: Event): void {
             <AwField id="lab-label" label="Název testu"><input class="aw-input" id="lab-label" v-model="lab.label" maxlength="100" placeholder="Např. návrat hosta · suchý humor" /></AwField>
             <AwField id="lab-revision" label="Verze persony">
               <select class="aw-input" id="lab-revision" v-model="lab.revisionId" required :disabled="lab.busy || lab.voiceActive || lab.recoveryPending || lab.hardware.active">
-                <option v-for="version in lab.catalog?.versions" :key="version.id" :value="version.id">{{ version.name }} · r{{ version.revision }} · {{ version.status }}</option>
+                <option v-for="version in lab.catalog?.versions.filter(isExecutableDv01Revision)" :key="version.id" :value="version.id">{{ version.name }} · r{{ version.revision }} · {{ version.status }}</option>
               </select>
             </AwField>
-            <AwField id="lab-engine" label="Konverzační model">
-              <select class="aw-input" id="lab-engine" v-model="lab.engine" :disabled="lab.busy || lab.voiceActive || lab.recoveryPending || lab.hardware.active">
-                <option value="gpt-live-1">GPT Live · gpt-live-1</option><option value="gpt-realtime-2.1">GPT Realtime 2.1 · gpt-realtime-2.1</option>
-              </select>
-            </AwField>
+            <p class="lab-muted">DV01 · GPT Live · hlas spravovaný serverem.</p>
             <p v-if="lab.catalog && !lab.engineReady" class="lab-muted">Model není na serveru připravený. Sezení lze připravit, odpověď vyžaduje dostupný model.</p>
             <AwField id="lab-scenario" label="Scénář">
               <select class="aw-input" id="lab-scenario" v-model="lab.scenarioId" required :disabled="lab.busy || lab.voiceActive || lab.recoveryPending || lab.hardware.active"><option v-for="item in lab.catalog?.scenarios" :key="item.id" :value="item.id">{{ item.name }}</option></select>
@@ -182,7 +174,7 @@ function chooseImage(event: Event): void {
                   <label v-if="!lab.hardware.bound" class="lab-check"><input v-model="lab.hardware.confirmed" type="checkbox" :disabled="lab.hardware.pending || lab.busy" /><span>Výslovně potvrzuji test na tomto zařízení, bootu a revizi se zvoleným modelem a hlasem.</span></label>
                   <p v-if="lab.hardware.uncertain && !lab.selected.hardware" role="status">Výsledek vazby není potvrzený. Běžný text, hlas a fotografie jsou pro toto sezení zablokované. Obnovte přehled nebo ukončete test.</p>
                   <div class="lab-actions">
-                    <AwButton v-if="!lab.hardware.bound" variant="primary" :busy="lab.hardware.pending" :disabled="!lab.providerConsent || !lab.hardware.confirmed || !lab.hardware.eligibility.ready || lab.busy || lab.voiceActive || lab.conversationPending || lab.recoveryPending || !!lab.image || !!lab.selected.hasImage" @click="lab.hardware.start">Spustit izolovaný test na kufru</AwButton>
+                    <AwButton v-if="!lab.hardware.bound" variant="primary" :busy="lab.hardware.pending" :disabled="!lab.providerConsent || !lab.hardware.confirmed || !lab.hardware.eligibility.ready || lab.busy || lab.voiceActive || lab.conversationPending || lab.recoveryPending || !!lab.selected.hasImage" @click="lab.hardware.start">Spustit izolovaný test na kufru</AwButton>
                     <AwButton v-if="!lab.hardware.bound && lab.hardware.eligibility.canConfigure" :disabled="!lab.providerConsent || !lab.hardware.confirmed || lab.busy || lab.hardware.pending" @click="lab.hardware.configure">Nastavit zvolený model a hlas na kufru</AwButton>
                     <AwButton v-if="lab.hardware.bound" variant="danger" @click="lab.end">Ukončit vazbu a vyžádat místní Stop</AwButton>
                   </div>
@@ -191,9 +183,9 @@ function chooseImage(event: Event): void {
               <div class="lab-conversation-heading"><div><h3>{{ lab.selected.label }}</h3><p class="lab-muted">{{ lab.selected.engine }} · {{ lab.selected.config.name }} · r{{ lab.selected.config.revision }}</p></div><span class="aw-badge">{{ lab.selected.status === 'open' ? phaseLabels[lab.voicePhase] : 'Sezení ukončené' }}</span></div>
               <p class="lab-muted">{{ lab.selected.recordContent ? 'Přepis se ukládá s vaším souhlasem.' : 'Přepis se nearchivuje. Po skončení může být dostupná jen technická stopa.' }}</p>
               <p>Délka od přípravy: <strong>{{ lab.sessionAgeSeconds }} s</strong><template v-if="lab.selected.endedAt"> · ukončené sezení</template></p>
-                <details><summary>Přesný snímek konfigurace testu</summary><dl class="lab-definition"><dt>Verze / původ</dt><dd>{{ lab.selected.config.id }} · {{ lab.selected.config.sourceVersion || 'Původ neuveden' }}</dd><dt>Otisk instrukcí</dt><dd><code>{{ lab.selected.config.sha256 || 'Otisk není v této odpovědi dostupný' }}</code></dd><dt>Scénář / paměť</dt><dd>{{ selectedScenario?.name || lab.selected.scenarioId }} / {{ lab.selected.memorySnapshot?.name || lab.selected.fixtureId }}</dd><dt>Příprava sezení</dt><dd>{{ platformLabel(lab.selected.platform) }}</dd><dt>Provedení testu</dt><dd>{{ executionPlatformLabel(lab.selected.executionPlatforms) }} · hlášení klienta, ne fyzický důkaz</dd><dt>Hlas pro test</dt><dd>{{ lab.selected.config.voice }}</dd></dl></details>
+                <details><summary>Přesný snímek konfigurace testu</summary><dl class="lab-definition"><dt>Verze / původ</dt><dd>{{ lab.selected.config.id }} · {{ lab.selected.config.sourceVersion || 'Původ neuveden' }}</dd><dt>Otisk instrukcí</dt><dd><code>{{ lab.selected.config.sha256 || 'Otisk není v této odpovědi dostupný' }}</code></dd><dt>Scénář / paměť</dt><dd>{{ selectedScenario?.name || lab.selected.scenarioId }} / {{ lab.selected.memorySnapshot?.name || lab.selected.fixtureId }}</dd><dt>Příprava sezení</dt><dd>{{ platformLabel(lab.selected.platform) }}</dd><dt>Provedení testu</dt><dd>{{ executionPlatformLabel(lab.selected.executionPlatforms) }} · hlášení klienta, ne fyzický důkaz</dd><dt>Hlas DV01</dt><dd>Efektivní hlas vybírá server; tento záznam neuvádí aktuální hlas.</dd></dl></details>
               <div class="lab-transcript" aria-label="Tahy rozhovoru" tabindex="0">
-                <p v-if="!lab.selected.turns.length && !lab.partial.user && !lab.partial.assistant" class="lab-empty">Začněte textem nebo spusťte hlas. Žádná odpověď zatím nevznikla.</p>
+                <p v-if="!lab.selected.turns.length && !lab.partial.user && !lab.partial.assistant" class="lab-empty">{{ lab.selectedEngineReady ? 'Začněte textem nebo spusťte hlas. Žádná odpověď zatím nevznikla.' : 'Archivované sezení nemá uložené tahy.' }}</p>
                 <article v-for="(turn, index) in lab.selected.turns" :key="turn.id" :class="['lab-turn', `lab-turn--${turn.role}`]">
                   <header><strong>{{ turn.role === 'user' ? 'Vy' : 'DildoVander' }}</strong><a :href="`#lab-turn-${turn.id}`" @click="section = 'evaluation'">Tah {{ index + 1 }}</a></header>
                   <p>{{ turn.text || 'Obsah tohoto tahu nebyl archivován.' }}</p>
@@ -204,12 +196,12 @@ function chooseImage(event: Event): void {
                 <article v-if="lab.partial.assistant" class="lab-turn"><strong>DildoVander · průběžná odpověď</strong><p>{{ lab.partial.assistant }}</p></article>
               </div>
               <div v-if="lab.selected.status === 'open'" class="lab-actions">
-                <AwButton v-if="!lab.simulationBlocked && !lab.voiceActive && (lab.voicePhase !== 'error' || lab.manualVoiceRestart)" :disabled="!lab.providerConsent || lab.busy || lab.recoveryPending || !lab.online || !lab.catalog?.capabilities.voice || !lab.selectedEngineReady" @click="lab.startVoice()">Spustit hlas</AwButton>
+                <AwButton v-if="lab.selectedEngineReady && !lab.simulationBlocked && !lab.voiceActive && (lab.voicePhase !== 'error' || lab.manualVoiceRestart)" :disabled="!lab.providerConsent || lab.busy || lab.recoveryPending || !lab.online || !lab.catalog?.capabilities.voice" @click="lab.startVoice()">Spustit hlas</AwButton>
                 <AwButton v-if="lab.voiceActive" :aria-pressed="lab.muted" @click="lab.toggleMute">{{ lab.muted ? 'Zapnout mikrofon' : 'Ztlumit mikrofon' }}</AwButton>
                 <AwButton v-if="lab.voiceActive" :disabled="lab.voicePhase === 'connecting'" @click="lab.interrupt">Přerušit odpověď</AwButton>
                 <AwButton v-if="lab.voiceActive" @click="lab.stopVoice">Vypnout hlas</AwButton>
-                <AwButton v-if="lab.recoverable && !lab.voiceActive" :disabled="!lab.providerConsent || lab.busy" @click="lab.startVoice(true)">Zkusit hlas znovu ({{ lab.reconnects + 1 }}/2)</AwButton>
-                <AwButton variant="danger" @click="lab.end">Ukončit test</AwButton>
+                <AwButton v-if="lab.selectedEngineReady && lab.recoverable && !lab.voiceActive" :disabled="!lab.providerConsent || lab.busy" @click="lab.startVoice(true)">Zkusit hlas znovu ({{ lab.reconnects + 1 }}/2)</AwButton>
+                <AwButton v-if="lab.selectedEngineReady || lab.hardware.bound" variant="danger" @click="lab.end">Ukončit test</AwButton>
               </div>
               <p v-if="lab.voiceActive" class="lab-muted">Pro hlasové ukončení řekněte „ukonči test“ nebo „end the test“.</p>
               <p v-if="lab.voiceActive" role="status">
@@ -219,32 +211,16 @@ function chooseImage(event: Event): void {
                 <template v-else>Mikrofon {{ lab.muted ? 'je ztlumený' : 'je zapnutý' }}.</template>
               </p>
               <form class="lab-composer" @submit.prevent="lab.send">
-                <AwField id="lab-message" label="Vaše zpráva" :hint="lab.voiceActive ? 'Text je během hlasového spojení pozastavený. Pro textové pokračování ukončete hlas.' : undefined"><textarea class="aw-input" id="lab-message" v-model="lab.text" rows="3" maxlength="4000" :disabled="lab.busy || lab.simulationBlocked || lab.voiceActive || lab.recoveryPending || !lab.online || lab.selected.status !== 'open'" placeholder="Napište hostův vstup…" /></AwField>
-                <div class="lab-actions"><AwButton type="submit" variant="primary" :busy="lab.busy" :disabled="!lab.providerConsent || lab.simulationBlocked || !lab.text.trim() || lab.voiceActive || lab.recoveryPending || !lab.online || lab.selected.status !== 'open' || !lab.selectedEngineReady">Odeslat do modelu</AwButton><AwButton v-if="selectedScenario?.openingText" :disabled="lab.busy || lab.simulationBlocked || lab.voiceActive || lab.recoveryPending || !lab.online || lab.selected.status !== 'open'" @click="lab.text = selectedScenario.openingText">Vložit úvod scénáře</AwButton></div>
+                <AwNotice v-if="!lab.selectedEngineReady" tone="info">Toto archivované sezení zůstává dostupné ke čtení a hodnocení. Modelové odpovědi, hlas ani test na kufru zde nelze spustit. Pro další test založte sezení s aktuální revizí DV01 · GPT Live.</AwNotice>
+                <AwField id="lab-message" label="Vaše zpráva" :hint="lab.voiceActive ? 'Text je během hlasového spojení pozastavený. Pro textové pokračování ukončete hlas.' : undefined"><textarea class="aw-input" id="lab-message" v-model="lab.text" rows="3" maxlength="4000" :disabled="!lab.selectedEngineReady || lab.busy || lab.simulationBlocked || lab.voiceActive || lab.recoveryPending || !lab.online || lab.selected.status !== 'open'" placeholder="Napište hostův vstup…" /></AwField>
+                <div class="lab-actions"><AwButton v-if="lab.selectedEngineReady" type="submit" variant="primary" :busy="lab.busy" :disabled="!lab.providerConsent || lab.simulationBlocked || !lab.text.trim() || lab.voiceActive || lab.recoveryPending || !lab.online || lab.selected.status !== 'open'">Odeslat do modelu</AwButton><AwButton v-if="lab.selectedEngineReady && selectedScenario?.openingText" :disabled="lab.busy || lab.simulationBlocked || lab.voiceActive || lab.recoveryPending || !lab.online || lab.selected.status !== 'open'" @click="lab.text = selectedScenario.openingText">Vložit úvod scénáře</AwButton></div>
               </form>
-              <details v-if="lab.selected.engine === 'gpt-realtime-2.1'" class="lab-image">
-                <summary>Fotografie pro vizuální test</summary>
-                <p>Realtime může při další odpovědi použít jeden dobrovolně připojený snímek. Fotografie zůstává v dočasném kontextu nejvýše 15 minut, nearchivuje se a není součástí diagnostického exportu.</p>
-                <p v-if="!lab.catalog?.capabilities.imageRealtime" class="lab-muted">Server zatím obrazový vstup pro tento model nepotvrdil.</p>
-                <template v-else>
-                  <AwField id="lab-camera-input" label="Vyfotit" hint="Otevře fotoaparát, pokud ho zařízení nabízí.">
-                    <input class="aw-input" id="lab-camera-input" type="file" accept="image/jpeg,image/png,image/webp" capture="user" :disabled="lab.busy || lab.simulationBlocked || lab.imagePreparing || lab.voiceActive || lab.recoveryPending || lab.selected.status !== 'open'" @change="chooseImage" />
-                  </AwField>
-                  <AwField id="lab-image-input" label="Vybrat fotografii" hint="JPEG, PNG nebo WebP do 8 MB. Před odesláním se snímek zmenší a odstraní se metadata.">
-                    <input class="aw-input" id="lab-image-input" type="file" accept="image/jpeg,image/png,image/webp" :disabled="lab.busy || lab.simulationBlocked || lab.imagePreparing || lab.voiceActive || lab.recoveryPending || lab.selected.status !== 'open'" @change="chooseImage" />
-                  </AwField>
-                  <p v-if="lab.imagePreparing" role="status">Připravuji soukromý náhled…</p>
-                  <figure v-if="lab.image"><img :src="lab.image.previewUrl" alt="Vybraný testovací snímek před odesláním" /><figcaption>Náhled · {{ lab.image.width }} × {{ lab.image.height }} · {{ Math.ceil(lab.image.bytes / 1024) }} kB. Výběr snímek neodesílá.</figcaption></figure>
-                  <label v-if="lab.image" class="lab-check"><input v-model="lab.imageConsent" type="checkbox" :disabled="lab.busy || lab.voiceActive || lab.recoveryPending || lab.hardware.active" /><span>Mám souhlas zobrazených osob nebo používám syntetický snímek. Souhlasím s odesláním fotografie společnosti OpenAI pro vizuální testování persony a tvorbu odpovědí v tomto testu.</span></label>
-                  <p v-if="lab.selected.hasImage || lab.imageAttachedSession === lab.selected.id" role="status">Server potvrdil dočasné připojení fotografie k tomuto testu.</p>
-                  <div class="lab-actions"><AwButton :busy="lab.busy" :disabled="!lab.providerConsent || lab.simulationBlocked || !lab.image || !lab.imageConsent || lab.voiceActive || lab.recoveryPending || !lab.online || lab.selected.status !== 'open'" @click="lab.attachImage">Připojit fotografii k dalšímu vstupu</AwButton><AwButton v-if="lab.image || lab.imagePreparing" @click="lab.discardImage">Odstranit místní náhled</AwButton><AwButton v-if="lab.selected.hasImage || lab.imageAttachedSession === lab.selected.id" @click="lab.removeImage">Odebrat fotografii z testu</AwButton></div>
-                  <p v-if="lab.voiceActive" class="lab-muted">Pro připojení nového snímku nejprve vypněte hlas. Odebrání snímku hlas vypne okamžitě.</p>
-                </template>
+              <details v-if="lab.selected.hasImage && !lab.selectedEngineReady" class="lab-image">
+                <summary>Fotografie v historickém testu</summary>
+                <p>Toto archivované sezení je pouze ke čtení. Připojený snímek lze odebrat.</p>
+                <div class="lab-actions"><AwButton @click="lab.removeImage">Odebrat fotografii z testu</AwButton></div>
               </details>
-              <div v-else>
-                <p class="lab-muted">GPT Live v této laboratoři nemá potvrzený obrazový vstup. Nový vizuální test použije Realtime 2.1 a zachová verzi persony, scénář, paměť a volbu záznamu tohoto testu. Původní test zůstane v přehledu.</p>
-                <AwButton v-if="lab.selected.status === 'open'" :disabled="!lab.canCreateVisualTest" @click="lab.createVisualTest">Připravit nový vizuální test · Realtime 2.1</AwButton>
-              </div>
+              <div v-else-if="!lab.selectedEngineReady" class="lab-muted">Archivované relace zůstávají v historii. Nové testy používají aktuální revizi DV01 · GPT Live.</div>
             </template>
             <div v-else class="lab-empty"><h3>Prostor pro rozhovor</h3><p>Připravte nové sezení nebo vyberte svůj uložený test. Každý test uchovává přesnou verzi persony.</p></div>
           </div>
@@ -358,23 +334,22 @@ function chooseImage(event: Event): void {
         <h2 id="lab-configuration-title">Konfigurace persony</h2>
         <p>Správa verzí je dostupná pouze administrátorům. Každý test používá neměnný snímek verze; úprava vytvoří nový draft.</p>
         <form class="aw-card lab-config" @submit.prevent="lab.saveDraft">
-          <AwField id="lab-config-base" label="Výchozí verze / historie"><select class="aw-input" id="lab-config-base" v-model="lab.configRevisionId" :disabled="lab.busy"><option v-for="version in lab.catalog?.versions" :key="version.id" :value="version.id">{{ version.name }} · r{{ version.revision }} · {{ version.status }}{{ version.id === lab.catalog?.activeRevisionId ? ' · aktivní' : '' }}</option></select></AwField>
+          <AwField id="lab-config-base" label="Výchozí verze DV01"><select class="aw-input" id="lab-config-base" v-model="lab.configRevisionId" :disabled="lab.busy"><option v-for="version in lab.catalog?.versions.filter(isExecutableDv01Revision)" :key="version.id" :value="version.id">{{ version.name }} · r{{ version.revision }} · {{ version.status }}{{ version.id === lab.catalog?.activeRevisionId ? ' · aktivní' : '' }}</option></select></AwField>
           <p v-if="lab.configRevision" class="lab-muted">Vytvořeno {{ date(lab.configRevision.createdAt) }} · {{ lab.configRevision.id }}</p>
           <AwField id="lab-draft-name" label="Název nového draftu"><input class="aw-input" id="lab-draft-name" v-model="lab.draftName" :disabled="lab.busy" required maxlength="100" /></AwField>
           <AwField id="lab-draft-instructions" label="Instrukce persony"><textarea class="aw-input" id="lab-draft-instructions" v-model="lab.draftInstructions" :disabled="lab.busy" required rows="14" maxlength="12000" spellcheck="false" /></AwField>
-          <div class="lab-comparison-select"><AwField id="lab-draft-engine" label="Výchozí model pro testování"><select class="aw-input" id="lab-draft-engine" v-model="lab.draftEngine" :disabled="lab.busy"><option value="gpt-live-1">gpt-live-1</option><option value="gpt-realtime-2.1">gpt-realtime-2.1</option></select></AwField><AwField id="lab-draft-voice" label="Výchozí hlas pro testování"><select class="aw-input" id="lab-draft-voice" v-model="lab.draftVoice" :disabled="lab.busy" required><option value="cedar">Cedar</option><option value="marin">Marin</option><option value="coral">Coral</option></select></AwField></div>
-          <p class="lab-muted">Teplota není pro tyto konverzační modely nastavitelná.</p>
+          <p class="lab-muted">Model: GPT Live · gpt-live-1. Hlas DV01 vybírá server při vytvoření spojení. Teplota není nastavitelná.</p>
           <details open><summary>Rozdíl proti výchozí verzi ({{ diff.length }})</summary><p v-if="!diff.length">Žádné změny.</p><div v-for="change in diff" :key="change.label" class="lab-diff"><strong>{{ change.label }}</strong><div><span>Původní</span><pre>{{ change.before }}</pre></div><div><span>Nové</span><pre>{{ change.after }}</pre></div></div></details>
           <AwButton type="submit" variant="primary" :busy="lab.busy" :disabled="!lab.configRevision || !diff.length">Uložit nový draft</AwButton>
         </form>
-        <div v-if="lab.configRevision" class="aw-card lab-publish"><h3>Publikovat nebo vrátit verzi</h3><p>Vybráno: <strong>{{ lab.configRevision.name }}</strong>. Publikace nastaví instrukce novým produkčním rozhovorům. Model a hlas zůstávají volbou konkrétního sezení. Existující sezení zachovají svůj snímek.</p><details><summary>Rozdíl vybrané uložené verze proti aktivní ({{ publishedDiff.length }})</summary><p v-if="!publishedDiff.length">Instrukce, model a hlas jsou shodné.</p><div v-for="change in publishedDiff" :key="change.label" class="lab-diff"><strong>{{ change.label }}</strong><div><span>Aktivní</span><pre>{{ change.before }}</pre></div><div><span>Vybrané</span><pre>{{ change.after }}</pre></div></div></details><label class="lab-check"><input v-model="lab.configConfirmed" type="checkbox" :disabled="lab.busy" /><span>Potvrzuji změnu aktivní konfigurace na vybranou verzi.</span></label><p v-if="diff.length" class="lab-muted">Nejprve uložte rozepsané změny jako nový draft. Publikovat lze pouze vybranou uloženou verzi.</p><div class="lab-actions"><AwButton v-if="lab.configRevision.status === 'draft'" variant="primary" :busy="lab.busy" :disabled="!lab.configConfirmed || !!diff.length" @click="lab.publish()">Publikovat vybraný draft</AwButton><AwButton v-else :busy="lab.busy" :disabled="!lab.configConfirmed || !!diff.length || lab.configRevision.id === lab.catalog?.activeRevisionId" @click="lab.publish(true)">Vrátit tuto verzi</AwButton></div></div>
+        <div v-if="lab.configRevision" class="aw-card lab-publish"><h3>Publikovat nebo vrátit verzi</h3><p>Vybráno: <strong>{{ lab.configRevision.name }}</strong>. Publikace nastaví DV01 pro nové produkční rozhovory. GPT Live a serverem spravovaný hlas jsou pevně dané. Existující sezení zachovají svůj snímek.</p><details><summary>Rozdíl vybrané uložené verze proti aktivní ({{ publishedDiff.length }})</summary><p v-if="!publishedDiff.length">Instrukce, model a hlas jsou shodné.</p><div v-for="change in publishedDiff" :key="change.label" class="lab-diff"><strong>{{ change.label }}</strong><div><span>Aktivní</span><pre>{{ change.before }}</pre></div><div><span>Vybrané</span><pre>{{ change.after }}</pre></div></div></details><label class="lab-check"><input v-model="lab.configConfirmed" type="checkbox" :disabled="lab.busy" /><span>Potvrzuji změnu aktivní konfigurace na vybranou verzi.</span></label><p v-if="diff.length" class="lab-muted">Nejprve uložte rozepsané změny jako nový draft. Publikovat lze pouze vybranou uloženou verzi.</p><div class="lab-actions"><AwButton v-if="lab.configRevision.status === 'draft'" variant="primary" :busy="lab.busy" :disabled="!lab.configConfirmed || !!diff.length" @click="lab.publish()">Publikovat vybraný draft</AwButton><AwButton v-else :busy="lab.busy" :disabled="!lab.configConfirmed || !!diff.length || lab.configRevision.id === lab.catalog?.activeRevisionId" @click="lab.publish(true)">Vrátit tuto verzi</AwButton></div></div>
         <details class="aw-card lab-system-diagnostics">
           <summary>Systémová diagnostika · administrátor</summary>
           <p>Technická metadata napříč účty. Načtení nic nespouští a nevolá model. Nejvýše 20 nejnovějších sezení a posledních 20 událostí každého sezení; chybějící událost nepotvrzuje úspěch.</p>
           <div class="lab-actions"><AwButton :busy="lab.diagnosticsLoading" :disabled="!lab.online" @click="lab.loadSystemDiagnostics">Načíst systémovou diagnostiku</AwButton><AwButton :disabled="!lab.systemDiagnostics" @click="lab.downloadSystemDiagnostics">Stáhnout systémovou diagnostiku</AwButton></div>
           <p v-if="!lab.systemDiagnostics && !lab.diagnosticsLoading" class="lab-muted">Data se načtou pouze na výslovný pokyn administrátora.</p>
           <template v-if="lab.systemDiagnostics">
-            <dl class="lab-definition"><dt>Sezení / revize v úložišti</dt><dd>{{ lab.systemDiagnostics.storage.sessions ?? 'Neuvedeno' }} / {{ lab.systemDiagnostics.storage.revisions ?? 'Neuvedeno' }}</dd><dt>Aktivní spojení</dt><dd>{{ lab.systemDiagnostics.activeConnections ?? 'Neuvedeno' }}</dd><dt>GPT Live / GPT Realtime</dt><dd>{{ availability(lab.systemDiagnostics.liveAvailable) }} / {{ availability(lab.systemDiagnostics.realtimeAvailable) }}</dd><dt>Izolovaný hardware kontext serveru</dt><dd>{{ availability(lab.systemDiagnostics.hardwareContext) }} · neprokazuje schopnost připojeného firmware</dd></dl>
+            <dl class="lab-definition"><dt>Sezení / revize v úložišti</dt><dd>{{ lab.systemDiagnostics.storage.sessions ?? 'Neuvedeno' }} / {{ lab.systemDiagnostics.storage.revisions ?? 'Neuvedeno' }}</dd><dt>Aktivní spojení</dt><dd>{{ lab.systemDiagnostics.activeConnections ?? 'Neuvedeno' }}</dd><dt>GPT Live / záložní Realtime (neaktivní)</dt><dd>{{ availability(lab.systemDiagnostics.liveAvailable) }} / {{ availability(lab.systemDiagnostics.realtimeAvailable) }}</dd><dt>Izolovaný hardware kontext serveru</dt><dd>{{ availability(lab.systemDiagnostics.hardwareContext) }} · neprokazuje schopnost připojeného firmware</dd></dl>
             <p v-if="lab.systemDiagnostics.storage.sessionsTruncated" class="lab-muted">Seznam sezení je zkrácený; nejde o úplnou historii serveru.</p>
             <p v-if="!lab.systemDiagnostics.storage.recentSessions.length">Server nevrátil žádná technická sezení.</p>
             <article v-for="session in lab.systemDiagnostics.storage.recentSessions" :key="session.sessionId" class="lab-suite-result">

@@ -13,7 +13,8 @@ internal static partial class RealtimeLiveEndpoints
 {
     internal static IEndpointRouteBuilder MapRealtimeLive(this IEndpointRouteBuilder routes)
     {
-        routes.MapPost("/v1/conversations/{id}/realtime-live", RunAsync);
+        routes.MapPost("/v1/conversations/{id}/realtime-live", (HttpContext context) =>
+            ApiProblem.Create(context, StatusCodes.Status410Gone, "conversation_engine_upgrade_required"));
         routes.MapPost("/v1/conversations/{id}/realtime-live/{streamId:guid}/audio", UploadAsync);
         routes.MapPost("/v1/conversations/{id}/realtime-live/{streamId:guid}/played", PlayedAsync);
         routes.MapPost("/v1/conversations/{id}/gpt-live/{streamId:guid}/audio", UploadAsync);

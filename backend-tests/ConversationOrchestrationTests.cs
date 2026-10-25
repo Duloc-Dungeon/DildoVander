@@ -7,23 +7,20 @@ internal static class ConversationOrchestrationTests
 {
     internal static void Run()
     {
-        foreach (var gptLive in new[] { false, true })
+        var directory = Path.Combine(Path.GetTempPath(), "kufr-context-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
         {
-            var directory = Path.Combine(Path.GetTempPath(), "kufr-context-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(directory);
-            try
-            {
-                VerifyEngine(directory, gptLive);
-            }
-            finally
-            {
-                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-                Directory.Delete(directory, true);
-            }
+            VerifyEngine(directory);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Directory.Delete(directory, true);
         }
     }
 
-    private static void VerifyEngine(string directory, bool gptLive)
+    private static void VerifyEngine(string directory)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -34,7 +31,7 @@ internal static class ConversationOrchestrationTests
         var store = new ConversationStore(TimeProvider.System, journal, eveningMemory: memory,
             liveOptions: new() { Mode = LiveActorMode.AutonomousActor });
         var settings = store.ReadServerModes();
-        Require(store.ChangeServerModes(new(settings.Revision, PersonalityId: PersonalityCatalog.OllivanderId,
+        Require(store.ChangeServerModes(new(settings.Revision, PersonalityId: PersonalityCatalog.DefaultId,
             CharacterEnabled: true)).Status == 200, "DV01 enabled without retired provider flags");
         var boot = Guid.NewGuid();
         var created = store.Create("context-device", Guid.NewGuid(), "guest-a"u8,
@@ -43,10 +40,10 @@ internal static class ConversationOrchestrationTests
             PartyWandCatalog.Version, true, "", null, "marin", 1);
         using var lifetime = new CancellationTokenSource();
         var call = store.BeginRealtimeTurn("context-device", created.ConversationId, Guid.NewGuid(), "admit"u8.ToArray(),
-            request, true, lifetime.Token, default, handsFree: true, gptLive: gptLive).Call
-            ?? throw new Exception("retained engine admission failed");
+            request, true, lifetime.Token, default, handsFree: true, gptLive: true).Call
+            ?? throw new Exception("GPT-Live admission failed");
         Require(call.Context.LivePrompt?.Version == "dv01-adult-v1",
-            "both retained engines admit the actual character without legacy providers");
+            "GPT-Live admits the actual DV01 character without legacy providers");
         Require(store.RegisterRealtimeLifetime(call!, lifetime), "first provider stream owns its lifetime");
         foreach (var (text, index) in new[] { "I collect purple clocks.", "I prefer quiet rooms.", "My name is Ada.", "Correction: my name is Eva." }.Select((text, index) => (text, index)))
         {
@@ -62,11 +59,11 @@ internal static class ConversationOrchestrationTests
             "a released provider operation cannot append into the next turn of the same conversation");
         Require(store.BeginRealtimeTurn("context-device", created.ConversationId, Guid.NewGuid(), "duplicate-start"u8.ToArray(),
             request with { ClientTurnId = Guid.NewGuid(), Opening = false }, true, default, default,
-            handsFree: true, gptLive: !gptLive).Code == "conversation_stream_active",
-            "rapid engine switching cannot start a second stream during playback acknowledgement");
+            handsFree: true, gptLive: true).Code == "conversation_stream_active",
+            "a second GPT-Live stream cannot start during playback acknowledgement");
         var next = store.BeginRealtimeTurn("context-device", created.ConversationId, Guid.NewGuid(), "follow-up"u8.ToArray(),
             request with { ClientTurnId = Guid.NewGuid(), Opening = false }, true, lifetime.Token, default,
-            handsFree: true, gptLive: gptLive).Call!;
+            handsFree: true, gptLive: true).Call!;
         Require(next.Context.History.Count == 4 && next.Context.History[0].VisitorText.Contains("purple clocks")
             && next.Context.History[^1].VisitorText.Contains("Correction"),
             "history preserves an early answer beyond two exchanges and its later correction");
@@ -78,7 +75,7 @@ internal static class ConversationOrchestrationTests
             new("context-device", boot, 0, PartyWandCatalog.Version, "cs-CZ", new(true, false))).Response!;
         var newGuest = store.BeginRealtimeTurn("context-device", replacement.ConversationId, Guid.NewGuid(), "new-admit"u8.ToArray(),
             request with { ClientTurnId = Guid.NewGuid() }, true, default, default,
-            handsFree: true, gptLive: gptLive).Call!;
+            handsFree: true, gptLive: true).Call!;
         Require(newGuest.Context.History.Count == 0 && !newGuest.Context.EveningContext.Contains("purple clocks"),
             "a new unbound guest starts without the previous guest personal context");
         store.EndConversation("context-device", replacement.ConversationId, Guid.NewGuid());

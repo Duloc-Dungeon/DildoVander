@@ -45,7 +45,7 @@ beforeEach(() => {
   api.configure.mockReset().mockReturnValue(true);
   api.epoch = 1; deviceSession.native = true; deviceSession.snapshot.value = snapshot(); associationFixture.canOperate.value = true;
   session = { id: 'session', ownerId: 'owner', status: 'open', engine: 'gpt-live-1', platform: 'ios', label: 'Synthetic hardware test',
-    config: { id: 'r', voice: 'cedar', engine: 'gpt-live-1' }, turns: [], events: [] } as unknown as LabSession;
+    config: { id: 'r', voice: 'cedar', engine: 'gpt-live-1', sourceVersion: 'dv01-live-v1' }, turns: [], events: [] } as unknown as LabSession;
   stored = structuredClone(session);
   api.request.mockImplementation(async (path: string) => {
     if (path.endsWith('/hardware-ticket')) {
@@ -124,6 +124,12 @@ describe('isolated native hardware test admission', () => {
   it('requires a real native source and a paired identity even when an operate claim is available', () => {
     expect(hardwareEligibility(session, { ...snapshot(), source: 'e2-simulator' }, true, 'case-one', true, true).ready).toBe(false);
     expect(hardwareEligibility(session, snapshot(), true, 'different-case', true, true).ready).toBe(false);
+  });
+  it('rejects physical execution for archived GPT Live revisions', () => {
+    const archived = { ...session, config: { ...session.config, sourceVersion: 'dv01-legacy-v1' } };
+    const result = hardwareEligibility(archived, snapshot(), true, 'case-one', true, true, 1);
+    expect(result.ready).toBe(false);
+    expect(result.reason).toContain('Archivované sezení DV01');
   });
   it('does not reuse a ticket or target Stop after a same-boot connection epoch changes', async () => {
     let complete!: (response: Response) => void;

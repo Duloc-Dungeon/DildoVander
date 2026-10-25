@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--dv01-consolidation"]) { GptLiveVoiceTests.Run(); await AutonomousLiveTests.RunVoiceFallbackAsync(); await PersonalityTests.RunAsync(); return; }
 if (args is ["--character-portraits"]) { await CharacterPortraitTests.RunAsync(); return; }
 if (args is ["--prelaunch-http"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(); return; }
 if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await AiObservabilityTests.RunAsync(); await ObservabilityLogTests.RunAsync(); return; }
@@ -25,6 +26,7 @@ if (args is ["--testing-enrichment-queue"]) { await TestingSessionsTests.RunOpti
 if (args is ["--testing-character-race"]) { await TestingCharacterRaceTests.RunAsync(); return; }
 if (args is ["--testing-diagnostics"]) { await TestingDiagnosticsTests.RunAsync(); return; }
 if (args is ["--server-logs"]) { ServerLogTests.Run(); return; }
+if (args is ["--text-dialog-contracts"]) { await TextDialogRuntimeTests.RunAsync(); return; }
 if (args is ["--wand-artwork"]) { await WandArtworkTests.RunAsync(); return; }
 if (args is ["--generated-wands"]) { await WandGenerationTests.RunAsync(); await GeneratedWandFlowTests.RunAsync(); await WandArtworkTests.RunAsync(); return; }
 if (args is ["--customer-data-browser-fixture"]) { await AccountIdentityTests.RunCustomerDataBrowserFixtureAsync(); return; }
@@ -201,6 +203,8 @@ await AutonomousLiveTests.RunCharacterAsync();
 await CostumeImageTests.RunAsync();
 await BoundedSdkTransportTests.RunAsync();
 await RealtimeTests.RunAsync();
+GptLiveVoiceTests.Run();
+await AutonomousLiveTests.RunVoiceFallbackAsync();
 await GptLiveTests.RunAsync();
 await DeviceMediaTransportTests.RunAsync();
 await AccountIdentityTests.RunTesterIdentityAsync();

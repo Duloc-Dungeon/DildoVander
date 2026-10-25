@@ -3,7 +3,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { account, accountOrigin } from '../identity/session';
 import { PersonaLabClient } from '../persona-lab/client';
 import { LabVoice, type VoicePhase } from '../persona-lab/voice';
-import type { LabEngine, LabSession } from '../persona-lab/contracts';
+import type { LabSession } from '../persona-lab/contracts';
 import { TestingError, TestingSessionsClient } from './client';
 import { diagnosticRequestId } from '../../application/requestDiagnostics';
 import type { CharacterInput, InputMode, TestCharacter, TestSession, TestSessionDetail } from './contracts';
@@ -19,7 +19,7 @@ export function useTestingSessions() {
   const errorRequestId = ref('');
   const errorRejected = ref(false); const clock = ref(Date.now());
   let errorFromRefresh = false;
-  const engine = ref<LabEngine>('gpt-live-1'); const inputMode = ref<InputMode>('text'); const consent = ref(false);
+  const inputMode = ref<InputMode>('text'); const consent = ref(false);
   const text = ref(''); const outputEnabled = ref(false); const captureEnabled = ref(false); const voicePhase = ref<VoicePhase>('idle');
   const partial = ref({ user: '', assistant: '' }); const spokenBusy = ref(false); const providerConfirmed = ref(false);
   const turnPhase = ref<'idle' | 'waiting' | 'finalizing' | 'recovering'>('idle');
@@ -186,7 +186,7 @@ export function useTestingSessions() {
     await run(async () => {
       client.invalidate(); stopVoice(); const current = epoch; const request = ++readEpoch; const detail = await client.session(id);
       if (current !== epoch || request !== readEpoch) return;
-      selected.value = detail; inputMode.value = detail.session.inputMode; engine.value = detail.session.engine;
+      selected.value = detail; inputMode.value = detail.session.inputMode;
       text.value = ''; stale.value = false;
       if (pendingTextTurn && (pendingTextTurn.sessionId !== detail.session.id
         || pendingTextTurn.conversationId !== detail.conversation.id)) clearPendingTextTurn();
@@ -199,7 +199,7 @@ export function useTestingSessions() {
     if (!consent.value) { recordError('Potvrďte souhlas se skutečným zpracováním OpenAI a uložením testu.'); return; }
     await run(async () => {
       operationId ??= crypto.randomUUID();
-      const session = await client.create(engine.value, inputMode.value, consent.value, operationId);
+      const session = await client.create('gpt-live-1', inputMode.value, consent.value, operationId);
       operationId = null; stopVoice(); selected.value = await client.session(session.id);
       if (pendingTextTurn && (pendingTextTurn.sessionId !== selected.value.session.id
         || pendingTextTurn.conversationId !== selected.value.conversation.id)) clearPendingTextTurn();
@@ -254,7 +254,7 @@ export function useTestingSessions() {
     }
   }
   async function send(): Promise<void> {
-    if (!selected.value || !text.value.trim() || !open.value || !consent.value || spokenBusy.value || busy.value || stale.value || uncertainTurn.value) return;
+    if (!selected.value || selected.value.session.engine !== 'gpt-live-1' || !text.value.trim() || !open.value || !consent.value || spokenBusy.value || busy.value || stale.value || uncertainTurn.value) return;
     if (!voiceActive.value && selected.value.conversationActive) {
       recordError('Předchozí požadavek ještě probíhá. Vyčkejte a obnovte stav.');
       return;
@@ -302,7 +302,7 @@ export function useTestingSessions() {
     });
   }
   async function startVoice(): Promise<void> {
-    if (!selected.value || !open.value || !consent.value || inputMode.value === 'text' || busy.value || stale.value || uncertainTurn.value) return;
+    if (!selected.value || selected.value.session.engine !== 'gpt-live-1' || !open.value || !consent.value || inputMode.value === 'text' || busy.value || stale.value || uncertainTurn.value) return;
     const hadConnection=voiceActive.value || retiringSessionId===selected.value.session.id;stopVoice();
     if(hadConnection){try{await awaitRetired(selected.value.session.id);}catch(cause){recordError(cause);return;}}
     outputEnabled.value = true;
@@ -311,7 +311,7 @@ export function useTestingSessions() {
     await voice.connect(() => lab.ticket(id, voicePhase.value === 'error'), id, accountOrigin.value || window.location.origin);
   }
   async function startSpokenText(input = ''): Promise<void> {
-    if (!selected.value || !open.value || !consent.value || busy.value) return;
+    if (!selected.value || selected.value.session.engine !== 'gpt-live-1' || !open.value || !consent.value || busy.value) return;
     const hadConnection=voiceActive.value || retiringSessionId===selected.value.session.id;stopVoice();
     if(hadConnection){try{await awaitRetired(selected.value.session.id);}catch(cause){recordError(cause);return;}}
     pendingSpokenText = input; spokenBusy.value = input.length > 0; captureEnabled.value = false; voice = makeVoice();
@@ -384,7 +384,7 @@ export function useTestingSessions() {
   document.addEventListener('visibilitychange', hidden); window.addEventListener('online', online);
   onBeforeUnmount(() => { disposed = true; invalidate(); clearInterval(refreshTimer); clearInterval(activeOperationTimer); clearInterval(progressTimer); clearInterval(clockTimer); document.removeEventListener('visibilitychange', hidden); window.removeEventListener('online', online); });
   const retrySeconds = computed(() => Math.ceil(Math.max(0, client.cooldownUntil() - clock.value) / 1000));
-  return { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, engine, inputMode, consent,
+  return { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, inputMode, consent,
     text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, turnPhase, uncertainTurn, open, client, run, refresh, refreshAfterCommand, resume, start, saveCharacter, selectCharacter,
     enrich, send, selectWand, generate, fault, startVoice, startSpokenText, stopVoice, changeMode, end, cancel, remove, interrupt: () => voice.interrupt() };
 }

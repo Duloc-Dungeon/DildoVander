@@ -1,5 +1,5 @@
 const errors: Record<string, string> = {
-      conversation_engine_upgrade_required: 'Starý rozhovorový režim byl vyřazen. Obnovte aplikaci a zvolte GPT Live nebo GPT Realtime 2.1.',
+      conversation_engine_upgrade_required: 'Starý rozhovorový režim byl vyřazen. Obnovte aplikaci. Nové rozhovory používají GPT Live.',
       account_admin_required: 'Tato akce vyžaduje správce účtu. Běžný test může pokračovat anonymně.',
       account_admin_confirmation_required: 'Potvrďte správní akci a znovu ověřte účet ve správě aplikace.',
       recent_passkey_required: 'Znovu ověřte účet passkey v nastavení účtu před správní akcí.',

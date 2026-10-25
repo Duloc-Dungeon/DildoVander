@@ -6,19 +6,23 @@ export const capabilityFixture = () => ({ schemaVersion: 1 as const, primaryEngi
     speed: { supported: engine === 'realtime', min: engine === 'realtime' ? .8 : 1, max: engine === 'realtime' ? 1.2 : 1, default: 1 },
     inputModes: ['audio'], cameraSources: ['phone', 'suitcase'] })) });
 describe('canonical conversation capabilities', () => {
-  it('keeps exactly the two model identities and fails closed on incompatible metadata', () => {
-    expect(parseEngineCapabilities(capabilityFixture())).not.toBeNull();
+  it('exposes only GPT Live while accepting old capability responses for compatibility', () => {
+    expect(parseEngineCapabilities(capabilityFixture())?.engines.map(item => item.engine)).toEqual(['gpt-live']);
+    const liveOnly = capabilityFixture(); liveOnly.engines.pop();
+    expect(parseEngineCapabilities(liveOnly)?.engines.map(item => item.engine)).toEqual(['gpt-live']);
+  });
+  it('fails closed on incompatible metadata', () => {
     for (const edit of [(data: ReturnType<typeof capabilityFixture>) => { data.engines[0]!.model = 'old-model'; },
       (data: ReturnType<typeof capabilityFixture>) => { data.engines[1]!.speed.default = NaN; },
-      (data: ReturnType<typeof capabilityFixture>) => { data.engines.pop(); }]) {
+      (data: ReturnType<typeof capabilityFixture>) => { data.engines.shift(); }]) {
       const data = capabilityFixture(); edit(data); expect(parseEngineCapabilities(data)).toBeNull();
     }
   });
-  it('migrates only the equivalent PTT preference and requires deliberate choice for other retired engines', () => {
+  it('migrates every saved engine preference to GPT Live', () => {
     expect(migrateConversationEngine(null).engine).toBe('gpt-live');
-    expect(migrateConversationEngine('realtime-ptt').engine).toBe('realtime');
-    expect(migrateConversationEngine('chained').engine).toBeUndefined();
-    expect(migrateConversationEngine('realtime').engine).toBe('realtime');
+    expect(migrateConversationEngine('realtime-ptt').engine).toBe('gpt-live');
+    expect(migrateConversationEngine('chained').engine).toBe('gpt-live');
+    expect(migrateConversationEngine('realtime').engine).toBe('gpt-live');
     expect(validGuestMemoryId('Guest-042.a')).toBe(true); expect(validGuestMemoryId('guest name')).toBe(false);
   });
 });

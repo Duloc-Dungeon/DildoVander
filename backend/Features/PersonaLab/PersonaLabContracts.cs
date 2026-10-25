@@ -117,7 +117,21 @@ internal static class LabContract
         Respect withdrawal, stop, corrections and safety boundaries. Reply to the current test input, then listen.
         """;
 
-    internal static bool Engine(string? engine) => engine is GptLiveProtocol.Model or RealtimeProtocol.Model;
+    internal static bool Engine(string? engine) => engine == GptLiveProtocol.Model;
+    internal static void RequireExecutableSession(LabSession session)
+    {
+        RequireLiveEngine(session.Engine);
+        if (session.Config.SourceVersion != PersonaLabStore.ActivePersonaVersion)
+        {
+            throw new LabException(410, "lab_revision_upgrade_required");
+        }
+    }
+
+    internal static void RequireLiveEngine(string? engine)
+    {
+        if (engine == RealtimeProtocol.Model) { throw new LabException(410, "lab_engine_upgrade_required"); }
+        if (engine != GptLiveProtocol.Model) { throw new LabException(400, "invalid_lab_engine"); }
+    }
     internal static bool Voice(string? voice) => voice is "cedar" or "marin" or "coral";
     internal static bool Platform(string? platform) => platform is "web" or "ios";
     internal static string ExecutionPlatform(string? platform)

@@ -1,4 +1,4 @@
-# Rozhovor: GPT Live, Realtime 2.1 a kanonická paměť
+# Rozhovor: DV01, GPT Live a kanonická paměť
 
 Rozhodnutí majitele z19.10.2026 nahrazuje starou architekturu D128/D143.
 Aktivní implementaci a skutečné důkazy vede
@@ -7,11 +7,13 @@ Staré receipts jsou historické, nejsou návodem obnovit vyřazený engine.
 
 ## Zapojení a kompatibilita
 
-Existují dva produkční enginy: GPT Live `gpt-live-1` (primární) a Realtime
-`gpt-realtime-2.1` (výslovná alternativa). Výběr operátora se zachová;
-nepřístupný model vrací chybu, nemění se na jiný. Oba používají stejného
-českého DildoVandera, skutečný katalog a autoritativní dostupnost. Live tvoří
-běžnou řeč, backendové delegace vracejí podklady a validovaný výběr.
+Jediný produkční engine je GPT Live `gpt-live-1`; jediná osobnost kufru je DV01 (`dv01`).
+Realtime `gpt-realtime-2.1` zůstává ve zdrojích jako neaktivní záloha.
+Nové konverzace, Persona Lab, telefon, web i zařízení volí Live automaticky.
+Historické osobnosti a revize zůstávají čitelné, ale nelze je aktivovat.
+Nedostupný model vrací chybu a umožňuje nový pokus; engine se nikdy nenahrazuje.
+Live tvoří běžnou řeč, backendové delegace vracejí podklady a validovaný výběr.
+Vlastní hlas a provisioning popisuje [DV01 voice](dv01-voice.md).
 Sol vision/strukturované rozhodování ani provider transcription nejsou třetí
 rozhovor. Samostatný Responses dialog, STT→dialog→TTS, skriptovaný Live a
 oddělený Realtime PTT runtime byly odstraněny. Deterministické fixture adaptéry
@@ -218,7 +220,7 @@ Pro telefon byl zvolen trvalý autentizovaný backendový WebSocket. Zachovává
 stávající backendové delegace/device topology a odstraňuje sériové200ms HTTP
 úzké místo bez přesunu provider credentialu do telefonu. Každý rámec má
 inputId/sequence; ACK ledger omezuje nevyřízené bajty a dobu, chybu nereplayuje.
-Realtime má skutečný poloduplex; Live telefon full duplex s nativním voice
+Live telefon používá full duplex s nativním voice
 processing. ESP bez AEC zůstává poloduplex, neaktivuje mikrofon proti reproduktoru.
 
 Swift vlastní jediný microphone/audio engine a AVAudioSession, převádí skutečný
@@ -267,16 +269,17 @@ model/hlas, iOS/model telefonu, audio route a u kufru firmware digest/revizi
 zapojení. Použij výhradně syntetického hosta a zaznamenej UTC a technické ID
 relace; credentialy, audio ani fotografie nepatří do diagnostického reportu.
 
-1. V iOS **Debug** obnov stav serveru a zvol **GPT Live**. Zahaj nový rozhovor,
-   proveď nejméně čtyři výměny, sděl syntetický fakt, oprav ho a ověř pozdější
-   odpověď. Opakuj po výslovném přepnutí na **Realtime 2.1**; ověř efektivní
-   model, žádný automatický fallback a srozumitelnou chybu při nedostupnosti.
-   V obou případech ověř skutečný katalog a zamítnutí neplatné/nedostupné hůlky.
+1. V iOS **Debug** obnov stav serveru a ověř automatický **GPT Live** a DV01.
+   Zahaj nový rozhovor, proveď nejméně čtyři výměny, sděl syntetický fakt,
+   oprav ho a ověř pozdější odpověď. Ověř efektivní model/hlas a srozumitelnou
+   chybu při nedostupnosti bez automatické změny enginu. Pokus starého klienta
+   spustit Realtime musí vrátit upgrade. Ověř skutečný katalog a zamítnutí
+   neplatné/nedostupné hůlky. Poslech češtiny zůstává samostatná placená akceptace.
 2. S výslovně ověřeným testovacím guest ID a souhlasem ukonči relaci a vrať
    stejného hosta; v inspektoru ověř opravený fakt. Nový anonymní host nesmí
    obdržet jeho osobní obsah. Ručně smaž testovací paměť/archiv a ověř po
    restartu backendu i po dokončení dříve čekající práce, že se obsah nevrátil.
-3. V každém enginu pořiď fotku před i během řeči: první souhlas, zamítnutí a
+3. V GPT Live pořiď fotku před i během řeči: první souhlas, zamítnutí a
    návrat ze Settings, přední/zadní kamera, portrét/krajina, retake a Cancel.
    Ověř postup uploading→analysing→available a použití právě této revize.
    Přeruš přenos, opakuj stejný koncept a odeber fotku při mluvení: stará řeč

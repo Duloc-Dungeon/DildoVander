@@ -51,6 +51,10 @@ internal sealed partial class TestingSessionService
     {
         using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("testing.session.create");
         activity?.SetTag("app.operation_id", request.OperationId);
+        if (request.Engine == "gpt-realtime-2.1")
+        {
+            throw new TestingException(410, "lab_engine_upgrade_required");
+        }
         if(!LabContract.Engine(request.Engine)||request.InputMode is not("text" or "voice" or "hybrid")
             ||request.Platform is not("web" or "ios")||!Guid.TryParse(request.OperationId,out _))
             throw new TestingException(400,"invalid_test_session");

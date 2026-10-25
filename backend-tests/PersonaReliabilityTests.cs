@@ -26,7 +26,7 @@ internal static class PersonaReliabilityTests
         await VerifyRealtimeCancellationAsync();
         await VerifyRealtimeTransportLossAsync();
         await VerifyAmbiguousInputFailureAsync();
-        Console.WriteLine("Persona reliability: 100 Live startup/cancel, 100 Realtime completion, 100 input-retirement, 100 Realtime interruption/reuse cycles and fault tests passed (fake providers only).");
+        Console.WriteLine("Persona reliability: 100 Live startup/cancel, 100 isolated Realtime recovery completion, 100 input-retirement, 100 Realtime recovery interruption/reuse cycles and fault tests passed (fake providers only).");
     }
 
     private static void VerifyInstructionOverride()
@@ -295,7 +295,7 @@ internal static class PersonaReliabilityTests
             PartyWandCatalog.Version, true, "", null, "marin", 1);
         return new(request, true, "", [])
         {
-            LivePrompt = LivePromptSnapshot.Create(PersonalityCatalog.OllivanderId, new GptLiveOptions())
+            LivePrompt = LivePromptSnapshot.Create(PersonalityCatalog.DefaultId, new GptLiveOptions())
         };
     }
 

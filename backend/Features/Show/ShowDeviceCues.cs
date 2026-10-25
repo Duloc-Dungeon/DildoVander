@@ -22,6 +22,7 @@ internal sealed partial class ShowDeviceCueBridge
     private readonly TimeProvider clock;
     private readonly SpeechOptions speech;
     private readonly string speechMode;
+    private readonly bool allowConfiguredTestProvider;
     private readonly CancellationToken stopping;
     private readonly Dictionary<string, Mailbox> mailboxes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> narration = new(StringComparer.Ordinal);
@@ -31,11 +32,16 @@ internal sealed partial class ShowDeviceCueBridge
 
     public ShowDeviceCueBridge(IConfiguration configuration, ShowCoordinator show, OperationJournal journal,
         ShowSpeechProvider voice, TimeProvider clock, IHostApplicationLifetime? host = null)
+        : this(configuration, show, journal, voice, clock, host, allowConfiguredTestProvider: false) { }
+
+    private ShowDeviceCueBridge(IConfiguration configuration, ShowCoordinator show, OperationJournal journal,
+        ShowSpeechProvider voice, TimeProvider clock, IHostApplicationLifetime? host, bool allowConfiguredTestProvider)
     {
         this.show = show;
         this.journal = journal;
         this.voice = voice;
         this.clock = clock;
+        this.allowConfiguredTestProvider = allowConfiguredTestProvider;
         stopping = host?.ApplicationStopping ?? voice.Stopping;
         speechMode = configuration["Show:DeviceCueSpeechMode"] ?? "configured";
         if (speechMode is not ("configured" or "fake" or "off"))
@@ -49,9 +55,11 @@ internal sealed partial class ShowDeviceCueBridge
 
     internal ShowDeviceCueBridge(IConfiguration configuration, ShowCoordinator show, OperationJournal journal,
         VoiceProviderRunner fixture, TimeProvider clock, IHostApplicationLifetime? host = null)
-        : this(configuration, show, journal, new ShowSpeechProvider(fixture), clock, host) { }
+        : this(configuration, show, journal, new ShowSpeechProvider(fixture), clock, host,
+            allowConfiguredTestProvider: true) { }
 
-    private bool SpeechAvailable => speechMode == "fake" || speechMode == "configured" && voice.Enabled;
+    private bool SpeechAvailable => speechMode == "fake"
+        || speechMode == "configured" && allowConfiguredTestProvider && voice.Enabled;
     private static string Key(string device, string duel) => device + "\n" + duel;
 
     internal bool HasRecentDevicePoll(string deviceId) => presence.TryGetValue(deviceId, out var seen)
@@ -64,6 +72,7 @@ internal sealed partial class ShowDeviceCueBridge
         if (!seen.SettingsKnown) { return "device_settings_unconfirmed"; }
         if (seen.Quiet) { return "device_quiet"; }
         if (speechMode == "fake") { return "synthetic_speech_only"; }
+        if (speechMode == "configured" && !allowConfiguredTestProvider) { return "gpt_live_required"; }
         return SpeechAvailable ? null : "speech_unavailable";
     }
 

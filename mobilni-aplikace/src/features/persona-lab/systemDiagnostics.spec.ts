@@ -31,7 +31,7 @@ beforeEach(() => {
   transport.mockReset().mockImplementation(async (path: string) => {
     const value = path.endsWith('/diagnostics') ? fixture()
       : path.endsWith('/catalog') ? { capabilities: { live: true, realtime: true, voice: true, text: true, simulationOnly: false, defaultMode: 'simulation', hardwareContext: true },
-        activeRevisionId: 'revision', versions: [{ id: 'revision', name: 'Baseline', engine: 'gpt-live-1', voice: 'cedar', instructions: 'Synthetic', createdAt: '', revision: 1 }], scenarios: [], memoryFixtures: [] }
+        activeRevisionId: 'revision', versions: [{ id: 'revision', name: 'Baseline', engine: 'gpt-live-1', voice: 'cedar', instructions: 'Synthetic', sourceVersion: 'dv01-live-v1', createdAt: '', revision: 1 }], scenarios: [], memoryFixtures: [] }
         : path.endsWith('/analytics') ? { sessions: 0, evaluations: 0, metrics: [], comparisons: [] } : [];
     return new Response(JSON.stringify(value));
   });

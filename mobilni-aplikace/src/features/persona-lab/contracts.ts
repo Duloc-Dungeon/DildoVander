@@ -12,6 +12,10 @@ export interface Revision {
   voice: string; status: 'draft' | 'published' | 'baseline'; sha256?: string; sourceVersion?: string;
   createdAt: string; publishedAt: string | null; revision: number;
 }
+export const currentDv01SourceVersion = 'dv01-live-v1';
+export function isExecutableDv01Revision(revision: Revision | null | undefined): revision is Revision {
+  return revision?.engine === 'gpt-live-1' && revision.sourceVersion === currentDv01SourceVersion;
+}
 export interface Scenario {
   id: string; name: string; description: string; openingText: string;
   script?: { index: number; input: string; checks: string[] }[]; scriptSha256?: string;
@@ -51,6 +55,9 @@ export interface LabSession {
   comparisonId?: string | null; recordContent: boolean; hasImage?: boolean; config: Revision; turns: Turn[]; events: LabEvent[]; evaluation?: Evaluation | null;
   memorySnapshot?: MemoryFixture | null; scenarioSnapshot?: Scenario | null;
   hardware?: LabHardware | null;
+}
+export function isExecutableDv01Session(session: LabSession | null | undefined): session is LabSession {
+  return session?.engine === 'gpt-live-1' && isExecutableDv01Revision(session.config);
 }
 export interface LabHardware {
   deviceId: string; bootId: string; expectedRevision: number; conversationId: string | null;

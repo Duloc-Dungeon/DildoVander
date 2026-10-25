@@ -7,6 +7,7 @@ namespace Kufr.Backend.Features.PersonaLab;
 // A separate database is intentional: fixtures and test turns never enter guest memory.
 internal sealed partial class PersonaLabStore
 {
+    internal const string ActivePersonaVersion = "dv01-live-v1";
     private readonly string connectionString;
     private readonly string currentBaselineId;
     private readonly Lock gate = new();
@@ -31,10 +32,10 @@ internal sealed partial class PersonaLabStore
             CREATE TABLE IF NOT EXISTS lab_state (id INTEGER PRIMARY KEY CHECK(id=1), active TEXT NOT NULL, source_baseline INTEGER NOT NULL DEFAULT 1);
             """;
         command.ExecuteNonQuery();
-        var id = "baseline-" + baseline.Sha256[..16];
+        var id = $"baseline-{ActivePersonaVersion}-{baseline.Sha256[..16]}";
         currentBaselineId = id;
         var revision = new LabRevision(id, null, "Production baseline", baseline.Instructions, GptLiveProtocol.Model,
-            "cedar", "baseline", DateTimeOffset.UtcNow, null, 1, baseline.Sha256, baseline.Version);
+            "cedar", "baseline", DateTimeOffset.UtcNow, null, 1, baseline.Sha256, ActivePersonaVersion);
         using var transaction = connection.BeginTransaction();
         if (Read<LabRevision>(connection, "revision", id, transaction) is null)
         {
@@ -45,6 +46,18 @@ internal sealed partial class PersonaLabStore
         state.CommandText = "INSERT OR IGNORE INTO lab_state(id,active) VALUES(1,$id)";
         state.Parameters.AddWithValue("$id", id);
         state.ExecuteNonQuery();
+        var activeId = Active(connection, transaction);
+        var activeRevision = Read<LabRevision>(connection, "revision", activeId, transaction);
+        if (activeRevision is null || activeRevision.SourceVersion != ActivePersonaVersion
+            || activeRevision.Engine != GptLiveProtocol.Model)
+        {
+            using var migrate = connection.CreateCommand();
+            migrate.Transaction = transaction;
+            migrate.CommandText = "UPDATE lab_state SET active=$id,source_baseline=1 WHERE id=1 AND active=$previous";
+            migrate.Parameters.AddWithValue("$id", id);
+            migrate.Parameters.AddWithValue("$previous", activeId);
+            migrate.ExecuteNonQuery();
+        }
         using var refresh = connection.CreateCommand();
         refresh.Transaction = transaction;
         refresh.CommandText = "UPDATE lab_state SET active=$id WHERE id=1 AND source_baseline=1";
@@ -72,7 +85,8 @@ internal sealed partial class PersonaLabStore
         {
             using var connection = Open();
             var active = Read<LabRevision>(connection, "revision", Active(connection))!;
-            return active.Status == "baseline" && active.Id == currentBaselineId ? null : active;
+            return active.SourceVersion == ActivePersonaVersion && active.Engine == GptLiveProtocol.Model
+                && !(active.Status == "baseline" && active.Id == currentBaselineId) ? active : null;
         }
     }
     internal LabRevision[] Revisions()
@@ -85,6 +99,7 @@ internal sealed partial class PersonaLabStore
     }
     internal LabRevision CreateRevision(LabRevisionRequest request)
     {
+        LabContract.RequireLiveEngine(request.Engine);
         LabContract.Text(request.Name, 100);
         LabContract.Text(request.Instructions, 12_000);
         if (LiveTextBudget.UpperBound(request.Instructions + "\n" + LabContract.SafetyInstructions) > 16000)
@@ -97,17 +112,20 @@ internal sealed partial class PersonaLabStore
         {
             using var connection = Open();
             using var transaction = connection.BeginTransaction();
-            if (request.ParentId is null || Read<LabRevision>(connection, "revision", request.ParentId, transaction) is null)
+            var parent = request.ParentId is null ? null : Read<LabRevision>(connection, "revision", request.ParentId, transaction);
+            if (parent is null)
             {
                 throw new LabException(404, "lab_revision_not_found");
             }
+            if (parent.SourceVersion != ActivePersonaVersion || parent.Engine != GptLiveProtocol.Model)
+            { throw new LabException(410, "lab_revision_upgrade_required"); }
             if (Count(connection, "revision", transaction) >= 1000)
             {
                 throw new LabException(409, "lab_revision_capacity");
             }
             var revision = new LabRevision(Guid.NewGuid().ToString("N"), request.ParentId, request.Name.Trim(),
                 request.Instructions, request.Engine, request.Voice, "draft", DateTimeOffset.UtcNow, null,
-                1, LabContract.Hash(request.Instructions), "persona-lab-v1");
+                1, LabContract.Hash(request.Instructions), ActivePersonaVersion);
             Insert(connection, "revision", revision.Id, "", revision.Revision, revision, transaction);
             transaction.Commit();
             return revision;
@@ -121,6 +139,8 @@ internal sealed partial class PersonaLabStore
             using var transaction = connection.BeginTransaction();
             var revision = Read<LabRevision>(connection, "revision", id, transaction)
                 ?? throw new LabException(404, "lab_revision_not_found");
+            LabContract.RequireLiveEngine(revision.Engine);
+            if (revision.SourceVersion != ActivePersonaVersion) { throw new LabException(410, "lab_revision_upgrade_required"); }
             if (rollback && revision.Status == "draft") { throw new LabException(409, "lab_revision_not_published"); }
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
@@ -141,11 +161,11 @@ internal sealed partial class PersonaLabStore
     }
     internal LabSession CreateSession(string owner, LabSessionRequest request)
     {
+        LabContract.RequireLiveEngine(request.Engine);
         LabContract.Text(owner, 128);
         LabContract.Text(request.RevisionId, 100);
         LabContract.Text(request.Label, 100);
-        if (!LabContract.Engine(request.Engine)
-            || request.Platform is not ("web" or "ios")
+        if (request.Platform is not ("web" or "ios")
             || !LabContract.Scenarios.Any(x => x.Id == request.ScenarioId)
             || !LabContract.Fixtures.Any(x => x.Id == request.FixtureId)
             || request.ComparisonId is { } comparison && (comparison.Length > 64 || !comparison.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')))
@@ -158,6 +178,8 @@ internal sealed partial class PersonaLabStore
             using var transaction = connection.BeginTransaction();
             var revision = Read<LabRevision>(connection, "revision", request.RevisionId, transaction)
                 ?? throw new LabException(404, "lab_revision_not_found");
+            if (revision.SourceVersion != ActivePersonaVersion || revision.Engine != GptLiveProtocol.Model)
+            { throw new LabException(410, "lab_revision_upgrade_required"); }
             if (List<LabSession>(connection, "session", owner, transaction).Length >= 1000)
             {
                 throw new LabException(409, "lab_session_capacity");
@@ -304,9 +326,10 @@ internal sealed partial class PersonaLabStore
         connection.Open();
         return connection;
     }
-    private static string Active(SqliteConnection connection)
+    private static string Active(SqliteConnection connection, SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT active FROM lab_state WHERE id=1";
         return (string)command.ExecuteScalar()!;
     }

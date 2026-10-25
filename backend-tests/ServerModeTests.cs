@@ -58,8 +58,8 @@ internal static class ServerModeTests
             var store = new ConversationStore(TimeProvider.System, journal, dialog, voiceRunner: voice);
             var state = store.ReadServerModes();
             Require(state.Engines is { SchemaVersion: 1, PrimaryEngine: "gpt-live" }
-                && state.Engines.Engines.Select(engine => engine.Engine).SequenceEqual(["gpt-live", "realtime"]),
-                "only the two retained engines are advertised");
+                && state.Engines.Engines.Select(engine => engine.Engine).SequenceEqual(["gpt-live"]),
+                "only GPT-Live is advertised for production");
             Require(state.Engines!.Engines.All(engine => !engine.Ready && engine.UnavailableReason == "provider_credential_missing"),
                 "readiness depends on provider configuration rather than legacy test runners");
             Require(store.ChangeServerModes(new(state.Revision, "responses", "openai")).Status == 410,
@@ -72,14 +72,15 @@ internal static class ServerModeTests
             var created = store.Create("esp-test", Guid.NewGuid(), "create"u8, request).Response!;
             var activeState = store.ReadServerModes();
             Require(activeState.ActiveConversations == 1, "active count");
-            Require(store.ChangeServerModes(new(activeState.Revision, PersonalityId: PersonalityCatalog.OllivanderId)).Error == "conversations_active", "active conversation freezes persona");
+            Require(store.ChangeServerModes(new(activeState.Revision, PersonalityId: PersonalityCatalog.OllivanderId)) is { Status: 409, Error: "only_dv01_personality_supported" }, "historical personality rejected while conversation is active");
             Require(store.ChangeServerModes(new(activeState.Revision)).Status == 200, "no-op allowed");
             store.EndConversation("esp-test", created.ConversationId, Guid.NewGuid());
-            Require(store.ChangeServerModes(new(activeState.Revision, PersonalityId: PersonalityCatalog.OllivanderId)).Status == 200, "cleanup permits change");
+            Require(store.ChangeServerModes(new(activeState.Revision, PersonalityId: PersonalityCatalog.OllivanderId)) is { Status: 409, Error: "only_dv01_personality_supported" }
+                && store.ReadServerModes().PersonalityId == PersonalityCatalog.DefaultId, "ending conversation does not enable historical personality");
             configuration["OPENAI_API_KEY"] = "fixture-key-never-dispatched";
             var unavailable = new ConversationStore(TimeProvider.System, journal, configuration: configuration);
             Require(unavailable.ReadServerModes().Engines!.Engines.All(engine => engine.Ready),
-                "retained engines configure without legacy dialog or voice settings");
+                "GPT-Live configures without legacy dialog or voice settings");
             Require(unavailable.ReadServerModes().Revision != state.Revision, "restart invalidates revision");
         }
         finally

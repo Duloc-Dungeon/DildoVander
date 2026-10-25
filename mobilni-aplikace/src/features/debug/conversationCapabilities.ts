@@ -25,16 +25,14 @@ export const enginePreferenceKey = 'kufr.conversation.engine.v1';
 export const engineLabels: Record<ConversationEngine, string> = { 'gpt-live': 'GPT Live · gpt-live-1', realtime: 'GPT Realtime 2.1 · gpt-realtime-2.1' };
 export function validGuestMemoryId(value: string): boolean { return /^[A-Za-z0-9._-]{1,80}$/.test(value); }
 export function migrateConversationEngine(value: string | null): { engine?: ConversationEngine; message?: string } {
-  if (value === null) return { engine: 'gpt-live' };
-  if (value === 'gpt-live' || value === 'realtime') return { engine: value };
-  if (value === 'realtime-ptt') return { engine: 'realtime', message: 'Původní Realtime PTT bylo převedeno na GPT Realtime 2.1. Ověřte způsob vstupu.' };
-  return { message: 'Uložený režim už není podporován. Vyberte GPT Live nebo GPT Realtime 2.1.' };
+  if (value === null || value === 'gpt-live') return { engine: 'gpt-live' };
+  return { engine: 'gpt-live', message: 'Uložený rozhovorový režim byl vyřazen. Nové rozhovory používají GPT Live.' };
 }
 export function parseEngineCapabilities(value: unknown): EngineCapabilities | null {
   if (!value || typeof value !== 'object') return null;
   const data = value as EngineCapabilities;
-  if (data.schemaVersion !== 1 || !['gpt-live', 'realtime'].includes(data.primaryEngine)
-    || !Array.isArray(data.engines) || data.engines.length !== 2) return null;
+  if (data.schemaVersion !== 1 || data.primaryEngine !== 'gpt-live'
+    || !Array.isArray(data.engines) || data.engines.length < 1 || data.engines.length > 2) return null;
   const seen = new Set<string>();
   const strings = (items: unknown): items is string[] => Array.isArray(items) && items.length <= 64
     && items.every(item => typeof item === 'string' && item.length > 0 && item.length <= 160);
@@ -46,5 +44,6 @@ export function parseEngineCapabilities(value: unknown): EngineCapabilities | nu
       || item.speed.min <= 0 || item.speed.min > item.speed.default || item.speed.default > item.speed.max) return null;
     seen.add(item.engine);
   }
-  return data;
+  if (!seen.has('gpt-live')) return null;
+  return { ...data, engines: data.engines.filter(item => item.engine === 'gpt-live') };
 }

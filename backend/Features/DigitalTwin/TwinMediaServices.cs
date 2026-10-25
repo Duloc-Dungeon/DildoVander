@@ -120,9 +120,9 @@ internal sealed partial class TwinMediaSessions
             "media-socket-receive" or "media-socket-close" => request.Method == "POST"
                 && request.Path == prefix + "/device-media" && bytes.Length == 0 && request.Headers.Count == 0
                 && request.IdempotencyKey.Length == 0 && request.ContentType == "application/json",
-            "realtime-start" => actor.Settings.Engine == "fake" && request.Method == "POST" && request.Path == prefix + (actor.Settings.Engine == "gpt-live" ? "/gpt-live" : "/realtime-live") && bytes.Length <= 4096 && request.ContentType == "application/json",
+            "realtime-start" => actor.Settings.Engine == "fake" && request.Method == "POST" && request.Path == prefix + "/gpt-live" && bytes.Length <= 4096 && request.ContentType == "application/json",
             "realtime-input" or "realtime-played" or "realtime-playback" => actor.Settings.Engine == "fake" && request.Method == "POST" && actor.StreamId is not null
-                && request.Path == prefix + (actor.Settings.Engine == "gpt-live" ? "/gpt-live/" : "/realtime-live/") + actor.StreamId
+                && request.Path == prefix + "/gpt-live/" + actor.StreamId
                     + (request.Kind == "realtime-input" ? "/audio" : request.Kind == "realtime-played" ? "/played" : "/playback")
                 && bytes.Length <= 32768 && (request.Kind != "realtime-input" || bytes.Length > 0 && bytes.Length % 2 == 0),
             _ => false

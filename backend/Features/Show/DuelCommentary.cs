@@ -25,12 +25,9 @@ internal sealed class DuelCommentaryService : IDisposable
 
     public DuelCommentaryService(IConfiguration configuration)
     {
-        if (!configuration.GetValue<bool>("Show:DuelCommentaryEnabled")) { return; }
-        key = configuration["OPENAI_API_KEY"];
-        if (!string.IsNullOrWhiteSpace(key))
-        {
-            http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
-        }
+        // Ordinary duel flavor belongs to the active GPT-Live conversation. Keep
+        // this Responses adapter only for explicit fixture/recovery evaluation.
+        _ = configuration;
     }
 
     internal DuelCommentaryService(HttpClient fixture, string fixtureKey)
@@ -41,10 +38,10 @@ internal sealed class DuelCommentaryService : IDisposable
 
     internal async Task<DuelCommentaryAttempt> GenerateAsync(DuelView result, CancellationToken cancellationToken)
     {
+        if (!Available) { return new(null, new("gpt_live_required", ResponsesTextDialogBudget.Model)); }
         using var telemetry = GenAiOperation.Start("responses", ResponsesTextDialogBudget.Model);
         try
         {
-            if (!Available) { return new(null, new("configuration_unavailable", ResponsesTextDialogBudget.Model)); }
             var request = BuildRequest(result);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(TimeSpan.FromSeconds(8));

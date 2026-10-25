@@ -58,7 +58,7 @@ internal static class TestingSessionEndpoints
         });
         group.MapGet("/catalog",(PersonaLabRuntime runtime)=>Results.Json(new
         {
-            engines=new[]{"gpt-live-1","gpt-realtime-2.1"},
+            engines=new[]{"gpt-live-1"},
             capabilities=new {text=true,voice=true,hybrid=true,virtualHardware=true,providerConfigured=new {live=runtime.LiveAvailable,realtime=runtime.RealtimeAvailable}},
             evidence="Configuration availability is not a provider handshake. Provider events confirm execution. Hardware observations are always simulated."
         })).RequireRateLimiting(AccountIdentity.PollingRateLimitPolicy);

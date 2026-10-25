@@ -234,9 +234,8 @@ internal static partial class AccountIdentityTests
             await db.SaveChangesAsync();
         });
         var engines = await JsonAsync(await actor.GetAsync("/app/v1/workshop/granted-twin/engines"));
-        Check(engines.GetProperty("schemaVersion").GetInt32() == 1 && engines.GetProperty("engines").GetArrayLength() == 2
-            && engines.GetProperty("engines")[0].GetProperty("model").GetString() == "gpt-live-1"
-            && engines.GetProperty("engines")[1].GetProperty("model").GetString() == "gpt-realtime-2.1", "scoped Workshop capabilities expose exactly canonical engines");
+        Check(engines.GetProperty("schemaVersion").GetInt32() == 1 && engines.GetProperty("engines").GetArrayLength() == 1
+            && engines.GetProperty("engines")[0].GetProperty("model").GetString() == "gpt-live-1", "scoped Workshop capabilities expose only the canonical GPT-Live engine");
         Check(!engines.TryGetProperty("personalities", out _), "Workshop capabilities expose no admin metadata");
         Check((await actor.GetAsync("/app/v1/workshop/denied-twin/engines")).StatusCode == HttpStatusCode.Forbidden, "Workshop capabilities enforce exact read grant");
         Check((await actor.GetAsync("/app/v1/workshop/missing/engines")).StatusCode == HttpStatusCode.Forbidden, "Workshop capability visibility does not expose ungranted instance existence");
@@ -641,7 +640,7 @@ internal static partial class AccountIdentityTests
                 builder.Services.AddSingleton(_ => new Kufr.Backend.Features.PersonaLab.PersonaLabStore(
                     Path.Combine(root, "persona-lab.sqlite"),
                     Kufr.Backend.Features.GptLive.LivePromptSnapshot.Create(
-                        PersonalityCatalog.OllivanderId, new Kufr.Backend.Features.GptLive.GptLiveOptions())));
+                        PersonalityCatalog.DefaultId, new Kufr.Backend.Features.GptLive.GptLiveOptions())));
                 if (!customerMemoryFeatures && !accountDataExportFeatures)
                 {
                     builder.Services.AddSingleton(services => new AccountDataExportStore(

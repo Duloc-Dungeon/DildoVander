@@ -70,7 +70,9 @@ jobs:
           KUFR_TESTS_DLL: backend-tests/bin/Release/net10.0/linux-x64/BackendTests.dll
         run: node backend/tests/keepsake-http.mjs
       - name: Interactive client offline tests
-        run: python3 -m unittest discover -s backend/tests -p 'test_*.py'
+        run: |
+          python3 -m unittest discover -s backend/tests -p 'test_*.py'
+          python3 -m unittest discover -s scripts -p 'test_provision_dv01_voice.py'
       - name: Deployment configuration tests
         run: |
           python3 -m unittest discover -s backend/deploy -p 'test_*.py'

@@ -4,11 +4,18 @@ Open **Persona Lab** in the application navigation and sign in. Every authentica
 account can test, including viewers without a device grant. The lab requires an
 online account; cached offline device access does not authorize cloud tests.
 
-Choose a saved persona, GPT Live (`gpt-live-1`) or Realtime 2.1
-(`gpt-realtime-2.1`), a Czech scenario, and an empty or synthetic memory fixture.
+New sessions use the current DV01 baseline and GPT Live (`gpt-live-1`) automatically.
+Choose a DV01 prompt revision, a Czech scenario, and empty or synthetic memory.
 Preparing a session does not call OpenAI. Sending text, starting voice, or running
-a scenario suite does. Text uses these same conversation engines. Retired
-Responses conversations and STT/dialog/TTS pipelines remain retired.
+a scenario suite does. Guest-created fictional characters remain separate from
+the suitcase personality. [Voice configuration](../../../docs/dv01-voice.md) is server-owned.
+Historical revisions and Realtime diagnostics are readable, but cannot execute or publish.
+Old active publication pointers migrate to the explicit DV01 baseline without deleting records.
+New DV01 revisions retain editing, evaluation, context inspection and multi-turn testing.
+
+The Realtime transport sections and dated measurements below describe retained
+backup code and historical evidence, not an executable Lab engine. There is no
+Realtime visual-test action in the current UI; Live does not advertise direct image input.
 
 ## Test, inspect, evaluate
 
@@ -21,19 +28,9 @@ Responses conversations and STT/dialog/TTS pipelines remain retired.
   a validated Realtime terminal decision can trigger this action; assistant
   quotations, negated requests and stale connection callbacks cannot. This is a
   client control, not a general language classifier or a physical suitcase Stop.
-- Realtime supports a consented, metadata-free JPEG prepared in the browser,
-  at most 640 by 640 pixels and 45,000 bytes. It is volatile, expires after
-  15 minutes and is removed on explicit withdrawal/end/deletion. GPT Live image
-  input is not advertised by this lab.
-- A Live session offers explicit preparation of a new Realtime visual test;
-  it does not change the saved Live session or call a model. Camera and photo
-  library selection are separate actions. A local preview can be discarded
-  without uploading or deleting anything on the server. Withdrawing an attached
-  image stops local voice immediately and requires server confirmation before
-  reporting that the temporary model input has been removed. Server content
-  commits check their originating execution token under the same admission fence
-  as withdrawal; late replies cannot enter durable or in-memory history after
-  cancellation. Already observed usage remains accounted independently.
+- Historical visual test attachments remain private archive evidence; new Live
+  sessions do not expose the retired Realtime image-input workflow.
+
 - **SIMULATION** is the default and cannot dispatch to a device. Deliberate
   **REAL SUITCASE** testing requires a paired native connection, the exact device
   operating grant, explicit confirmation and advertised `voiceTestContext`

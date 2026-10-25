@@ -30,13 +30,11 @@ internal static class TwinMediaStreamingTests
     {
         await CleanupRetryAsync();
         await RunCaseAsync(native, StreamFault.None);
-        await RunCaseAsync(native, StreamFault.None, gptLive: false);
         await RunCaseAsync(native, StreamFault.Truncated);
         await RunCaseAsync(native, StreamFault.MissingType);
         await RunCaseAsync(native, StreamFault.MissingStreamId);
         await RunCaseAsync(native, StreamFault.StaleGeneration);
-        await RunCaseAsync(native, StreamFault.StaleGeneration, gptLive: false);
-        foreach (var engine in new[] { true, false })
+        foreach (var engine in new[] { true })
         {
             foreach (var fault in new[] { StreamFault.SeededJitter, StreamFault.AbruptLoss,
                 StreamFault.DuplicateFrame, StreamFault.OutOfOrderFrame, StreamFault.FullQueue, StreamFault.StallStopRestart })

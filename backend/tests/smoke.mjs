@@ -77,7 +77,7 @@ async function call(path, { method = 'GET', token, key, body, raw, headers = {} 
 }
 const post = (path, options) => call(path, { method: 'POST', ...options });
 const remove = (path, token, key = randomUUID(), body) => call(path, { method: 'DELETE', token, key, body });
-const contextPath = (id, device = 'device-a') => `/v1/admin/memory/context?deviceId=${device}&conversationId=${id}&personalityId=ollivander-trunk`;
+const contextPath = (id, device = 'device-a') => `/v1/admin/memory/context?deviceId=${device}&conversationId=${id}&personalityId=dv01`;
 const context = id => call(contextPath(id), { token: adminCredential });
 const tokenFor = async credential => {
   const issued = await post('/v1/device-access/token', { token: credential });
@@ -99,7 +99,7 @@ try {
   const modes = (await call('/v1/admin/modes', { token: adminCredential })).result;
   assert.equal(modes.engines.primaryEngine, 'gpt-live');
   assert.deepEqual(modes.engines.engines.map(item => [item.engine, item.model]),
-    [['gpt-live', 'gpt-live-1'], ['realtime', 'gpt-realtime-2.1']]);
+    [['gpt-live', 'gpt-live-1']]);
   assert.ok(modes.engines.engines.every(item => !item.ready && item.unavailableReason === 'provider_credential_missing'));
   assert.ok(!('dialogMode' in modes) && !('voiceMode' in modes), 'retired implementations are absent from capabilities');
   const diagnostics = (await call('/v1/diagnostics', { token: tokenA })).result;
@@ -124,7 +124,7 @@ try {
   const opaqueBody = { ...body, deviceId: 'device-b', bootId: randomUUID(), catalogVersion: 'fixture-opaque-catalog' };
   const opaque = await post('/v1/conversations', { token: tokenB, key: randomUUID(), body: opaqueBody });
   assert.equal(opaque.status, 201);
-  for (const engine of ['gpt-live', 'realtime-live']) {
+  for (const engine of ['gpt-live']) {
     const opaquePath = `/v1/conversations/${opaque.result.conversationId}/${engine}`;
     const opaqueKey = randomUUID();
     const invalid = request(opaqueBody);
@@ -141,7 +141,7 @@ try {
   }
   assert.equal((await remove(`/v1/conversations/${opaque.result.conversationId}`, tokenB)).status, 204);
 
-  for (const engine of ['gpt-live', 'realtime-live']) {
+  for (const engine of ['gpt-live']) {
     const unavailable = await post(`/v1/conversations/${id}/${engine}`, { token: tokenA, key: randomUUID(), body: request(body) });
     assert.equal(unavailable.status, 409); assert.equal(unavailable.result.code, 'realtime_unavailable');
     assert.ok(!unavailable.result.operationId, 'unavailable engines cannot fabricate paid operations');
@@ -149,7 +149,7 @@ try {
     const absentStream = await call(`/v1/conversations/${id}/${engine}/${randomUUID()}/audio-stream`, { token: tokenA });
     assert.equal(absentStream.status, 404);
   }
-  for (const route of ['opening', 'turns', 'transcriptions', 'speech', 'realtime-turns']) {
+  for (const route of ['opening', 'turns', 'transcriptions', 'speech', 'realtime-turns', 'realtime-live']) {
     const retired = await post(`/v1/conversations/${id}/${route}`, { token: tokenA, key: randomUUID(), body: request(body) });
     assert.equal(retired.status, 410); assert.equal(retired.result.code, 'conversation_engine_upgrade_required');
   }
@@ -169,7 +169,7 @@ try {
   assert.equal((await call('/v1/admin/memory/guest', { method: 'PUT', token: adminCredential, body: binding })).status, 200);
   const evening = (await call('/v1/evening-memory', { token: tokenA })).result.eveningId;
   const memoryId = randomUUID();
-  const memory = { deviceId: 'device-a', conversationId: id, eveningId: evening, personalityId: 'ollivander-trunk',
+  const memory = { deviceId: 'device-a', conversationId: id, eveningId: evening, personalityId: 'dv01',
     scope: 'Personal', kind: 'UserReportedFact', text: 'HTTP guest A repairs violet clocks.', sourceReference: 'operator:fixture', expectedRevision: 0 };
   assert.equal((await call(`/v1/admin/memory/records/${memoryId}`, { method: 'PUT', token: adminCredential, body: memory })).status, 200);
   assert.equal((await context(id)).result.records[0].text, memory.text);
@@ -199,7 +199,7 @@ try {
   for (const secret of [credentialA, credentialB, adminCredential, logCredential, tokenA, tokenB, memory.text]) {
     assert.ok(!output.includes(secret) && !JSON.stringify(logs.result).includes(secret), 'technical diagnostics exclude private words and credentials');
   }
-  console.log('Offline backend HTTP: two engines/readiness, auth, idempotency, retired routes, truthful vision failure, private guest binding, archive restart and deletion fences passed.');
+  console.log('Offline backend HTTP: sole Live engine/readiness, auth, idempotency, retired routes, truthful vision failure, private guest binding, archive restart and deletion fences passed.');
 } finally {
   await stop();
   assert.equal(dirname(resolve(directory)), resolve(tmpdir()));

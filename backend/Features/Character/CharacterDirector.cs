@@ -42,6 +42,10 @@ internal static class CharacterDirector
             + (session.RoastAllowed ? "roast=ano;" : "roast=ne,žádné osobní útoky;")
             + $"styl={style};finále={finale};profil={session.Policy.FinaleProfile};"
             + "bez názvu/slotu,bez tvrzení pohybu. ";
+        if (session.Tone <= CharacterTone.Dry)
+        {
+            prompt += "Bez nadávek a sexuálních narážek. ";
+        }
         if (repair)
         {
             prompt += "Oprava vstupu,ne osobní soud. ";

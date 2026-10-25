@@ -120,8 +120,7 @@ internal sealed partial class TwinMediaSessions : IDisposable
             var available = settings.Read(id);
             if (available is null) { return (null, "media_unavailable"); }
             selected = available;
-            if (selected.Engine == "realtime" && !selected.Availability.Realtime
-                || selected.Engine == "gpt-live" && !selected.Availability.GptLive)
+            if (selected.Engine == "gpt-live" && !selected.Availability.GptLive)
             { return (null, "provider_not_authorized_or_configured"); }
             if (start.PhotoConsent != selected.PhotoConsent) { return (null, "media_settings_mismatch"); }
             var claim = hosts.ClaimMedia(id, owner);
@@ -164,7 +163,7 @@ internal sealed partial class TwinMediaSessions : IDisposable
                 }
                 else
                 {
-                    var engine = selected.Engine == "gpt-live" ? "gpt-live" : "realtime";
+                    var engine = "gpt-live";
                     admission = hosts.MediaCommandAsync(id, $"MEDIA_START {actor.SessionId} {start.OperationId} {engine} {selected.Voice} "
                         + $"{selected.Speed.ToString(CultureInfo.InvariantCulture)} {start.PhotoConsent.ToString().ToLowerInvariant()} {selected.PresentationVariant} "
                         + $"{(start.MicAvailable ? 1 : 0)} {(start.SpeakerAvailable ? 1 : 0)} {(start.CameraAvailable ? 1 : 0)}");

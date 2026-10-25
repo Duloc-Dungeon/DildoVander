@@ -20,7 +20,7 @@ internal enum SceneIntent { Wake, Consider, ChoiceAccent, Farewell }
 internal enum CharacterSpeechIntent { None, Question, Reply, Repair, Finale, Closing }
 
 internal sealed record CharacterPolicy(
-    bool Enabled = false,
+    bool Enabled = true,
     CharacterTone HostTone = CharacterTone.Adult,
     FinaleProfile FinaleProfile = FinaleProfile.Blocked,
     string Version = "dv01-director-v1");

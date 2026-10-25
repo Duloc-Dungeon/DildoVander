@@ -305,7 +305,7 @@ test('brief welcome connections cannot reset the retry limit but five seconds of
   connection.suspend();
 });
 
-test('native voice settings and start use schema-validated device confirmation without a lease', async () => {
+test('native GPT Live voice settings and start use schema-validated device confirmation without a lease', async () => {
   const native = bridge();
   const connection = new ProtocolDeviceConnection(() => {}, {
     source: 'native-device', deviceId: fixture.deviceId,
@@ -320,13 +320,14 @@ test('native voice settings and start use schema-validated device confirmation w
   native.emit('frame', JSON.stringify({ protocolVersion: 1, type: 'welcome', requestMessageId: hello.messageId,
     snapshot: { ...fixture, controlMode: 'standalone', controlLeaseId: null, activeCommandId: null, voice },
   }));
-  assert.equal(connection.configureVoice('realtime', 'cedar'), true);
+  assert.equal(connection.configureVoice('realtime', 'cedar'), false, 'retired Realtime is not configurable');
+  assert.equal(connection.configureVoice('gpt-live', 'cedar'), true);
   await settle();
   const configure = validateControlMessage(new TextEncoder().encode(native.sent.at(-1).frame));
   assert.equal(configure.type, 'voice.configure');
   assert.equal(connection.snapshot().voice.mode, 'off');
   native.emit('frame', JSON.stringify({ protocolVersion: 1, type: 'voice.ack', bootId: fixture.bootId,
-    requestMessageId: configure.messageId, accepted: true, voice: { ...voice, mode: 'realtime', voice: 'cedar' },
+    requestMessageId: configure.messageId, accepted: true, voice: { ...voice, mode: 'gpt-live', voice: 'cedar' },
   }));
   assert.equal(connection.snapshot().voice.canStart, true);
   assert.equal(connection.startVoice(), true);
@@ -336,7 +337,7 @@ test('native voice settings and start use schema-validated device confirmation w
   assert.equal(start.expectedRevision, fixture.revision);
   assert.equal('controlLeaseId' in start, false);
   native.emit('frame', JSON.stringify({ protocolVersion: 1, type: 'voice.ack', bootId: fixture.bootId,
-    requestMessageId: start.messageId, accepted: true, voice: { ...voice, mode: 'realtime', voice: 'cedar', phase: 'listening' },
+    requestMessageId: start.messageId, accepted: true, voice: { ...voice, mode: 'gpt-live', voice: 'cedar', phase: 'listening' },
   }));
   assert.equal(connection.snapshot().voice.canStop, true);
   assert.equal(connection.stopVoice(), true);

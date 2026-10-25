@@ -59,7 +59,7 @@ function submitText() {
   <section v-if="enabled" class="simulation-controls" aria-labelledby="simulation-controls-title">
     <h3 id="simulation-controls-title">Ovládání vybrané simulace</h3>
     <p>{{ instanceId }} · {{ profile }}. Oprávnění ověřuje server; tyto povely nejsou dostupné pro živý kufr ani replay.</p>
-    <AwNotice v-if="profile === 'integration'">Textový backend byl ukončen. Rozhovor spustíte ve hlasovém panelu přes GPT Live nebo Realtime 2.1. Provider vyžaduje samostatnou autorizaci vlastníka.</AwNotice>
+    <AwNotice v-if="profile === 'integration'">Textový backend byl ukončen. Nový rozhovor spustíte ve hlasovém panelu přes GPT Live. Provider vyžaduje samostatnou autorizaci vlastníka.</AwNotice>
     <AwField id="simulation-slot" label="Přihrádka">
       <select id="simulation-slot" v-model.number="slot" class="aw-input"><option v-for="index in 6" :key="index" :value="index">{{ index }}</option></select>
     </AwField>

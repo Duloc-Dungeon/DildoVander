@@ -19,8 +19,9 @@ import { diagnosticExportHistory, exportDiagnosticReport } from '../../applicati
 import { applicationBuild } from '../../application/buildIdentity';
 import type { CharacterInput, InputMode } from './contracts';
 const test = useTestingSessions();
-const { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, engine, inputMode, consent,
+const { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, inputMode, consent,
   text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, turnPhase, uncertainTurn, open } = test;
+const supportsDialogue = computed(() => selected.value?.session.engine === 'gpt-live-1');
 const characterDeleteConfirmed = ref(false);
 const longTermConsent = ref(false); const photoConsent = ref(false); const photoFile = ref<File | null>(null); const photoKeepsake = ref('');
 const diagnosticExportStatus = ref(''); const diagnosticExportError = ref(''); const characterCopyStatus = ref('');
@@ -50,7 +51,7 @@ const steps = ['Sezení', 'Postava', 'Rozhovor', 'Výsledek'];
 const characterPending = computed(() => ['queued', 'running'].includes(latestCharacter.value?.profile.status ?? ''));
 const inputModes = [
   { value: 'text', label: 'Text — bez mikrofonu' },
-  { value: 'voice', label: 'Živý mikrofon — GPT Live / Realtime' },
+  { value: 'voice', label: 'Živý mikrofon — GPT Live' },
   { value: 'hybrid', label: 'Hybrid — text a živý mikrofon' },
 ] as const;
 const conversationReadiness = computed(() => {
@@ -189,9 +190,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
         </div>
         <div class="testing-start-controls">
           <div class="testing-new-session">
-          <AwField id="testing-model" label="AI model"><select id="testing-model" v-model="engine" class="aw-select" :disabled="busy || voiceActive">
-            <option value="gpt-live-1">GPT Live · gpt-live-1</option><option value="gpt-realtime-2.1">Realtime 2.1 · gpt-realtime-2.1</option>
-          </select></AwField>
+          <p class="aw-muted">Engine dialogu: GPT Live · gpt-live-1. Hlas DV01 spravuje server.</p>
           </div>
           <AwField id="testing-input" label="Vstup"><select id="testing-input" :value="inputMode" class="aw-select" :disabled="busy" @change="switchMode">
             <option v-for="mode in inputModes" :key="mode.value" :value="mode.value">{{ mode.label }}</option>
@@ -278,7 +277,8 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
           <section v-show="step === 3" class="testing-conversation" aria-labelledby="testing-conversation-title">
             <div class="testing-section-heading"><h2 id="testing-conversation-title">Rozhovor s DildoVanderem</h2><AwStatus>{{ inputMode }}</AwStatus></div>
             <p v-if="selectedCharacter" class="aw-muted">{{ selectedCharacter.profile.userInput.name }} · {{ selectedCharacter.profile.userInput.world }}</p>
-            <AwField v-if="open" id="testing-conversation-input" label="Režim rozhovoru">
+            <AwNotice v-if="!supportsDialogue" tone="info">Toto historické sezení GPT Realtime je dostupné ke čtení. Nové testy a odpovědi používají pouze GPT Live.</AwNotice>
+            <AwField v-if="open && supportsDialogue" id="testing-conversation-input" label="Režim rozhovoru">
               <select id="testing-conversation-input" :value="inputMode" class="aw-select" :disabled="busy || uncertainTurn || (selected.conversationActive && !voiceActive)" @change="switchMode">
                 <option v-for="mode in inputModes" :key="mode.value" :value="mode.value">{{ mode.label }}</option>
               </select>
@@ -290,14 +290,14 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
               <strong>{{ turn.role === 'user' ? selectedCharacter?.profile.userInput.name ?? 'Vy' : 'DildoVander' }}</strong><p>{{ turn.text || 'Text není uložený.' }}</p><small v-if="turn.latencyMs != null">{{ turn.latencyMs }} ms · skutečný backend</small>
             </li></ol>
             <p v-if="partial.user" class="testing-partial">Vy · {{ partial.user }}</p><p v-if="partial.assistant" class="testing-partial">DildoVander · {{ partial.assistant }}</p>
-            <form v-if="open && inputMode !== 'voice'" class="testing-chat-form" @submit.prevent="test.send">
+            <form v-if="open && supportsDialogue && inputMode !== 'voice'" class="testing-chat-form" @submit.prevent="test.send">
               <p v-if="inputMode === 'hybrid'" class="aw-muted">Odeslání psané zprávy vypne mikrofon. Pro pokračování hlasem ho znovu zapněte tlačítkem.</p>
               <AwField id="testing-message" label="Vaše zpráva"><textarea id="testing-message" v-model="text" class="aw-input" rows="3" maxlength="4000" :disabled="!selectedCharacter || (voiceActive && captureEnabled && inputMode !== 'hybrid')" /></AwField>
               <AwButton type="submit" variant="primary" :busy="busy || spokenBusy" :disabled="busy || uncertainTurn || !text.trim() || !selectedCharacter || !consent || stale || (selected.conversationActive && !voiceActive)">Odeslat skutečnému AI</AwButton>
             </form>
-            <label v-if="open" class="testing-consent"><input v-model="outputEnabled" type="checkbox" /> Přehrávat skutečný hlas asistenta (také pro psané zprávy, bez mikrofonu)</label>
-            <template v-if="open && inputMode !== 'text'">
-              <p class="aw-muted">{{ selected.session.engine === 'gpt-realtime-2.1' ? 'Realtime 2.1' : 'GPT Live' }} · Živý rozhovor s průběžným přenosem mikrofonu, hlasové odpovědi a přepisu. Mikrofon i přehrávání se zapnou až tlačítkem. Přepnutí do textu uzavře audio spojení a zachová uloženou historii.</p>
+            <label v-if="open && supportsDialogue" class="testing-consent"><input v-model="outputEnabled" type="checkbox" /> Přehrávat skutečný hlas asistenta (také pro psané zprávy, bez mikrofonu)</label>
+            <template v-if="open && supportsDialogue && inputMode !== 'text'">
+              <p class="aw-muted">GPT Live · živý rozhovor s průběžným přenosem mikrofonu, hlasové odpovědi a přepisu. Mikrofon i přehrávání se zapnou až tlačítkem. Přepnutí do textu uzavře audio spojení a zachová uloženou historii.</p>
 
               <div class="testing-actions"><AwButton v-if="!voiceActive" variant="primary" :disabled="busy || uncertainTurn || selected.conversationActive || !selectedCharacter || !consent || stale" @click="test.startVoice">Zapnout mikrofon a hlasové spojení</AwButton>
                 <AwButton v-if="voiceActive" @click="test.interrupt">Přerušit odpověď</AwButton><AwButton v-if="voiceActive" @click="test.stopVoice">{{ captureEnabled ? 'Vypnout mikrofon' : 'Odpojit hlasový výstup' }}</AwButton></div>

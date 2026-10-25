@@ -4,6 +4,11 @@ namespace Kufr.Backend.Features.GptLive;
 
 internal static class CharacterConfiguration
 {
+    internal static string Instructions(CharacterPolicy policy) => Persona
+        + $"\nTrusted application host ceiling: {policy.HostTone}. Finale publication profile: {policy.FinaleProfile}."
+        + (policy.HostTone <= CharacterTone.Dry
+            ? " No swearing, sexual jokes, or humiliation. This ceiling overrides examples in the character description." : "");
+
     internal static CharacterPolicy Read(IConfiguration section)
     {
         var tone = section["HostTone"] ?? "Adult";
@@ -19,7 +24,8 @@ internal static class CharacterConfiguration
         {
             throw new InvalidOperationException("DV01 named finale unavailable: no controlled full-speech publication capability.");
         }
-        return new() { Enabled = section.GetValue("Enabled", false), HostTone = parsedTone, FinaleProfile = parsedFinale };
+        // Legacy Enabled=false settings cannot restore a historical production persona.
+        return new() { Enabled = true, HostTone = parsedTone, FinaleProfile = parsedFinale };
     }
 
     internal static string Persona => """

@@ -535,7 +535,7 @@ LocalVoiceStatus EspIdfBackendNetwork::VoiceStatus() const {
 }
 
 bool EspIdfBackendNetwork::ConfigureVoice(const std::string& mode, const std::string& voice) {
-  if ((mode != "off" && mode != "realtime" && mode != "gpt-live") ||
+  if ((mode != "off" && mode != "gpt-live") ||
       (voice != "cedar" && voice != "marin" && voice != "coral")) return false;
   std::lock_guard<std::mutex> lock(voiceMutex_);
   if (voiceBusy_.load() || showCues_.IsActive() || (mode != "off" && !voiceStatus_.available)) return false;

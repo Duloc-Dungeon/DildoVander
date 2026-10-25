@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.Show;
+using Microsoft.Extensions.Configuration;
 
 internal static class DuelCommentaryTests
 {
@@ -37,6 +38,13 @@ internal static class DuelCommentaryTests
         using var malformed = JsonDocument.Parse("{}");
         Check(DuelCommentaryService.Parse(malformed.RootElement, view).Commentary is null, "malformed provider response keeps local fallback");
         PersonalizedCommentary(view);
+        using (var production = new DuelCommentaryService(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["OPENAI_API_KEY"] = "fixture-key", ["Show:DuelCommentaryEnabled"] = "true" }).Build()))
+        {
+            var disabled = await production.GenerateAsync(view, default);
+            Check(!production.Available && disabled.Commentary is null && disabled.Audit.Status == "gpt_live_required",
+                "normal duel commentary never starts Responses dialogue and directs narration to GPT-Live");
+        }
         var handler = new FixtureHandler(Response(view));
         using var http = new HttpClient(handler);
         using var service = new DuelCommentaryService(http, "fixture-not-a-real-provider-key");

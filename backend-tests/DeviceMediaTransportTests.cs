@@ -47,7 +47,7 @@ internal static class DeviceMediaTransportTests
 
     private static void VerifyOpeningAndFrames()
     {
-        foreach (var engine in new[] { "gpt-live", "realtime" })
+        foreach (var engine in new[] { "gpt-live" })
         {
             foreach (var epoch in new string?[] { null, "0", "9007199254740993", MaximumEpoch })
             {
@@ -56,6 +56,7 @@ internal static class DeviceMediaTransportTests
                     "opening retains engine and exact canonical epoch");
             }
         }
+        Reject(() => DeviceMediaProtocol.ReadOpening(Encoding.UTF8.GetBytes(Opening("realtime"))), "Realtime media opening requires upgrade");
         var valid = Opening();
         var invalid = new[]
         {
@@ -487,19 +488,23 @@ internal static class DeviceMediaTransportTests
                 using var json = JsonDocument.Parse(failure.Bytes);
                 Check(failure.Kind == WebSocketMessageType.Text && json.RootElement.GetProperty("type").GetString() == "failed"
                     && json.RootElement.TryGetProperty("code", out _), "post-upgrade admission failure is socket event for " + engine);
-                await CheckDisconnectedAsync(client);
+                if (engine == "realtime")
+                {
+                    Check(json.RootElement.GetProperty("code").GetString() == "conversation_engine_upgrade_required"
+                        && providers.IsEmpty && liveProviders.IsEmpty,
+                        "production device-media rejects Realtime before either provider connects");
+                    var closed = await ReadAsync(client);
+                    Check(closed.Kind == WebSocketMessageType.Close,
+                        "upgrade event reaches the client before a graceful bounded close");
+                    await client.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "upgrade received", CancellationToken.None);
+                }
+                else { await CheckDisconnectedAsync(client); }
             }
             await VerifyOrderedFramesAsync(http.BaseAddress!);
-            await VerifyOpeningExpiryAtReceiveAsync(http.BaseAddress!, app.Services, socketGates, providers, clock);
             token = access.IssueToken("media-device")!.AccessToken;
-            await VerifyAckVisibilityAsync(http.BaseAddress!, app.Services, socketGates, providers);
             await VerifyPrimaryLiveAsync(http.BaseAddress!, app.Services, liveProviders);
-            await VerifyControlReplyCapacityAsync(http.BaseAddress!, app.Services, providers);
             await VerifyClaimAdmissionFencesAsync(app.Services);
             await VerifyPlayedReplyFencesAsync(app.Services);
-            await VerifyMappedPlayedReplyAsync(http.BaseAddress!, app.Services, socketGates, providers);
-            await VerifyMappedTerminalRepliesAsync(http.BaseAddress!, app.Services, socketGates, providers, liveProviders);
-            await VerifyActiveProviderAsync(http.BaseAddress!, app.Services, providers, clock);
             token = access.IssueToken("media-device")!.AccessToken;
             using (var client = await ConnectAsync(http.BaseAddress!, route, token))
             {
@@ -1138,6 +1143,22 @@ internal static class DeviceMediaTransportTests
         var sessionId = sessionEvent.GetProperty("streamId").GetGuid();
         var registry = services.GetRequiredService<RealtimeLiveRegistry>();
         Check(registry.Find(sessionId, device, conversation) is not null, "primary Live owns actual registered media session");
+        var controlRequest = Guid.NewGuid();
+        var availability = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            type = "availability", requestId = controlRequest, bootId = boot, generation = 1,
+            readyMask = 63, deviceRevision = 7, operationEpoch = MaximumEpoch
+        });
+        await SendControlAsync(client, availability);
+        var firstAck = await inbox.JsonAsync("control.ack");
+        Check(firstAck.GetProperty("requestId").GetGuid() == controlRequest
+            && firstAck.GetProperty("status").GetInt32() == 204,
+            "primary Live accepts an idempotent opening-snapshot control");
+        await SendControlAsync(client, availability);
+        var replayAck = await inbox.JsonAsync("control.ack");
+        Check(replayAck.GetProperty("requestId").GetGuid() == controlRequest
+            && replayAck.GetProperty("status").GetInt32() == 204,
+            "primary Live replays the cached control acknowledgement without reapplying control");
         await SendControlAsync(client, JsonSerializer.SerializeToUtf8Bytes(new
         { type = "cancel", requestId = Guid.NewGuid(), operationId = operation, responseGeneration = 0 }));
         await CheckTargetedCancellationAsync(() => ReadAsync(client),

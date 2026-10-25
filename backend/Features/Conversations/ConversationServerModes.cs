@@ -1,6 +1,5 @@
 using Kufr.Backend.Features.Character;
 using Kufr.Backend.Features.GptLive;
-using Kufr.Backend.Features.Realtime;
 
 namespace Kufr.Backend.Features.Conversations;
 
@@ -28,8 +27,10 @@ internal sealed partial class ConversationStore
                 return new(410, null, "conversation_engine_upgrade_required");
             }
             var requestedPersonality = request.PersonalityId ?? personalityId;
-            if (!PersonalityCatalog.Contains(requestedPersonality))
-                return new(400, null, "invalid_personality");
+            if (requestedPersonality != PersonalityCatalog.DefaultId)
+            {
+                return new(409, null, "only_dv01_personality_supported");
+            }
 
             if (request.ExpectedRevision != modeRevision)
             {
@@ -50,11 +51,7 @@ internal sealed partial class ConversationStore
                 }
                 catch (InvalidOperationException) { return new(400, null, "invalid_character_policy"); }
             }
-            if (nextCharacter.Enabled && (liveOptions?.Mode != LiveActorMode.AutonomousActor || requestedPersonality != PersonalityCatalog.OllivanderId))
-            {
-                return new(409, null, "character_requires_autonomous_ollivander");
-            }
-
+            nextCharacter = ((liveOptions ?? new()) with { Character = nextCharacter }).EffectiveCharacter;
             var current = ServerModesSnapshot();
             if (requestedPersonality == personalityId && nextCharacter == characterPolicy && !request.ResetCharacterVariety)
             {
@@ -102,9 +99,7 @@ internal sealed partial class ConversationStore
         string[] cameras = ["phone", "suitcase"];
         return new(1, "gpt-live", [
             new("gpt-live", GptLiveProtocol.Model, ready, unavailableReason, voices,
-                new(false, 1, 1, 1), inputs, cameras),
-            new("realtime", RealtimeProtocol.Model, ready, unavailableReason, voices,
-                new(true, 0.8, 1.2, 1), inputs, cameras)
+                new(false, 1, 1, 1), inputs, cameras)
         ]);
     }
 }

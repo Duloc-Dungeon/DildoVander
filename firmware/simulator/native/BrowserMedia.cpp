@@ -95,6 +95,7 @@ void BrowserMedia::ClearLocked() {
 bool BrowserMedia::Start(const std::string& session, const std::string& requestId, bool gptLive,
     const std::string& voice, const std::string& speed, bool imageConsent, bool cameraAvailable,
     const ConversationRuntimeSnapshot& snapshot) {
+  if (!gptLive) return false;  // Realtime transport is a dormant engineering backup.
   { std::lock_guard<std::mutex> lock(mutex_); if (!done_ || busy_.load() || session == session_ || requestId == lastRequestId_) return false; }
   if (worker_.joinable()) worker_.join();
   VoiceWorkflowRequest request;

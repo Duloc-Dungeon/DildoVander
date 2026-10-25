@@ -39,8 +39,8 @@ async function mutate(path:string, method:string, body:object) {
 }
 function saveModes() {
   const modes=status.value?.modes; if(!modes || busy.value || modes.activeConversations > 0) return;
-  void mutate('/app/v1/admin/operations/modes','PUT',{expectedRevision:modes.revision,personalityId:modes.personalityId,
-    characterEnabled:modes.characterEnabled,characterTone:modes.characterTone,characterFinaleProfile:modes.characterFinaleProfile});
+  void mutate('/app/v1/admin/operations/modes','PUT',{expectedRevision:modes.revision,personalityId:'dv01',
+    characterEnabled:true,characterTone:modes.characterTone,characterFinaleProfile:modes.characterFinaleProfile});
 }
 function resetVariety() {
   const modes = status.value?.modes; if (!modes || busy.value || modes.activeConversations > 0) return;
@@ -60,12 +60,10 @@ onMounted(load);onBeforeUnmount(()=>{++epoch;status.value=null;logs.value=null;}
       <form v-if="status.modes" class="mode-form" @submit.prevent="saveModes">
         <h3>Rozhovor a hlas</h3><p>Aktivní rozhovory: {{status.modes.activeConversations}}. Revize {{status.modes.revision}}.</p>
         <ConversationCapabilities :capabilities="status.modes.engines" />
-        <label for="operations-persona">Osobnost</label><select id="operations-persona" v-model="status.modes.personalityId" class="aw-select"><option v-for="persona in status.modes.personalities" :key="persona.id" :value="persona.id">{{persona.name}}</option></select>
-        <p>Postava {{status.modes.characterVersion}}. Osobnost a pravidla se uchovávají přes restart; engine se volí při začátku rozhovoru.</p>
-        <label><input v-model="status.modes.characterEnabled" type="checkbox"> Zapnout DV01 pro nové rozhovory</label>
+        <p>DV01 je povinná osobnost kufru. {{status.modes.characterVersion}}. Nové rozhovory používají GPT Live a hlas nastavený na serveru.</p>
         <label for="operations-tone">Hostitelský tón</label><select id="operations-tone" v-model="status.modes.characterTone" class="aw-select"><option>Reserved</option><option>Dry</option><option>Adult</option><option>Chaos</option></select>
         <label for="operations-finale">Publikační profil finále</label><select id="operations-finale" v-model="status.modes.characterFinaleProfile" class="aw-select"><option value="Blocked">Blokované · bez fyzického reveal</option><option value="Limited">Omezené · bez vysloveného názvu hůlky</option></select>
-        <AwButton type="submit" :busy="busy" :disabled="status.modes.activeConversations > 0">Potvrdit změnu osobnosti a postavy</AwButton>
+        <AwButton type="submit" :busy="busy" :disabled="status.modes.activeConversations > 0">Potvrdit změnu tónu a finále DV01</AwButton>
         <AwButton :disabled="busy || status.modes.activeConversations > 0" @click="resetVariety">Resetovat anonymní pestrost</AwButton>
       </form>
       <p v-else>Režimy rozhovoru nejsou v tomto prostředí dostupné.</p>

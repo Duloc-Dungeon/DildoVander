@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using System.Globalization;
 using System.Text;
+using Kufr.Backend.Features.GptLive;
 
 namespace Kufr.Backend.Features.PersonaLab;
 
@@ -8,10 +9,11 @@ internal sealed partial class PersonaLabStore
 {
     internal LabSuite CreateSuite(string owner, LabSuiteRequest request)
     {
+        LabContract.RequireLiveEngine(request.Engine);
         LabContract.ExecutionPlatform(request.ExecutionPlatform);
         LabContract.Text(request.RevisionId, 100);
         LabContract.Text(request.Label, 80);
-        if (!LabContract.Engine(request.Engine) || !LabContract.Fixtures.Any(x => x.Id == request.FixtureId)
+        if (!LabContract.Fixtures.Any(x => x.Id == request.FixtureId)
             || request.ScenarioIds is null || request.ScenarioIds.Length < 1
             || request.ScenarioIds.Length > Math.Min(32, LabContract.Scenarios.Length)
             || request.ScenarioIds.Distinct(StringComparer.Ordinal).Count() != request.ScenarioIds.Length
@@ -21,8 +23,10 @@ internal sealed partial class PersonaLabStore
         {
             using var connection = Open();
             using var transaction = connection.BeginTransaction();
-            if (Read<LabRevision>(connection, "revision", request.RevisionId, transaction) is null)
-            { throw new LabException(404, "lab_revision_not_found"); }
+            var revision = Read<LabRevision>(connection, "revision", request.RevisionId, transaction)
+                ?? throw new LabException(404, "lab_revision_not_found");
+            if (revision.SourceVersion != ActivePersonaVersion || revision.Engine != GptLiveProtocol.Model)
+            { throw new LabException(410, "lab_revision_upgrade_required"); }
             if (List<LabSuite>(connection, "suite", owner, transaction).Length >= 200)
             { throw new LabException(409, "lab_suite_capacity"); }
             var suite = new LabSuite(Guid.NewGuid().ToString("N"), owner, "running", DateTimeOffset.UtcNow,

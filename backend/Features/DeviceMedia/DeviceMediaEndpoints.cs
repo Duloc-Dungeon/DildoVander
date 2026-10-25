@@ -77,13 +77,10 @@ internal static class DeviceMediaEndpoints
             var parsed = DeviceMediaProtocol.ReadOpening(buffer.AsMemory(0, opening.Count));
             CryptographicOperations.ZeroMemory(buffer);
             sink.BindOpening(parsed.Engine, RealtimeProtocol.ReadRequest(parsed.Request)!);
-            // Both transports enter the same sole admission/provider lifecycle;
+            // Device media enters the sole production Live provider lifecycle;
             // the core takes ownership of and zeroes the exact opening bytes.
-            run = parsed.Engine == "gpt-live"
-                ? GptLiveEndpoints.RunWithTransportAsync(id, context, device, key, parsed.Request, sink,
-                    conversations, live, registry, host, decisions, memory, clock)
-                : RealtimeLiveEndpoints.RunWithTransportAsync(id, context, device, key, parsed.Request, sink,
-                    conversations, realtime, registry, host, memory);
+            run = GptLiveEndpoints.RunWithTransportAsync(id, context, device, key, parsed.Request, sink,
+                conversations, live, registry, host, decisions, memory, clock);
             while (!lifetime.IsCancellationRequested)
             {
                 receive = socket.ReceiveAsync(buffer, lifetime.Token);
@@ -171,6 +168,21 @@ internal static class DeviceMediaEndpoints
                 else { throw new InvalidDataException("invalid_media_frame"); }
                 CryptographicOperations.ZeroMemory(buffer.AsSpan(0, message.Count));
             }
+        }
+        catch (InvalidDataException error) when (error.Message == "conversation_engine_upgrade_required")
+        {
+            // A TCP abort can discard the just-written upgrade event on Linux.
+            // No other reader is outstanding before provider admission here.
+            using var close = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            close.CancelAfter(TimeSpan.FromSeconds(2));
+            try
+            {
+                await socket.SendJsonAsync(new { type = "failed", status = 410,
+                    code = "conversation_engine_upgrade_required" }, close.Token);
+                await webSocket.CloseAsync(WebSocketCloseStatus.PolicyViolation,
+                    "conversation_engine_upgrade_required", close.Token);
+            }
+            catch (Exception closed) when (closed is OperationCanceledException or WebSocketException) { }
         }
         catch (Exception error) when (error is JsonException or InvalidDataException or InvalidOperationException
             or FormatException or OverflowException or OperationCanceledException or WebSocketException)

@@ -1,8 +1,8 @@
 import type { DeviceSnapshot } from '../device_connection/FakeDeviceConnection';
-import type { LabSession } from './contracts';
+import { isExecutableDv01Session, type LabSession } from './contracts';
 
 export interface LabHardwareTarget {
-  deviceId: string; bootId: string; revision: number; connectionEpoch: number; mode: 'gpt-live' | 'realtime'; voice: 'cedar' | 'marin' | 'coral';
+  deviceId: string; bootId: string; revision: number; connectionEpoch: number; mode: 'gpt-live'; voice: 'cedar' | 'marin' | 'coral';
 }
 // Technical correlation only. The bearer context never enters observable UI state.
 export async function hardwareContextId(testContext: string): Promise<string> {
@@ -22,11 +22,12 @@ export function hardwareEligibility(session: LabSession | null, snapshot: Device
     || !Number.isSafeInteger(snapshot.revision) || snapshot.revision! < 0 || !Number.isSafeInteger(connectionEpoch) || connectionEpoch! < 0)
     return reject('Chybí shodná identita spárovaného kufru, boot, revize nebo generace spojení.');
   if (!session || session.status !== 'open') return reject('Nejprve připravte otevřené testovací sezení.');
+  if (!isExecutableDv01Session(session)) return reject('Archivované sezení DV01 je pouze ke čtení. Nové testy používají aktuální revizi GPT Live DV01.');
   if (session.hardware) return reject('Toto sezení už má vazbu na skutečný kufr. Pro nový start připravte nové sezení.');
   const voice = session.config.voice;
   if (!['cedar', 'marin', 'coral'].includes(voice)) return reject('Uložený hlas persony není podporovaný tímto kufrem.');
   const target: LabHardwareTarget = { deviceId: identity.deviceId, bootId: identity.bootId, revision: snapshot.revision!, connectionEpoch: connectionEpoch!,
-    mode: session.engine === 'gpt-live-1' ? 'gpt-live' : 'realtime', voice: voice as LabHardwareTarget['voice'] };
+    mode: 'gpt-live', voice: voice as LabHardwareTarget['voice'] };
   if (snapshot.voice?.mode !== target.mode || snapshot.voice.voice !== target.voice)
     return reject('Model nebo hlas kufru se liší od neměnného testovacího snímku. Změna vyžaduje výslovnou akci.', target, snapshot.voice?.canConfigure === true);
   if (!snapshot.voice.canStart || snapshot.busy || snapshot.phase !== 'ready') return reject('Kufr nepotvrdil připravenost pro nový hlasový test.', target);

@@ -13,8 +13,6 @@ const snapshot = device.snapshot;
 const status = debug.status;
 const legacySettings = computed(() => status.value.accessMode === 'legacy-service' || !status.value.accessMode);
 const serverAdminAccess = computed(() => status.value.accessMode === 'legacy-service' || !status.value.accessMode || cloud.administrator.value);
-const personality = ref('');
-const characterEnabled = ref(false);
 const tone = ref('Adult');
 const finale = ref('Blocked');
 const eveningName = ref('');
@@ -32,7 +30,6 @@ watch(device.journalEntries, entries => { if (!journalPaused.value) localEntries
 watch(status, value => {
   if (value.server && value.server.revision !== draftRevision) {
     draftRevision = value.server.revision;
-    personality.value = value.server.personalityId ?? ''; characterEnabled.value = value.server.characterEnabled ?? false;
     tone.value = value.server.characterTone ?? 'Adult'; finale.value = value.server.characterFinaleProfile ?? 'Blocked';
   }
   if (value.evenings) eveningId.value = value.evenings.activeEveningId;
@@ -59,8 +56,8 @@ async function applyModes(character = false, reset = false): Promise<void> {
   const server = status.value.server;
   if (!server || !debug.idle.value || status.value.accessMode === 'account') return;
   await debug.run(() => debugBridge.changeServerModes({ expectedRevision: server.revision,
-    personalityId: character || reset ? server.personalityId : personality.value || undefined,
-    ...(character ? { characterEnabled: characterEnabled.value, characterTone: tone.value, characterFinaleProfile: finale.value } : {}),
+    personalityId: 'dv01', characterEnabled: true,
+    ...(character ? { characterTone: tone.value, characterFinaleProfile: finale.value } : {}),
     resetCharacterVariety: reset }));
 }
 async function createEvening(): Promise<void> {
@@ -109,8 +106,8 @@ watch(level, () => debug.clearLogs());
       <p v-if="status.accessMode === 'account'">Změny režimů a postavy vyžadují správu aplikace, potvrzení a nové ověření účtu. <RouterLink v-if="cloud.administrator.value" to="/settings/admin">Otevřít správu aplikace</RouterLink></p>
       <details><summary>Vývojová servisní obnova · starší profil</summary><p>Oddělená kompatibilita pro vývojáře a obnovu. Běžný provoz používá účet výše. Starší credential se zadává pouze v zabezpečeném nativním dialogu a lze jej odebrat tlačítkem Odpojit diagnostický přístup.</p><AwButton :disabled="!device.native || debug.pending.value || status.running || status.session" @click="configure">Nastavit vývojový servisní profil</AwButton></details>
       <ConversationCapabilities :capabilities="status.engines ?? status.server?.engines" />
-      <fieldset v-if="legacySettings" :disabled="!debug.idle.value || !status.server"><legend>Režimy serveru pro další rozhovory</legend><div class="diagnostic-fields"><label class="aw-field">Personalita<select v-model="personality" class="aw-input"><option value="">Vyberte personalitu</option><option v-for="item in status.server?.personalities" :key="item.id" :value="item.id">{{ item.name }}</option></select></label></div><p>{{ status.server?.personalities?.find(item => item.id === personality)?.description }}</p><AwButton variant="primary" @click="applyModes()">Použít nastavení serveru</AwButton><p class="aw-help">Osobnost a pravidla postavy jsou trvalé; engine vybírá obsluha pro nový rozhovor. Změna používá aktuální revizi, bez automatického opakování.</p></fieldset>
-      <fieldset v-if="legacySettings" :disabled="!debug.idle.value || !status.server"><legend>DV01 · dospělá roast postava</legend><label><input v-model="characterEnabled" type="checkbox"> Zapnout pro nové rozhovory</label><div class="diagnostic-fields"><label class="aw-field">Hostitelský tón<select v-model="tone" class="aw-input"><option>Reserved</option><option>Dry</option><option>Adult</option><option>Chaos</option></select></label><label class="aw-field">Finále<select v-model="finale" class="aw-input"><option value="Blocked">Blokované · bez fyzického reveal</option><option value="Limited">Omezené · bez vysloveného názvu hůlky</option></select></label></div><p>Pojmenované finále a roast fotografie čekají na samostatné ověření. DV01 vyžaduje osobnost Mistr hůlek a režim AutonomousActor. Přepis DV01 se nepřenáší do dalšího hosta.</p><div class="diagnostic-actions"><AwButton @click="applyModes(true)">Použít DV01 pro nové rozhovory</AwButton><AwButton @click="applyModes(false, true)">Resetovat anonymní pestrost</AwButton></div></fieldset>
+      <fieldset v-if="legacySettings" :disabled="!debug.idle.value || !status.server"><legend>Režimy DV01 pro další rozhovory</legend><p>DV01 je povinná osobnost kufru. Nové rozhovory používají GPT Live a hlas nastavený na serveru.</p><AwButton variant="primary" @click="applyModes()">Použít nastavení DV01</AwButton><p class="aw-help">Změna tónu nebo profilu finále se vztahuje na další rozhovory a používá aktuální revizi, bez automatického opakování.</p></fieldset>
+      <fieldset v-if="legacySettings" :disabled="!debug.idle.value || !status.server"><legend>DV01 · dospělá roast postava</legend><p>DV01 je povinná osobnost pro nové rozhovory.</p><div class="diagnostic-fields"><label class="aw-field">Hostitelský tón<select v-model="tone" class="aw-input"><option>Reserved</option><option>Dry</option><option>Adult</option><option>Chaos</option></select></label><label class="aw-field">Finále<select v-model="finale" class="aw-input"><option value="Blocked">Blokované · bez fyzického reveal</option><option value="Limited">Omezené · bez vysloveného názvu hůlky</option></select></label></div><p>Pojmenované finále a roast fotografie čekají na samostatné ověření. Výběr hůlky i fyzické akce zůstávají pod backendem a firmware.</p><div class="diagnostic-actions"><AwButton @click="applyModes(true)">Použít tón a finále DV01</AwButton><AwButton @click="applyModes(false, true)">Resetovat anonymní pestrost</AwButton></div></fieldset>
     </section>
     <PhoneTestPanel v-if="!offlineSession" />
     <GuestMemoryPanel v-if="!offlineSession" />

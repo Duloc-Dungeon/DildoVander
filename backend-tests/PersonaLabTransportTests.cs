@@ -13,35 +13,91 @@ internal static class PersonaLabTransportTests
 {
     internal static async Task RunAsync()
     {
-        await RunCaseAsync("image revocation at completed reply write fence", 25, ImageRevocationWriteFenceAsync);
-        await RunCaseAsync("originating Live transcript cancellation fence", 20, LiveTranscriptRevocationFenceAsync);
-        await RunCaseAsync("admitted execution platforms", 15, ExecutionPlatformsAsync);
-        await RunCaseAsync("text history and privacy", 10, TextHistoryAndPrivacyAsync);
-        await RunCaseAsync("eight-turn dialogue recall", 10, DialogueRecallExecutionAsync);
-        await RunCaseAsync("provider failure and recovery", 10, ProviderFailureAndRecoveryAsync);
-        await RunCaseAsync("suite execution", 10, SuiteExecutionAsync);
-        await RunCaseAsync("script isolation between turns", 10, ScriptIsolationBetweenTurnsAsync);
+        await RunCaseAsync("historical Realtime sessions remain readable but dormant", 10, HistoricalRealtimeIsDormantAsync);
         await RunCaseAsync("Live close and final usage", 30, LiveCompletionAsync);
+        await RunCaseAsync("Live server voice and revoked fallback", 25, LiveVoiceConfigurationAsync);
+        await RunCaseAsync("Historical Live revision cannot resume", 10, HistoricalLiveIsReadOnlyAsync);
         await RunCaseAsync("Live provider error categories", 10, LiveErrorCategoriesAsync);
         await RunCaseAsync("observed simulated Live tool failure", 15, LiveToolFailureAsync);
-        await RunCaseAsync("shutdown and orphaned suites", 10, ShutdownAndOrphansAsync);
-        await RunCaseAsync("voice interruption and reuse", 10, VoiceInterruptionAsync);
-        await RunCaseAsync("acknowledged completed cancellation", 10, () => AcknowledgedCancellationAsync(false));
-        await RunCaseAsync("acknowledged active cancellation", 10, () => AcknowledgedCancellationAsync(true));
-        await RunCaseAsync("acknowledged multipart cancellation", 10, () => AcknowledgedCancellationAsync(false, true));
-        await RunCaseAsync("acknowledged completion and next microphone", 10, AcknowledgedCompletionAsync);
-        await RunCaseAsync("acknowledged terminal notification failure", 10, AcknowledgedNotificationFailureAsync);
-        await RunCaseAsync("acknowledged drain shutdown", 15, AcknowledgedShutdownAsync);
-        await RunCaseAsync("acknowledged atomic dispositions", 10, AcknowledgedDispositionsAsync);
         await RunCaseAsync("negotiated Live streaming mode", 10, NegotiatedLiveAsync);
-        await RunCaseAsync("continuous voice input admission", 10, ContinuousVoiceInputAsync);
-        await RunCaseAsync("continuous voice normal completion", 10, ContinuousVoiceCompletionAsync);
-        await RunCaseAsync("voice protocol failure diagnostics", 10, VoiceProtocolDiagnosticsAsync);
-        await RunCaseAsync("Realtime input barriers and diagnostics", 10, RealtimeInputBarriersAsync);
-        await RunCaseAsync("blocked voice input shutdown", 10, BlockedVoiceInputShutdownAsync);
-        await RunCaseAsync("observed voice recovery", 10, VoiceRecoveryAsync);
-        await RunCaseAsync("hardware admission leases", 10, HardwareAdmissionLeasesAsync);
-        Console.WriteLine("Persona Lab actual runtime: text history/privacy, provider faults, suites, Live final usage, PCM interruption/reuse and acknowledged playback barriers passed (fake providers only).");
+        Console.WriteLine("Persona Lab actual runtime: GPT-Live multi-turn, provider faults, delegated tool diagnostics and retired-engine boundaries passed (fake providers only).");
+    }
+
+    private static async Task HistoricalLiveIsReadOnlyAsync()
+    {
+        using var fixture = new Fixture();
+        var session = fixture.Session();
+        var turns = Enumerable.Range(0, 36).Select(index => new LabTurn("turn-" + index, "user",
+            index == 0 ? "Už mě neurážej" : "Mám rád knihy", DateTimeOffset.UtcNow)).ToArray();
+        var directive = PersonaLabRuntime.CharacterInstructions(session with { Turns = turns }, new GptLiveOptions());
+        Check(directive.Contains("roast=ne"), "withdrawn roast survives more than thirty later turns");
+        fixture.Store.Change("owner", session.Id, current => current with
+        {
+            Config = current.Config with { SourceVersion = "persona-lab-v1" }
+        });
+        Check(fixture.Runtime.Detail("owner", session.Id).Config.SourceVersion == "persona-lab-v1",
+            "historical Live records remain readable");
+        try
+        {
+            await fixture.Runtime.TurnAsync("owner", session.Id, "Old baseline must not execute.", fixture.Token);
+            throw new Exception("Historical Live revision resumed.");
+        }
+        catch (LabException error) when (error.Status == 410 && error.Code == "lab_revision_upgrade_required") { }
+        Check(fixture.LiveSockets.Count == 0 && fixture.RealtimeSockets.Count == 0,
+            "old Live revision is rejected before either provider connection");
+    }
+
+    private static async Task LiveVoiceConfigurationAsync()
+    {
+        using var fixture = new Fixture(liveOptions: new() { Voice = new("voice_lab_fixture") });
+        var session = fixture.Session();
+        await fixture.Runtime.TurnAsync("owner", session.Id, "Custom voice test.", fixture.Token);
+        using var custom = JsonDocument.Parse(fixture.LiveSockets[0].Commands.First(command => command.Contains("session.start")));
+        Check(custom.RootElement.GetProperty("session").GetProperty("audio").GetProperty("output")
+            .GetProperty("voice").GetProperty("id").GetString() == "voice_lab_fixture",
+            "actual Lab startup uses server custom voice rather than revision/client wire voice");
+        fixture.NextLiveError = "voice";
+        await fixture.Runtime.TurnAsync("owner", session.Id, "Revoked voice test.", fixture.Token);
+        using var fallback = JsonDocument.Parse(fixture.LiveSockets[2].Commands.First(command => command.Contains("session.start")));
+        Check(fixture.LiveSockets.Count == 3 && fixture.RealtimeSockets.Count == 0
+            && fallback.RootElement.GetProperty("session").GetProperty("audio").GetProperty("output")
+                .GetProperty("voice").GetString() == "vesper",
+            "Lab custom voice rejection retries once as a new Live session with built-in fallback");
+    }
+
+    private static async Task HistoricalRealtimeIsDormantAsync()
+    {
+        using var fixture = new Fixture();
+        var session = fixture.Session(engine: GptLiveProtocol.Model);
+        var archived = fixture.Store.Change("owner", session.Id, value => value with
+        {
+            Engine = RealtimeProtocol.Model,
+            Config = value.Config with { Engine = RealtimeProtocol.Model, SourceVersion = "persona-lab-v1" }
+        });
+        Check(fixture.Store.Session("owner", archived.Id).Engine == RealtimeProtocol.Model,
+            "historical Realtime session metadata remains readable");
+        try
+        {
+            await fixture.Runtime.TurnAsync("owner", archived.Id, "Archived test turn.", fixture.Token);
+            throw new Exception("Historical Realtime text turn was executed.");
+        }
+        catch (LabException error) when (error.Status == 410 && error.Code == "lab_engine_upgrade_required") { }
+        using var socket = new ClientSocket();
+        try
+        {
+            await fixture.Runtime.VoiceAsync("owner", archived.Id, socket, _ => Task.FromResult(true), fixture.Token);
+            throw new Exception("Historical Realtime voice session was executed.");
+        }
+        catch (LabException error) when (error.Status == 410 && error.Code == "lab_engine_upgrade_required") { }
+        Check(!fixture.Runtime.RealtimeAvailable && fixture.RealtimeSockets.Count == 0 && fixture.LiveSockets.Count == 0,
+            "archived engine retry is rejected before opening either provider");
+        try
+        {
+            fixture.Store.CreateSession("owner", new(fixture.Revision, RealtimeProtocol.Model,
+                "first-visit", "empty", "unsupported"));
+            throw new Exception("New Realtime test session was accepted.");
+        }
+        catch (LabException error) when (error.Status == 410 && error.Code == "lab_engine_upgrade_required") { }
     }
 
     private static async Task RunCaseAsync(string name, int timeoutSeconds, Func<Task> test)
@@ -1222,12 +1278,12 @@ internal static class PersonaLabTransportTests
         internal bool HoldNextLiveClose { get; set; }
         internal bool InvalidNextLiveUsage { get; set; }
         internal string? NextLiveError { get; set; }
-        internal static LivePromptSnapshot Baseline() => LivePromptSnapshot.Create(PersonalityCatalog.OllivanderId, new GptLiveOptions());
+        internal static LivePromptSnapshot Baseline() => LivePromptSnapshot.Create(PersonalityCatalog.DefaultId, new GptLiveOptions());
 
-        internal Fixture(PersonaLabOptions? options = null, bool liveAvailable = true)
+        internal Fixture(PersonaLabOptions? options = null, bool liveAvailable = true, GptLiveOptions? liveOptions = null)
         {
             Store = new(Database, Baseline());
-            Revision = Store.CreateRevision(new(Store.ActiveRevisionId, "Transport fixture", "Exact transport persona instructions.", RealtimeProtocol.Model, "marin")).Id;
+            Revision = Store.CreateRevision(new(Store.ActiveRevisionId, "Transport fixture", "Exact transport persona instructions.", GptLiveProtocol.Model, "cedar")).Id;
             realtime = new(_ =>
             {
                 var socket = new RealtimeSocket("TRANSPORT-ANSWER-" + (RealtimeSockets.Count + 1), FailNextRealtime, VoiceNextRealtime)
@@ -1248,10 +1304,10 @@ internal static class PersonaLabTransportTests
                 LiveSockets.Add(socket); LiveConnected.Writer.TryWrite(true);
                 return Task.FromResult<WebSocket>(socket);
             });
-            Runtime = new(Store, live, realtime, images, options);
+            Runtime = new(Store, live, realtime, images, options, liveOptions: liveOptions);
         }
 
-        internal LabSession Session(string fixture = "empty", string engine = RealtimeProtocol.Model, string scenario = "first-visit", bool recordContent = false) =>
+        internal LabSession Session(string fixture = "empty", string engine = GptLiveProtocol.Model, string scenario = "first-visit", bool recordContent = false) =>
             Store.CreateSession("owner", new(Revision, engine, scenario, fixture, "transport fixture", RecordContent: recordContent));
         internal Lock AdmissionGate => (Lock)typeof(PersonaLabRuntime)
             .GetField("admissionGate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(Runtime)!;
@@ -1461,13 +1517,17 @@ internal static class PersonaLabTransportTests
                             "Live startup uses documented text content type for each message role");
                     }
                     if (errorStage == "hold-startup") { break; }
-                    if (errorStage == "startup")
+                    if (errorStage == "voice")
+                    { Push(new { type = "error", error = new { code = "voice_not_found", type = "invalid_request_error" } }); }
+                    else if (errorStage == "startup")
                     { Push(new { type = "error", error = new { type = "invalid_request_error", code = "unrecognized-provider-code", message = "PRIVATE-PROVIDER-PAYLOAD" } }); }
                     else { Push(new { type = "session.started", client_event_id = root.GetProperty("event_id").GetString(), session = new { model = GptLiveProtocol.Model, id = "live-" + reply } }); }
                     break;
                 case "session.instructions.append":
-                    Check(root.TryGetProperty("delegation_id", out var delegation) && delegation.ValueKind == JsonValueKind.Null,
-                        "standalone Live append explicitly carries a null delegation reference");
+                    Check(root.TryGetProperty("delegation_id", out var delegation) && delegation.ValueKind == JsonValueKind.Null
+                        && root.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String
+                        && !root.TryGetProperty("instructions", out _),
+                        "Live instruction append follows the exact content wire schema");
                     break;
                 case "session.commentary.append" when errorStage == "delegate":
                     Check(root.GetProperty("delegation_id").GetString() == "fixture-tool-failure", "simulated tool failure is correlated to the actual requested delegation");

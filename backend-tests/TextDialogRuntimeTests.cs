@@ -135,7 +135,7 @@ internal static class TextDialogRuntimeTests
             {
                 1 => new TextDialogResponse("Jaký trapas má magie napravit?", "ask", "", null,
                     ResponsesTextDialogBudget.Model, 100, 20, "default"),
-                2 or 3 or 4 => new TextDialogResponse("Jaký druh magie?", "ask", "", null,
+                2 => new TextDialogResponse("Jaký druh magie?", "ask", "", null,
                     ResponsesTextDialogBudget.Model, 200, 20, "default"),
                 _ => new TextDialogResponse("Třpyt a chaos? Hůlka dvě tě zvládne líp než ty svůj plán.",
                     "propose", "Třpyt a chaos", 2,
@@ -149,7 +149,7 @@ internal static class TextDialogRuntimeTests
             new CreateConversationRequest("device-a", boot, 0, "neutral-1", "cs-CZ",
                 new ConversationConsent(false, false)));
         var conversationId = created.Response!.ConversationId;
-        var answers = new[] { "Chci hůlku.", "Třpyt.", "Chaos.", "S kamarády.", "Petr." };
+        var answers = new[] { "Chci hůlku.", "Třpyt.", "Chaos." };
         for (var index = 0; index < answers.Length; index++)
         {
             var request = new TextTurnRequest(Guid.NewGuid(), boot, 0, answers[index], 2, 7,
@@ -159,10 +159,10 @@ internal static class TextDialogRuntimeTests
             Require(accepted.OperationId is not null, "multi-turn request was accepted");
             var operation = await PollAsync(store, runner, accepted.OperationId!, "completed");
             var result = (TurnResult)operation.Result!;
-            if (index < ResponsesTextDialogBudget.MinimumQuestions)
+            if (index < PersonalityCatalog.MinimumQuestions(PersonalityCatalog.DefaultId))
             {
                 Require(result.Decision == "ask" && result.Proposal is null,
-                    "four completed questions precede any proposal");
+                    "two completed DV01 questions precede a proposal");
             }
             else
             {
@@ -171,19 +171,19 @@ internal static class TextDialogRuntimeTests
                     && proposal.ConversationId == conversationId
                     && proposal.TurnId == request.ClientTurnId
                     && proposal.DeviceRevision == request.DeviceRevision,
-                    "fifth turn may publish a correlated proposal");
+                    "third turn may publish a correlated proposal");
             }
         }
 
-        Require(seenHistory.Count == 5
+        Require(seenHistory.Count == 3
             && seenHistory[0].Length == 0
             && seenHistory[1].Length == 1
             && seenHistory[1][0].Reply.Contains("trapas", StringComparison.Ordinal)
             && seenHistory[2].Length == 2
             && seenHistory[2][1].VisitorText == "Třpyt.",
             "provider receives completed question and answer pairs in order");
-        Require(requiredQuestions.SequenceEqual(new[] { true, true, true, true, false }),
-            "only first four turns require a model-generated question");
+        Require(requiredQuestions.SequenceEqual(new[] { true, true, false }),
+            "DV01 requires model-generated questions for the first two turns only");
         Require(store.EndConversation("device-a", conversationId, Guid.NewGuid()).Status == 204,
             "ending conversation discards its RAM history");
         var next = store.Create("device-a", Guid.NewGuid(), "next"u8,

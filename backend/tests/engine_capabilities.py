@@ -1,6 +1,6 @@
-"""Validate the versioned two-engine diagnostic contract without inference."""
+"""Validate the versioned Live-only diagnostic contract without inference."""
 
-MODELS = {"gpt-live": "gpt-live-1", "realtime": "gpt-realtime-2.1"}
+MODELS = {"gpt-live": "gpt-live-1"}
 
 
 def require(condition, label):
@@ -12,7 +12,7 @@ def validate_engine_capabilities(value, *, require_ready=False):
     require(isinstance(value, dict) and type(value.get("schemaVersion")) is int and value.get("schemaVersion") == 1
             and value.get("primaryEngine") == "gpt-live", "engine_contract_version")
     engines = value.get("engines")
-    require(isinstance(engines, list) and len(engines) == 2, "engine_inventory")
+    require(isinstance(engines, list) and len(engines) == 1, "engine_inventory")
     require(all(isinstance(engine, dict) for engine in engines), "engine_inventory")
     require(all(isinstance(engine.get("engine"), str) for engine in engines), "engine_inventory")
     require({engine.get("engine") for engine in engines} == set(MODELS), "engine_inventory")

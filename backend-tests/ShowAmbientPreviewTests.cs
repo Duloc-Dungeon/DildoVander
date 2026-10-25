@@ -26,6 +26,7 @@ internal static class ShowAmbientPreviewTests
 
     internal static async Task RunAsync()
     {
+        await ConfiguredPreviewRequiresLiveAsync();
         await OneClaimAndUnchangedShowAsync();
         await UnavailableFailureAndCancellationAsync();
         await RetentionCapacityAndRestartAsync();
@@ -45,6 +46,18 @@ internal static class ShowAmbientPreviewTests
         var endpoints = ((Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)app).DataSources
             .SelectMany(source => source.Endpoints).ToArray();
         Check(endpoints.Length >= 5, "Show route metadata does not infer preview as an additional body when an unrelated host omits its registration");
+    }
+
+    private static Task ConfiguredPreviewRequiresLiveAsync()
+    {
+        using var fixture = new Fixture();
+        using var productionPreview = new ShowAmbientPreview(fixture.Configuration, fixture.Journal,
+            fixture.Voice, fixture.Clock);
+        var result = productionPreview.Start(Device, Guid.NewGuid());
+        Check(result.StatusCode == 503 && result.Response.Code == "gpt_live_required"
+            && fixture.Calls == 0 && fixture.Sql("SELECT count(*) FROM turn_operations") == 0,
+            "normal configured preview reports GPT-Live requirement without reserving or calling standalone TTS");
+        return Task.CompletedTask;
     }
 
     private static async Task OneClaimAndUnchangedShowAsync()
@@ -318,7 +331,7 @@ internal static class ShowAmbientPreviewTests
                 return (await Audio.Task.WaitAsync(token)).ToArray();
             }, Stopping.Token);
             Voice = new ShowSpeechProvider(Runner);
-            Preview = new ShowAmbientPreview(Configuration, Journal, Voice, Clock);
+            Preview = new ShowAmbientPreview(Configuration, Journal, Voice, Clock, allowConfiguredTestProvider: true);
         }
 
         internal long Sql(string sql)
