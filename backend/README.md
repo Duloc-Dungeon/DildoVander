@@ -16,6 +16,8 @@ to the canonical URL and retains its `KUFR_BACKEND_URL` override.
 postavy přihlášeným účtům, verzované instrukce, hodnocení a diagnostiku obou
 podporovaných hlasových enginů.
 
+[Opt-in OpenTelemetry tracing](../docs/honeycomb-tracing.md) is server-only and content-free by default.
+
 ## Show Pack
 
 [Provoz a společné kontrakty](../docs/show-pack.md) rozšiřují současné DV01/DV10,

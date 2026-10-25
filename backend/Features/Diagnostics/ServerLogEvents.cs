@@ -9,6 +9,12 @@ internal static class ServerLogEvents
     {
         context.TraceIdentifier = Guid.NewGuid().ToString();
         context.Response.Headers["X-Request-Id"] = context.TraceIdentifier;
+        // Preserve the old request GUID; W3C trace IDs have a different format.
+        if (Activity.Current is { } span && span.TraceId != default)
+        {
+            span.SetTag("app.request_id", context.TraceIdentifier);
+            context.Response.Headers["X-Trace-Id"] = span.TraceId.ToHexString();
+        }
         var start = Stopwatch.GetTimestamp();
         string? failure = null;
         try { await next(context); }

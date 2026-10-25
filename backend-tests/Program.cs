@@ -19,6 +19,7 @@ if (args is ["--testing-enrichment-queue"]) { await TestingSessionsTests.RunOpti
 if (args is ["--testing-character-race"]) { await TestingCharacterRaceTests.RunAsync(); return; }
 if (args is ["--testing-diagnostics"]) { await TestingDiagnosticsTests.RunAsync(); return; }
 if (args is ["--server-logs"]) { ServerLogTests.Run(); return; }
+if (args is ["--observability"]) { ObservabilityTests.Run(); return; }
 if (args is ["--wand-artwork"]) { await WandArtworkTests.RunAsync(); return; }
 if (args is ["--generated-wands"]) { await WandGenerationTests.RunAsync(); await GeneratedWandFlowTests.RunAsync(); await WandArtworkTests.RunAsync(); return; }
 if (args is ["--customer-data-browser-fixture"]) { await AccountIdentityTests.RunCustomerDataBrowserFixtureAsync(); return; }
@@ -218,6 +219,7 @@ await EveningMemoryTests.RunAsync();
 await VoiceProviderTests.RunAsync();
 ServerModeTests.Run();
 ServerLogTests.Run();
+ObservabilityTests.Run();
 
 var clock = new AdjustableTimeProvider(new DateTimeOffset(2026, 9, 29, 10, 0, 0, TimeSpan.Zero));
 var databaseDirectory = Path.Combine(Path.GetTempPath(), $"kufr-backend-tests-{Guid.NewGuid():N}");

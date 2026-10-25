@@ -1,4 +1,5 @@
 using Kufr.Backend.Features.GptLive;
+using Kufr.Backend.Features.Observability;
 using Kufr.Backend.Features.DeviceMedia;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.ModelReleases;
@@ -40,6 +41,7 @@ if (accountProvisioning)
     Environment.ExitCode = await AccountProvisioning.RunAsync(accountApp, args);
     return;
 }
+builder.Services.AddBackendTelemetry(builder.Configuration, builder.Environment);
 builder.Services.AddModelReleases(builder.Configuration);
 builder.Services.AddSingleton(TimeProvider.System);
 var showOrigins = builder.Configuration.GetSection("Show:AllowedOrigins").Get<string[]>() ?? [];
