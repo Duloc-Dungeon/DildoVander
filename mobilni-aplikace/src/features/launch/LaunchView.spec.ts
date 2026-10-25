@@ -90,9 +90,10 @@ it('never carries another account’s AI consent or late mutation error into the
 
 it('shows the admin opening text, then a recognized-character update without leaking final text early', async () => {
   let researched = false;
+  let generatedMessage = false;
   api.request.mockImplementation(async (path: string) => path === '/app/v1/launch' ? waitingPolicy() : {
     character: { profileId: 'profile', revision: 1, name: 'Archivář', universe: 'Město za zrcadlem', status: researched ? 'ready' : 'running' },
-    artwork: { status: researched ? 'running' : 'queued', loadingMessage: researched ? 'Archiváři, katalog právě odmítl evidovat tvé ego.' : null, finalMessage: 'UNRELEASED FINAL TEXT' },
+    artwork: { status: researched ? 'running' : 'queued', loadingMessage: generatedMessage ? 'Archiváři, katalog právě odmítl evidovat tvé ego.' : null, finalMessage: 'UNRELEASED FINAL TEXT' },
   });
   const view = entry();
   try {
@@ -100,6 +101,12 @@ it('shows the admin opening text, then a recognized-character update without lea
     expect(view.get('.launch-status').text()).toBe('Olivander má kocovinu.');
     expect(view.text()).not.toContain('UNRELEASED FINAL TEXT');
     researched = true;
+    await vi.advanceTimersByTimeAsync(5000);
+    await flushPromises();
+    expect(view.get('.launch-status').text()).toContain('Archivář ze světa „Město za zrcadlem“');
+    expect(view.get('.launch-status').text()).toContain('portrét už malujeme');
+    expect(view.text()).not.toContain('UNRELEASED FINAL TEXT');
+    generatedMessage = true;
     await vi.advanceTimersByTimeAsync(5000);
     await flushPromises();
     expect(view.get('.launch-status').text()).toContain('katalog právě odmítl evidovat tvé ego');

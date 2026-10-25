@@ -130,7 +130,14 @@ try {
   await page.getByRole('combobox', { name: 'Interface language' }).selectOption('cs');
   await page.setViewportSize({ width: 390, height: 844 });
   character.status = 'ready';
-  artwork = { status: 'running', loadingMessage: 'Matyldo, město za zrcadlem nám poslalo tvůj spis. Zrcadla požádala o přestávku.', finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
+  artwork = { status: 'running', loadingMessage: null, finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByText(/portrét už malujeme/).waitFor();
+  const fallbackLoading = await page.locator('.launch-status').innerText();
+  assert.ok(fallbackLoading.includes(character.name) && fallbackLoading.includes(character.universe));
+  assert.equal(await page.getByText('NEVER SHOW BEFORE READY').count(), 0);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-loading-fallback.png'), fullPage: true });
+  artwork.loadingMessage = 'Matyldo, město za zrcadlem nám poslalo tvůj spis. Zrcadla požádala o přestávku.';
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByText(/Zrcadla požádala o přestávku/).waitFor();
   assert.equal(await page.getByText('NEVER SHOW BEFORE READY').count(), 0);

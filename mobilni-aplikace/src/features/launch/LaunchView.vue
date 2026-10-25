@@ -75,8 +75,18 @@ const timeParts = computed(() => {
   return [Math.floor(total / 86400), Math.floor(total / 3600) % 24, Math.floor(total / 60) % 60, total % 60];
 });
 const hasPortrait = computed(() => !!portrait.url.value);
-const loadingMessage = computed(() => (policy.value?.personalizedLoadingEnabled ? state.value?.artwork?.loadingMessage : null)
-  || policy.value?.initialLoadingMessage || copy.value.loading);
+const loadingMessage = computed(() => {
+  const character = state.value?.character;
+  const artwork = state.value?.artwork;
+  if (policy.value?.personalizedLoadingEnabled) {
+    if (artwork?.loadingMessage) return artwork.loadingMessage;
+    if (character?.status === 'ready' && ['queued', 'running'].includes(artwork?.status ?? '')) {
+      return copy.value.knownCharacterLoading.replace(/\{\{(name|world)\}\}/g,
+        (_match, field: string) => field === 'name' ? character.name : character.universe);
+    }
+  }
+  return policy.value?.initialLoadingMessage || copy.value.loading;
+});
 const finalMessage = computed(() => state.value?.artwork?.finalMessage
   || copy.value.finalFallback.replace('{{name}}', state.value?.character?.name ?? ''));
 const phase = computed(() => {

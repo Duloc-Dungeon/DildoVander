@@ -218,6 +218,7 @@ await AccountIdentityTests.RunTestingSessionHttpAsync();
 await TestingSessionsTests.RunAsync();
 await PersonalityTests.RunAsync();
 await AutonomousLiveTests.RunAsync();
+await CaseVoiceAsideTests.RunAsync();
 await HybridMemoryTests.RunAsync();
 await MemoryCapacityTests.RunAsync();
 await TonightMemoryStatusTests.RunAsync();
