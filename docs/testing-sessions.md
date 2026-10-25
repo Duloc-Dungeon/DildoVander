@@ -90,8 +90,15 @@ in Sezení after refresh or application restart; the URL retains the session ide
 
 Text is the default. It calls the real backend/Live or Realtime provider adapter
 without creating an AudioContext, opening capture, or requesting microphone
-permission. Voice is explicit and reuses the existing LabVoice audio integration.
-Hybrid allows typed turns on that voice transport. Text/voice reconnection uses
+permission. The conversation step also exposes the input-mode selector, so an
+existing text conversation can switch to **Živý mikrofon — GPT Live / Realtime**.
+Voice is explicit and reuses the existing LabVoice audio integration. Starting
+the microphone enables assistant playback for a two-way conversation, with
+streamed audio, partial transcripts and listening/waiting/speaking status.
+Stop releases capture; switching to text preserves the stored conversation.
+Hybrid also exposes typed input. Sending a typed message retires microphone
+capture before using the text or spoken-text transport; starting the microphone
+again is explicit. Text/voice reconnection uses
 actual persisted turns and the same character and isolated memory context.
 Provider-session continuity is preserved within an active supported socket;
 changing transport reconstructs from the canonical retained history, not a
