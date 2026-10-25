@@ -6,7 +6,7 @@ import { launchAllowed } from '../../application/launchAccess';
 <template>
   <article class="page-stack information-page" aria-labelledby="privacy-title">
     <template v-if="launchAllowed !== true">
-      <p class="eyebrow">DildoVander</p>
+      <p class="eyebrow">Wand Night Stand</p>
       <h1 id="privacy-title">Soukromí před spuštěním</h1>
       <p>Tato pozvánková fáze zahrnuje účet, přípravu fiktivní postavy a její portrét.</p>
       <section>
@@ -23,11 +23,11 @@ import { launchAllowed } from '../../application/launchAccess';
       </section>
       <section>
         <h2>Kontakt</h2>
-        <p>Otázky k soukromí: <a href="mailto:support@dildovander.de?subject=DildoVander%20%E2%80%93%20privacy">support@dildovander.de</a>. Další pomoc najdete na stránce <RouterLink to="/support">podpory</RouterLink>.</p>
+        <p>Otázky k soukromí: <a href="mailto:support@dildovander.de?subject=Wand%20Night%20Stand%20%E2%80%93%20privacy">support@dildovander.de</a>. Další pomoc najdete na stránce <RouterLink to="/support">podpory</RouterLink>.</p>
       </section>
     </template>
     <template v-else>
-    <p class="eyebrow">Wand Night Stand · DildoVander</p>
+    <p class="eyebrow">Wand Night Stand</p>
     <h1 id="privacy-title">{{ customerCopy.text('privacy.title') }}</h1>
     <p>{{ customerCopy.text('privacy.updated') }}</p>
 

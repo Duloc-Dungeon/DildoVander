@@ -248,7 +248,7 @@ describe('hardware-free testing journey', () => {
       voiceObserver.transcript('assistant', `Průběžná odpověď ${index}`);
       voiceObserver.phase('speaking'); await flushPromises();
       expect(wrapper.get('.testing-conversation [role="status"]').text()).toContain('přehrává průběžně');
-      expect(wrapper.findAll('.testing-partial').map(item => item.text())).toEqual([`Vy · Živá otázka ${index}`, `DildoVander · Průběžná odpověď ${index}`]);
+      expect(wrapper.findAll('.testing-partial').map(item => item.text())).toEqual([`Vy · Živá otázka ${index}`, `Wand Night Stand · Průběžná odpověď ${index}`]);
       for (const role of ['user', 'assistant'] as const) {
         voiceObserver.turn({ id: `${role}-${index}`, role, text: `${role} ${index}`, createdAt: '2026-10-25T10:00:00Z' });
       }

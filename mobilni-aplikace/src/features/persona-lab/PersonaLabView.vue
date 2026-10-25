@@ -51,7 +51,7 @@ function measured(value: number | null | undefined, unit = ''): string { return 
 const fixture = computed(() => lab.catalog?.memoryFixtures.find(item => item.id === lab.fixtureId));
 const scenario = computed(() => lab.catalog?.scenarios.find(item => item.id === lab.scenarioId));
 const selectedScenario = computed(() => lab.selected?.scenarioSnapshot ?? lab.catalog?.scenarios.find(item => item.id === lab.selected?.scenarioId));
-const phaseLabels = { idle: 'Připraveno', connecting: 'Připojuji hlas…', waiting: 'Čekám na připravenost modelu', listening: 'Mikrofon aktivní · naslouchám', speaking: 'DildoVander mluví', ended: 'Hlas ukončen', error: 'Hlas přerušen' };
+const phaseLabels = { idle: 'Připraveno', connecting: 'Připojuji hlas…', waiting: 'Čekám na připravenost modelu', listening: 'Mikrofon aktivní · naslouchám', speaking: 'Wand Night Stand mluví', ended: 'Hlas ukončen', error: 'Hlas přerušen' };
 const diff = computed(() => {
   const base = lab.configRevision;
   if (!base) return [];
@@ -187,13 +187,13 @@ function selectExisting(event: Event): void {
               <div class="lab-transcript" aria-label="Tahy rozhovoru" tabindex="0">
                 <p v-if="!lab.selected.turns.length && !lab.partial.user && !lab.partial.assistant" class="lab-empty">{{ lab.selectedEngineReady ? 'Začněte textem nebo spusťte hlas. Žádná odpověď zatím nevznikla.' : 'Archivované sezení nemá uložené tahy.' }}</p>
                 <article v-for="(turn, index) in lab.selected.turns" :key="turn.id" :class="['lab-turn', `lab-turn--${turn.role}`]">
-                  <header><strong>{{ turn.role === 'user' ? 'Vy' : 'DildoVander' }}</strong><a :href="`#lab-turn-${turn.id}`" @click="section = 'evaluation'">Tah {{ index + 1 }}</a></header>
+                  <header><strong>{{ turn.role === 'user' ? 'Vy' : 'Wand Night Stand' }}</strong><a :href="`#lab-turn-${turn.id}`" @click="section = 'evaluation'">Tah {{ index + 1 }}</a></header>
                   <p>{{ turn.text || 'Obsah tohoto tahu nebyl archivován.' }}</p>
                   <small v-if="turn.latencyMs != null">Odezva {{ turn.latencyMs }} ms</small>
                   <small v-if="turn.decision">Simulované rozhodnutí: {{ turn.decision }}<template v-if="turn.compartment"> · přihrádka {{ turn.compartment }}</template></small>
                 </article>
                 <article v-if="lab.partial.user" class="lab-turn lab-turn--user"><strong>Vy · průběžný přepis</strong><p>{{ lab.partial.user }}</p></article>
-                <article v-if="lab.partial.assistant" class="lab-turn"><strong>DildoVander · průběžná odpověď</strong><p>{{ lab.partial.assistant }}</p></article>
+                <article v-if="lab.partial.assistant" class="lab-turn"><strong>Wand Night Stand · průběžná odpověď</strong><p>{{ lab.partial.assistant }}</p></article>
               </div>
               <div v-if="lab.selected.status === 'open'" class="lab-actions">
                 <AwButton v-if="lab.selectedEngineReady && !lab.simulationBlocked && !lab.voiceActive && (lab.voicePhase !== 'error' || lab.manualVoiceRestart)" :disabled="!lab.providerConsent || lab.busy || lab.recoveryPending || !lab.online || !lab.catalog?.capabilities.voice" @click="lab.startVoice()">Spustit hlas</AwButton>
@@ -288,7 +288,7 @@ function selectExisting(event: Event): void {
           <div class="lab-metrics"><fieldset v-for="[key, title] in metrics" :key="key" class="aw-card"><legend>{{ title }}</legend><div class="lab-score"><label v-for="score in 5" :key="score"><input v-model="lab.scores[key]" type="radio" :name="`lab-score-${key}`" :value="score" /><span>{{ score }}</span></label></div></fieldset></div>
           <AwField id="lab-evaluation-comment" label="Celkový komentář" hint="Co zachovat a co změnit v další verzi?"><textarea class="aw-input" id="lab-evaluation-comment" v-model="lab.comment" rows="3" maxlength="4000" /></AwField>
           <details open><summary>Komentáře k přesným tahům ({{ lab.selected.turns.length }})</summary>
-            <article v-for="(turn, index) in lab.selected.turns" :id="`lab-turn-${turn.id}`" :key="turn.id" class="lab-turn"><strong>Tah {{ index + 1 }} · {{ turn.role === 'user' ? 'Vy' : 'DildoVander' }}</strong><p>{{ turn.text || 'Přepis tohoto tahu nebyl uložen.' }}</p><AwField :id="`lab-comment-${turn.id}`" :label="`Komentář k tahu ${index + 1}`"><textarea class="aw-input" :id="`lab-comment-${turn.id}`" v-model="lab.turnComments[turn.id]" rows="2" maxlength="1000" /></AwField><small class="lab-muted">{{ turn.id }}</small></article>
+            <article v-for="(turn, index) in lab.selected.turns" :id="`lab-turn-${turn.id}`" :key="turn.id" class="lab-turn"><strong>Tah {{ index + 1 }} · {{ turn.role === 'user' ? 'Vy' : 'Wand Night Stand' }}</strong><p>{{ turn.text || 'Přepis tohoto tahu nebyl uložen.' }}</p><AwField :id="`lab-comment-${turn.id}`" :label="`Komentář k tahu ${index + 1}`"><textarea class="aw-input" :id="`lab-comment-${turn.id}`" v-model="lab.turnComments[turn.id]" rows="2" maxlength="1000" /></AwField><small class="lab-muted">{{ turn.id }}</small></article>
             <p v-if="!lab.selected.turns.length">Komentáře k tahům budou dostupné po skutečné odpovědi modelu.</p>
           </details>
           <AwButton type="submit" variant="primary" :busy="lab.busy" :disabled="!lab.validEvaluation || !lab.selected.turns.length || lab.voiceActive">Uložit hodnocení</AwButton>

@@ -19,7 +19,7 @@ export async function createBattleSummary(view: Duel, artwork: { left: string; r
     if (line) ctx.fillText(line, x, y + row * lineHeight, width);
   };
   ctx.fillStyle = colors.background; ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.textAlign = 'center'; ctx.fillStyle = colors.muted; ctx.font = '600 22px Inter, sans-serif'; ctx.fillText('DildoVander · Souboj postav', 500, 65);
+  ctx.textAlign = 'center'; ctx.fillStyle = colors.muted; ctx.font = '600 22px Inter, sans-serif'; ctx.fillText('Wand Night Stand · Souboj postav', 500, 65);
   const winner = view.result.leftPoints === view.result.rightPoints ? 'Remíza' : `${view[view.result.leftPoints > view.result.rightPoints ? 'left' : 'right'].displayName} vítězí!`;
   ctx.fillStyle = colors.text; ctx.font = '700 42px Inter, sans-serif'; lines(winner, 500, 132, 880, 48, 2);
   ctx.fillStyle = colors.accent; ctx.font = '700 78px Inter, sans-serif'; ctx.fillText(`${view.result.leftPoints} : ${view.result.rightPoints}`, 500, 250);

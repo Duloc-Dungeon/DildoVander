@@ -1,53 +1,43 @@
 // Original project artwork, AGPL-3.0-only. No downloaded image or font is used.
 // Run after Capacitor sync and before compiling the native asset catalog.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const palette = await readFile(resolve(mobileRoot, '../design-system/tokens/palette.css'), 'utf8');
-const output = resolve(mobileRoot, 'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png');
+const assetCatalog = resolve(mobileRoot, 'ios/App/App/Assets.xcassets');
+const appIconOutput = resolve(assetCatalog, 'AppIcon.appiconset/AppIcon-512@2x.png');
+const launchImageSet = resolve(assetCatalog, 'BrandLaunch.imageset');
+const launchOutput = resolve(launchImageSet, 'BrandLaunch.png');
+const launchMetadata = resolve(launchImageSet, 'Contents.json');
 const size = 1024;
 
-function color(token, visited = []) {
-  if (visited.includes(token)) throw new Error(`Circular Vapour Chrome color: ${[...visited, token].join(' -> ')}`);
-  // The first declaration is the offline-safe dark theme. Native icons remain
-  // fixed artwork, independent of the appearance selected inside the app.
-  const declaration = palette.match(new RegExp(`--aw-${token}:\\s*([^;]+);`, 'i'));
-  if (!declaration) throw new Error(`Missing Vapour Chrome color: ${token}`);
-  const value = declaration[1].trim();
-  const reference = value.match(/^var\(--aw-([a-z0-9-]+)\)$/i);
-  if (reference) return color(reference[1], [...visited, token]);
-  const hex = value.match(/^#([0-9a-f]{6})$/i);
-  if (!hex) throw new Error(`Unsupported Vapour Chrome color: ${token}`);
-  return [0, 2, 4].map(index => parseInt(hex[1].slice(index, index + 2), 16));
+function rgb(hex) {
+  return [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16));
 }
 
-const background = color('void');
-const surface = color('surface');
-const accent = color('accent');
+const background = rgb('251d26');
+const gold = rgb('e0bc7e');
 
-// Signed distance to an axis-aligned rounded rectangle; subpixel coverage
-// smooths edges without requiring a graphics package on the signing runner.
-function rectangle(x, y, left, top, width, height, radius) {
-  const dx = Math.abs(x - left - width / 2) - width / 2 + radius;
-  const dy = Math.abs(y - top - height / 2) - height / 2 + radius;
-  return Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) + Math.min(Math.max(dx, dy), 0) - radius;
+function segmentDistance(x, y, start, end) {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const lengthSquared = dx * dx + dy * dy;
+  const projection = Math.max(0, Math.min(1,
+    ((x - start[0]) * dx + (y - start[1]) * dy) / lengthSquared));
+  return Math.hypot(x - start[0] - projection * dx, y - start[1] - projection * dy);
 }
 
-const shapes = [
-  { bounds: [390, 242, 244, 160, 48], fill: accent },
-  { bounds: [420, 272, 184, 160, 20], fill: background },
-  { bounds: [180, 354, 664, 432, 64], fill: accent },
-  { bounds: [208, 382, 608, 376, 38], fill: surface },
-  { bounds: [208, 460, 608, 20, 0], fill: accent },
-  { bounds: [292, 436, 44, 68, 10], fill: accent },
-  { bounds: [688, 436, 44, 68, 10], fill: accent },
-  ...Array.from({ length: 6 }, (_, index) => ({
-    bounds: [286 + index * 84, 552, 32, 138, 16], fill: accent,
-  })),
+const mark = [
+  [192, 320],
+  [352, 720],
+  [512, 432],
+  [672, 720],
+  [832, 320],
 ];
+const strokeRadius = 28;
+const moon = { x: 592, y: 220, outerRadius: 140, innerX: 680, innerY: 228, innerRadius: 130 };
 
 const rows = Buffer.alloc(size * (1 + size * 3));
 for (let y = 0; y < size; y++) {
@@ -55,11 +45,19 @@ for (let y = 0; y < size; y++) {
   rows[row] = 0; // PNG filter: none, RGB with no alpha channel.
   for (let x = 0; x < size; x++) {
     const pixel = [...background];
-    for (const shape of shapes) {
-      const coverage = Math.max(0, Math.min(1, 0.5 - rectangle(x + 0.5, y + 0.5, ...shape.bounds)));
-      for (let channel = 0; channel < 3; channel++) {
-        pixel[channel] += coverage * (shape.fill[channel] - pixel[channel]);
-      }
+    const px = x + 0.5;
+    const py = y + 0.5;
+    const distanceToMark = Math.min(...mark.slice(1).map((point, index) =>
+      segmentDistance(px, py, mark[index], point)));
+    const markCoverage = Math.max(0, Math.min(1, strokeRadius + 0.5 - distanceToMark));
+    const outerMoonCoverage = Math.max(0, Math.min(1,
+      moon.outerRadius + 0.5 - Math.hypot(px - moon.x, py - moon.y)));
+    const innerMoonCoverage = Math.max(0, Math.min(1,
+      moon.innerRadius + 0.5 - Math.hypot(px - moon.innerX, py - moon.innerY)));
+    const moonCoverage = Math.min(outerMoonCoverage, 1 - innerMoonCoverage);
+    const coverage = Math.max(markCoverage, moonCoverage);
+    for (let channel = 0; channel < 3; channel++) {
+      pixel[channel] += coverage * (gold[channel] - pixel[channel]);
     }
     for (let channel = 0; channel < 3; channel++) {
       rows[row + 1 + x * 3 + channel] = Math.round(pixel[channel]);
@@ -97,6 +95,16 @@ const png = Buffer.concat([
   chunk('IEND', Buffer.alloc(0)),
 ]);
 
-await mkdir(dirname(output), { recursive: true });
-await writeFile(output, png);
-console.log('Generated original opaque 1024x1024 iOS AppIcon from Vapour Chrome tokens.');
+await Promise.all([
+  mkdir(dirname(appIconOutput), { recursive: true }),
+  mkdir(launchImageSet, { recursive: true }),
+]);
+await Promise.all([
+  writeFile(appIconOutput, png),
+  writeFile(launchOutput, png),
+  writeFile(launchMetadata, `${JSON.stringify({
+    images: [{ filename: 'BrandLaunch.png', idiom: 'universal' }],
+    info: { author: 'xcode', version: 1 },
+  }, null, 2)}\n`),
+]);
+console.log('Generated opaque 1024x1024 iOS app icon and launch image with Wand Night Stand mark.');

@@ -40,6 +40,7 @@ let jobs = [{ profileId: 'portrait-fixture', revision: 3, status: 'failed', atte
 let audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: 4, changeSummary: 'schedule' }];
 const writes = [];
 const errors = [];
+const loadedScripts = [];
 let browser;
 try {
   browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}), ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
@@ -47,6 +48,7 @@ try {
   await context.addInitScript(() => { window.confirm = () => true; });
   await context.route('**/*', async route => {
     const request = route.request(); const url = new URL(request.url());
+    if (request.resourceType() === 'script') loadedScripts.push(url.pathname);
     if (url.origin !== origin) { await route.abort(); return; }
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session' && request.method() === 'GET') return json({ enabled: true, account, csrfToken: 'fake-csrf', origin });
@@ -84,6 +86,8 @@ try {
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await page.getByRole('heading', { name: /Něco se chystá/ }).waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Wand Night Stand, úvod' }).count(), 1);
+  assert.equal(await page.getByText(/DildoVander|tester|operátor|administrace/i).count(), 0);
   assert.equal(await page.getByLabel('Jméno postavy').count(), 1);
   assert.equal(await page.locator('.application-sidebar').count(), 0);
   assert.equal(await page.getByText('Rozhovor s kufrem', { exact: false }).count(), 0);
@@ -109,13 +113,26 @@ try {
   assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
   assert.equal(await page.getByText(/Summary|Appearance|Facts/).count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-countdown.png'), fullPage: true });
+  for (const [label, viewport] of [['tablet', { width: 820, height: 1180 }], ['desktop', { width: 1440, height: 1000 }]]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: path.join(screenshots, `launch-${label}-countdown.png`), fullPage: true });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label} must not overflow`);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('combobox', { name: 'Jazyk rozhraní' }).selectOption('en');
+  await page.getByRole('heading', { name: /Something is stirring, Matylda/ }).waitFor();
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'English narrow mobile must not overflow');
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-english.png'), fullPage: true });
+  await page.getByRole('combobox', { name: 'Interface language' }).selectOption('cs');
+  await page.setViewportSize({ width: 390, height: 844 });
   artwork = { status: 'ready', loadingMessage: null, url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByAltText('Portrét tvé postavy').waitFor({ state: 'visible' });
   character = { profileId: 'legacy-profile', revision: 8, name: 'Eliška', universe: 'Starý svět', status: 'ready' };
   artwork = null;
   await page.reload({ waitUntil: 'networkidle' });
-  await page.getByText(/uložená postava zatím nemá portrét/).waitFor();
+  await page.getByText(/Tvá postava je uložená/).waitFor();
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Připravit můj portrét' }).click();
   assert(writes.some(write => write.expectedProfileId === 'legacy-profile' && write.expectedRevision === 8));
@@ -127,11 +144,12 @@ try {
   assert.equal(await page.locator('.application-sidebar').count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-invitation.png'), fullPage: true });
 
+  assert.equal(loadedScripts.some(script => /(?:LaunchManagement(?:View|Panel)?|CustomerAdminView|PersonaLabView|TestingSessionsView|DirectorPanel)-/.test(script)), false, 'prelaunch guest must not load privileged view chunks');
   account = { id: 'launch-admin', displayName: 'Admin', roles: ['Owner'] };
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();
-  await page.getByRole('heading', { name: 'Launch Management' }).waitFor();
+  await page.getByRole('heading', { name: 'Spuštění aplikace' }).waitFor();
   await page.getByLabel('Použít beta odpočítávání').check();
   await page.getByLabel('Časové pásmo').selectOption('Europe/Prague');
   await page.getByLabel('Otevření beta účastníkům').fill('2026-03-30T10:00');
@@ -143,9 +161,10 @@ try {
   await page.getByText(/Hvězdy se schovaly/).waitFor();
   await page.getByRole('button', { name: 'Opakovat přípravu' }).click();
   assert.equal(writes.length, 5);
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(screenshots, 'launch-desktop-admin.png'), fullPage: true });
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ mobile: '390x844', desktop: '1440x1000', states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'admin schedule save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
+  console.log(JSON.stringify({ mobile: '390x844', tablet: '820x1180', desktop: '1440x1000', states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'admin schedule save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
   await context.close();
 } finally {
   if (browser) await browser.close();

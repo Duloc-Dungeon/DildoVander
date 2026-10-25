@@ -67,7 +67,7 @@ public final class KufrCustomerBlePlugin: CAPPlugin, CAPBridgedPlugin, CBCentral
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
                 guard let self, self.epoch == current, self.scanning else { return }
                 self.central?.stopScan(); self.scanning = false
-                let devices = self.peripherals.values.map { ["id": $0.identifier.uuidString, "name": $0.name ?? "DildoVander"] }
+                let devices = self.peripherals.values.map { ["id": $0.identifier.uuidString, "name": $0.name ?? "Wand Night Stand"] }
                     .sorted { ($0["id"] ?? "") < ($1["id"] ?? "") }
                 self.finish(["devices": devices])
             }

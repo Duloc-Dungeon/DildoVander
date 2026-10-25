@@ -2,7 +2,7 @@
 
 Web and the Capacitor iOS application use the same `/app/v1/launch` policy.
 Administrators manage beta and production schedules separately in **Správa →
-Launch Management** (`/settings/admin/launch`). Gates start disabled to preserve existing accounts. Enabling a gate
+Spuštění aplikace** (`/settings/admin/launch`). Gates start disabled to preserve existing accounts. Enabling a gate
 without a date keeps that audience closed until an administrator supplies a date,
 disables the gate, or explicitly unlocks it. Re-enabling a gate after launch can
 remove existing user access; the editor warns before saving. Dates are persisted
@@ -10,7 +10,7 @@ as UTC milliseconds, with the administrator's display timezone recorded separate
 Europe/Prague changes in daylight saving time do not change the saved instant.
 
 Owner, Administrator, Operator, Viewer and internal Tester accounts retain their
-existing permissions. The Beta role is assigned by an administrator's verified,
+existing permissions. The Beta role is assigned by an Owner's verified,
 single-use invitation; it grants the beta schedule, no staff permissions. An iOS
 build, TestFlight installation, URL parameter or local clock never grants access.
 Public registration is unavailable while the production audience is closed;
@@ -93,7 +93,7 @@ recent-passkey/confirmation controls as launch mutations.
 ## Review and verification
 
 App Review uses a dedicated synthetic account assigned the existing Tester role
-through a real administrator invitation and passkey enrollment. This is an explicit
+through a real Owner-issued invitation and passkey enrollment. This is an explicit
 backend entitlement shared across all clients, with no secret build-dependent
 bypass. Arrange durable reviewer sign-in instructions privately and test them
 before submission. Do not publish account credentials or invitation tokens.

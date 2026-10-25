@@ -71,10 +71,11 @@ def render_page(version: str, build: str, manifest_url: str, ipa_url: str) -> st
   <meta name="theme-color" content="{html.escape(INSTALLER_THEME_COLOR, quote=True)}">
   <script>{INSTALLER_THEME_JS}</script>
   <script>{INSTALLER_THEME_CONTROLS}</script>
-  <title>DildoVander · Instalace pro iPhone</title>
+  <title>Wand Night Stand · Instalace pro iPhone</title>
   <style>
     {INSTALLER_DESIGN_CSS}
     /* Page layout only; embedded canonical components also work in archives. */
+    :root[data-theme] {{ --aw-void: #211a22; --aw-surface: #2b222d; --aw-elevated: #382d39; --aw-ivory: #f4ecd9; --aw-muted: #c4b8c1; --aw-accent: #e0bc7e; --aw-on-accent: #211a22; --aw-accent-soft: #483a37; --aw-link: #edcc96; --aw-border: #89747e; --aw-border-subtle: #55434f; }}
     body {{ margin: 0; padding: calc(24px + env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px)); min-height: 100vh; }}
     main {{ max-width: 44rem; margin: min(10vh, 80px) auto; }}
     .brand {{ display: flex; align-items: center; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid var(--aw-border); margin-bottom: 40px; }}
@@ -93,8 +94,8 @@ def render_page(version: str, build: str, manifest_url: str, ipa_url: str) -> st
 <body class="aw-root">
   <main>
     <label class="aw-theme-selector">Vzhled <select class="aw-select" data-theme-select aria-label="Vzhled aplikace"></select></label>
-    <div class="brand"><svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="5" y="9" width="22" height="18" rx="4"/><path d="M11 9V5h10v4M12 17h8M16 13v8"/></svg><strong>DildoVander</strong></div>
-    <h1>DildoVander pro iPhone</h1>
+    <div class="brand"><svg class="mark" viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d="m12 20 10 25 10-18 10 18 10-25" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M37 10a9 9 0 0 0 10 12A9 9 0 1 1 37 10Z" fill="currentColor" stroke="none"/></svg><strong>Wand Night Stand</strong></div>
+    <h1>Wand Night Stand pro iPhone</h1>
     <p class="aw-muted">Otevři tuto stránku v Safari na registrovaném iPhonu a nainstaluj podepsanou aplikaci.</p>
     <section class="aw-card install-card" aria-label="Instalace aplikace">
       <h2>Instalace aplikace</h2>
@@ -103,7 +104,7 @@ def render_page(version: str, build: str, manifest_url: str, ipa_url: str) -> st
       <p class="aw-muted">Po klepnutí potvrď instalaci a její dokončení zkontroluj na ploše iPhonu. Tato stránka nemůže zjistit výsledek instalace ani připravenost kufru.</p>
       <details><summary>Instalace se nedaří</summary><p class="aw-muted">Otevři odkaz přímo v Safari. Pokud iPhone instalaci odmítne, obsluha musí ověřit registraci tohoto zařízení, platnost podpisu a vývojářský profil. Stávající aplikace a data zůstávají v telefonu.</p><p class="aw-muted meta diagnostics"><span>Soubory pro diagnostiku:</span><a class="aw-button aw-button--secondary" href="{html.escape(ipa_url, quote=True)}">Stáhnout IPA</a><a class="aw-button aw-button--secondary" href="{html.escape(manifest_url, quote=True)}">Otevřít manifest</a></p></details>
     </section>
-    <p><a href="/">Zpět na přehled DildoVanderu</a> · <a href="/companion/">Otevřít webovou simulaci</a></p>
+    <p><a href="/">Zpět na přehled Wand Night Stand</a> · <a href="/companion/">Otevřít webovou simulaci</a></p>
   </main>
 </body>
 </html>

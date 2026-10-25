@@ -61,7 +61,7 @@ const conversationReadiness = computed(() => {
       case 'connecting': return 'Připojuji živý mikrofon a poskytovatele';
       case 'listening': return 'Mikrofon je aktivní — můžete mluvit';
       case 'waiting': return 'Čekám na hlasovou odpověď';
-      case 'speaking': return 'DildoVander mluví — odpověď se přehrává průběžně';
+      case 'speaking': return 'Wand Night Stand mluví — odpověď se přehrává průběžně';
     }
   }
   const phase = selected.value?.conversationOperation?.phase;
@@ -275,7 +275,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
             <AwButton v-if="selectedCharacter && !showCharacterForm" variant="primary" :disabled="busy || (characterPending && !selected?.conversation.turns.length)" @click="goToStep(3)">Pokračovat k rozhovoru</AwButton>
           </section>
           <section v-show="step === 3" class="testing-conversation" aria-labelledby="testing-conversation-title">
-            <div class="testing-section-heading"><h2 id="testing-conversation-title">Rozhovor s DildoVanderem</h2><AwStatus>{{ inputMode }}</AwStatus></div>
+            <div class="testing-section-heading"><h2 id="testing-conversation-title">Rozhovor s Wand Night Stand</h2><AwStatus>{{ inputMode }}</AwStatus></div>
             <p v-if="selectedCharacter" class="aw-muted">{{ selectedCharacter.profile.userInput.name }} · {{ selectedCharacter.profile.userInput.world }}</p>
             <AwNotice v-if="!supportsDialogue" tone="info">Toto historické sezení GPT Realtime je dostupné ke čtení. Nové testy a odpovědi používají pouze GPT Live.</AwNotice>
             <AwField v-if="open && supportsDialogue" id="testing-conversation-input" label="Režim rozhovoru">
@@ -287,9 +287,9 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
             <p role="status" aria-live="polite">{{ conversationReadiness }}<span v-if="selected.conversationOperation"> · {{ selected.conversationOperation.elapsedMs }} ms · operace {{ selected.conversationOperation.operationId }}</span></p>
             <p v-if="!selected.conversation.turns.length" class="aw-muted">{{ inputMode === 'text' ? 'Napište první zprávu. Textový režim nikdy nevyžaduje mikrofon.' : 'Zapněte mikrofon a začněte mluvit. Spojení zůstane otevřené pro další odpovědi.' }}</p>
             <ol class="testing-chat" aria-label="Uložený rozhovor"><li v-for="turn in selected.conversation.turns" :key="turn.id" :class="`testing-turn-${turn.role}`">
-              <strong>{{ turn.role === 'user' ? selectedCharacter?.profile.userInput.name ?? 'Vy' : 'DildoVander' }}</strong><p>{{ turn.text || 'Text není uložený.' }}</p><small v-if="turn.latencyMs != null">{{ turn.latencyMs }} ms · skutečný backend</small>
+              <strong>{{ turn.role === 'user' ? selectedCharacter?.profile.userInput.name ?? 'Vy' : 'Wand Night Stand' }}</strong><p>{{ turn.text || 'Text není uložený.' }}</p><small v-if="turn.latencyMs != null">{{ turn.latencyMs }} ms · skutečný backend</small>
             </li></ol>
-            <p v-if="partial.user" class="testing-partial">Vy · {{ partial.user }}</p><p v-if="partial.assistant" class="testing-partial">DildoVander · {{ partial.assistant }}</p>
+            <p v-if="partial.user" class="testing-partial">Vy · {{ partial.user }}</p><p v-if="partial.assistant" class="testing-partial">Wand Night Stand · {{ partial.assistant }}</p>
             <form v-if="open && supportsDialogue && inputMode !== 'voice'" class="testing-chat-form" @submit.prevent="test.send">
               <p v-if="inputMode === 'hybrid'" class="aw-muted">Odeslání psané zprávy vypne mikrofon. Pro pokračování hlasem ho znovu zapněte tlačítkem.</p>
               <AwField id="testing-message" label="Vaše zpráva"><textarea id="testing-message" v-model="text" class="aw-input" rows="3" maxlength="4000" :disabled="!selectedCharacter || (voiceActive && captureEnabled && inputMode !== 'hybrid')" /></AwField>

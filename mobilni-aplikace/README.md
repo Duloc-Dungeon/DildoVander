@@ -1,8 +1,10 @@
 # DildoVander: společná webová a iOS aplikace
 
 Vue 3 SFC s Composition API, TypeScriptem a Vue Routerem sdílejí stejné
-obrazovky na webu a v Capacitor WKWebView. Vapour Chrome dodává autoritativní
-tokeny a styl; `src/components/` obsahuje typované Vue komponenty.
+obrazovky na webu a v Capacitor WKWebView. Spotřebitelská značka **Wand Night Stand**
+používá `src/application/consumer-brand.css` nad společnými sémantickými tokeny;
+[DESIGN.md](../DESIGN.md) popisuje aktuální vzhled. Technické nástroje zachovávají
+Vapour Chrome. `src/components/` obsahuje typované Vue komponenty.
 `src/application/App.vue` drží navigaci **Domov, Kufr, Dílna, Archiv, Nastavení**
 a dostupný Stop. Feature služby vlastní zařízení, účty, archiv a viewer;
 Swift adaptéry dál vlastní Bluetooth, Keychain, audio a nativní transport.

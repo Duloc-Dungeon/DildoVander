@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import keepsakeArtwork from '../../assets/brand/keepsake-still-life.webp';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
@@ -386,7 +387,7 @@ onBeforeUnmount(() => {
       </form>
 
       <p v-if="loading && !items.length" class="collection-status" role="status">{{ copy.loading }}</p>
-      <p v-else-if="isEmpty" class="collection-empty">{{ filterIsActive ? copy.filteredEmpty : copy.empty }}</p>
+      <div v-else-if="isEmpty" class="collection-empty"><img v-if="!filterIsActive" :src="keepsakeArtwork" alt="" width="960" height="640" loading="lazy" /><p>{{ filterIsActive ? copy.filteredEmpty : copy.empty }}</p></div>
       <ol v-else-if="items.length" class="collection-list">
         <li v-for="item in items" :key="item.locator" class="collection-card">
           <div class="collection-card__heading">
@@ -449,6 +450,8 @@ onBeforeUnmount(() => {
 .collection-card__actions { justify-content: flex-start; }
 .collection-card__actions a { display: inline-flex; align-items: center; min-height: 44px; }
 .collection-empty, .collection-status { margin: 0; }
+.collection-empty { display: grid; gap: 1rem; max-width: 38rem; }
+.collection-empty img { display: block; width: 100%; height: auto; max-height: 18rem; object-fit: cover; border-radius: 12px; }
 .collection-field input:focus-visible, .collection-field select:focus-visible, .collection-card__actions a:focus-visible { outline: 3px solid var(--aw-accent); outline-offset: 3px; }
 @media (max-width: 680px) {
   .collection-search { grid-template-columns: minmax(0, 1fr); }

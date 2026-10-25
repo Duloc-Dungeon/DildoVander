@@ -11,7 +11,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>AI kufr</string>
+        <string>Wand Night Stand</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -31,11 +31,11 @@
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Připojení ke kufru v místní síti pro pozorování a ruční ovládání.</string>
+    <string>Připojení k Wand Night Stand v místní síti pro pozorování a ruční ovládání.</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Bluetooth připojí váš účet k rozhovoru s kufrem. Obsluha jej používá také k nastavení Wi-Fi a diagnostice.</string>
+    <string>Bluetooth připojí váš účet k rozhovoru s Wand Night Stand. Obsluha jej používá také k nastavení Wi-Fi a diagnostice.</string>
     <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>Bluetooth připojí iPhone ke kufru pro váš rozhovor nebo servisní nastavení.</string>
+    <string>Bluetooth připojí iPhone k Wand Night Stand pro váš rozhovor nebo servisní nastavení.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Po spuštění vybraného rozhovoru mikrofon průběžně posílá váš hlas serveru. Rozhovor můžete kdykoli zastavit.</string>
     <key>NSCameraUsageDescription</key>

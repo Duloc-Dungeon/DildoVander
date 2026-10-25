@@ -59,7 +59,7 @@ async function submit() {
 <template>
   <section class="page-stack identity-page" aria-labelledby="sign-in-title">
     <InvitationSeal v-if="launchAllowed !== true" />
-    <header><p class="eyebrow">DildoVander</p><h1 id="sign-in-title">{{ enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : customerCopy.text('signin.invite-title') : customerCopy.text('signin.title') }}</h1><p>{{ launchAllowed === true ? customerCopy.text('signin.account-purpose') : 'Přihlášení a osobní pozvánky do aplikace.' }}</p></header>
+    <header><p class="eyebrow">Wand Night Stand</p><h1 id="sign-in-title">{{ enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : customerCopy.text('signin.invite-title') : customerCopy.text('signin.title') }}</h1><p>{{ launchAllowed === true ? customerCopy.text('signin.account-purpose') : 'Přihlášení a osobní pozvánky do aplikace.' }}</p></header>
     <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
     <p v-if="loading" role="status">{{ customerCopy.text('signin.loading') }}</p>
     <p v-if="signingOut" role="status">{{ customerCopy.text('signin.signing-out') }}</p>

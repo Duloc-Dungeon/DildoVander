@@ -1,0 +1,62 @@
+{
+  "brand": "Wand Night Stand",
+  "date": "2026-10-25",
+  "assets": [
+    {
+      "file": "invitation-curtain.webp",
+      "origin": "Original built-in ImageGen output; resized and encoded as WebP using Pillow",
+      "prompt": "Create an original premium editorial illustration for a fictional invitation-only adult magical evening brand named Wand Night Stand. Portrait orientation 3:4. No text, no lettering, no people, no faces, no suitcase, no recognizable Harry Potter or other franchise motifs, no sexual imagery. A mysterious closed oxblood velvet curtain with a fine warm-brass crescent clasp, one slightly displaced fold suggesting anticipation, a single botanical night flower in the foreground on an ivory marble sill. Hand-painted gouache and fine lithographic shading, art-directed still life, refined theatrical intimacy, restrained surreal humor. Rich near-black plum background #211a22, oxblood #672e43, warm cream #f4ecd9 and antique gold #cfaa6c. Strong quiet negative space around the subject, beautiful tactile pigment, precise edges, high-end independent cultural magazine cover. Main subject contained in middle 75% with generous edges for responsive crop. This is a production onboarding/countdown placeholder, not a UI mockup. Deliver one image.",
+      "use": "Prelaunch placeholder; no portrait or future-feature disclosure",
+      "dimensions": [
+        960,
+        1280
+      ],
+      "sha256": "68cac1bddba55072ec5f90250180c2d0dfbda974295d583d2d60954c2e5d1234",
+      "bytes": 71712,
+      "license": "Distributed with this project under AGPL-3.0-only"
+    },
+    {
+      "file": "invitation-curtain-small.webp",
+      "origin": "Responsive derivative of invitation-curtain.webp from the same original output",
+      "prompt": "Create an original premium editorial illustration for a fictional invitation-only adult magical evening brand named Wand Night Stand. Portrait orientation 3:4. No text, no lettering, no people, no faces, no suitcase, no recognizable Harry Potter or other franchise motifs, no sexual imagery. A mysterious closed oxblood velvet curtain with a fine warm-brass crescent clasp, one slightly displaced fold suggesting anticipation, a single botanical night flower in the foreground on an ivory marble sill. Hand-painted gouache and fine lithographic shading, art-directed still life, refined theatrical intimacy, restrained surreal humor. Rich near-black plum background #211a22, oxblood #672e43, warm cream #f4ecd9 and antique gold #cfaa6c. Strong quiet negative space around the subject, beautiful tactile pigment, precise edges, high-end independent cultural magazine cover. Main subject contained in middle 75% with generous edges for responsive crop. This is a production onboarding/countdown placeholder, not a UI mockup. Deliver one image.",
+      "use": "Mobile prelaunch and invitation crop",
+      "dimensions": [
+        480,
+        640
+      ],
+      "sha256": "b2ddea15f597c5cacd218678c9834b574b164f31516bf909319903cfafbe8357",
+      "bytes": 19042,
+      "license": "Distributed with this project under AGPL-3.0-only"
+    },
+    {
+      "file": "keepsake-still-life.webp",
+      "origin": "Original built-in ImageGen output; resized and encoded as WebP using Pillow",
+      "prompt": "One original editorial still life illustration, landscape 3:2, for Wand Night Stand magical evening keepsake archive. No text, no people, no faces, no franchise iconography, no Harry Potter props. A slender hand-carved dark wood theatrical wand with a simple brass ring and a dried night-blooming flower rests diagonally on warm ivory folded paper with an unmarked oxblood wax seal, lying on deep near-black plum velvet. Painterly refined gouache and lithograph detail, cultured witty independent arts publication, beautiful tactile paper edge. Palette warm paper #f4ecd9, oxblood #672e43, muted antique brass #cfaa6c, near-black plum #211a22. Quiet composition, natural asymmetry, generous empty space. This is production keepsake empty-state art. Not a UI screenshot.",
+      "use": "Postlaunch home and account archive empty state only",
+      "dimensions": [
+        960,
+        640
+      ],
+      "sha256": "1db184cb08c258f9bb9e844c5fbca2d7a7e3a4c463b521de3fb344d47fd4a440",
+      "bytes": 58904,
+      "license": "Distributed with this project under AGPL-3.0-only"
+    },
+    {
+      "file": "mark.svg",
+      "origin": "Original geometric W and crescent authored for this project",
+      "use": "Shell, countdown masthead and favicon",
+      "sha256": "ac22162fa9be914025b650a646477c035b6b7844db89ecb8079b7e3b580cad93",
+      "bytes": 333,
+      "license": "Distributed with this project under AGPL-3.0-only"
+    },
+    {
+      "file": "cormorant-garamond-500.ttf",
+      "origin": "Google Fonts Cormorant Garamond, Christian Thalmann",
+      "source": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3umX5slCNuHLi8bLeY9MK7whWMhyjypVO7abI26QOD_s06GnM.ttf",
+      "license": "SIL OFL 1.1; cormorant-OFL.txt",
+      "use": "Self-hosted display type, font-display swap",
+      "sha256": "1724047c8988ca5155bff667bc48fa52e97d57aabc6b42eebbf986f21a4be20b",
+      "bytes": 290496
+    }
+  ]
+}

@@ -80,7 +80,7 @@ async function exportSummary() {
     const view = await client.read(id.value); check(); accept(view); if (!view.result) throw new Error('Battle is not complete');
     // Public fiction only: no grants, private URLs, account IDs or artwork capabilities.
     const ending = view.result.leftPoints === view.result.rightPoints ? 'Remíza' : `${view[view.result.leftPoints > view.result.rightPoints ? 'left' : 'right'].displayName} vítězí!`;
-    const lines = ['DildoVander · Souboj postav', `${view.left.displayName} — ${duelWandName(view.left)}`, `${view.right.displayName} — ${duelWandName(view.right)}`, ending, `${view.result.leftPoints} : ${view.result.rightPoints}`, view.result.ending,
+    const lines = ['Wand Night Stand · Souboj postav', `${view.left.displayName} — ${duelWandName(view.left)}`, `${view.right.displayName} — ${duelWandName(view.right)}`, ending, `${view.result.leftPoints} : ${view.result.rightPoints}`, view.result.ending,
       ...view.rounds.map(round => `Kolo ${round.number}: ${duelSpell(view.left, round.leftAction)} × ${duelSpell(view.right, round.rightAction)} · ${round.leftScore} : ${round.rightScore}\n${view.commentary?.rounds.find(item => item.round === round.number)?.quip ?? round.quip}`)];
     if (exportedSummary.value) URL.revokeObjectURL(exportedSummary.value);
     exportedSummary.value = URL.createObjectURL(new Blob([lines.join('\n\n')], { type: 'text/plain;charset=utf-8' }));
