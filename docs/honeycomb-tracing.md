@@ -46,11 +46,15 @@ file. Use ASP.NET configuration/environment variables on the server:
 | `Backend__Telemetry__Enabled` | `false` by default; restart to change |
 | `Backend__Telemetry__SampleRatio` | 1 outside Production, 0.1 in Production when omitted; finite 0 through 1 |
 | `Backend__Telemetry__Environment` | Explicit resource environment, otherwise ASP.NET environment |
+| `Backend__Telemetry__Logs__Enabled` | Separate opt-in, default false; requires telemetry enabled |
+| `Backend__Telemetry__Logs__MinimumLevel` | Information, Warning or Error; defaults Warning in Production, Information elsewhere |
 | `OTEL_SERVICE_NAME` | Defaults to `dildovander-backend` |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | Supported protocol is `http/protobuf`; configured explicitly in code |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Exact traces URL; default `http://127.0.0.1:4318/v1/traces` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Fallback base URL, with `/v1/traces` appended |
 | `OTEL_EXPORTER_OTLP_TRACES_HEADERS` | Private trace-specific OTLP headers; overrides generic headers |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | Exact log URL; generic base endpoint appends `/v1/logs`, otherwise loopback collector |
+| `OTEL_EXPORTER_OTLP_LOGS_HEADERS` | Private log-specific headers; overrides generic headers |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Private generic OTLP headers |
 
 For Honeycomb, choose the team's actual region before using
@@ -71,12 +75,39 @@ the release resource rather than assuming a local build has a SHA. Resource
 detectors and `OTEL_RESOURCE_ATTRIBUTES` are intentionally not used, avoiding
 automatic export of host names, command lines or arbitrary extra metadata.
 
-Batching is asynchronous: queue 2048 spans, batches 256, scheduled every 5 seconds,
+Batching is asynchronous: each signal has a queue of 2048 records, batches 256, scheduled every 5 seconds,
 HTTP and exporter timeout 5 seconds. Export failures and queue saturation lose
 telemetry rather than block requests or retry an application operation. There is
 no disk spool and no guarantee of delivery on crash. The exporter does not trace
 its own HTTP requests. SDK export is suppressed and Honeycomb/explicit collector
 hosts are additionally excluded from outbound HTTP instrumentation.
+
+## Safe log export
+
+Log export is independently opt-in and uses the existing SDK packages. A dedicated
+pipeline receives allowlisted `ServerLogStore` events and projected general
+application logs. General logs export constant `application_log` bodies, known
+backend type categories (other categories become fixed families), numeric event
+IDs and normalized exception categories. UUID request/operation/conversation IDs
+are read from explicitly named state and scope fields. No formatter is invoked;
+message text, exception text/stacks, arbitrary state/scopes and event names stay
+local. Known worker failure records already captured by `ServerLogStore` are
+deduplicated. Normal application logger filters apply before this provider.
+Framework categories always require at least Warning to avoid request/transport
+information records for high-frequency audio uploads.
+
+Structured events have a constant `diagnostic_event` body and explicit
+`app.event.name`, finite failure codes, validated UUIDs, bounded numeric metadata,
+and route templates verified against the configured endpoints. Unknown event
+names become `diagnostic_event`; unknown codes/routes are omitted. Updating an
+event producer may require updating this allowlist and its privacy tests.
+
+Logs are not trace-sampled. A warning may carry a trace ID whose spans were
+sampled out; it does not prove that a waterfall is available. Set the log-specific
+endpoint and private headers; trace-specific headers are not a log fallback.
+Disable only log export with `Backend__Telemetry__Logs__Enabled=false` and restart.
+The [investigation runbook](observability-investigation.md) explains discovery,
+signal filters, correlation and evidence limits for Codex.
 
 ## Correlation and compatibility
 
@@ -192,6 +223,9 @@ sentinels. It tests disconnected exporter handling, 100 audio uploads without a
 span flood, safe metadata, remote parent `00` sampling, UUID log compatibility,
 persisted job links after reopening SQLite, cancellation/timeouts, and scripted
 SDK streaming. Ordinary tests make no paid provider calls or Honeycomb requests.
+The log suite also decodes actual OTLP log records, checks opt-in/severity
+defaults, unsampled trace correlation, scope/exception/content exclusion, frame
+suppression and nonblocking logging during a collector stall.
 The export handler simulates an unreachable destination; it does not prove the
 network, live ingestion, regional key configuration or retention in Honeycomb.
 
