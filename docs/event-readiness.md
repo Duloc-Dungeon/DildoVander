@@ -1,15 +1,16 @@
 # Připravenost na akci a provozní checklist
 
-Aktuální gates a blokace: [STATUS](project/STATUS.md) a
-[work items](project/work-items). Tento dokument zachovává provozní postup;
-aktuální výsledky se zapisují do JSON a receipts, nikoli do druhé matice.
-[Archiv D158–D166](project/archive/dv08/docs/event-readiness.md) uchovává
-všech 47 scénářů a historicky přijaté servisní výsledky.
+Aktuální kritéria, gates, blokace a důkazy vede privátní Linear podle
+[koordinačního workflow](development-coordination.md). Tento dokument zachovává
+provozní postup; aktuální výsledky patří do příslušného úkolu, nikoli do druhé
+matice. Bývalé lokální podklady `project/` nejsou v tomto checkoutu dostupné;
+historické přijetí vyžaduje dohledání původního důkazu.
 
 ## Příprava před akcí
 
 Následující body jsou provozní postup, nikoli potvrzení splnění.
-Datovaná servisní přijetí D159 a aktuální neověřené části jsou v JSON a archivu.
+Historická servisní přijetí D159 ověřte v původních důkazech; aktuální neověřené
+části patří do příslušného privátního úkolu.
 
 - Na desce `kufr-68ee8f4b6048` mít první OTA-capable obraz, bootloader a shodné partition layout
   skutečně instalované v ověřené N16R8. Uchovat soukromou zálohu flash/NVS
@@ -78,12 +79,13 @@ Do sdíleného záznamu nevkládat hesla, PoP, tokeny ani obsah paměti návšt�
 
 ## Matice všech 47 požadovaných scénářů (historické výsledky D158/D159)
 
-Každý scénář S01–S47 má revizované kritérium a mapování v
-[migration.json](project/migration.json). Datovaná tvrzení zůstávají v archivu;
-software test není nový fyzický důkaz.
+Pro scénáře S01–S47 ověřte aktuální kritéria a důkazy v příslušném privátním
+úkolu podle [koordinačního workflow](development-coordination.md). Bývalé lokální
+mapování zde není dostupné; software test není nový fyzický důkaz.
 
 ## Připravenost subsystémů a vnější podmínky
 
-[STATUS](project/STATUS.md) počítá všechny povinné gates, včetně skrytých
-blockerů. Stable podpis, volitelný obraz/SD/Dance a PB720 mají oddělený rozsah.
+Před akcí ověřte všechny povinné gates a blokace v příslušném privátním úkolu
+podle [koordinačního workflow](development-coordination.md). Stable podpis,
+volitelný obraz/SD/Dance a PB720 mají oddělený rozsah.
 Publikace, instalace a fyzická přejímka jsou různé události.

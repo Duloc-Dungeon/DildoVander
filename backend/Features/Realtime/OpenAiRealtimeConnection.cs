@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.Observability;
 using System.Net.WebSockets;
 using System.ClientModel.Primitives;
 using System.Security.Cryptography;
@@ -31,6 +32,7 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
     internal long? LastInputTokens { get; private set; }
     internal long? LastOutputTokens { get; private set; }
     internal long LastCostMicroUsd { get; private set; }
+    private int reconnectAttempts;
     private int visualResets;
     private readonly HashSet<string> items = new(StringComparer.Ordinal);
     private bool initialized;
@@ -101,17 +103,30 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
 
     private async Task RestartAsync(long generation, CancellationToken token)
     {
-        if (reconnect is null) { throw new InvalidOperationException("Realtime provider reconnect unavailable."); }
-        ProviderSessionId = null;
-        socket.Abort();
-        try { await events.DisposeAsync(); } catch (Exception) { }
-        session.Dispose();
-        socket = await reconnect(token);
-        session = new BackendRealtimeSession(socket);
-        events = session.ReceiveUpdatesAsync(token).GetAsyncEnumerator(token);
-        initialized = false;
-        items.Clear(); visualItemId = null; visualImageId = null; inputItemId = null;
-        VisualGeneration = generation;
+        using var telemetry = GenAiOperation.Start("realtime.reconnect", RealtimeProtocol.Model);
+        telemetry.SetPhase(GenAiPhase.Reconnecting);
+        telemetry.SetAttempt(Interlocked.Increment(ref reconnectAttempts));
+        telemetry.Disconnect(GenAiDisconnectCause.VisualRevoked);
+        try
+        {
+            if (reconnect is null) { throw new InvalidOperationException("Realtime provider reconnect unavailable."); }
+            ProviderSessionId = null;
+            socket.Abort();
+            try { await events.DisposeAsync(); } catch (Exception) { }
+            session.Dispose();
+            socket = await reconnect(token);
+            session = new BackendRealtimeSession(socket);
+            events = session.ReceiveUpdatesAsync(token).GetAsyncEnumerator(token);
+            initialized = false;
+            items.Clear(); visualItemId = null; visualImageId = null; inputItemId = null;
+            VisualGeneration = generation;
+            telemetry.SetPhase(GenAiPhase.Ready);
+        }
+        catch (Exception error)
+        {
+            telemetry.Fail(error, token);
+            throw;
+        }
     }
 
     public Task SendAudioAsync(byte[] pcm, CancellationToken token) =>
@@ -134,57 +149,72 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
         Func<RealtimeReply, CancellationToken, Task>? finalize = null,
         IRealtimeResponsePlayback? playback = null)
     {
-        var original = turn;
-        LastInputTokens = null;
-        LastOutputTokens = null;
-        LastCostMicroUsd = 0;
-        var latestInput = turn.Request.Text;
-        var acceptedInput = !turn.LiveAudio && inputPcm is null;
-        long retiredCost = 0;
-        var progress = new RealtimeTurnProgress();
-        if (!initialized)
+        using var telemetry = GenAiOperation.Start("realtime", RealtimeProtocol.Model, streaming: true);
+        try
         {
-            VisualGeneration = visualRevision?.Invoke().Generation ?? 0;
-            turn = turn with { CostumeContext = visualContext?.Invoke().Context ?? turn.CostumeContext };
-            if (VisualGeneration > 0)
-            { turn = turn with { EveningContext = recoveryContext?.Invoke() ?? "", History = turn.History.Select(item => new DialogExchange(item.VisitorText, "")).ToArray() }; }
-            original = turn;
-        }
-        while (true)
-        {
-            try
+            var original = turn;
+            LastInputTokens = null;
+            LastOutputTokens = null;
+            LastCostMicroUsd = 0;
+            var latestInput = turn.Request.Text;
+            var acceptedInput = !turn.LiveAudio && inputPcm is null;
+            long retiredCost = 0;
+            var progress = new RealtimeTurnProgress();
+            if (!initialized)
             {
-                var result = await GenerateTurnCoreAsync(turn, inputPcm, audio,
-                    async (text, token) => { latestInput = text; acceptedInput = true; await visitor(text, token); }, cancellationToken,
-                    listening, speech, responseReady, transcript, visualImage, inputContext, visualContext, visualRevision, progress, playback);
-                result = result with { CostMicroUsd = checked(result.CostMicroUsd + retiredCost) };
-                if (finalize is not null) { await finalize(result, cancellationToken); }
-                return result;
+                VisualGeneration = visualRevision?.Invoke().Generation ?? 0;
+                turn = turn with { CostumeContext = visualContext?.Invoke().Context ?? turn.CostumeContext };
+                if (VisualGeneration > 0)
+                { turn = turn with { EveningContext = recoveryContext?.Invoke() ?? "", History = turn.History.Select(item => new DialogExchange(item.VisitorText, "")).ToArray() }; }
+                original = turn;
             }
-            catch (VisualResponseRevokedException) when (visualRevision is not null)
+            while (true)
             {
-                if (++visualResets > 8) { throw new InvalidDataException("Visual response reset limit."); }
-                var current = visualRevision();
-                if (current.Generation < 0) { throw new OperationCanceledException(cancellationToken); }
-                retiredCost = checked(retiredCost + RealtimeProtocol.ReservationMicroUsd(original));
-                await RestartAsync(current.Generation, cancellationToken);
-                progress = new RealtimeTurnProgress();
-                // Keep the application operation and committed canonical outcomes. A
-                // new provider gets literal guest statements, never assistant
-                // text or image-derived context from the revoked generation.
-                turn = original with
+                try
                 {
-                    Request = original.Request with { Text = latestInput, Wav = null }, LiveAudio = original.LiveAudio && !acceptedInput,
-                    EveningContext = recoveryContext?.Invoke() ?? "", CostumeContext = visualContext?.Invoke().Context ?? "",
-                    History = original.History.Where(item => item.VisitorText.Length > 0)
-                        .Select(item => new DialogExchange(item.VisitorText, "")).ToArray()
-                };
-                inputPcm = null;
+                    var result = await GenerateTurnCoreAsync(turn, inputPcm, audio,
+                        async (text, token) => { latestInput = text; acceptedInput = true; await visitor(text, token); }, cancellationToken,
+                        listening, speech, responseReady, transcript, visualImage, inputContext, visualContext, visualRevision, progress, playback, telemetry);
+                    result = result with { CostMicroUsd = checked(result.CostMicroUsd + retiredCost) };
+                    if (finalize is not null) { await finalize(result, cancellationToken); }
+                    return result;
+                }
+                catch (VisualResponseRevokedException) when (visualRevision is not null)
+                {
+                    if (++visualResets > 8) { throw new InvalidDataException("Visual response reset limit."); }
+                    var current = visualRevision();
+                    if (current.Generation < 0) { throw new OperationCanceledException(cancellationToken); }
+                    retiredCost = checked(retiredCost + RealtimeProtocol.ReservationMicroUsd(original));
+                    telemetry.SetPhase(GenAiPhase.Reconnecting);
+                    await RestartAsync(current.Generation, cancellationToken);
+                    progress = new RealtimeTurnProgress();
+                    // Keep the application operation and committed canonical outcomes. A
+                    // new provider gets literal guest statements, never assistant
+                    // text or image-derived context from the revoked generation.
+                    turn = original with
+                    {
+                        Request = original.Request with { Text = latestInput, Wav = null }, LiveAudio = original.LiveAudio && !acceptedInput,
+                        EveningContext = recoveryContext?.Invoke() ?? "", CostumeContext = visualContext?.Invoke().Context ?? "",
+                        History = original.History.Where(item => item.VisitorText.Length > 0)
+                            .Select(item => new DialogExchange(item.VisitorText, "")).ToArray()
+                    };
+                    inputPcm = null;
+                }
+                finally
+                {
+                    lock (responseGate) { activeResponse = null; }
+                }
             }
-            finally
-            {
-                lock (responseGate) { activeResponse = null; }
-            }
+        }
+        catch (RealtimeResponseInterruptedException telemetryError)
+        {
+            telemetry.Fail(telemetryError, cancellationToken, cancelled: true);
+            throw;
+        }
+        catch (Exception telemetryError)
+        {
+            telemetry.Fail(telemetryError, cancellationToken);
+            throw;
         }
     }
 
@@ -202,12 +232,13 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
         Func<string, CancellationToken, Task<string>>? inputContext = null,
         Func<(int Revision, string Context)>? visualContext = null,
         Func<VisualResponseRevision>? visualRevision = null, RealtimeTurnProgress? progress = null,
-        IRealtimeResponsePlayback? playback = null)
+        IRealtimeResponsePlayback? playback = null, GenAiOperation? telemetry = null)
     {
         using var abort = cancellationToken.Register(socket.Abort);
         var continuing = initialized;
         if (!initialized)
         {
+            telemetry?.SetPhase(GenAiPhase.ProviderHandshake);
             if (await NextResponseAsync(visualRevision, cancellationToken) is not RealtimeServerUpdateSessionCreated created
                 || created.Session is not RealtimeConversationSession createdSession
                 || createdSession.Model != RealtimeProtocol.Model)
@@ -221,6 +252,7 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
         {
             await session.ClearInputAudioAsync(cancellationToken);
         }
+        telemetry?.SetPhase(GenAiPhase.Configuring);
         await session.ConfigureConversationSessionAsync(RealtimeProtocol.SessionOptions(turn), cancellationToken);
         var configuration = await ConfigurationAsync(cancellationToken, visualRevision);
         if (configuration is not RealtimeServerUpdateSessionUpdated updated
@@ -229,12 +261,14 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
         {
             throw new InvalidDataException("Realtime configuration was not accepted.");
         }
+        telemetry?.SetPhase(GenAiPhase.Ready);
         if (!continuing && (turn.EveningContext.Length != 0 || turn.History.Count != 0))
         {
             await session.AddItemAsync(
                 RealtimeItem.CreateUserMessageItem(RealtimeProtocol.ContextData(turn)),
                 cancellationToken);
         }
+        telemetry?.SetPhase(GenAiPhase.Input);
         string? visitorText = turn.LiveAudio || inputPcm is not null ? null : turn.Request.Text;
         if (turn.LiveAudio)
         {
@@ -353,6 +387,7 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
         }
         if (visualImage is not null) { await RefreshVisualAsync(visualImage(), cancellationToken); }
         if (visualRevision is not null && visualRevision().Generation != VisualGeneration) { throw new VisualResponseRevokedException(); }
+        telemetry?.SetPhase(GenAiPhase.Response);
         if (progress is { Decision: not "ask" })
         {
             await session.AddItemAsync(RealtimeItem.CreateUserMessageItem("Aplikace uz overila vysledek: "
@@ -400,6 +435,7 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
                         {
                             throw new InvalidDataException("Invalid Realtime audio length.");
                         }
+                        telemetry?.OutputChunk(pcm.Length);
                         lock (responseGate)
                         {
                             if (!string.IsNullOrEmpty(delta.ItemId))
@@ -482,6 +518,7 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
                         cost = checked(cost + RealtimeProtocol.ResponseCost(response.Usage));
                         LastCostMicroUsd = cost;
                         RecordObservedTokens(response.Usage);
+                        telemetry?.SetUsage(LastInputTokens, LastOutputTokens);
                     }
                     if (playback is not null && cancellation is null && responsePlayback.ForwardedPcmBytes > 0)
                     {
@@ -560,6 +597,7 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
                     if (function is not null)
                     {
                         (decision, reason, compartment) = OpenAiRealtimeClient.ValidateTool(function, turn);
+                        telemetry?.Tool(function.FunctionName);
                         if (progress is not null) { progress.Decision = decision; progress.Reason = reason; progress.Compartment = compartment; }
                         var toolResult = JsonSerializer.Serialize(new
                         {
@@ -772,9 +810,20 @@ internal sealed class OpenAiRealtimeConnection : IAsyncDisposable, IStreamingAud
 
     public async ValueTask DisposeAsync()
     {
-        socket.Abort();
-        try { await events.DisposeAsync(); }
-        finally { session.Dispose(); }
+        using var telemetry = GenAiOperation.Start("realtime.disconnect", RealtimeProtocol.Model);
+        telemetry.SetPhase(GenAiPhase.Closing);
+        telemetry.Disconnect(GenAiDisconnectCause.Disposed);
+        try
+        {
+            socket.Abort();
+            try { await events.DisposeAsync(); }
+            finally { session.Dispose(); }
+        }
+        catch (Exception error)
+        {
+            telemetry.Fail(error, CancellationToken.None);
+            throw;
+        }
     }
 
     private static string ReadString(string? value, int maximum) =>

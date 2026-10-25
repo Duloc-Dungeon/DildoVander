@@ -10,6 +10,13 @@ from the authenticated principal; no caller-provided owner or preview role grant
 production authority. Unowned resources fail without exposing private content.
 Owner/Administrator are not implicit test identities.
 
+Testing-session GETs have a separate per-IP fixed-window allowance of 240 requests
+per minute. Mutations retain the existing account request allowance. Middleware
+rate-limit rejections return HTTP 429 with the standard problem body, code
+`rate_limited`, the request `traceId` and an integer-seconds `Retry-After` header.
+Clients pause polling until that delay expires and never automatically replay a
+rejected mutation.
+
 Session IDs are server-generated 32-character hexadecimal identifiers; the
 virtual hardware identity is exactly `test-<session-id>`. Creation uses a stable
 client operation UUID and validates engine, input mode, OpenAI consent and saved
@@ -21,6 +28,42 @@ immutable character snapshot. Provider operations revalidate scope and operation
 state. Realtime tickets retain the existing one-use, short-lived, origin/account
 session/security-stamp constraints; reconnect uses actual retained history.
 Client generations/AbortSignal reject stale work after account/session changes.
+
+Saving a test character with OpenAI consent durably queues enrichment in the
+isolated character store. Name and world are sufficient; description/version are
+optional. The enrich endpoint returns promptly and ensures queued/running work
+without duplicating it. Character reads expose the current background status and
+result. Clients select the latest profile before beginning a conversation; later
+enrichment does not change an already started conversation's snapshot.
+
+Session detail preserves `character` as the frozen profile for compatibility.
+`latestCharacter` separately contains the current persisted profile and its
+`enrichmentOperationId`, when a durable job exists. It is null after profile
+deletion; retained ended sessions and their frozen context remain readable.
+`characterSnapshot` exposes the captured profile ID/revision, user input,
+enrichment, Unix-seconds `capturedAt`, and the actual persisted character `context`.
+Snapshot metadata/context are captured coherently with concurrent selection.
+These authenticated content fields must never enter a technical diagnostic export.
+
+`conversationOperation`, while active, contains `operationId`, `phase`, and
+monotonic `elapsedMs`. Phases distinguish admission, context preparation, provider
+connection, waiting for output and turn finalization. Persisted technical events
+carry the same operation ID, including `operation_released` after the concurrency
+guard is removed on success, failure, cancellation or timeout. Provider readiness
+continues to require the engine's confirmed protocol event.
+
+After a failed text request the client reads the saved conversation, since the
+server may have persisted the user turn before provider failure. It never replays
+the mutation on refresh, and blocks a new HTTP turn while conversationActive is
+reported by the server.
+
+Collection refresh failures do not override authoritative selected-session
+readiness. A completed text request needs one detail reconciliation GET, with no
+automatic collection waterfall or POST replay. Ambiguous outcomes are scoped to
+the original session/conversation and must reconcile before another submission.
+Realtime Tester conversations without prepared personalized candidates omit the
+proposal tool until explicit selection prepares those candidates; physical
+readiness and generated candidate authority remain separate.
 
 The existing Lab session gets a server-only Testing context and bridge. The
 public Lab session request cannot supply that context. Managed session end and

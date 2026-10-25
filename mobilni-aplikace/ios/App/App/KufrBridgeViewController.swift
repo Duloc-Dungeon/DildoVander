@@ -34,5 +34,6 @@ class KufrBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(KufrProvisioningPlugin())
         bridge?.registerPluginInstance(KufrCustomerBlePlugin())
         bridge?.registerPluginInstance(KufrIdentityPlugin())
+        bridge?.registerPluginInstance(KufrDiagnosticExportPlugin())
     }
 }

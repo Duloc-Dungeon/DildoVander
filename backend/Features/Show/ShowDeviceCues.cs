@@ -133,6 +133,8 @@ internal sealed partial class ShowDeviceCueBridge
 
     internal ShowDeviceCueAckResult Acknowledge(string deviceId, Guid cueId, ShowDeviceCueAck request)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("device.cue.acknowledge");
+        activity?.SetTag("app.operation_id", cueId.ToString());
         if (request.BootId == Guid.Empty || request.Generation < 0 || request.DeviceRevision < 0
             || request.Outcome is not ("accepted" or "completed" or "rejected" or "cancelled")
             || request.Evidence is not ("commanded" or "playback_finished" or "missing_assets")
@@ -174,6 +176,7 @@ internal sealed partial class ShowDeviceCueBridge
                     break;
             }
             entry.Acks.Add(request.Outcome, fingerprint);
+            activity?.SetTag("app.device.outcome", request.Outcome);
             return new(200, "ack_recorded", request.Outcome);
         }
     }

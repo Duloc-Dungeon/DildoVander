@@ -8,6 +8,63 @@ let request: ReturnType<typeof vi.fn>;
 beforeEach(() => { vi.resetModules(); bridge.native = false; bridge.request.mockReset(); bridge.passkey.mockReset(); bridge.accountTransport.mockReset(); bridge.shareAccountDataFile.mockReset(); bridge.cancelAccountRequest.mockReset().mockResolvedValue({cancelled: true}); request = vi.fn(); vi.stubGlobal('fetch', request); });
 afterEach(() => { interfaceLanguagePreference.setScope(null); interfaceLanguagePreference.setLanguage('cs'); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+describe.each([false, true])('request diagnostic wiring (native=%s)', native => {
+  it('sends a fresh bounded traceparent through account transport without replacing request diagnostics', async () => {
+    bridge.native = native;
+    const identity = await import('./session');
+    bridge.accountTransport.mockResolvedValue({ status: 200, headers: {}, bodyBase64: btoa('{}') });
+    request.mockImplementation(async () => Response.json({}));
+    const parents: string[] = [];
+    for (let index = 0; index < 2; index++) {
+      await identity.accountTransport('/app/v1/session', { headers: { traceparent: 'old', baggage: 'private=value' } });
+      const headers = native ? bridge.accountTransport.mock.calls.at(-1)![0].headers : request.mock.calls.at(-1)![1].headers;
+      const bounded = new Headers(headers);
+      expect(bounded.get('traceparent')).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-00$/);
+      expect(bounded.has('baggage')).toBe(false);
+      expect(bounded.has('X-Request-Id')).toBe(false);
+      parents.push(bounded.get('traceparent')!);
+    }
+    expect(parents[0]).not.toBe(parents[1]);
+  });
+  it('correlates account requests and application actions without retaining credentials or private bodies', async () => {
+    bridge.native = native;
+    const identity = await import('./session');
+    const { requestDiagnostics } = await import('../../application/requestDiagnostics');
+    const requestId = '01234567-89ab-4cde-8f01-23456789abcd';
+    const problem = { code: 'account_required', traceId: requestId, detail: 'PRIVATE SERVER DETAIL' };
+    bridge.request.mockResolvedValue({ status: 401, body: JSON.stringify(problem) });
+    request.mockResolvedValue(Response.json(problem, { status: 401, headers: { 'X-Request-Id': requestId } }));
+    await identity.accountRequest('/app/v1/session', 'GET').catch(() => {});
+    expect(requestDiagnostics.value[0]).toMatchObject({ action: '/app/v1/session', status: 401, requestId });
+    bridge.accountTransport.mockResolvedValue({ status: 503, headers: { 'X-Request-Id': requestId }, bodyBase64: btoa('{}') });
+    request.mockResolvedValue(new Response('{}', { status: 503, headers: { 'X-Request-Id': requestId } }));
+    await identity.accountTransport('/app/v1/testing-sessions/secret-id/character', { method: 'POST', body: 'PRIVATE INPUT' });
+    expect(requestDiagnostics.value[1]).toMatchObject({ action: '/app/v1/testing-sessions/:id/character', status: 503, requestId });
+    expect(JSON.stringify(requestDiagnostics.value)).not.toMatch(/PRIVATE|secret-id/);
+  });
+});
+
+describe.each([false, true])('invitation error detail (native=%s)', native => {
+  it.each([
+    [400, 'invalid_role', 'Server nepodporuje zvolenou roli'],
+    [429, 'invitation_limit', 'příliš mnoho pozvánek'],
+    [400, 'recovery_unavailable', 'Vybraný účet nelze obnovit'],
+    [403, 'recent_passkey_required', 'znovu ověřte'],
+    [429, undefined, 'omezuje počet požadavků'],
+    [500, undefined, 'technické logy serveru'],
+  ])('explains HTTP %s/%s without rendering private response data', async (status, code, explanation) => {
+    bridge.native = native;
+    const body = JSON.stringify({code, privateDetail:'never-render-this-secret'});
+    bridge.request.mockResolvedValue({status, body});
+    request.mockResolvedValue(new Response(body,{status}));
+    vi.stubGlobal('confirm',vi.fn().mockReturnValue(true));
+    const identity = await import('./session');
+    const error = await identity.accountRequest('/app/v1/admin/invitations','POST',{role:'Tester',recoveryUserId:null}).catch(value=>value);
+    if (!(error instanceof Error)) throw new Error('Expected the rejected account request');
+    expect(error).toMatchObject({status,code});expect(error.message).toContain(explanation);expect(error.message).not.toContain('never-render');
+  });
+});
+
 describe('native account archive transport limits', () => {
   const archiveId = '123e4567-e89b-42d3-a456-426614174000';
   const uploadPath = `/app/v1/archive/owned/${archiveId}/portrait-uploads`;

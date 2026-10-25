@@ -1,3 +1,8 @@
+## Distributed tracing
+
+Opt-in distributed tracing, privacy rules, local verification and rollout guidance:
+[Honeycomb tracing](../docs/honeycomb-tracing.md). Existing request IDs and server logs remain available independently.
+
 ## Public production origin
 
 The canonical public entry is `https://dildovander.de`; HTTP and `www` redirect

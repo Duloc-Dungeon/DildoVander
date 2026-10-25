@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using System.Diagnostics;
+using Kufr.Backend.Features.Observability;
 
 namespace Kufr.Backend.Features.Diagnostics;
 
@@ -13,11 +15,13 @@ internal sealed class ServerLogStore
     private readonly TimeProvider clock;
     private readonly int capacity;
     private readonly string storeId;
+    private readonly SafeServerLogTelemetry? telemetry;
     private long droppedWrites;
     internal const int MaxPageSize = 200;
 
-    public ServerLogStore(IConfiguration configuration, TimeProvider clock)
+    public ServerLogStore(IConfiguration configuration, TimeProvider clock, SafeServerLogTelemetry? telemetry = null)
     {
+        this.telemetry = telemetry;
         this.clock = clock;
         capacity = Math.Clamp(configuration.GetValue("Backend:Logs:Capacity", 5000), 200, 20000);
         var path = configuration["Backend:DatabasePath"]
@@ -44,15 +48,17 @@ internal sealed class ServerLogStore
 
     public void Write(string level, string eventCode, string? traceId = null, string? route = null,
         string? method = null, int? status = null, double? durationMs = null,
-        string? operationId = null, string? conversationId = null, string? code = null)
+        string? operationId = null, string? conversationId = null, string? code = null,
+        int? attempt = null)
     {
+        var time = clock.GetUtcNow();
+        var entry = new ServerLogEntry(0, time.ToString("O", CultureInfo.InvariantCulture),
+            level, eventCode, traceId, route, method, status, durationMs, operationId, conversationId, code, attempt,
+            Activity.Current?.IdFormat == ActivityIdFormat.W3C ? Activity.Current.TraceId.ToHexString() : null);
         lock (gate)
         {
             try
             {
-                var time = clock.GetUtcNow();
-                var entry = new ServerLogEntry(0, time.ToString("O", CultureInfo.InvariantCulture),
-                    level, eventCode, traceId, route, method, status, durationMs, operationId, conversationId, code);
                 using var connection = Open();
                 using var transaction = connection.BeginTransaction();
                 using var command = connection.CreateCommand();
@@ -77,6 +83,7 @@ internal sealed class ServerLogStore
                 droppedWrites++;
             }
         }
+        telemetry?.Write(entry);
     }
 
     public ServerLogPage Read(long? after, int limit, string level, string? traceId, string? operationId)
@@ -149,6 +156,6 @@ internal sealed class ServerLogStore
 
 internal sealed record ServerLogEntry(long Id, string Timestamp, string Level, string EventCode,
     string? TraceId, string? Route, string? Method, int? Status, double? DurationMs,
-    string? OperationId, string? ConversationId, string? Code);
+    string? OperationId, string? ConversationId, string? Code, int? Attempt = null, string? DistributedTraceId = null);
 internal sealed record ServerLogPage(string StoreId, long OldestCursor, long LatestCursor,
     long NextCursor, bool HasMore, bool Truncated, long DroppedWrites, IReadOnlyList<ServerLogEntry> Entries);

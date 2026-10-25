@@ -25,11 +25,21 @@ internal sealed partial class TestingSessionService
         TestingHardwareAdapter hardware,TimeProvider clock)
     {
         this.resources=resources;this.lab=lab;this.runtime=runtime;this.hardware=hardware;this.clock=clock;
-        store=new(resources.Root);
+        store=resources.SessionsStore;
         resources.ResolveDuelIdentity=ResolveDuelIdentity;
     }
     internal TestingSession[] Sessions(string owner)=>store.List<TestingSession>(owner,"session").OrderByDescending(x=>x.CreatedAt).ToArray();
     internal TestingCharacter[] Characters(string owner)=>store.List<TestingCharacter>(owner,"character");
+    internal async Task<TestingCharacter[]> CharactersAsync(string owner,CancellationToken token)
+    {
+        var characters=Characters(owner);
+        foreach(var character in characters)
+        {
+            var profile=await resources.Profiles(owner,character.Id).ReadAsync(owner,token);
+            if(profile is not null)StoreEnrichedCharacter(owner,character.Id,profile);
+        }
+        return Characters(owner);
+    }
     internal TestingSession Read(string owner,string id)=>store.Read<TestingSession>(owner,"session",id);
     internal TestingSession RequireOpen(string owner,string id)
     {
@@ -39,6 +49,8 @@ internal sealed partial class TestingSessionService
     }
     internal TestingSession Create(string owner,TestingSessionRequest request)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("testing.session.create");
+        activity?.SetTag("app.operation_id", request.OperationId);
         if(!LabContract.Engine(request.Engine)||request.InputMode is not("text" or "voice" or "hybrid")
             ||request.Platform is not("web" or "ios")||!Guid.TryParse(request.OperationId,out _))
             throw new TestingException(400,"invalid_test_session");
@@ -107,25 +119,27 @@ internal sealed partial class TestingSessionService
         if(previous.Status is not("queued" or "running"))
         {
             previous=await profiles.CorrectAsync(owner,new(previous.Revision,previous.ProfileId,true),token);
-            StoreEnrichedCharacter(owner,id,previous);
         }
-        CharacterProfile profile;
-        try{profile=await resources.EnrichAsync(owner,id,token);}
-        catch{var failed=await resources.Profiles(owner,id).ReadAsync(owner,CancellationToken.None);if(failed is not null)StoreEnrichedCharacter(owner,id,failed);throw;}
-        return StoreEnrichedCharacter(owner,id,profile);
+        return StoreEnrichedCharacter(owner,id,previous);
     }
-    private TestingCharacter StoreEnrichedCharacter(string owner,string id,CharacterProfile profile)
+    internal TestingCharacter StoreEnrichedCharacter(string owner,string id,CharacterProfile profile)
     {
         lock(gate)
         {
             var latest=store.Read<TestingCharacter>(owner,"character",id);
             if(latest.Profile.Revision>profile.Revision)return latest;
+            if(latest.Profile.Revision==profile.Revision&&IsTerminalProfile(latest.Profile.Status)
+                &&!IsTerminalProfile(profile.Status))return latest;
             var updated=latest with {Profile=profile};
             store.Put(owner,"character",id,updated);return updated;
         }
     }
+    private static bool IsTerminalProfile(string status)=>status is "saved" or "ready" or "needs_clarification" or "failed";
     internal async Task<TestingSessionDetail> SelectCharacterAsync(string owner,string id,TestingCharacterSelection request,CancellationToken token)
     {
+        // The enrichment worker commits to the profile store independently of
+        // collection polling. Capture that durable result, never a cached queued copy.
+        await LatestCharacterAsync(owner,request.CharacterId,token);
         lock(gate)
         {
             var s=RequireOpen(owner,id);var c=store.Read<TestingCharacter>(owner,"character",request.CharacterId);
@@ -146,15 +160,39 @@ internal sealed partial class TestingSessionService
     }
     internal async Task<TestingSessionDetail> DetailAsync(string owner,string id,CancellationToken token)
     {
-        var s=Read(owner,id);
-        var snapshot=s.Status=="ended" ? store.TryRead<TestingHardware>(owner,"hardware",id) ?? new(false,false,"ended",[],null,"ended","off",null,null,false,[]) : await hardware.SnapshotAsync(id,s.VirtualDeviceId,token);
-        if(s.Status=="open")snapshot=PersistHardware(owner,id,snapshot);
-        var wand=resources.Wands.Read(owner,id);
-        if(wand is not null)snapshot=snapshot with {Compartments=snapshot.Compartments.Select(slot=>slot with
-            {WandName=wand.Candidates.FirstOrDefault(w=>w.PhysicalSlot==slot.Slot)?.Name}).ToArray()};
-        var memories=resources.MemoryStore.LocalMemory(Access(s));
-        return new(s,runtime.Detail(owner,s.LabSessionId),CharacterFor(s),
-            snapshot,wand,s.KeepsakeId is {} k?[resources.Keepsakes.Read(k,Actor(s))]:[],new("real_isolated_local_store",memories),runtime.IsActive(s.LabSessionId));
+        for(var attempt=0;attempt<3;attempt++)
+        {
+            var s=Read(owner,id);
+            var latest=s.CharacterId is {} characterId?await LatestCharacterAsync(owner,characterId,token):null;
+            var snapshot=s.Status=="ended" ? store.TryRead<TestingHardware>(owner,"hardware",id) ?? new(false,false,"ended",[],null,"ended","off",null,null,false,[]) : await hardware.SnapshotAsync(id,s.VirtualDeviceId,token);
+            lock(gate)
+            {
+                // Selection writes the frozen profile and actual Lab projection
+                // under this gate. A read that crossed selection must restart,
+                // rather than pairing the previous identity with newer context.
+                if(Read(owner,id).Revision!=s.Revision){continue;}
+                if(s.Status=="open"){snapshot=PersistHardware(owner,id,snapshot);}
+                var wand=resources.Wands.Read(owner,id);
+                if(wand is not null){snapshot=snapshot with {Compartments=snapshot.Compartments.Select(slot=>slot with
+                    {WandName=wand.Candidates.FirstOrDefault(w=>w.PhysicalSlot==slot.Slot)?.Name}).ToArray()};}
+                var memories=resources.MemoryStore.LocalMemory(Access(s));
+                var conversation=runtime.Detail(owner,s.LabSessionId);
+                var captured=s.CharacterSnapshot;
+                return new(s,conversation,CharacterFor(s),
+                    snapshot,wand,s.KeepsakeId is {} k?[resources.Keepsakes.Read(k,Actor(s))]:[],new("real_isolated_local_store",memories),runtime.IsActive(s.LabSessionId),
+                    latest,captured is null?null:new(captured.ProfileId,captured.Revision,captured.UserInput,captured.Enrichment,captured.CapturedAt,conversation.Testing?.CharacterContext??""),runtime.Operation(s.LabSessionId));
+            }
+        }
+        throw new TestingException(409,"test_revision_conflict");
+    }
+    private async Task<TestingCharacter?> LatestCharacterAsync(string owner,string id,CancellationToken token)
+    {
+        var character=store.TryRead<TestingCharacter>(owner,"character",id);
+        if(character is null){return null;}
+        var profile=await resources.Profiles(owner,id).ReadAsync(owner,token);
+        var latest=profile is null?character:StoreEnrichedCharacter(owner,id,profile);
+        var job=resources.Profiles(owner,id).JobIdForRevision(owner,latest.Profile.ProfileId,latest.Profile.Revision);
+        return latest with {EnrichmentOperationId=Guid.TryParse(job,out var operation)?operation.ToString():null};
     }
     internal TestingSession Mode(string owner,string id,TestingModeRequest request)
     {
@@ -218,6 +256,7 @@ internal sealed partial class TestingSessionService
     internal async Task DeleteCharacterAsync(string owner,string id,CancellationToken token)
     {
         var character=store.Read<TestingCharacter>(owner,"character",id);
+        await resources.Profiles(owner,id).FenceAccountDeletionAsync(owner,CancellationToken.None);
         foreach(var session in Sessions(owner).Where(s=>s.CharacterId==id&&s.Status=="open"))
             await EndAsync(owner,session.Id,token);
         await resources.Profiles(owner,id).DeleteAsync(owner,character.Profile.Revision,character.Profile.ProfileId,token);
@@ -228,6 +267,12 @@ internal sealed partial class TestingSessionService
     internal async Task DeleteAccountAsync(string owner,CancellationToken token=default)
     {
         store.Fence(owner);
+        var characters=Characters(owner);
+        foreach(var character in characters)
+        {
+            await resources.Profiles(owner,character.Id)
+                .FenceAccountDeletionAsync(owner,CancellationToken.None);
+        }
         foreach(var s in Sessions(owner))
         {
             CancelOperation(s.Id);runtime.End(owner,s.LabSessionId);
@@ -239,9 +284,8 @@ internal sealed partial class TestingSessionService
             await hardware.DeleteAsync(s.Id,s.VirtualDeviceId,token);
             store.Remove(owner,"session",s.Id);store.Remove(owner,"hardware",s.Id);
         }
-        foreach(var c in Characters(owner))
+        foreach(var c in characters)
         {
-            await resources.Profiles(owner,c.Id).FenceAccountDeletionAsync(owner,token);
             await resources.Profiles(owner,c.Id).DeleteAsync(owner,c.Profile.Revision,c.Profile.ProfileId,token);
             resources.MemoryStore.DeleteScopedMemory(MemoryDevice(owner),"guest","test-"+c.Id,resources.MemoryStore.MemoryEpoch);
             store.Remove(owner,"character",c.Id);
@@ -280,8 +324,8 @@ internal sealed partial class TestingSessionService
         if(s.LabSessionId!=conversation.Id||s.CharacterId is null)throw new TestingException(409,"test_character_required");
         var snapshot=await hardware.SnapshotAsync(s.Id,s.VirtualDeviceId,token);
         if(!snapshot.Connected||!snapshot.Ready)throw new TestingException(409,"virtual_hardware_unavailable");
-        if(s.Engine=="gpt-realtime-2.1"&&conversation.Testing!.Candidates.Length==0)
-            await PrepareCandidatesAsync(s,token);
+        // Candidate generation belongs to explicit selection/delegation. Ordinary
+        // conversation admission must not wait for an unrelated paid generation.
     }
     internal async Task CompleteTurnAsync(LabSession conversation,CancellationToken token)
     {

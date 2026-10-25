@@ -126,6 +126,9 @@ internal static partial class AccountEndpoints
         var expiresAt = user is null ? (long?)null : await db.Sessions
             .Where(session => session.Id == sessionId && session.UserId == user.Id)
             .Select(session => (long?)session.ExpiresAt).SingleOrDefaultAsync();
+        // Match antiforgery's required headers before it issues the token.
+        context.Response.Headers.CacheControl = "no-cache, no-store";
+        context.Response.Headers.Pragma = "no-cache";
         return Results.Ok(new
         {
             enabled = true,
@@ -198,7 +201,11 @@ internal static partial class AccountEndpoints
         if (recoveryUser is null && (string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Length > 80))
         { return Error(context, "invalid_enrollment"); }
         var name = recoveryUser?.DisplayName ?? request.DisplayName.Trim();
-        var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = id, Name = id, DisplayName = name });
+        var roles = recoveryUser is null ? new[] { invitation.Role } : await (
+            from membership in db.UserRoles join role in db.Roles on membership.RoleId equals role.Id
+            where membership.UserId == id select role.Name!).ToArrayAsync();
+        var label = PasskeyLabels.Account(name, roles);
+        var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = id, Name = label, DisplayName = label });
         await SaveCeremonyAsync(context, db, "enroll", id, name, hash);
         return Results.Content(options, "application/json");
     }
@@ -276,6 +283,7 @@ internal static partial class AccountEndpoints
             await db.Sessions.Where(x => x.UserId == user.Id).ExecuteDeleteAsync();
             if (!(await users.UpdateSecurityStampAsync(user)).Succeeded) { return Error(context, "recovery_failed"); }
         }
+        PasskeyLabels.NameNew(attestation.Passkey, PasskeyLabels.Account(user.DisplayName, await users.GetRolesAsync(user)));
         if (!(await users.AddOrUpdatePasskeyAsync(user, attestation.Passkey)).Succeeded)
         {
             return Error(context, "passkey_not_saved");
@@ -290,7 +298,8 @@ internal static partial class AccountEndpoints
     {
         var user = (await users.GetUserAsync(context.User))!;
         if ((await users.GetPasskeysAsync(user)).Count >= 8) { return Error(context, "passkey_limit"); }
-        var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = user.Id, Name = user.UserName!, DisplayName = user.DisplayName });
+        var label = PasskeyLabels.Account(user.DisplayName, await users.GetRolesAsync(user));
+        var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = user.Id, Name = label, DisplayName = label });
         await SaveCeremonyAsync(context, db, "add", user.Id, user.DisplayName, null);
         return Results.Content(options, "application/json");
     }
@@ -307,6 +316,7 @@ internal static partial class AccountEndpoints
         }
         var attestation = await signIn.PerformPasskeyAttestationAsync(request.Credential.GetRawText());
         if (!attestation.Succeeded || attestation.UserEntity.Id != user.Id) { return Error(context, "passkey_not_verified"); }
+        PasskeyLabels.NameNew(attestation.Passkey, PasskeyLabels.Account(user.DisplayName, await users.GetRolesAsync(user)));
         return (await users.AddOrUpdatePasskeyAsync(user, attestation.Passkey)).Succeeded ? Results.NoContent() : Error(context, "passkey_not_saved");
     }
 

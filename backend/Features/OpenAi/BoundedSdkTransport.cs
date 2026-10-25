@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.ClientModel.Primitives;
 
@@ -31,7 +32,19 @@ internal static class BoundedSdkTransport
             try
             {
                 if (!response.IsSuccessStatusCode)
-                    throw new InvalidDataException($"Provider HTTP {(int)response.StatusCode}.");
+                {
+                    if ((int)response.StatusCode < 400)
+                    {
+                        throw new InvalidDataException("Provider redirect is not allowed.");
+                    }
+                    // Let the SDK retain the HTTP status for retry/diagnostics,
+                    // without buffering or exposing an upstream error body.
+                    response.Content.Dispose();
+                    response.Content = new StringContent(
+                        "{\"error\":{\"message\":\"Provider request failed.\",\"type\":\"provider_http_error\"}}",
+                        Encoding.UTF8, "application/json");
+                    return response;
+                }
                 if (response.Content.Headers.ContentLength > maximumBytes
                     || contentTypes is not null && !contentTypes.Contains(response.Content.Headers.ContentType?.MediaType))
                     throw new InvalidDataException("Unexpected provider response.");

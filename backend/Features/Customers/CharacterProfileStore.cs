@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Diagnostics;
+using Kufr.Backend.Features.Observability;
 using Kufr.Backend.Features.CustomerData;
 using Microsoft.Data.Sqlite;
 
@@ -35,6 +37,9 @@ internal sealed partial class CharacterProfileStore
                 attempt INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, openai_consent INTEGER NOT NULL DEFAULT 0);
             CREATE INDEX IF NOT EXISTS character_jobs_queue ON character_jobs(status, created_at);
             CREATE UNIQUE INDEX IF NOT EXISTS character_jobs_account ON character_jobs(account_id);
+            CREATE TABLE IF NOT EXISTS character_job_traces (
+                job_id TEXT PRIMARY KEY REFERENCES character_jobs(id) ON DELETE CASCADE,
+                traceparent TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS character_account_fences (account_id TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS character_deletions (
                 account_id TEXT NOT NULL, profile_id TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0,
@@ -94,6 +99,7 @@ internal sealed partial class CharacterProfileStore
 
     internal Task<CharacterProfile?> ReadAsync(string accountId, CancellationToken token = default)
     {
+        using var activity = BackendTelemetry.StartOperation("character.context.read");
         token.ThrowIfCancellationRequested();
         using var connection = Open();
         return Task.FromResult(Read(connection, null, accountId));
@@ -155,6 +161,7 @@ internal sealed partial class CharacterProfileStore
     private Task<CharacterProfile> SaveRevisionAsync(string accountId, CharacterWriteRequest request,
         bool correction, CancellationToken token)
     {
+        using var activity = BackendTelemetry.StartOperation("character.save");
         token.ThrowIfCancellationRequested();
         Validate(request.UserInput);
         using var connection = Open();
@@ -195,6 +202,8 @@ internal sealed partial class CharacterProfileStore
                 DELETE FROM customer_conversation_preferences WHERE account_id=$account AND profile_id!=$profile;
                 INSERT INTO character_jobs(id,account_id,profile_id,revision,input_json,rejected,status,created_at,openai_consent)
                 SELECT $job,$account,$profile,$revision,$input,$rejected,'queued',$now,1 WHERE $consent=1;
+                INSERT INTO character_job_traces(job_id,traceparent)
+                SELECT $job,$trace WHERE $consent=1 AND $trace IS NOT NULL;
                 """;
             command.Parameters.AddWithValue("$account", accountId);
             command.Parameters.AddWithValue("$status", profile.Status);
@@ -202,7 +211,12 @@ internal sealed partial class CharacterProfileStore
             command.Parameters.AddWithValue("$profile", profile.ProfileId);
             command.Parameters.AddWithValue("$revision", profile.Revision);
             command.Parameters.AddWithValue("$input", JsonSerializer.Serialize(request.UserInput, Json));
-            command.Parameters.AddWithValue("$job", Guid.NewGuid().ToString("N"));
+            var operationId = Guid.NewGuid().ToString("N");
+            activity?.SetTag("app.operation_id", operationId);
+            activity?.SetTag("app.phase", request.OpenAiConsent ? "queue" : "save");
+            command.Parameters.AddWithValue("$job", operationId);
+            command.Parameters.AddWithValue("$trace", Activity.Current?.IdFormat == ActivityIdFormat.W3C
+                ? (object?)Activity.Current.Id ?? DBNull.Value : DBNull.Value);
             command.Parameters.AddWithValue("$rejected", correction
                 ? JsonSerializer.Serialize(current?.Enrichment is null ? new { recognizedName = "", world = "" }
                     : new { recognizedName = current.Enrichment.RecognizedName, world = current.Enrichment.World }, Json)
@@ -211,6 +225,7 @@ internal sealed partial class CharacterProfileStore
             command.ExecuteNonQuery();
         }
         transaction.Commit();
+        BackendTelemetry.Completed(activity);
         return Task.FromResult(profile);
     }
 
@@ -310,6 +325,17 @@ internal sealed partial class CharacterProfileStore
             ? new(current.ProfileId, current.Revision, current.UserInput, current.Enrichment, Now()) : null;
     }
 
+    internal string? JobIdForRevision(string accountId, string profileId, long revision)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id FROM character_jobs WHERE account_id=$account AND profile_id=$profile AND revision=$revision";
+        command.Parameters.AddWithValue("$account", accountId);
+        command.Parameters.AddWithValue("$profile", profileId);
+        command.Parameters.AddWithValue("$revision", revision);
+        return command.ExecuteScalar() as string;
+    }
+
     internal Task<CharacterJob?> ClaimAsync(CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
@@ -318,7 +344,8 @@ internal sealed partial class CharacterProfileStore
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT id,account_id,profile_id,revision,input_json,rejected,attempt FROM character_jobs
+            SELECT id,account_id,profile_id,revision,input_json,rejected,attempt,created_at,
+                (SELECT traceparent FROM character_job_traces WHERE job_id=character_jobs.id) FROM character_jobs
             WHERE openai_consent=1 AND ((status='queued' AND lease_until <= $now) OR (status='running' AND lease_until < $now))
             ORDER BY created_at,id LIMIT 1;
             """;
@@ -329,7 +356,8 @@ internal sealed partial class CharacterProfileStore
             if (!reader.Read()) { return Task.FromResult<CharacterJob?>(null); }
             job = new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt64(3),
                 JsonSerializer.Deserialize<CharacterUserInput>(reader.GetString(4), Json)!,
-                reader.IsDBNull(5) ? null : reader.GetString(5), Guid.NewGuid().ToString("N"), reader.GetInt32(6) + 1, OpenAiConsent: true);
+                reader.IsDBNull(5) ? null : reader.GetString(5), Guid.NewGuid().ToString("N"), reader.GetInt32(6) + 1,
+                OpenAiConsent: true, TraceParent: reader.IsDBNull(8) ? null : reader.GetString(8), CreatedAt: reader.GetInt64(7));
         }
         command.Parameters.Clear();
         command.CommandText = """
@@ -367,6 +395,8 @@ internal sealed partial class CharacterProfileStore
     internal Task<bool> CompleteAsync(CharacterJob job, CharacterEnrichment? enrichment, string? errorCode,
         CancellationToken token = default)
     {
+        using var activity = BackendTelemetry.StartOperation("character.context.persist");
+        activity?.SetTag("app.operation_id", job.Id);
         token.ThrowIfCancellationRequested();
         if (enrichment is not null) { CharacterEnrichmentValidation.Validate(enrichment, job.Revision); }
         using var connection = Open();

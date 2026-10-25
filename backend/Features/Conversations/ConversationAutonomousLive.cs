@@ -47,7 +47,9 @@ internal sealed partial class ConversationStore
             if (!IsRealtimeTurnCurrent(call) || !conversations.TryGetValue(call.Correlation.ConversationId, out var c)
                 || !OperationEpoch.Same(c.LiveOperationEpoch, call.Correlation.OperationEpoch))
                 return (0, call.Context.Request.DeviceRevision, false);
-            return (c.LiveReadyMask ?? call.Context.Request.ReadyMask, c.LiveAvailabilityRevision ?? call.Context.Request.DeviceRevision, true);
+            var mask = c.CustomerKeepsakes ? CustomerWandSelection.KeepsakeReadyMask
+                : c.LiveReadyMask ?? call.Context.Request.ReadyMask;
+            return (mask, c.LiveAvailabilityRevision ?? call.Context.Request.DeviceRevision, true);
         }
     }
     internal bool UpdateLiveAvailability(string device, string conversation, Guid boot, int generation, int mask, int revision,

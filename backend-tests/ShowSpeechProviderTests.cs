@@ -121,7 +121,14 @@ internal static class ShowSpeechProviderTests
                 return Task.FromResult(response);
             });
             using var http = new HttpClient(handler);
-            await RejectAsync<InvalidDataException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", default));
+            if (status == HttpStatusCode.TemporaryRedirect)
+            {
+                await RejectAsync<InvalidDataException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", default));
+            }
+            else
+            {
+                await RejectAsync<System.ClientModel.ClientResultException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", default));
+            }
             Check(handler.Calls == 1, "HTTP failure or redirect cannot trigger a second provider request");
         }
     }

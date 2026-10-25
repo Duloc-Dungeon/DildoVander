@@ -225,6 +225,7 @@ internal sealed class HybridMemoryService(EveningMemoryStore store, OpenAiVector
     internal async Task<MemoryRetrieval> RetrieveAsync(MemoryAccess access, MemoryScope scope, string query,
         CancellationToken token, bool conversationOnly = false)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("memory.retrieve");
         if (!options.Enabled) return new("memory_unavailable", []);
         if (scope == MemoryScope.Personal && (!options.LongTermPersonalEnabled || access.Guest is not { IdentityVerified: true, LongTermAllowed: true }))
             return new("memory_not_found", []);
@@ -374,20 +375,26 @@ internal sealed class MemoryIndexWorker(EveningMemoryStore store, OpenAiVectorMe
         {
             var job = store.ClaimMemoryJob();
             if (job is null) { if (!await timer.WaitForNextTickAsync(token)) return; continue; }
+            using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("memory.index.process");
+            activity?.SetTag("app.operation_id", job.Id);
+            activity?.SetTag("app.attempt", job.Attempts);
             try
             {
                 await ProcessAsync(job, token); store.FinishMemoryJob(job); service.ProviderRecovered();
+                Kufr.Backend.Features.Observability.BackendTelemetry.Completed(activity);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { return; } // lease is recovered after restart
             catch (Exception e) when (e is MemoryProviderException or InvalidDataException or HttpRequestException or OperationCanceledException
                 or InvalidOperationException or KeyNotFoundException or ArgumentException)
             {
                 var error = e as MemoryProviderException;
+                Kufr.Backend.Features.Observability.BackendTelemetry.Failed(activity, e, token);
                 var retryable = error?.Retryable ?? e is HttpRequestException or OperationCanceledException;
                 var backoff = TimeSpan.FromSeconds(Math.Min(300, options.RetryBaseSeconds * Math.Pow(2, Math.Min(job.Attempts - 1, 8)))
                     + Random.Shared.NextDouble());
                 if (error?.RetryAfter is { } rateLimit && rateLimit > backoff) backoff = rateLimit;
                 var retry = retryable && job.Attempts < options.MaxAttempts ? backoff : (TimeSpan?)null;
+                activity?.SetTag("app.outcome", retry is null ? "failed" : "retry_scheduled");
                 store.FinishMemoryJob(job, error?.Code ?? (e is OperationCanceledException ? "index_timeout" : "invalid_provider_response"), retry);
                 if (retry is null && job.Action == "index") store.QueueMemoryDeletion(job);
                 service.ProviderFailed();

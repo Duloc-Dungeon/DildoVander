@@ -4,13 +4,14 @@ using System.Text.Json;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.OpenAi;
 using OpenAI.Responses;
+using Kufr.Backend.Features.Observability;
 
 #pragma warning disable OPENAI001
 namespace Kufr.Backend.Features.Customers;
 
 internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentProvider, IDisposable
 {
-    internal const string PromptVersion = "customer-character-v1";
+    internal const string PromptVersion = "customer-character-v2";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly string? key;
     private readonly string model;
@@ -25,7 +26,7 @@ internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentPr
         model = configuration["CustomerCharacters:Model"] ?? ResponsesTextDialogBudget.Model;
         if (model.Length is < 1 or > 100 || model.Any(char.IsControl))
         {
-            throw new InvalidOperationException("Invalid CustomerCharacters:Model.");
+            throw new CharacterException("character_provider_configuration_error", 503);
         }
         webSearch = configuration.GetValue("CustomerCharacters:WebSearchEnabled", true);
         http = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
@@ -33,24 +34,45 @@ internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentPr
 
     public async Task<CharacterEnrichment> EnrichAsync(CharacterJob job, CancellationToken cancellationToken)
     {
-        if (!await store.CanDispatchAsync(job, cancellationToken)) { throw new CharacterException("openai_consent_required", 409); }
-        if (string.IsNullOrWhiteSpace(key)) { throw new CharacterException("character_provider_unavailable", 503); }
-        using var bounded = BoundedSdkTransport.Create(http, 131_072, ["application/json"]);
-        var client = new ResponsesClient(new ApiKeyCredential(key), new ResponsesClientOptions
+        using var telemetry = GenAiOperation.Start("responses", model);
+        try
         {
-            Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
-        });
-        using var body = BinaryContent.Create(BinaryData.FromString(BuildRequest(job, model, webSearch)));
-        var response = await client.CreateResponseAsync(body, new RequestOptions { CancellationToken = cancellationToken });
-        using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
-        if (document.RootElement.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
-        {
-            var actualModel = document.RootElement.TryGetProperty("model", out var modelValue)
-                ? modelValue.GetString() ?? model : model;
-            await store.RecordProviderUsageAsync(job.Id, actualModel,
-                usage.GetProperty("input_tokens").GetInt32(), usage.GetProperty("output_tokens").GetInt32());
+            if (!await store.CanDispatchAsync(job, cancellationToken)) { throw new CharacterException("openai_consent_required", 409); }
+            if (string.IsNullOrWhiteSpace(key)) { throw new CharacterException("character_provider_unavailable", 503); }
+            using var bounded = BoundedSdkTransport.Create(http, 131_072, ["application/json"]);
+            var client = new ResponsesClient(new ApiKeyCredential(key), new ResponsesClientOptions
+            {
+                Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
+            });
+            using var body = BinaryContent.Create(BinaryData.FromString(BuildRequest(job, model, webSearch)));
+            var response = await client.CreateResponseAsync(body, new RequestOptions { CancellationToken = cancellationToken });
+            using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
+            telemetry.ReadUsage(document.RootElement);
+            if (document.RootElement.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+            {
+                var actualModel = document.RootElement.TryGetProperty("model", out var modelValue)
+                    ? modelValue.GetString() ?? model : model;
+                await store.RecordProviderUsageAsync(job.Id, actualModel,
+                    usage.GetProperty("input_tokens").GetInt32(), usage.GetProperty("output_tokens").GetInt32());
+            }
+            using var parsing = BackendTelemetry.StartOperation("character.enrichment.validate");
+            try
+            {
+                var result = Parse(document.RootElement, job.Revision, model);
+                BackendTelemetry.Completed(parsing);
+                return result;
+            }
+            catch (Exception error)
+            {
+                BackendTelemetry.Failed(parsing, error, cancellationToken);
+                throw;
+            }
         }
-        return Parse(document.RootElement, job.Revision, model);
+        catch (Exception error)
+        {
+            telemetry.Fail(error, cancellationToken);
+            throw;
+        }
     }
 
     internal static string BuildRequest(CharacterJob job, string model, bool webSearch)
@@ -65,54 +87,100 @@ internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentPr
             + "Put playful proposals only in conversationIdeas, separately from sourced facts. "
             + "If search is unavailable or returns no usable evidence, leave facts empty, explain the limitation in ambiguities, "
             + "and use only the supplied description and explicitly speculative conversation ideas. "
-            + "Do not rewrite userInput. Return JSON with recognizedName, world, summary, facts:[{text,sourceUrls:[url]}], "
+            + "Do not rewrite userInput. Return one valid JSON object only, without Markdown fences or text outside it. "
+            + "Use recognizedName, world, summary, facts:[{text,sourceUrls:[url]}], "
             + "conversationIdeas:[string], ambiguities:[string], needsClarification:boolean. "
             + "Use at most 6 facts, 5 ideas, 5 ambiguities, 1000 summary characters and 400 characters per list item. Input: " + input;
         return JsonSerializer.Serialize(new
         {
             model, store = false, max_output_tokens = 2400, max_tool_calls = 2,
+            reasoning = new { effort = "low" },
             tools = webSearch ? new object[] { new { type = "web_search", search_context_size = "low" } } : [],
-            input = prompt, text = new { format = new { type = "json_object" } }
+            include = webSearch ? new[] { "web_search_call.action.sources" } : [],
+            // Hosted search rejects JSON mode. Keep the same JSON-only contract
+            // in the prompt, then enforce shape and citation evidence locally.
+            input = prompt, text = new { format = new { type = webSearch ? "text" : "json_object" } }
         }, Json);
     }
 
     internal static CharacterEnrichment Parse(JsonElement root, long revision, string requestedModel)
     {
-        if (root.GetProperty("status").GetString() != "completed") { throw new InvalidDataException("Character response incomplete."); }
+        try
+        {
+            return ParseCompleted(root, revision, requestedModel);
+        }
+        catch (Exception error) when (error is JsonException or InvalidDataException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)
+        {
+            // Never retain response text or exception messages: both can contain
+            // fictional input, source content or provider diagnostics.
+            throw new CharacterException("character_provider_invalid_response", 502);
+        }
+    }
+
+    private static CharacterEnrichment ParseCompleted(JsonElement root, long revision, string requestedModel)
+    {
+        if (root.GetProperty("status").GetString() != "completed")
+        {
+            var limited = root.TryGetProperty("incomplete_details", out var details)
+                && details.ValueKind == JsonValueKind.Object
+                && details.TryGetProperty("reason", out var reason)
+                && reason.GetString() == "max_output_tokens";
+            throw new CharacterException(limited ? "character_provider_output_limit" : "character_provider_incomplete", 502);
+        }
         var text = "";
         var sources = new Dictionary<string, CharacterSource>(StringComparer.Ordinal);
         foreach (var output in root.GetProperty("output").EnumerateArray())
         {
+            // Structured JSON may cite a searched URL without a text annotation.
+            // Only provider-returned search evidence can authorize those facts.
+            if (output.GetProperty("type").GetString() == "web_search_call"
+                && output.TryGetProperty("action", out var action)
+                && action.TryGetProperty("sources", out var searchedSources))
+            {
+                foreach (var source in searchedSources.EnumerateArray())
+                {
+                    AddSource(sources, source);
+                }
+            }
             if (output.GetProperty("type").GetString() != "message") { continue; }
             foreach (var content in output.GetProperty("content").EnumerateArray())
             {
+                if (content.GetProperty("type").GetString() == "refusal") { throw new CharacterException("character_provider_refused", 502); }
                 if (content.GetProperty("type").GetString() != "output_text") { continue; }
                 text += content.GetProperty("text").GetString();
                 if (!content.TryGetProperty("annotations", out var annotations)) { continue; }
                 foreach (var annotation in annotations.EnumerateArray())
                 {
                     if (annotation.GetProperty("type").GetString() != "url_citation") { continue; }
-                    var url = annotation.GetProperty("url").GetString()!;
-                    if (CharacterEnrichmentValidation.IsSourceUrl(url) && sources.Count < 8)
-                    {
-                        var title = annotation.TryGetProperty("title", out var titleValue) ? titleValue.GetString() : null;
-                        sources.TryAdd(url, new((title ?? url)[..Math.Min((title ?? url).Length, 300)], url));
-                    }
+                    AddSource(sources, annotation);
                 }
             }
         }
         var parsed = JsonSerializer.Deserialize<ProviderResult>(text, Json)
             ?? throw new InvalidDataException("Character response missing.");
         var usage = root.GetProperty("usage");
+        if (parsed.Facts is null) { throw new InvalidDataException("Character facts missing."); }
+        var referencedUrls = parsed.Facts.Where(fact => fact is not null)
+            .SelectMany(fact => fact.SourceUrls ?? []).ToHashSet(StringComparer.Ordinal);
+        var selectedSources = sources.Values.OrderByDescending(source => referencedUrls.Contains(source.Url)).Take(8).ToArray();
         var result = new CharacterEnrichment(parsed.RecognizedName, parsed.World, parsed.Summary,
             parsed.Facts, parsed.ConversationIdeas, parsed.Ambiguities, parsed.NeedsClarification,
-            sources.Values.ToArray(), root.TryGetProperty("model", out var actualModel)
+            selectedSources, root.TryGetProperty("model", out var actualModel)
                 ? actualModel.GetString() ?? requestedModel : requestedModel,
             PromptVersion, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), revision,
             sources.Count > 0 ? "web_sources" : "user_input_and_model_interpretation",
             usage.GetProperty("input_tokens").GetInt32(), usage.GetProperty("output_tokens").GetInt32());
         CharacterEnrichmentValidation.Validate(result, revision);
         return result;
+    }
+
+    private static void AddSource(Dictionary<string, CharacterSource> sources, JsonElement source)
+    {
+        var url = source.GetProperty("url").GetString();
+        if (!CharacterEnrichmentValidation.IsSourceUrl(url) || sources.Count >= 128) { return; }
+        var title = source.TryGetProperty("title", out var value) ? value.GetString() : null;
+        var label = title ?? url!;
+        sources.TryAdd(url!, new(label[..Math.Min(label.Length, 300)], url!));
     }
 
     private sealed record ProviderResult(string RecognizedName, string World, string Summary,

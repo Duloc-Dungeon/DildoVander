@@ -19,6 +19,8 @@ describe('native guest transport shares real SFC contracts without account crede
     const claim = nativeBridge.guestRequest.mock.calls[1][0];
     expect(claim.headers).toMatchObject({ 'x-dv10-csrf': 'guest-csrf', 'content-type': 'application/json' });
     expect(claim.headers['idempotency-key']).toMatch(/^[a-f0-9-]{36}$/);
+    expect(claim.headers.traceparent).toMatch(/^00-[a-f0-9]{32}-[a-f0-9]{16}-00$/);
+    expect(claim.headers.traceparent).not.toBe(nativeBridge.guestRequest.mock.calls[0][0].headers.traceparent);
     expect(new TextDecoder().decode(base64ToBytes(claim.bodyBase64))).toContain('a'.repeat(40));
     expect(claim.path).toBe('/guest/v1/claim'); expect(JSON.stringify(claim.headers)).not.toContain('a'.repeat(40));
   });

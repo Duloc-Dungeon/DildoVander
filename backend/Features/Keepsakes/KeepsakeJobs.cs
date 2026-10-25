@@ -457,6 +457,9 @@ internal sealed class KeepsakeWorker(KeepsakeStore store, IKeepsakeProvider prov
         {
             var job = store.LeaseNext();
             if (job is null) { await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken); continue; }
+            using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("keepsake.job.process");
+            activity?.SetTag("app.operation_id", job.Id);
+            activity?.SetTag("app.job.type", job.Kind);
             try
             {
                 var request = store.Dispatch(job);
@@ -465,9 +468,11 @@ internal sealed class KeepsakeWorker(KeepsakeStore store, IKeepsakeProvider prov
                 deadline.CancelAfter(TimeSpan.FromMinutes(4));
                 var output = await provider.GenerateAsync(request, deadline.Token);
                 store.Complete(job, output);
+                Kufr.Backend.Features.Observability.BackendTelemetry.Completed(activity);
             }
             catch (Exception exception)
             {
+                Kufr.Backend.Features.Observability.BackendTelemetry.Failed(activity, exception, stoppingToken);
                 // Technical diagnostics never contain prompts, names, photos or provider bodies.
                 store.MarkAmbiguous(job, exception is OperationCanceledException ? "provider_timeout" : "provider_attempt_unknown");
                 logger.LogWarning("Keepsake job {JobId} requires reconciliation ({ExceptionType})", job.Id, exception.GetType().Name);

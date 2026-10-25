@@ -1,19 +1,50 @@
 import type { Duel, DuelAction, DuelSide } from '../archive/showContracts';
 import { accountTransport } from '../identity/session';
 import { labClientPlatform } from '../persona-lab/platform';
+import { diagnosticRequestId } from '../../application/requestDiagnostics';
 import type { LabEngine } from '../persona-lab/contracts';
 import type { CharacterInput, InputMode, TestCharacter, TestingCatalog, TestSession, TestSessionDetail } from './contracts';
 
 export class TestingError extends Error {
-  constructor(readonly code: string, readonly status: number) { super(code); }
+  constructor(readonly code: string, readonly status: number, readonly requestId?: string, readonly retryAfterMs?: number) { super(code); }
+}
+
+const MIN_RATE_LIMIT_DELAY_MS = 1000;
+const MAX_RATE_LIMIT_DELAY_MS = 5 * 60 * 1000;
+const DEFAULT_RATE_LIMIT_DELAY_MS = 5000;
+
+function rateLimitDelay(header: string | null): number {
+  let delay = DEFAULT_RATE_LIMIT_DELAY_MS;
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) delay = seconds * 1000;
+    else {
+      const timestamp = Date.parse(header);
+      if (Number.isFinite(timestamp)) delay = timestamp - Date.now();
+    }
+  }
+  return Math.min(MAX_RATE_LIMIT_DELAY_MS, Math.max(MIN_RATE_LIMIT_DELAY_MS, delay));
 }
 
 /** Account transport supplies CSRF/native cancellation; no device credential is accepted. */
 export class TestingSessionsClient {
   private generation = 0;
   private controller = new AbortController();
+  private retryAt = 0;
+  private rateLimitRequestId?: string;
   constructor(private identity: () => string) {}
-  invalidate(): void { this.generation++; this.controller.abort(); this.controller = new AbortController(); }
+  invalidate(clearRateLimit = false): void {
+    this.generation++; this.controller.abort(); this.controller = new AbortController();
+    if (clearRateLimit) { this.retryAt = 0; this.rateLimitRequestId = undefined; }
+  }
+  cooldownUntil(): number { return this.retryAt; }
+  cooldownRemainingMs(): number { return Math.max(0, this.retryAt - Date.now()); }
+  private rateLimited(response: Response, requestId?: string): TestingError {
+    const retryAfterMs = rateLimitDelay(response.headers.get('Retry-After'));
+    this.retryAt = Math.max(this.retryAt, Date.now() + retryAfterMs);
+    this.rateLimitRequestId = requestId ?? this.rateLimitRequestId;
+    return new TestingError('rate_limited', response.status, this.rateLimitRequestId, retryAfterMs);
+  }
   private async request<T>(path = '', method = 'GET', body?: unknown): Promise<T> {
     const owner = this.identity(); const generation = this.generation; const signal = this.controller.signal;
     const current = () => {
@@ -21,14 +52,21 @@ export class TestingSessionsClient {
         throw new DOMException('Testing account changed.', 'AbortError');
     };
     current();
+    const cooldown = this.cooldownRemainingMs();
+    if (cooldown > 0) throw new TestingError('rate_limited', 429, this.rateLimitRequestId, cooldown);
     const response = await accountTransport('/app/v1/testing-sessions' + path, {
       method, signal, redirect: 'error', headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     current();
     const value = await response.json().catch(() => null); current();
-    if (!response.ok) throw new TestingError(typeof value?.code === 'string' ? value.code : 'testing_request_failed', response.status);
-    if (value === null && response.status !== 204) throw new TestingError('testing_invalid_response', 502);
+    const requestId = diagnosticRequestId(response.headers.get('X-Request-Id')) ?? diagnosticRequestId(value?.traceId);
+    const code = typeof value?.code === 'string' ? value.code : 'testing_request_failed';
+    if (response.status === 429 || code === 'rate_limited') {
+      throw this.rateLimited(response, requestId);
+    }
+    if (!response.ok) throw new TestingError(code, response.status, requestId);
+    if (value === null && response.status !== 204) throw new TestingError('testing_invalid_response', 502, requestId);
     return value as T;
   }
   catalog() { return this.request<TestingCatalog>('/catalog'); }
@@ -57,7 +95,11 @@ export class TestingSessionsClient {
   move(id: string, duelId: string, side: DuelSide, round: number, revision: number, action: DuelAction, operationKey: string) { return this.request<Duel>(`/${encodeURIComponent(id)}/duels/${encodeURIComponent(duelId)}/move`, 'POST', { side, round, revision, action, operationKey }); }
   async asset(id: string, keepsakeId: string, assetId: string): Promise<Blob> {
     const owner = this.identity(); const generation = this.generation; const signal = this.controller.signal;
+    const cooldown = this.cooldownRemainingMs();
+    if (cooldown > 0) throw new TestingError('rate_limited', 429, this.rateLimitRequestId, cooldown);
     const response = await accountTransport(`/app/v1/testing-sessions/${encodeURIComponent(id)}/keepsakes/${encodeURIComponent(keepsakeId)}/assets/${encodeURIComponent(assetId)}`, { signal, redirect:'error' });
+    if (!owner || owner !== this.identity() || generation !== this.generation || signal.aborted) throw new DOMException('Testing account changed.', 'AbortError');
+    if (response.status === 429) throw this.rateLimited(response, diagnosticRequestId(response.headers.get('X-Request-Id')));
     const blob = await response.blob();
     if (!owner || owner !== this.identity() || generation !== this.generation || signal.aborted) throw new DOMException('Testing account changed.', 'AbortError');
     if (!response.ok || !['image/png','image/jpeg','image/webp'].includes(blob.type)) throw new TestingError('testing_asset_unavailable', response.status);

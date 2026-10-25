@@ -9,6 +9,11 @@ namespace Kufr.Backend.Features.Realtime;
 // Both voice engines consume the same revision/operation-bound candidate set.
 internal static class CustomerWandSelection
 {
+    // Digital keepsakes are reusable choices, not consumable physical stock.
+    internal const int KeepsakeReadyMask = 63;
+    private const string KeepsakeInstructions = "Všech šest digitálních hůlkových památek je vždy dostupných, i v produkci. "
+        + "Kufr vydává digitální památku, nikoli fyzickou hůlku; předchozí výběry nabídku nevyčerpávají. ";
+
     internal static async Task<RealtimeCall> PrepareAsync(RealtimeCall call, ConversationStore conversations,
         IServiceProvider services, CancellationToken token)
     {
@@ -23,7 +28,7 @@ internal static class CustomerWandSelection
         // the next session; deletion and delegated-account revocation always win.
         var existing = store.Read(session.OwnerId, session.OperationId);
         if (existing is null)
-            store.Begin(session.OwnerId, session.OperationId, captured.Profile, call.Context.Request.ReadyMask,
+            store.Begin(session.OwnerId, session.OperationId, captured.Profile, KeepsakeReadyMask,
                 captured.OpenAiConsent);
         var memory = services.GetRequiredService<Kufr.Backend.Features.Memory.HybridMemoryService>();
         var memoryAccess = conversations.LiveMemoryAccess(call);
@@ -52,15 +57,22 @@ internal static class CustomerWandSelection
         return call with { Context = call.Context with { GeneratedWands = result.SelectedWand is { } selected ? [selected] : result.Candidates } };
     }
 
-    internal static string AvailableForPrompt(RealtimeTurnContext turn) => turn.GeneratedWands is null
-        ? PartyWandCatalog.AvailableForPrompt(turn.Request.ReadyMask)
-        : JsonSerializer.Serialize(turn.GeneratedWands.Where(w => (turn.Request.ReadyMask & (1 << (w.PhysicalSlot - 1))) != 0)
+    internal static string AvailableForPrompt(RealtimeTurnContext turn) => turn.DeferWandSelection
+        ? "Šest digitálních hůlkových památek (1–6); osobní názvy a příběhy budou připraveny při výběru."
+        : turn.GeneratedWands is null
+            ? PartyWandCatalog.AvailableForPrompt(turn.Request.ReadyMask)
+            : JsonSerializer.Serialize(turn.GeneratedWands.Where(w => (turn.Request.ReadyMask & (1 << (w.PhysicalSlot - 1))) != 0)
             .Select(w => new { compartment = w.PhysicalSlot, name = w.Name,
                 temperament = GptLive.LiveTextBudget.Bound(w.Temperament, 96), affinity = GptLive.LiveTextBudget.Bound(w.Affinity, 96) }),
             RealtimeProtocol.JsonOptions);
 
     internal static string ActorInstructions(RealtimeTurnContext turn) => turn.GeneratedWands is null ? ""
-        : "\nPro tuto postavu platí výhradně nové osobní kandidáty v citovaných datech níže. Staré katalogové názvy a jejich lore nepoužívej. "
+        : turn.DeferWandSelection
+        ? "\n" + KeepsakeInstructions
+            + "Osobní kandidáti ještě nebyli vygenerováni; to neznamená nedostupnost památek. "
+            + "Pokračuj v rozhovoru, nevymýšlej názvy ani potvrzený výběr. Přípravu a výběr spustí samostatná akce testera."
+        : "\n" + KeepsakeInstructions
+            + "Pro tuto postavu platí výhradně nové osobní kandidáty v citovaných datech níže. Staré katalogové názvy a jejich lore nepoužívej. "
             + "Výběr nadále dělá backendová delegace. V závěru vyslov pouze název potvrzeného kandidáta, bez čísla přihrádky. "
             + "Jde o digitální fikci; nemění vzhled ani schopnosti fyzické rekvizity. Netvrď dokončený pohyb. "
             + AvailableForPrompt(turn);

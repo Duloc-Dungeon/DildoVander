@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.GptLive;
 using Kufr.Backend.Features.Realtime;
+using Kufr.Backend.Features.Observability;
 using Microsoft.Extensions.Configuration;
 using Kufr.Backend.Features.Character;
 using Kufr.Backend.Features.Show;
@@ -531,6 +533,17 @@ internal static class AutonomousLiveTests
 
     private static async Task VerifyVisualResetAsync(GptLiveOptions options, bool beforeReady = false)
     {
+        Activity? observed = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == BackendTelemetry.SourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == "gen_ai.live") { observed = activity; }
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
         using var clock = new ManualClock(); using var old = new SocketFixture(); using var fresh = new SocketFixture();
         old.BeforeDelivery = () => clock.Advance(50); fresh.BeforeDelivery = () => clock.Advance(50);
         old.DelayStarted = beforeReady;
@@ -550,6 +563,7 @@ internal static class AutonomousLiveTests
         else
         {
             await old.Command("session.instructions.append", lifetime.Token);
+            old.Emit(new { type = "session.usage.updated", usage = new { seconds = 5 } });
             old.Audio();
             Check(await audio.Reader.ReadAsync(lifetime.Token) == 0, "Live initial audio belongs to original provider");
         }
@@ -557,11 +571,15 @@ internal static class AutonomousLiveTests
         generation = 1; previous.TrySetResult();
         await fresh.Command("session.start", lifetime.Token);
         await fresh.Command("session.instructions.append", lifetime.Token);
+        fresh.Emit(new { type = "session.usage.updated", usage = new { seconds = 2 } });
         old.Audio(); fresh.Audio();
         Check(await audio.Reader.ReadAsync(lifetime.Token) == 1 && !run.IsCompleted,
             "blocked Live provider resets without ending application voice session and late old audio never reappears");
         Check(!fresh.Sent.Any(item => item.Contains("revoked cloak")), "Live restart does not replay revoked admission costume");
         lifetime.Cancel(); try { await run; } catch (OperationCanceledException) { }
+        Check(observed?.GetTagItem("app.ai.billable_seconds") is double actualSeconds
+            && actualSeconds == (beforeReady ? 2 : 7),
+            "Live trace sums actual observed seconds across visual restarts without adding reserved cost");
     }
 
     private static async Task VerifyExpressWithoutEvidence(GptLiveOptions options, string control)
@@ -925,6 +943,7 @@ internal static class AutonomousLiveTests
         await VerifyConversation(options, correction: false, revokeAtPublication: true);
         await VerifyConversation(options, correction: true);
         await VerifyConversation(options, correction: false, interrupt: true);
+        await VerifyConversation(options, correction: false, interrupt: true, lateAudioBeforeInterrupt: true);
         await VerifyConversation(options with { DelegationTimeoutMs = 2000, DelegationContextWaitMs = 350 }, correction: false,
             naturalVerdict: true, visitorStillSpeaking: true, acknowledge: true, resumeDuringDecision: true);
         await VerifyConversation(options, correction: false, naturalVerdict: true, repairVerdict: true);
@@ -1084,7 +1103,8 @@ internal static class AutonomousLiveTests
 
     private static async Task VerifyConversation(GptLiveOptions options, bool correction, bool interrupt = false,
         bool naturalVerdict = false, bool visitorStillSpeaking = false, bool acknowledge = false,
-        bool resumeDuringDecision = false, bool repairVerdict = false, bool fractionalTimeline = false, bool withMemory = false, bool revokeAtPublication = false, bool personalized = false)
+        bool resumeDuringDecision = false, bool repairVerdict = false, bool fractionalTimeline = false, bool withMemory = false, bool revokeAtPublication = false, bool personalized = false,
+        bool lateAudioBeforeInterrupt = false)
     {
         using var clock = new ManualClock();
         using var socket = new SocketFixture();
@@ -1132,6 +1152,7 @@ internal static class AutonomousLiveTests
         var consumed = Channel.CreateUnbounded<string>();
         var audioConsumed = Channel.CreateUnbounded<int>();
         var states = Channel.CreateUnbounded<string>();
+        TaskCompletionSource? playbackInterrupted = null;
         var pcmBytes = 0;
         var run = new AutonomousLiveDialogue(connection, decisions, clock, integrated?.Memory).RunAsync(call,
             (bytes, _) => { pcmBytes += bytes.Length; audioConsumed.Writer.TryWrite(bytes.Length); return Task.CompletedTask; },
@@ -1140,7 +1161,12 @@ internal static class AutonomousLiveTests
             (r, _) => { playerRequests.Writer.TryWrite(r); return playerDone.Task; },
             () => (63, 7, true), _ => { inputStopped = true; return Task.CompletedTask; }, lifetime.Token,
             memoryAccess: integrated?.Conversations.LiveMemoryAccess(call),
-            terminalState: state => states.Writer.TryWrite(state),
+            terminalState: state =>
+            {
+                states.Writer.TryWrite(state);
+                if (state == "character_response_cancelled" || !lateAudioBeforeInterrupt && state == "input_active")
+                { playbackInterrupted?.TrySetResult(); }
+            },
             transcript: integrated is null ? null : segment => integrated.Conversations.AppendRealtimeTranscript(call, segment),
             visualContext: withMemory ? () => (2, "latest grounded blue cloak") : null,
             visualRevision: revokeAtPublication ? () => new(visualGeneration, visualChanged.Task) : null,
@@ -1266,9 +1292,24 @@ internal static class AutonomousLiveTests
         Check(checkpoint.PcmBytes == pcmBytes && pcmBytes == (repairVerdict || acknowledge ? 12 : 8), "checkpoint covers actual transported PCM including a repaired announcement");
         if (interrupt)
         {
+            if (lateAudioBeforeInterrupt)
+            {
+                // A late provider tail retires this checkpoint before the user
+                // barges in. Its eventual drain must not publish the selection.
+                // Keep this stage below the 100ms PCM cancellation boundary.
+                socket.BeforeDelivery = null;
+                socket.Audio();
+                await audioConsumed.Reader.ReadAsync(lifetime.Token);
+                Check(pcmBytes == checkpoint.PcmBytes + 4, "late provider audio extends the old playback checkpoint");
+            }
+            playbackInterrupted = new(TaskCreationOptions.RunContinuationsAsynchronously);
             await connection.SendAudioAsync(new byte[] { 0, 32, 0, 32 }, lifetime.Token);
             playerDone.SetResult(new(checkpoint.PlaybackId, checkpoint.PcmBytes, true));
-            while (await states.Reader.ReadAsync(lifetime.Token) != "input_active") { }
+            // PCM observation does not wake the actor. Tick the fake clock so
+            // it can reject the old drain even if its player was already retired.
+            // Active speech may be cancelled outright instead of reporting input_active.
+            clock.Advance(50);
+            await playbackInterrupted.Task.WaitAsync(lifetime.Token);
             Check(!socket.Sent.Any(s => s.Contains("session.close")), "guest speech blocks a drained checkpoint before its transcript arrives");
             socket.Transcript(true, "Přestaň mluvit", 6100, 6500);
             await consumed.Reader.ReadAsync(lifetime.Token);

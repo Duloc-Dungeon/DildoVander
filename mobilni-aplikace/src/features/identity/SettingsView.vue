@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import AccountArchiveList from './AccountArchiveList.vue';
 import AccountDeletion from './AccountDeletion.vue';
+import RequestDiagnostics from './RequestDiagnostics.vue';
 import EveningPanel from './EveningPanel.vue';
 import CustomerDataPanel from '../customer/CustomerDataPanel.vue';
 import AwButton from '../../components/AwButton.vue';
@@ -89,6 +90,7 @@ function trust(session: AccountSession) {
       <section class="aw-card"><h2>{{ account.displayName }}</h2><p v-if="!customerSurface">{{ account.roles.join(', ') }}</p><p v-if="details">{{ customerCopy.text('settings.passkey-count', { count: details.passkeyCount }) }}</p><AwButton :busy="busy" @click="action(() => authenticatePasskey('add'), 'settings.passkey-added')">{{ customerCopy.text('settings.add-passkey') }}</AwButton><p v-if="!customerSurface && hasRole('Administrator')"><RouterLink to="/settings/admin">{{ customerCopy.text('settings.admin-link') }}</RouterLink></p></section>
       <section v-if="details" class="aw-card">
         <h2>{{ customerCopy.text('settings.passkeys') }}</h2>
+        <p>{{ customerCopy.text('settings.passkey-name-help') }}</p>
         <p>{{ customerCopy.text('settings.passkey-removal-warning') }}</p>
         <p>{{ customerCopy.text('settings.passkey-reauth') }} <RouterLink :to="`/signin?return=${customerSurface ? '/me/account' : '/settings'}`">{{ customerCopy.text('settings.reauthenticate-account') }}</RouterLink></p>
         <ul class="identity-list">
@@ -130,6 +132,7 @@ function trust(session: AccountSession) {
       <CustomerDataPanel v-if="showCustomerData" :account-id="account.id" :eligible="showCustomerData" />
     </template>
     <AccountDeletion />
+    <RequestDiagnostics />
   </section>
 </template>
 <style scoped>

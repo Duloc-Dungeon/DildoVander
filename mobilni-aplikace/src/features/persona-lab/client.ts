@@ -4,11 +4,12 @@ import { classifyLabFailure, describeLabFailure, isNetworkTransportFailure, type
 import { labClientPlatform } from './platform';
 import { normalizeExecutionPlatforms } from './executionPlatforms';
 import { sanitizeSystemDiagnostics } from './systemDiagnostics';
+import { diagnosticRequestId } from '../../application/requestDiagnostics';
 
 const base = '/app/v1/persona-lab';
 export class LabError extends Error {
   readonly failure: LabFailure;
-  constructor(readonly code: string, readonly status: number) {
+  constructor(readonly code: string, readonly status: number, readonly requestId?: string) {
     const details = classifyLabFailure(code, status);
     super(describeLabFailure(details)); this.failure = details;
   }
@@ -49,8 +50,9 @@ export class PersonaLabClient {
     }
     current();
     const value = await response.json().catch(() => null); current();
-    if (!response.ok) throw new LabError(value?.code ?? 'invalid_response', response.status);
-    if (value === null && response.status !== 204) throw new LabError('invalid_response', 502);
+    const requestId = diagnosticRequestId(response.headers.get('X-Request-Id')) ?? diagnosticRequestId(value?.traceId);
+    if (!response.ok) throw new LabError(value?.code ?? 'invalid_response', response.status, requestId);
+    if (value === null && response.status !== 204) throw new LabError('invalid_response', 502, requestId);
     return value as T;
   }
   catalog() { return this.request<Catalog>('/catalog'); }
@@ -110,8 +112,9 @@ export function technicalDiagnostics(session: LabSession, hardwareUncertain = fa
     revisionId: session.config.id, status: session.status, createdAt: session.createdAt, endedAt: session.endedAt,
     turns: session.turns.map(({ id, role, createdAt, latencyMs, audioBytes, decision, compartment }) =>
       ({ id, role, createdAt, latencyMs, audioBytes, decision, compartment })),
-    events: session.events.map(({ id, type, createdAt, code, latencyMs, decision, compartment, costMicroUsd, providerSessionId, inputTokens, outputTokens }) =>
+    events: session.events.map(({ id, type, createdAt, code, latencyMs, decision, compartment, costMicroUsd, providerSessionId, inputTokens, outputTokens, operationId }) =>
       ({ id, type, createdAt, code, latencyMs, decision, compartment, costMicroUsd, inputTokens, outputTokens,
+        operationId: typeof operationId === 'string' && /^[0-9a-f-]{36}$/i.test(operationId) ? operationId : null,
         providerSessionId: typeof providerSessionId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(providerSessionId) ? providerSessionId : null })),
   };
 }

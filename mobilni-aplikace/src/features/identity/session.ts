@@ -4,6 +4,8 @@ import { isTwinAccountPath, isShowAccountPath, isChronicleAdminPath } from './ac
 import { throwIfAborted } from '../../application/cancellation.mjs';
 import { secureUuid } from '../../application/identifiers.mjs';
 import { customerCopy } from '../../application/customerCopy';
+import { beginRequestDiagnostic, clearRequestDiagnostics, diagnosticRequestId } from '../../application/requestDiagnostics';
+import { correlationHeaders } from '../../application/requestCorrelation.mjs';
 
 export interface Account { id: string; displayName: string; roles: string[] }
 export interface ResourceGrant { id: string; userId: string; resourceType: string; resourceId: string; permission: string }
@@ -123,6 +125,9 @@ export async function shareNativeAccountDataFile(
 }
 
 export const account = ref<Account | null>(null);
+watch(() => account.value?.id, (_current, previous) => {
+  if (previous) clearRequestDiagnostics();
+}, { flush: 'sync' });
 const deletionRequested = ref(false);
 export const accountDeletionRequested = readonly(deletionRequested);
 export const offlineSession = ref(false);
@@ -187,17 +192,29 @@ function requireCurrentAuthentication(generation: number) {
 }
 
 export async function accountTransport(path: string, init: RequestInit = {}): Promise<Response> {
+  const diagnostic = beginRequestDiagnostic(path, init.method ?? 'GET');
+  try {
+    const response = await sendAccountTransport(path, init);
+    diagnostic.complete(response.status, response.headers.get('X-Request-Id') ?? undefined);
+    return response;
+  } catch (cause) {
+    diagnostic.fail(cause);
+    throw cause;
+  }
+}
+
+async function sendAccountTransport(path: string, init: RequestInit): Promise<Response> {
   const generation = authGeneration;
   const eveningPath = path === '/v1/evenings' && ['GET', 'POST'].includes(init.method ?? 'GET')
     || /^\/v1\/evenings\/[0-9a-f-]{36}\/active$/i.test(path) && init.method === 'PUT';
   if (!path.startsWith('/app/v1/') && !isTwinAccountPath(path) && !isShowAccountPath(path, init.method ?? 'GET') && !isChronicleAdminPath(path, init.method ?? 'GET') && !eveningPath) throw new Error('Neplatná cesta účtu.');
   throwIfAborted(init.signal);
   const method = init.method ?? 'GET';
-  const headers = new Headers(init.headers);
+  const headers = correlationHeaders(init.headers);
   headers.set('Accept', 'application/json');
   if (method !== 'GET') headers.set('X-DV-CSRF', csrfToken);
   if (!native) {
-    const response = await fetch(path, { ...init, method, headers, credentials: 'same-origin', cache: 'no-store' });
+    const response = await fetch(path, { ...init, method, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
     requireCurrentAuthentication(generation);
     return response;
   }
@@ -241,22 +258,37 @@ export async function accountRequest<T>(path: string, method = 'GET', body?: unk
   if (path === '/app/v1/account' && method === 'DELETE' && (!deletingAccountId || deletingAccountId !== account.value?.id)) throw new AccountContextChangedError();
   let status: number;
   let text: string;
-  if (native) {
-    const response = await nativeAccountCall(signal, requestId => nativeIdentity.request({ requestId, path, method, body: serialized, confirmed }));
-    status = response.status;
-    text = response.body;
-  } else {
-    const response = await fetch(path, {
-      method, credentials: 'same-origin', cache: 'no-store', signal,
-      headers: { Accept: 'application/json', ...(serialized ? { 'Content-Type': 'application/json' } : {}),
-        ...(method !== 'GET' ? { 'X-DV-CSRF': csrfToken } : {}), ...(confirmed ? { 'X-DV-Confirm': 'yes' } : {}) }, body: serialized,
-    });
-    status = response.status;
-    text = await response.text();
+  let requestId: string | undefined;
+  const diagnostic = beginRequestDiagnostic(path, method);
+  try {
+    if (native) {
+      const response = await nativeAccountCall(signal, requestId => nativeIdentity.request({ requestId, path, method, body: serialized, confirmed }));
+      status = response.status;
+      text = response.body;
+    } else {
+      const response = await fetch(path, {
+        method, credentials: 'same-origin', cache: 'no-store', signal, redirect: 'error',
+        headers: { Accept: 'application/json', ...(serialized ? { 'Content-Type': 'application/json' } : {}),
+          ...(method !== 'GET' ? { 'X-DV-CSRF': csrfToken } : {}), ...(confirmed ? { 'X-DV-Confirm': 'yes' } : {}),
+          ...Object.fromEntries(correlationHeaders()) }, body: serialized,
+      });
+      status = response.status;
+      text = await response.text();
+      requestId = diagnosticRequestId(response.headers.get('X-Request-Id'));
+    }
+    // Cancellation cannot undo a request the server already received. Ignore late
+    // results, including a 401 that belongs to a cancelled observer context.
+    throwIfAborted(signal);
+    // Native account ceremonies return the problem trace in the body rather than
+    // forwarding response headers. Read only that field, never log the body.
+    if (!requestId && status >= 400) {
+      try { requestId = diagnosticRequestId(JSON.parse(text)?.traceId); } catch { /* Non-JSON gateway response. */ }
+    }
+    diagnostic.complete(status, requestId);
+  } catch (cause) {
+    diagnostic.fail(cause);
+    throw cause;
   }
-  // Cancellation cannot undo a request the server already received. Ignore late
-  // results, including a 401 that belongs to a cancelled observer context.
-  throwIfAborted(signal);
   let value: unknown;
   try { value = text ? JSON.parse(text) : undefined; } catch { throw new Error('Server nevrátil odpověď účtu.'); }
   if (status < 200 || status >= 300) {
@@ -265,6 +297,11 @@ export async function accountRequest<T>(path: string, method = 'GET', body?: unk
     const explanations: Record<string, string> = {
       accounts_not_configured: 'Správce musí nejprve nakonfigurovat přihlašování serveru.',
       invitation_expired_or_used: 'Pozvánka už není platná. Vyžádejte si novou od vlastníka.',
+      invalid_role: 'Server nepodporuje zvolenou roli. Správce musí ověřit, že aplikace a backend mají kompatibilní verzi.',
+      invitation_limit: 'Je otevřeno příliš mnoho pozvánek. Počkejte na jejich využití nebo vypršení platnosti.',
+      recovery_unavailable: 'Vybraný účet nelze obnovit. Obnovte seznam účtů a zkontrolujte, že účet není zablokovaný.',
+      owner_required: 'Pozvánku nebo obnovu účtu může vytvořit pouze vlastník.',
+      account_required: 'Přihlášení vypršelo. Znovu se přihlaste a potom akci odešlete.',
       ceremony_expired_or_used: 'Ověření vypršelo. Spusťte ho znovu.',
       last_owner_required: 'Alespoň jeden aktivní vlastník musí zůstat zachován.',
       last_passkey_required: 'Nejprve přidejte druhý přístupový klíč. Poslední klíč nelze odebrat.',
@@ -290,7 +327,10 @@ export async function accountRequest<T>(path: string, method = 'GET', body?: unk
       customer_profile_revoked: 'Tento profil už není pro nový rozhovor platný. Obnovte profil postavy.',
       device_epoch_mismatch: 'Kufr se od připojení restartoval. Odpojte ho a připojte znovu.',
     };
-    throw new IdentityRequestError(explanations[code ?? ''] ?? (status === 403 ? 'K této akci nemáte oprávnění.' : 'Akci účtu se nepodařilo dokončit.'), status, code, rejectedGeneration);
+    const fallback = status === 429 ? 'Server nyní omezuje počet požadavků. Chvíli počkejte a potom akci znovu odešlete.'
+      : status >= 500 ? 'Server nemohl akci účtu dokončit. Správce musí ověřit technické logy serveru.'
+      : status === 403 ? 'K této akci nemáte oprávnění.' : 'Akci účtu se nepodařilo dokončit.';
+    throw new IdentityRequestError(explanations[code ?? ''] ?? fallback, status, code, rejectedGeneration);
   }
   if (path === '/app/v1/account' && method === 'DELETE') {
     if (status !== 202 || (value as { status?: string } | undefined)?.status !== 'deletion_requested') {
@@ -420,7 +460,14 @@ export function authenticatePasskey(mode: 'signin' | 'enroll' | 'customer-enroll
   const operation = (async () => {
     // Epochs protect Vue state; waiting also protects browser/native cookie ordering.
     if (logoutPending) await logoutPending.catch(() => {});
-    await performPasskeyAuthentication(mode, token, displayName);
+    const diagnostic = beginRequestDiagnostic('/app/v1/passkeys/' + (mode === 'signin' ? 'sign-in' : mode === 'reauth' ? 'reauthenticate' : 'complete'), 'POST');
+    try {
+      await performPasskeyAuthentication(mode, token, displayName);
+      diagnostic.complete(200);
+    } catch (cause) {
+      diagnostic.fail(cause);
+      throw cause;
+    }
   })();
   const pending = operation.finally(() => { if (authenticationPending === pending) authenticationPending = null; });
   authenticationPending = pending;

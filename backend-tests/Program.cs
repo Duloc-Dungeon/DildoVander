@@ -7,13 +7,22 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await AiObservabilityTests.RunAsync(); await ObservabilityLogTests.RunAsync(); return; }
+if (args is ["--observability-logs"]) { await ObservabilityLogTests.RunAsync(); return; }
+if (args is ["--ai-observability"]) { await AiObservabilityTests.RunAsync(); return; }
+if (args is ["--bounded-sdk-transport"]) { await BoundedSdkTransportTests.RunAsync(); return; }
 if (args is ["--tester-identity"]) { await AccountIdentityTests.RunTesterIdentityAsync(); return; }
+if (args is ["--passkey-labels"]) { await AccountIdentityTests.RunPasskeyLabelsAsync(); return; }
 if (args is ["--testing-hardware"]) { await TestingHardwareTests.RunAsync(); return; }
 if (args is ["--testing-conversations"]) { await TestingConversationTests.RunAsync(); return; }
+if (args is ["--testing-multiturn"]) { await TestingMultiTurnTests.RunAsync(); return; }
 if (args is ["--testing-resources"]) { await TestingResourcesTests.RunAsync(); return; }
 if (args is ["--testing-session-http"]) { await AccountIdentityTests.RunTestingSessionHttpAsync(); return; }
 if (args is ["--testing-sessions"]) { await TestingSessionsTests.RunAsync(); return; }
+if (args is ["--testing-enrichment-queue"]) { await TestingSessionsTests.RunOptionalEnrichmentAsync(); return; }
 if (args is ["--testing-character-race"]) { await TestingCharacterRaceTests.RunAsync(); return; }
+if (args is ["--testing-diagnostics"]) { await TestingDiagnosticsTests.RunAsync(); return; }
+if (args is ["--server-logs"]) { ServerLogTests.Run(); return; }
 if (args is ["--wand-artwork"]) { await WandArtworkTests.RunAsync(); return; }
 if (args is ["--generated-wands"]) { await WandGenerationTests.RunAsync(); await GeneratedWandFlowTests.RunAsync(); await WandArtworkTests.RunAsync(); return; }
 if (args is ["--customer-data-browser-fixture"]) { await AccountIdentityTests.RunCustomerDataBrowserFixtureAsync(); return; }
@@ -184,11 +193,13 @@ CharacterDirectorTests.Run();
 CharacterOperationTests.Run();
 await AutonomousLiveTests.RunCharacterAsync();
 await CostumeImageTests.RunAsync();
+await BoundedSdkTransportTests.RunAsync();
 await RealtimeTests.RunAsync();
 await GptLiveTests.RunAsync();
 await DeviceMediaTransportTests.RunAsync();
 await AccountIdentityTests.RunTesterIdentityAsync();
 await TestingConversationTests.RunAsync();
+await TestingMultiTurnTests.RunAsync();
 await TestingHardwareTests.RunAsync();
 await TestingResourcesTests.RunAsync();
 await TestingCharacterRaceTests.RunAsync();

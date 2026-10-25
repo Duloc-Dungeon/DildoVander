@@ -2,14 +2,18 @@ using System.Collections.Concurrent;
 using System.ClientModel;
 using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.Customers;
+using Kufr.Backend.Features.Diagnostics;
 using Kufr.Backend.Features.GptLive;
 using Kufr.Backend.Features.Keepsakes;
 using Kufr.Backend.Features.Memory;
 using Kufr.Backend.Features.Show;
 using Kufr.Backend.Features.Wands;
 using Microsoft.AspNetCore.DataProtection;
+
+using Kufr.Backend.Features.Observability;
 
 namespace Kufr.Backend.Features.TestingSessions;
 
@@ -20,6 +24,8 @@ namespace Kufr.Backend.Features.TestingSessions;
 internal sealed class TestingResources : IDisposable
 {
     private readonly ConcurrentDictionary<string, CharacterProfileStore> profiles = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CharacterProfileStore> profileStoresByPath = new(StringComparer.OrdinalIgnoreCase);
+    private readonly TestingSessionStore sessionStore;
     private readonly OpenAiWandGenerationProvider wandProvider;
     private readonly OpenAiVectorMemoryProvider vectorProvider;
     private readonly TestingDuelIdentities duelIdentities;
@@ -27,8 +33,10 @@ internal sealed class TestingResources : IDisposable
     private readonly SemaphoreSlim generation = new(1, 1);
     private readonly IKeepsakeProvider? providerOverride;
     private readonly ICharacterEnrichmentProvider? characterOverride;
+    private readonly ServerLogStore? logs;
     internal IConfiguration Configuration { get; }
     internal string Root { get; }
+    internal TestingSessionStore SessionsStore => sessionStore;
     internal OperationJournal Journal { get; }
     internal EveningMemoryStore MemoryStore { get; }
     internal HybridMemoryService HybridMemory { get; }
@@ -45,20 +53,22 @@ internal sealed class TestingResources : IDisposable
     }
     internal Action<string, string, int, string>? ObserveDuelRound { get; set; }
 
-    public TestingResources(IConfiguration configuration, TimeProvider clock)
-        : this(configuration, clock, null, null, null, null) { }
+    public TestingResources(IConfiguration configuration, TimeProvider clock, ServerLogStore? logs = null)
+        : this(configuration, clock, null, null, null, null, logs) { }
 
     // This overload is for controlled offline integration tests only. Application
     // DI registers the two-argument constructor and cannot choose a fake provider.
     internal TestingResources(IConfiguration configuration, TimeProvider clock,
         IWandGenerationProvider? wandOverride, IKeepsakeProvider? keepsakeOverride,
-        ICharacterEnrichmentProvider? enrichmentOverride, WandDecisionService? decisionsOverride)
+        ICharacterEnrichmentProvider? enrichmentOverride, WandDecisionService? decisionsOverride, ServerLogStore? logs = null)
     {
+        this.logs = logs;
         providerOverride = keepsakeOverride;
         characterOverride = enrichmentOverride;
         Root = Path.GetFullPath((configuration["Backend:DatabasePath"]
             ?? throw new InvalidOperationException("Backend:DatabasePath missing.")) + ".testing");
         Directory.CreateDirectory(Root);
+        sessionStore = new TestingSessionStore(Root);
         // Copy only service configuration needed by this graph. Physical device
         // secrets, production grants, twin targets and deployment controls are
         // never available to the virtual-device composition.
@@ -108,35 +118,124 @@ internal sealed class TestingResources : IDisposable
         if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(characterId))
             throw new CharacterException("character_not_found", 404);
         var key = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(owner + ":" + characterId)));
-        return profiles.GetOrAdd(key, id => new CharacterProfileStore(Path.Combine(Root, "characters", id)));
+        return profiles.GetOrAdd(key, id =>
+        {
+            var path = Path.Combine(Root, "characters", id);
+            return profileStoresByPath.GetOrAdd(path, _ => new CharacterProfileStore(path));
+        });
     }
 
-    internal async Task<CharacterProfile> EnrichAsync(string owner, string characterId, CancellationToken token)
+    internal string? TraceCharacterRequest(string owner, TestingCharacter character, string traceId)
     {
-        var store = Profiles(owner, characterId);
-        var job = await store.ClaimAsync(token);
-        if (job is null) return await store.ReadAsync(owner, token) ?? throw new CharacterException("character_not_found", 404);
-        if (job.AccountId != owner) throw new CharacterException("character_not_found", 404);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(45));
-        using var realProvider = characterOverride is null ? new OpenAiCharacterEnrichmentProvider(Configuration, store) : null;
         try
         {
-            var enrichment = await (characterOverride ?? realProvider!).EnrichAsync(job, timeout.Token);
-            timeout.Token.ThrowIfCancellationRequested();
-            if (!await store.CanDispatchAsync(job, token)) throw new CharacterException("character_revision_conflict", 409);
-            if (!await store.CompleteAsync(job, enrichment, null, token)) throw new CharacterException("character_revision_conflict", 409);
+            var profile = character.Profile;
+            var storedJobId = Profiles(owner, character.Id).JobIdForRevision(owner, profile.ProfileId, profile.Revision);
+            var jobId = Guid.TryParse(storedJobId, out var id) ? id.ToString() : null;
+            if (jobId is not null)
+            {
+                logs?.Write("info", "testing_character_job_requested", traceId, operationId: jobId);
+            }
+            return jobId;
         }
-        catch (Exception error) when (error is not OutOfMemoryException)
+        catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or IOException)
         {
-            var code = error is CharacterException character ? character.Code
-                : error is OperationCanceledException ? "character_provider_timeout"
-                : ProviderErrorCode(error, "character_provider_error");
-            await store.CompleteAsync(job, null, code, CancellationToken.None);
-            token.ThrowIfCancellationRequested();
-            throw new CharacterException(code, error is CharacterException known ? known.Status : 502);
+            // A correlation lookup must not turn an already-saved action into
+            // an apparent failure that encourages the client to repeat it.
+            logs?.Write("warning", "testing_character_correlation_failed", traceId);
+            return null;
         }
-        return await store.ReadAsync(owner, token) ?? throw new CharacterException("character_not_found", 404);
+    }
+
+    internal async Task<bool> ProcessNextCharacterEnrichmentAsync(CancellationToken token)
+    {
+        var charactersRoot = Path.Combine(Root, "characters");
+        if (!Directory.Exists(charactersRoot)) return false;
+
+        foreach (var databasePath in Directory.EnumerateFiles(charactersRoot, "customer-characters.sqlite", SearchOption.AllDirectories))
+        {
+            token.ThrowIfCancellationRequested();
+            var directory = Path.GetDirectoryName(databasePath)!;
+            var store = profileStoresByPath.GetOrAdd(directory, path => new CharacterProfileStore(path));
+            var job = await store.ClaimAsync(token);
+            if (job is null) continue;
+            using var jobTrace = new JobTelemetry("testing.character.enrichment.process", job.Id, job.Attempt, job.TraceParent, job.CreatedAt);
+            logs?.Write("info", "testing_character_job_started", operationId: Guid.Parse(job.Id).ToString(), attempt: job.Attempt);
+            logs?.Write("info", "testing_character_queue_delay", operationId: Guid.Parse(job.Id).ToString(),
+                durationMs: Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - job.CreatedAt) * 1000, attempt: job.Attempt);
+
+            if (job.Attempt > 3)
+            {
+                jobTrace.Activity?.SetTag("app.outcome", "attempt_limit");
+                await store.CompleteAsync(job, null, "character_job_interrupted", token);
+                logs?.Write("warning", "testing_character_job_failed", operationId: Guid.Parse(job.Id).ToString(), code: "character_job_interrupted", attempt: job.Attempt);
+                return true;
+            }
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(45));
+            try
+            {
+                var processing = Stopwatch.StartNew();
+                using var provider = characterOverride is null ? new OpenAiCharacterEnrichmentProvider(Configuration, store) : null;
+                if (!await store.CanDispatchAsync(job, timeout.Token))
+                { jobTrace.Activity?.SetTag("app.outcome", "discarded"); return true; }
+                jobTrace.Activity?.SetTag("app.phase", "provider");
+                Task<CharacterEnrichment>? pending = null;
+                var dispatched = sessionStore.TryStartUnlessFenced(job.AccountId,
+                    () => pending = (characterOverride ?? provider!).EnrichAsync(job, timeout.Token));
+                if (!dispatched)
+                {
+                    jobTrace.Activity?.SetTag("app.outcome", "discarded");
+                    await store.FenceAccountDeletionAsync(job.AccountId, CancellationToken.None);
+                    return true;
+                }
+                var enrichment = await pending!;
+                logs?.Write("info", "testing_character_provider_completed", operationId: Guid.Parse(job.Id).ToString(),
+                    durationMs: processing.Elapsed.TotalMilliseconds, attempt: job.Attempt);
+                timeout.Token.ThrowIfCancellationRequested();
+                if (sessionStore.IsFenced(job.AccountId))
+                {
+                    jobTrace.Activity?.SetTag("app.outcome", "discarded");
+                    await store.FenceAccountDeletionAsync(job.AccountId, CancellationToken.None);
+                    return true;
+                }
+                jobTrace.Activity?.SetTag("app.phase", "persistence");
+                var persistence = Stopwatch.StartNew();
+                var completed = await store.CompleteAsync(job, enrichment, null, timeout.Token);
+                jobTrace.Activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
+                logs?.Write("info", completed ? "testing_character_job_completed" : "testing_character_job_discarded",
+                    operationId: Guid.Parse(job.Id).ToString(), durationMs: persistence.Elapsed.TotalMilliseconds, attempt: job.Attempt);
+            }
+            catch (OperationCanceledException error) when (token.IsCancellationRequested)
+            {
+                BackendTelemetry.Failed(jobTrace.Activity, error, token);
+                throw;
+            }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            {
+                BackendTelemetry.Failed(jobTrace.Activity, error, token);
+                var code = CharacterProviderFailure.Code(error);
+                jobTrace.Activity?.SetTag("app.failure_code", code);
+                if (CharacterProviderFailure.IsTransient(error) && job.Attempt < 3)
+                {
+                    var retried = await store.RetryAsync(job, token);
+                    jobTrace.Activity?.SetTag("app.outcome", retried ? "retry_scheduled" : "discarded");
+                    logs?.Write("warning", retried ? "testing_character_job_retry_scheduled" : "testing_character_job_discarded",
+                        status: CharacterProviderFailure.Status(error), operationId: Guid.Parse(job.Id).ToString(), code: code, attempt: job.Attempt);
+                }
+                else
+                {
+                    var completed = await store.CompleteAsync(job, null, code, token);
+                    logs?.Write("warning", completed ? "testing_character_job_failed" : "testing_character_job_discarded",
+                        status: CharacterProviderFailure.Status(error), operationId: Guid.Parse(job.Id).ToString(), code: code, attempt: job.Attempt);
+                }
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     internal async Task GenerateKeepsakeAsync(string keepsakeId, CancellationToken token)

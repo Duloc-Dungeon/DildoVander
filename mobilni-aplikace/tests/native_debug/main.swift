@@ -28,6 +28,28 @@ struct NativeDebugTests {
             return
         }
         let profile = try DebugBackendProfile(address: "https://debug.example.test", deviceId: "debug-test", credential: "test-secret")
+        let correlationClient = DebugBackendClient()
+        let correlationURL = profile.baseURL.appendingPathComponent("v1/conversations")
+        let firstRequest = try await correlationClient.authorizedRequest(profile, URLRequest(url: correlationURL))
+        let secondRequest = try await correlationClient.authorizedRequest(profile, firstRequest)
+        assert(AccountTransportPolicy.validTraceparent(firstRequest.value(forHTTPHeaderField: "traceparent") ?? ""))
+        assert(firstRequest.value(forHTTPHeaderField: "traceparent") != secondRequest.value(forHTTPHeaderField: "traceparent"))
+        do {
+            _ = try await correlationClient.authorizedRequest(profile, URLRequest(url: URL(string: "https://provider.example/v1/conversations")!))
+            assertionFailure("backend context escaped its configured origin")
+        } catch DebugBackendError.invalidProfile {}
+        let mountedProfile = DebugBackendProfile(baseURL: URL(string: "http://127.0.0.1:8765/fixture")!,
+            deviceId: "debug-test", credential: "test-secret")
+        let mountedRequest = try await correlationClient.authorizedRequest(mountedProfile,
+            URLRequest(url: mountedProfile.baseURL.appendingPathComponent("v1/conversations")))
+        assert(AccountTransportPolicy.validTraceparent(mountedRequest.value(forHTTPHeaderField: "traceparent") ?? ""))
+        for path in ["/v1/conversations", "/fixture-other/v1/conversations", "/fixture/v10/conversations"] {
+            do {
+                _ = try await correlationClient.authorizedRequest(mountedProfile,
+                    URLRequest(url: URL(string: "http://127.0.0.1:8765" + path)!))
+                assertionFailure("backend context escaped its configured API prefix")
+            } catch DebugBackendError.invalidProfile {}
+        }
         let retained = try DebugProfileDraft.resolve(address: "https://DEBUG.example.test:443/",
             deviceId: "debug-test", credential: "", saved: profile)
         assert(retained.credential == "test-secret")

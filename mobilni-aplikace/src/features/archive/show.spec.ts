@@ -101,7 +101,9 @@ describe('generated wand privacy and presentation', () => {
     const join = wrapper.findAll('button').find(button => button.text() === 'Potvrdit účast')!;
     expect(join.attributes('disabled')).toBeDefined(); await wrapper.find('input[type=checkbox]').setValue(true); await join.trigger('click'); await flushPromises();
     const post = fetchMock.mock.calls.find(([path]) => String(path).endsWith('/join'))!;
-    expect(post[1]).toMatchObject({ credentials: 'omit', headers: { Authorization: 'Bearer ' + 'x'.repeat(43) } });
+    expect(post[1]).toMatchObject({ credentials: 'omit' });
+    expect(new Headers(post[1]?.headers).get('Authorization')).toBe('Bearer ' + 'x'.repeat(43));
+    expect(new Headers(post[1]?.headers).get('traceparent')).toMatch(/^00-[a-f0-9]{32}-[a-f0-9]{16}-00$/);
     expect(wrapper.text()).not.toContain('Souhlasím s účastí');
   });
   it('cannot republish an in-flight or prepared battle card after publication withdrawal', async () => {
@@ -181,7 +183,8 @@ describe('shared guest Show Pack screens', () => {
     const { wrapper } = await render(DuelView, `/archive/duel?duel=${id}`);
     const button = wrapper.findAll('button').find(button => button.attributes('aria-label') === 'Úder')!; await button.trigger('click'); await button.trigger('click'); await flushPromises();
     const post = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST'); expect(post).toHaveLength(1);
-    expect(post[0][1]).toMatchObject({ credentials: 'omit', headers: { Authorization: 'Bearer ' + 'x'.repeat(43) } });
+    expect(post[0][1]).toMatchObject({ credentials: 'omit' });
+    expect(new Headers(post[0][1]?.headers).get('Authorization')).toBe('Bearer ' + 'x'.repeat(43));
     expect(JSON.parse(post[0][1]!.body as string)).toMatchObject({ side: 'left', round: 1, revision: 1, action: 'strike' });
     expect(wrapper.text()).toContain('Tah přijat a uzamčen');
     await wrapper.findAll('button').find(button => button.text() === 'Obnovit souboj')!.trigger('click'); await flushPromises();
@@ -296,7 +299,7 @@ describe('shared guest Show Pack screens', () => {
     expect(wrapper.text()).toContain('<script>mág</script>'); expect(wrapper.find('script').exists()).toBe(false);
     expect(wrapper.findAll('button').find(button => button.text() === 'Kartička PNG')!.attributes('disabled')).toBeUndefined();
     const post = fetchMock.mock.calls.find(([path]) => String(path).endsWith('/wizard-identity'))!;
-    expect(JSON.parse(post[1]!.body as string)).toEqual({ schemaVersion: 1, editionId: id }); expect((post[1]!.headers as Record<string, string>)['X-DV10-CSRF']).toBe('fixture-csrf');
+    expect(JSON.parse(post[1]!.body as string)).toEqual({ schemaVersion: 1, editionId: id }); expect(new Headers(post[1]!.headers).get('X-DV10-CSRF')).toBe('fixture-csrf');
     const share = await render(KeepsakeView, `/keepsake/?k=${id}&view=share&editionId=${id}`);
     expect(share.wrapper.text()).not.toContain('Soukromé proroctví'); expect(share.wrapper.text()).not.toContain('Private future body');
   });

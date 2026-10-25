@@ -172,7 +172,16 @@ internal static class VoiceProviderTests
             });
         })))
         {
-            await RejectAsync(() => new OpenAiTranscriptionClient(unavailableHttp, "test-only").TranscribeAsync(DeviceWav(), default));
+            try
+            {
+                await new OpenAiTranscriptionClient(unavailableHttp, "test-only").TranscribeAsync(DeviceWav(), default);
+                throw new InvalidOperationException("Provider rejection was accepted.");
+            }
+            catch (System.ClientModel.ClientResultException error)
+            {
+                Require(error.Status == 429 && !error.Message.Contains("provider-private-error", StringComparison.Ordinal),
+                    "transcription keeps a safe HTTP failure without exposing the provider body");
+            }
         }
         Require(unavailableCalls == 1, "SDK does not retry failed transcription requests");
 

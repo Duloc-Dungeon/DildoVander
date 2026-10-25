@@ -1,6 +1,18 @@
 import Foundation
 
 let ambientPreviewId = "7fc470e2-e25e-46a2-b51b-97d50275ae77"
+let traceparent = AccountTransportPolicy.newTraceparent()
+require(AccountTransportPolicy.validTraceparent(traceparent), "generated traceparent invalid")
+require(traceparent != AccountTransportPolicy.newTraceparent(), "trace context retained across requests")
+for invalid in [traceparent.uppercased(), traceparent + "\n", "00-" + String(repeating: "0", count: 32) + "-1234567890abcdef-00",
+                "00-1234567890abcdef1234567890abcdef-0000000000000000-00", "00-1234567890abcdef1234567890abcdef-1234567890abcdef-01"] {
+    require(!AccountTransportPolicy.validTraceparent(invalid), "invalid/untrusted trace context accepted")
+    require(!AccountTransportPolicy.accountHeaderAllowed(path: "/app/v1/session", method: "GET", name: "traceparent", value: invalid), "invalid account context accepted")
+    require(!AccountTransportPolicy.guestHeader(path: "/guest/v1/evening", method: "GET", name: "traceparent", value: invalid), "invalid guest context accepted")
+}
+require(AccountTransportPolicy.accountHeaderAllowed(path: "/app/v1/session", method: "GET", name: "Traceparent", value: traceparent), "account trace context rejected")
+require(AccountTransportPolicy.guestHeader(path: "/guest/v1/evening", method: "GET", name: "Traceparent", value: traceparent), "public guest trace context rejected")
+require(!AccountTransportPolicy.guestHeader(path: "/guest/v1/evening", method: "GET", name: "baggage", value: "private=data"), "guest baggage accepted")
 let ambientPreviewRoot = "/v1/show/devices/case.s3/ambient-previews"
 require(AccountTransportPolicy.show(path: ambientPreviewRoot, method: "POST", query: []), "ambient preview creation unavailable")
 require(AccountTransportPolicy.show(path: "\(ambientPreviewRoot)/\(ambientPreviewId)", method: "GET", query: []), "ambient preview read unavailable")

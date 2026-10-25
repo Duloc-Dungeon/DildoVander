@@ -1,5 +1,5 @@
 // Compiled shared Vue application, synthetic account/domain/provider responses.
-// No remote network, paid requests, real device, microphone or physical acceptance.
+// Synthetic microphone/PCM; no remote network, paid requests or physical acceptance.
 import assert from 'node:assert/strict';
 import { readFile, stat, mkdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -18,25 +18,38 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin=`h
 const browser=await chromium.launch(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? {executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH} : {});let page;const failures=[];const calls=[];const socketUrls=[];
 try{
  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});page=await context.newPage();page.setDefaultTimeout(10000);
- await context.addInitScript(()=>{window.microphoneRequests=0;Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:()=>{window.microphoneRequests++;throw new Error('No microphone in text-only test');}}});});
- page.on('pageerror',e=>failures.push(e.message));page.on('websocket',socket=>socketUrls.push(socket.url()));page.on('console',message=>{if(message.type()==='error' && !message.text().includes('status of 504'))failures.push(message.text());});
+ await context.addInitScript(()=>{
+  window.microphoneRequests=0;window.allowTestMicrophone=false;window.testMicrophoneTracks=[];window.testMicrophoneContexts=[];
+  Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:async()=>{
+    window.microphoneRequests++;
+    if(!window.allowTestMicrophone)throw new DOMException('Synthetic permission denial','NotAllowedError');
+    const audio=new AudioContext();await audio.resume();const oscillator=audio.createOscillator(),gain=audio.createGain(),destination=audio.createMediaStreamDestination();
+    gain.gain.value=.01;oscillator.connect(gain);gain.connect(destination);oscillator.start();
+    window.testMicrophoneContexts.push(audio);window.testMicrophoneTracks.push(...destination.stream.getTracks());return destination.stream;
+  }}});
+ });
+ page.on('pageerror',e=>failures.push(e.message));page.on('websocket',socket=>socketUrls.push(socket.url()));page.on('console',message=>{if(message.type()==='error' && !/status of (429|503|504)/.test(message.text()))failures.push(message.text());});
  const owner={id:'tester-browser',displayName:'Testovací účet',roles:['Tester']};const createdAt='2026-10-24T11:00:00Z';
- let characters=[];let list=[];let detail=null;let rejectProvider=false;let chatRequests=0;let socketTurns=0;let textSocketTicket=false;
+ let characters=[];let list=[];let detail=null;let rejectProvider=false;let rejectStatus=false;let rejectCharacterSave=true;let chatRequests=0;let socketTurns=0;let textSocketTicket=false;
+ let microphoneSocket;let microphoneFrames=0;
  const hardware=()=>({connected:true,ready:true,state:'ready',compartments:Array.from({length:6},(_,index)=>({slot:index+1,state:'retracted',wandName:null})),selectedCompartment:null,currentAction:'idle',ledPattern:'idle',servoCommand:null,vibrationCommand:null,cameraAvailable:true,events:[]});
  const conversation=id=>({id,ownerId:owner.id,label:'Hardware-free browser test',engine:'gpt-live-1',scenarioId:'first-visit',fixtureId:'empty',platform:'web',createdAt,endedAt:null,status:'open',recordContent:true,config:{id:'baseline',name:'Production baseline',engine:'gpt-live-1',voice:'cedar'},turns:[],events:[]});
  await context.route('**/*',async route=>{
   const request=route.request(),url=new URL(request.url());if(url.origin!==origin){await route.abort();return;}const p=url.pathname,m=request.method();calls.push({path:p,method:m});const json=(value,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(value)});const body=()=>request.postDataJSON();
   if(p==='/app/v1/session')return json({enabled:true,account:owner,csrfToken:'fixture-csrf'});
   if(p==='/app/v1/account')return json({sessions:[],grants:[],associations:[],passkeys:[],devices:[]});
+  if(p==='/app/v1/archive/collection')return json({schemaVersion:1,items:[],nextCursor:null});
   if(p==='/app/v1/testing-sessions/catalog')return json({engines:['gpt-live-1','gpt-realtime-2.1'],capabilities:{text:true,voice:true,hybrid:true}});
   if(p==='/app/v1/testing-sessions/characters'){
+    if(m==='POST' && rejectCharacterSave){rejectCharacterSave=false;return route.fulfill({status:429,contentType:'application/problem+json',headers:{'Retry-After':'1','X-Request-Id':'01234567-89ab-4cde-8f01-23456789abcd'},body:JSON.stringify({code:'rate_limited',traceId:'01234567-89ab-4cde-8f01-23456789abcd'})});}
     if(m==='POST'){const input=body();const c={id:`character-${characters.length+1}`,longTermConsent:input.longTermConsent,profile:{profileId:`profile-${characters.length+1}`,revision:1,userInput:input.userInput,status:'ready',enrichment:{recognizedName:input.userInput.name,summary:'Řízená syntetická odpověď integračního testu.',model:'controlled-provider-double',evidenceKind:'fixture',conversationIdeas:[],ambiguities:[]}}};characters.push(c);return json(c);}return json(characters);
   }
   if(p==='/app/v1/testing-sessions'){
+    if(m==='GET' && rejectStatus)return json({code:'testing_request_failed',traceId:'01234567-89ab-4cde-8f01-23456789abcd'},503);
     if(m==='POST'){const input=body();assert.equal(input.engine,'gpt-live-1');assert.equal(input.inputMode,'text');assert.equal(input.openAiConsent,true);const s={id:`session-${list.length+1}`,ownerId:owner.id,virtualDeviceId:`test-${list.length+1}`,labSessionId:`lab-${list.length+1}`,engine:input.engine,inputMode:input.inputMode,status:'open',characterId:null,createdAt,endedAt:null,revision:1};list.push(s);detail={session:s,conversation:conversation(s.labSessionId),character:null,hardware:hardware(),wand:null,keepsakes:[],memory:{status:'empty',records:[]}};return json(s);}return json(list);
   }
   if(p==='/app/v1/testing-sessions/session-1')return json(detail);
-  if(p==='/app/v1/testing-sessions/session-1/character'){const c=characters.find(c=>c.id===body().characterId);assert(c);detail.character=c;detail.session.characterId=c.id;detail.session.revision++;return json(detail);}
+  if(p==='/app/v1/testing-sessions/session-1/character'){const c=characters.find(c=>c.id===body().characterId);assert(c);detail.character=c;detail.latestCharacter=c;detail.characterSnapshot={profileId:c.profile.profileId,revision:c.profile.revision,userInput:c.profile.userInput,enrichment:c.profile.enrichment,capturedAt:1792836000,context:JSON.stringify({userInput:c.profile.userInput,enrichment:c.profile.enrichment})};detail.session.characterId=c.id;detail.session.revision++;return json(detail);}
   if(p==='/app/v1/testing-sessions/session-1/mode'){detail.session.inputMode=body().inputMode;detail.session.revision++;return json(detail.session);}
   if(p==='/app/v1/testing-sessions/session-1/duels')return json([]);
   if(p==='/app/v1/persona-lab/sessions/lab-1/socket-ticket'){textSocketTicket=body().textInputOnly===true;return json({url:origin.replace('http:','ws:')+'/app/v1/persona-lab/sessions/lab-1/live?ticket=fixture',path:'/app/v1/persona-lab/sessions/lab-1/live',expiresAt:'2026-10-24T12:00:00Z'});}
@@ -52,8 +65,9 @@ try{
   return route.continue();
  });
  await context.routeWebSocket(/\/app\/v1\/persona-lab\/sessions\/lab-1\/live/,socket=>{
+  const capture=!textSocketTicket;if(capture)microphoneSocket=socket;
   socket.onMessage(message=>{
-    if(typeof message!=='string')return;const input=JSON.parse(message);
+    if(typeof message!=='string'){assert.equal(capture,true);assert.equal(message.length,960);microphoneFrames++;return;}const input=JSON.parse(message);
     if(input.type==='text'){
       socketTurns++;assert.equal(textSocketTicket,true);
       socket.send(JSON.stringify({type:'provider_ready',providerSessionId:'controlled-pcm-provider'}));
@@ -62,20 +76,106 @@ try{
       socket.send(JSON.stringify({type:'session',session:detail.conversation}));socket.send(JSON.stringify({type:'text_ready'}));
     }else if(input.type==='cancel')socket.send(JSON.stringify({type:'interrupted'}));
   });
-  socket.send(JSON.stringify({type:'ready',playbackMode:'stream',inputMode:'text'}));
+  socket.send(JSON.stringify({type:'ready',playbackMode:'stream',inputMode:capture?'voice':'text'}));
  });
  await page.goto(`${origin}/testing-sessions`);await page.getByRole('heading',{name:'Začněte bez hardwaru'}).waitFor();
  assert.equal(await page.evaluate(()=>window.microphoneRequests),0);
- await page.locator('.testing-setup input[type=checkbox]').check();await page.getByRole('button',{name:'Start New Test Session',exact:true}).click();await page.getByRole('button',{name:'Nová postava',exact:true}).waitFor();
- await page.getByRole('button',{name:'Nová postava',exact:true}).click();await page.locator('#testing-character-name').fill('Alena');await page.locator('#testing-character-world').fill('Knihovna měsíce');await page.locator('#testing-character-description').fill('Knihovnice, která zachraňuje ztracené příběhy.');await page.getByRole('button',{name:'Uložit a použít postavu'}).click();await page.getByRole('heading',{name:'Alena',exact:true}).waitFor();
+ await page.locator('.testing-setup input[type=checkbox]').check();await page.getByRole('button',{name:'Založit test a vybrat postavu',exact:true}).click();await page.locator('#testing-character-name').waitFor();
+ assert.equal(await page.locator('.testing-conversation').isVisible(),false);
+ await page.locator('#testing-character-name').fill('Alena');await page.locator('#testing-character-world').fill('Knihovna měsíce');await page.getByRole('button',{name:'Uložit a dohledat postavu'}).click();
+ await page.getByText('Požadavek byl odmítnut',{exact:true}).first().waitFor();
+ await page.getByText('ID požadavku: 01234567-89ab-4cde-8f01-23456789abcd',{exact:true}).first().waitFor();
+ const rateLimitedCalls=calls.length;await page.waitForTimeout(300);assert.equal(calls.length,rateLimitedCalls);assert.equal(characters.length,0);
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(captures,'mobile-rate-limited.png'),fullPage:true});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ await page.getByRole('button',{name:'Obnovit stav',exact:true}).first().waitFor();
+ await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(button=>button.textContent.trim()==='Obnovit stav')?.disabled);
+ await page.getByRole('button',{name:'Uložit a dohledat postavu'}).click();await page.getByRole('heading',{name:'Alena',exact:true}).waitFor();assert.equal(characters[0].profile.userInput.description,'');
+ assert.equal(calls.filter(call=>call.path==='/app/v1/testing-sessions/characters' && call.method==='POST').length,2);
+ await page.locator('.testing-character details summary').filter({hasText:'Kontext a AI obohacení postavy'}).click();
+ await page.getByText('Řízená syntetická odpověď integračního testu.',{exact:true}).waitFor();
+ await page.getByText('Profil profile-1, revize 1',{exact:false}).waitFor();
+ await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:path.join(captures,'desktop-character-inspector.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ await page.screenshot({path:path.join(captures,'mobile-character-inspector.png'),fullPage:true});
+ // A failed list poll must retain the selected character and recover through
+ // reads alone. Use the canonical GUID shape emitted by server middleware.
+ const mutationsBeforeRecovery=calls.filter(call=>call.method!=='GET').length;
+ rejectStatus=true;
+ await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+ await page.getByText('ID požadavku: 01234567-89ab-4cde-8f01-23456789abcd',{exact:true}).first().waitFor();
+ await page.getByRole('heading',{name:'Alena',exact:true}).waitFor();
+ await page.setViewportSize({width:390,height:844});
+ await page.screenshot({path:path.join(captures,'mobile-status-failure.png'),fullPage:true});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ rejectStatus=false;
+ await page.getByRole('button',{name:'Obnovit stav',exact:true}).first().click();
+ await page.locator('.aw-notice--danger').first().waitFor({state:'hidden'});
+ assert.equal(calls.filter(call=>call.method!=='GET').length,mutationsBeforeRecovery);
+ await page.setViewportSize({width:1440,height:1000});
+ await page.getByRole('button',{name:'Pokračovat k rozhovoru'}).click();await page.locator('#testing-message').waitFor();assert.equal(await page.locator('.testing-character').isVisible(),false);
  await page.locator('#testing-message').fill('Jsem knihovnice a hledám svou hůlku.');await page.getByRole('button',{name:'Odeslat skutečnému AI'}).click();await page.getByText('Odpověď poskytovatelského dvojníka pro Alena.',{exact:true}).waitFor();assert.equal(chatRequests,1);assert.equal(await page.evaluate(()=>window.microphoneRequests),0);
- await page.getByRole('button',{name:'Vybrat hůlku skutečným AI'}).click();await page.getByRole('heading',{name:'Knihovní ozvěna Aleny',exact:true}).waitFor();assert.equal(await page.locator('.virtual-compartments .is-selected strong').textContent(),'4');
+ await page.locator('#testing-message').fill('A také chráním své přátele.');await page.getByRole('button',{name:'Odeslat skutečnému AI'}).click();await page.waitForFunction(()=>document.querySelectorAll('.testing-chat li').length===4);assert.equal(chatRequests,2);
+ characters[0].profile={...characters[0].profile,revision:2,enrichment:{...characters[0].profile.enrichment,summary:'Novější obohacení uložené po zahájení rozhovoru.'}};detail.latestCharacter=characters[0];
  await page.evaluate(()=>scrollTo(0,0));await page.waitForTimeout(50);await page.screenshot({path:path.join(captures,'desktop.png'),fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>scrollTo(0,0));await page.waitForTimeout(50);await page.screenshot({path:path.join(captures,'mobile.png'),fullPage:true});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ await page.setViewportSize({width:960,height:900});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
  await page.setViewportSize({width:320,height:760});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.locator('#testing-message').focus();assert.equal(await page.locator('#testing-message').evaluate(e=>document.activeElement===e),true);
- await page.reload();await page.getByRole('heading',{name:'Alena',exact:true}).waitFor();await page.getByText('Odpověď poskytovatelského dvojníka pro Alena.',{exact:true}).waitFor();assert.equal(chatRequests,1);assert.equal(new URL(page.url()).searchParams.get('session'),'session-1');assert.equal(await page.evaluate(()=>window.microphoneRequests),0);
- await page.locator('.testing-setup input[type=checkbox]').check();await page.locator('#testing-input').selectOption('hybrid');await page.getByRole('button',{name:'Zapnout mikrofon a hlasové spojení'}).waitFor();assert.equal(await page.evaluate(()=>window.microphoneRequests),0);await page.locator('#testing-input').selectOption('text');await page.locator('#testing-message').waitFor();
- rejectProvider=true;await page.locator('#testing-message').fill('Ověř chybu poskytovatele.');await page.getByRole('button',{name:'Odeslat skutečnému AI'}).click();await page.locator('.aw-notice--danger').filter({hasText:'lab_provider_no_reply'}).waitFor();assert.equal(await page.locator('.testing-chat li').count(),2);
+ await page.getByRole('button',{name:'Pokračovat k výsledku'}).click();await page.getByRole('button',{name:'Vybrat hůlku skutečným AI'}).click();await page.getByRole('heading',{name:'Knihovní ozvěna Aleny',exact:true}).waitFor();assert.equal(await page.locator('.virtual-compartments .is-selected strong').textContent(),'4');
+ await page.reload();await page.locator('#testing-message').waitFor();assert.equal(await page.locator('.testing-chat li').count(),4);assert.equal(chatRequests,2);assert.equal(new URL(page.url()).searchParams.get('session'),'session-1');assert.equal(await page.evaluate(()=>window.microphoneRequests),0);
+ await page.locator('.testing-steps button').nth(1).click();await page.locator('.testing-character details summary').filter({hasText:'Kontext a AI obohacení postavy'}).click();
+ await page.getByText('Novější obohacení uložené po zahájení rozhovoru.',{exact:true}).waitFor();await page.getByText('Tento rozhovor ji nepoužívá',{exact:false}).waitFor();
+ await page.locator('.testing-steps button').nth(0).click();await page.locator('.testing-setup input[type=checkbox]').check();await page.locator('#testing-input').selectOption('hybrid');await page.locator('.testing-steps button').nth(2).click();await page.getByRole('button',{name:'Zapnout mikrofon a hlasové spojení'}).waitFor();assert.equal(await page.evaluate(()=>window.microphoneRequests),0);
+ await page.locator('.testing-steps button').nth(0).click();await page.locator('#testing-input').selectOption('text');await page.locator('.testing-steps button').nth(2).click();await page.locator('#testing-message').waitFor();
+ rejectProvider=true;await page.locator('#testing-message').fill('Ověř chybu poskytovatele.');await page.getByRole('button',{name:'Odeslat skutečnému AI'}).click();await page.locator('.aw-notice--danger').filter({hasText:'lab_provider_no_reply'}).waitFor();assert.equal(await page.locator('.testing-chat li').count(),4);
  rejectProvider=false;await page.locator('.testing-conversation .testing-consent input').check();await page.locator('#testing-message').fill('Odpověz nahlas, mikrofon nemám.');await page.getByRole('button',{name:'Odeslat skutečnému AI'}).click();await page.getByText('Řízená skutečně přenesená PCM odpověď bez mikrofonu.',{exact:true}).waitFor();assert.equal(socketTurns,1);assert.equal(textSocketTicket,true);assert.equal(await page.evaluate(()=>window.microphoneRequests),0);
- assert(!calls.some(call=>/start-tickets|hardware-ticket|\/devices\//.test(call.path)));assert.deepEqual(failures,[]);console.log(JSON.stringify({passed:true,checks:['create_without_hardware','character_real_contract','typed_backend_adapter_no_microphone','accepted_virtual_event','dynamic_wand','resume_no_duplicate_turn','modality_switch','provider_failure_no_fake_reply','desktop_mobile_320px','keyboard_focus','typed_spoken_pcm_no_microphone'],screenshots:captures,provider:'controlled double; no paid calls',physicalAcceptance:false},null,2));
+ await page.locator('#testing-conversation-input').selectOption('voice');
+ await page.getByRole('button',{name:'Zapnout mikrofon a hlasové spojení',exact:true}).click();
+ await page.locator('.testing-conversation .aw-notice--danger').waitFor();
+ assert.equal(await page.evaluate(()=>window.microphoneRequests),1);
+ await page.evaluate(()=>{window.allowTestMicrophone=true;});
+ await page.getByRole('button',{name:'Zapnout mikrofon a hlasové spojení',exact:true}).click();
+ await page.getByText('Mikrofon je aktivní — můžete mluvit',{exact:true}).waitFor();
+ assert.equal(await page.locator('.testing-conversation .testing-consent input').isChecked(),true);
+ for(let attempt=0;attempt<40 && microphoneFrames<2;attempt++)await page.waitForTimeout(50);
+ assert(microphoneFrames>=2,'Microphone PCM must stream through the real capture worklet');
+ const savedTurns=detail.conversation.turns.length;
+ for(let index=0;index<2;index++){
+   microphoneSocket.send(JSON.stringify({type:'transcript',role:'user',delta:`Živá otázka ${index}`}));
+   microphoneSocket.send(JSON.stringify({type:'transcript',role:'assistant',delta:`Živá odpověď ${index}`}));
+   microphoneSocket.send(Buffer.from(new Int16Array(12000).fill(200).buffer));
+   microphoneSocket.send(Buffer.from(new Int16Array(12000).fill(200).buffer));
+   await page.getByText(`DildoVander · Živá odpověď ${index}`,{exact:true}).waitFor();
+   await page.getByText('DildoVander mluví — odpověď se přehrává průběžně',{exact:true}).waitFor();
+   if(index===0){
+     await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:path.join(captures,'desktop-live-microphone.png'),fullPage:true});
+     await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+     await page.screenshot({path:path.join(captures,'mobile-live-microphone.png'),fullPage:true});
+   }
+   for(const role of ['user','assistant']){
+     const turn={id:`live-${role}-${index}`,role,text:`Uložený ${role} ${index}`,createdAt};detail.conversation.turns.push(turn);microphoneSocket.send(JSON.stringify({type:'turn',turn}));
+   }
+   await page.getByText('Mikrofon je aktivní — můžete mluvit',{exact:true}).waitFor();
+ }
+ assert.equal(await page.locator('.testing-chat li').count(),savedTurns+4);
+ await page.getByRole('button',{name:'Přerušit odpověď',exact:true}).click();
+ await page.getByRole('button',{name:'Vypnout mikrofon',exact:true}).click();
+ assert(await page.evaluate(()=>window.testMicrophoneTracks.every(track=>track.readyState==='ended')));
+ const stoppedFrames=microphoneFrames;await page.waitForTimeout(150);assert.equal(microphoneFrames,stoppedFrames);
+ await page.locator('#testing-conversation-input').selectOption('text');await page.locator('#testing-message').waitFor();
+ assert.equal(await page.locator('.testing-chat li').count(),savedTurns+4);
+ await page.evaluate(()=>Promise.all(window.testMicrophoneContexts.map(audio=>audio.close())));
+ await page.locator('a[href="/settings"]').first().click();
+ await page.getByText('Diagnostika připojení',{exact:true}).click();
+ await page.getByRole('button',{name:'Připravit diagnostiku',exact:true}).click();
+ const diagnosticLink=page.getByRole('link',{name:'Stáhnout diagnostiku',exact:true});
+ const downloadReady=page.waitForEvent('download');await diagnosticLink.click();
+ const diagnosticFile=await downloadReady;
+ const diagnosticPayload=JSON.parse(await readFile(await diagnosticFile.path(),'utf8'));
+ assert(diagnosticPayload.requests.some(entry=>entry.outcome==='http_error'));
+ assert(!JSON.stringify(diagnosticPayload).includes('fixture-csrf'));
+ assert(!JSON.stringify(diagnosticPayload).includes('Odpověď poskytovatelského'));
+ assert(diagnosticPayload.requests.every(entry=>!entry.action.includes('session-1')&&!entry.action.includes('lab-1')));
+ await page.screenshot({path:path.join(captures,'mobile-diagnostics.png'),fullPage:true});
+ assert(!calls.some(call=>/start-tickets|hardware-ticket|\/devices\//.test(call.path)));assert.deepEqual(failures,[]);console.log(JSON.stringify({passed:true,checks:['create_without_hardware','character_real_contract','current_enrichment_vs_immutable_snapshot','character_inspector_after_resume','partial_status_failure_trace_recovery_no_replay','safe_support_export','typed_backend_adapter_no_microphone','accepted_virtual_event','dynamic_wand','resume_no_duplicate_turn','modality_switch','provider_failure_no_fake_reply','desktop_mobile_320px','keyboard_focus','typed_spoken_pcm_no_microphone','live_microphone_permission_retry','live_microphone_pcm_frames','streamed_audio_before_final_turn','consecutive_live_turns','microphone_stop_releases_tracks','live_history_survives_text_switch'],screenshots:captures,provider:'controlled double; no paid calls',physicalAcceptance:false},null,2));
 }catch(error){console.error('Synthetic browser failure:',await page?.locator('.aw-notice').allTextContents(),calls.filter(call=>call.path.includes('ticket')),socketUrls,failures);throw error;}finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

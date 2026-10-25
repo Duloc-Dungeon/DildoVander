@@ -105,7 +105,7 @@ internal static class PersonaLabEndpoints
             return Results.NoContent();
         });
         group.MapPost("/sessions/{id}/turns", async (HttpContext http, string id, LabTurnRequest request, PersonaLabRuntime runtime) =>
-            Results.Json(await runtime.TurnAsync(Owner(http), id, request.Text, http.RequestAborted, platform: request.Platform)));
+            Results.Json(await runtime.TurnAsync(Owner(http), id, request.Text, http.RequestAborted, platform: request.Platform, requestId: http.TraceIdentifier)));
         group.MapPost("/sessions/{id}/end", (HttpContext http, string id, PersonaLabRuntime runtime) =>
         {
             RequireStandalone(runtime.Detail(Owner(http), id));

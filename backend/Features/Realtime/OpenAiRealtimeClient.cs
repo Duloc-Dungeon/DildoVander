@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.Observability;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -52,11 +53,23 @@ internal sealed class OpenAiRealtimeClient : IDisposable
 
     internal async Task<OpenAiRealtimeConnection> ConnectAsync(CancellationToken token)
     {
-        if (!Available)
+        using var telemetry = GenAiOperation.Start("realtime.connect", RealtimeProtocol.Model);
+        telemetry.SetPhase(GenAiPhase.Connecting);
+        try
         {
-            throw new InvalidOperationException("Realtime is unavailable.");
+            if (!Available)
+            {
+                throw new InvalidOperationException("Realtime is unavailable.");
+            }
+            var socket = await connect(token);
+            telemetry.SetPhase(GenAiPhase.Ready);
+            return new OpenAiRealtimeConnection(socket, token, connect);
         }
-        return new OpenAiRealtimeConnection(await connect(token), token, connect);
+        catch (Exception telemetryError)
+        {
+            telemetry.Fail(telemetryError, token);
+            throw;
+        }
     }
 
     internal async Task<RealtimeReply> GenerateAsync(
@@ -91,7 +104,7 @@ internal sealed class OpenAiRealtimeClient : IDisposable
         {
             return ("no_selection", reason, null);
         }
-        if (call.FunctionName != "propose_wand" || turn.RequireQuestion
+        if (call.FunctionName != "propose_wand" || turn.DeferWandSelection || turn.RequireQuestion
             || root.EnumerateObject().Count() != 2
             || !root.TryGetProperty("compartment", out var selected)
             || !selected.TryGetInt32(out var number)

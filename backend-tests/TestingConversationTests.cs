@@ -20,6 +20,9 @@ internal static class TestingConversationTests
             var original = store.CreateSession("tester", new(store.ActiveRevisionId, GptLiveProtocol.Model,
                 "first-visit", "empty", "real application", RecordContent: true));
             Check(original.Testing is null, "ordinary lab preparation cannot grant integration authority");
+            Check(!PersonaLabRuntime.Context(original, "Hello", out _).InstructionOverride!
+                .Contains("background already known about the current visitor"),
+                "tester profile grounding does not change ordinary lab instructions");
             var bound = store.Change("tester", original.Id, session => session with
             {
                 Testing = new("test-scope", "CHARACTER-CONTEXT", "AUTHORIZED-MEMORY", [])
@@ -30,6 +33,19 @@ internal static class TestingConversationTests
             Check(!context.InstructionOverride!.Contains("All tool outcomes are simulations") && context.InstructionOverride.Contains("explicitly virtual hardware"),
                 "application tools are real while physical observations remain explicitly virtual");
             Check(context.GeneratedWands is { Count: 0 }, "empty generated candidates cannot become six permanent wand identities");
+            Check(context.Request.ReadyMask == 63 && context.DeferWandSelection,
+                "all six tester keepsakes are available before personalized generation");
+            var liveStart = JsonSerializer.Serialize(GptLiveProtocol.Start(context));
+            using var liveDocument = JsonDocument.Parse(liveStart);
+            var liveInstructions = liveDocument.RootElement.GetProperty("session").GetProperty("instructions").GetString()!;
+            var realtimeInstructions = RealtimeProtocol.SessionOptions(context).Instructions;
+            foreach (var instructions in new[] { liveInstructions, realtimeInstructions })
+            {
+                Check(instructions.Contains("Všech šest digitálních hůlkových památek je vždy dostupných")
+                    && instructions.Contains("to neznamená nedostupnost památek")
+                    && instructions.Contains("samostatná akce testera"),
+                    "both engines distinguish six available digital keepsakes from pending personal candidates");
+            }
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                 { ["OPENAI_API_KEY"] = "test-transport-only-not-a-credential" }).Build();
             var sockets = new List<ProviderSocket>();
@@ -46,6 +62,9 @@ internal static class TestingConversationTests
             try { runtime.ReserveScript("tester", original.Id, out _); throw new Exception("Bound test session admitted scripted suite"); }
             catch (LabException error) when (error.Code == "testing_session_script_unsupported") { }
             var result = await runtime.TurnAsync("tester", original.Id, "I repair clocks.", CancellationToken.None);
+            Check(sockets[0].StartupContext!.Contains("Current visitor character profile (data): CHARACTER-CONTEXT")
+                && sockets[0].StartupInstructions!.Contains("background already known about the current visitor"),
+                "actual Live transport identifies supplied character data as known visitor background");
             Check(bridge.Delegations == 1 && bridge.Completed == 1 && bridge.SawUserEvidence,
                 "live provider delegation uses server bridge and actual persisted guest input");
             Check(result.Turns.Any(turn => turn.Role == "assistant" && turn.Text == "ACTUAL-TRANSPORT-REPLY"),
@@ -83,7 +102,8 @@ internal static class TestingConversationTests
             Check(cancelled.Status == "open" && cancellable.ActiveCount == 0
                 && cancelled.Turns.Count(turn => turn.Role == "assistant") == 1,
                 "cancelling an in-flight provider handshake retains the resumable session and never adds an assistant reply");
-            Check(cancelled.Events.Last().Type == "request_cancelled" && cancelled.Events.Last().Code == "user_cancelled",
+            Check(cancelled.Events[^2].Type == "request_cancelled" && cancelled.Events[^2].Code == "user_cancelled"
+                && cancelled.Events[^1].Type == "operation_released" && cancelled.Events[^1].OperationId==cancelled.Events[^2].OperationId,
                 "deliberate cancellation is distinct from provider timeout/failure");
             using var client = new TextClientSocket();
             var connectionsBeforeTextSocket = sockets.Count;
@@ -145,6 +165,7 @@ internal static class TestingConversationTests
         internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal string? Commentary;
         internal string? StartupContext;
+        internal string? StartupInstructions;
         public override WebSocketCloseStatus? CloseStatus => null;
         public override string? CloseStatusDescription => null;
         public override WebSocketState State => disposed ? WebSocketState.Closed : WebSocketState.Open;
@@ -162,6 +183,7 @@ internal static class TestingConversationTests
             {
                 case "session.start":
                     StartupContext = value.GetProperty("session").GetProperty("input").GetRawText();
+                    StartupInstructions = value.GetProperty("session").GetProperty("instructions").GetString();
                     Started.TrySetResult();
                     if (holdStartup) { break; }
                     Push(new { type = "session.started", client_event_id = value.GetProperty("event_id").GetString(), session = new { model = GptLiveProtocol.Model, id = "live-integration-fixture" } });
