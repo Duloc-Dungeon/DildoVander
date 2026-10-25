@@ -18,6 +18,15 @@
 - Pro zapojení a napájení čti `docs/efekty-a-napajeni.md`, pro podkladovou pinovou mapu `docs/pin-mapa-esp32-s3.md` a pro omezení kamery `docs/kamera.md`. Předběžné profily A/B a bezpečnostní obvod jsou v kapitolách 8 a 10 plánu.
 - Je-li přítomná `.codex/personal-routing.md`, načti ji jako doplněk aktuálních tracked pokynů. Přípravu lokálního kontextu nového worktree popisuje [.codex/environment/README.md](.codex/environment/README.md); Windows checkout, Cloud a VPS nejsou zaměnitelné prostředí.
 
+## Engram engineering memory
+
+When Engram is connected, follow [project memory guidance](.codex/engram.md):
+recall relevant context at session start and batch significant decisions,
+investigation results and verified outcomes into private, scoped topic memory.
+Keep rationale and lessons with source pointers; avoid routine source/chat copies.
+Memory never overrides current instructions, code, privacy or operational authority.
+If Engram is unavailable, report the gap and continue authorized work from source.
+
 ## Jak začít nebo pokračovat v implementaci
 
 - Pokyn „začni/pokračuj implementovat aplikaci podle implementačního plánu“ znamená pokračovat na systému kufru podle tohoto postupu. Pokud uživatel výslovně omezí práci na mobil, backend či firmware, respektuj omezení a vyber příslušný krok se splněnými závislostmi.
