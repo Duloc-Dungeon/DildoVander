@@ -19,7 +19,8 @@ internal static class CustomerSessionTests
             await RaceAndRestartAsync(root);
             ExpiredUnacceptedStart(root);
             await ExpiryWaitsForRedemptionAsync(root);
-            await SharedStartupAsync(root);
+            await SharedStartupAsync(root, gptLive: true);
+            await SharedStartupAsync(root, gptLive: false);
             ConsentAdmission(root);
             NoncustomerCleanup(root);
             OwnershipAndRevocation(root);
@@ -105,9 +106,11 @@ internal static class CustomerSessionTests
         catch (CustomerSessionException error) when (error.Code == "device_busy") { return null; }
     }
 
-    private static async Task SharedStartupAsync(string root)
+    private static async Task SharedStartupAsync(string root, bool gptLive)
     {
-        using var journal = new OperationJournal(Configuration(root, "startup"), new CustomerClock());
+        var engineRoot = Path.Combine(root, gptLive ? "startup-live" : "startup-realtime");
+        Directory.CreateDirectory(engineRoot);
+        using var journal = new OperationJournal(Configuration(engineRoot, "startup"), new CustomerClock());
         var boot = Guid.NewGuid().ToString("D");
         journal.SetCustomerMode("device-a", true);
         journal.RegisterCustomerChallenge("device-a", Challenge(boot));
@@ -121,17 +124,30 @@ internal static class CustomerSessionTests
         var response = store.Create("device-a", Guid.Parse(request.OperationId), JsonSerializer.SerializeToUtf8Bytes(create), create,
             customerSessionId: session.Id).Response!;
         Check(response is not null, "customer reservation admits its exact conversation");
-        var turn = new RealtimeTurnRequest(Guid.NewGuid(), Guid.Parse(boot), 0, 63, 0,
+        var turn = new RealtimeTurnRequest(Guid.NewGuid(), Guid.Parse(boot), 0, 0, 0,
             PartyWandCatalog.Version, true, "", null, "marin", 1);
         var admission = store.BeginRealtimeTurn("device-a", response!.ConversationId, Guid.NewGuid(),
-            JsonSerializer.SerializeToUtf8Bytes(turn), turn, true, default, default, handsFree: true, gptLive: true);
+            JsonSerializer.SerializeToUtf8Bytes(turn), turn, true, default, default, handsFree: true, gptLive: gptLive);
         Check(admission.Call is not null, "actual stream admission accepts captured customer context");
+        Check(admission.Call!.Context.Request.ReadyMask == 63
+            && store.LiveAvailability(admission.Call) == (63, 0, true),
+            "customer keepsakes offer all six choices even when physical stock reports zero");
+        if (gptLive)
+        {
+            Check(!store.UpdateLiveAvailability("device-a", response.ConversationId, Guid.Parse(boot), 0, 1, 0),
+                "digital availability does not bypass conflicting physical snapshot revisions");
+            Check(store.UpdateLiveAvailability("device-a", response.ConversationId, Guid.Parse(boot), 0, 1, 1)
+                && store.LiveAvailability(admission.Call) == (63, 1, true),
+                "physical stock updates preserve all six reusable digital choices and authoritative revision");
+            Check(!store.UpdateLiveAvailability("device-a", response.ConversationId, Guid.Parse(boot), 0, 0, 0),
+                "stale physical availability remains rejected");
+        }
         var call = await ConversationStartupMemory.PrepareAsync(admission.Call!, store, null!, default);
         var live = JsonSerializer.Serialize(GptLiveProtocol.Start(call.Context));
         var realtime = RealtimeProtocol.ContextData(call.Context);
         Check(live.Contains("Harry fixture") && realtime.Contains("Harry fixture"), "both engines receive immutable profile before startup");
         Check(!live.Contains("account-a") && !realtime.Contains("account-a"), "provider context excludes account authority identifiers");
-        var profiles = new CharacterProfileStore(Path.Combine(root, "startup-characters"));
+        var profiles = new CharacterProfileStore(Path.Combine(engineRoot, "startup-characters"));
         await profiles.DeleteAsync("account-a", 1, request.ProfileId);
         using var services = new ServiceCollection().AddSingleton(journal).AddSingleton(profiles).BuildServiceProvider();
         try
@@ -142,7 +158,7 @@ internal static class CustomerSessionTests
         catch (OperationCanceledException) { }
         Check(journal.CustomerSession(session.Id)!.Snapshot.Length > 0,
             "fault window fixture retains journal snapshot before durable deletion replay");
-        await new CharacterProfileStore(Path.Combine(root, "startup-characters")).ReplayDeletionsAsync((owner, profileId) =>
+        await new CharacterProfileStore(Path.Combine(engineRoot, "startup-characters")).ReplayDeletionsAsync((owner, profileId) =>
         {
             journal.RevokeCustomerProfile(owner, profileId);
             store.InvalidateMemoryContext("device-a", response.ConversationId);
