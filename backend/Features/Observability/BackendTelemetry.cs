@@ -29,20 +29,16 @@ internal static class BackendTelemetry
         Sdk.SetDefaultTextMapPropagator(new TraceContextPropagator());
         DistributedContextPropagator.Current = new TraceOnlyPropagator();
         services.AddSingleton<DistributedContextPropagator>(DistributedContextPropagator.Current);
-        var version = typeof(BackendTelemetry).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
-        var sha = version.Contains('+') ? version[(version.IndexOf('+') + 1)..] : "unknown";
+        if (configuration.GetValue<bool>("Backend:Telemetry:Logs:Enabled"))
+        {
+            services.AddSingleton(provider => new SafeServerLogTelemetry(configuration, environment,
+                provider.GetService<Microsoft.AspNetCore.Routing.EndpointDataSource>(), configureExporter));
+            services.AddSingleton<ILoggerProvider, SafeApplicationLogProvider>();
+        }
         services.AddOpenTelemetry().WithTracing(tracing =>
         {
             // Start with an empty resource: automatic detectors may include private host data.
-            tracing.SetResourceBuilder(ResourceBuilder.CreateEmpty()
-                .AddService(configuration["OTEL_SERVICE_NAME"] ?? "dildovander-backend", serviceVersion: version,
-                    autoGenerateServiceInstanceId: false)
-                .AddAttributes(new Dictionary<string, object>
-                {
-                    ["deployment.environment.name"] = configuration["Backend:Telemetry:Environment"] ?? environment.EnvironmentName,
-                    ["vcs.ref.head.revision"] = sha
-                }));
+            tracing.SetResourceBuilder(CreateResource(configuration, environment));
             // Public callers cannot force sampling with the remote sampled flag. The same
             // trace ID deterministically receives the same decision throughout this backend.
             tracing.SetSampler(new TraceIdRatioBasedSampler(ratio))
@@ -69,19 +65,33 @@ internal static class BackendTelemetry
         return services;
     }
 
-    internal static void ConfigureExporter(OtlpExporterOptions options, IConfiguration configuration)
+    internal static ResourceBuilder CreateResource(IConfiguration configuration, IHostEnvironment environment)
+    {
+        var version = typeof(BackendTelemetry).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+        return ResourceBuilder.CreateEmpty()
+            .AddService(configuration["OTEL_SERVICE_NAME"] ?? "dildovander-backend", serviceVersion: version,
+                autoGenerateServiceInstanceId: false)
+            .AddAttributes(new Dictionary<string, object>
+            {
+                ["deployment.environment.name"] = configuration["Backend:Telemetry:Environment"] ?? environment.EnvironmentName,
+                ["vcs.ref.head.revision"] = version.Contains('+') ? version[(version.IndexOf('+') + 1)..] : "unknown"
+            });
+    }
+
+    internal static void ConfigureExporter(OtlpExporterOptions options, IConfiguration configuration, string signal = "TRACES")
     {
         options.Protocol = OtlpExportProtocol.HttpProtobuf;
-        var exact = configuration["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"];
+        var exact = configuration[$"OTEL_EXPORTER_OTLP_{signal}_ENDPOINT"];
         var root = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
         options.Endpoint = new Uri(!string.IsNullOrWhiteSpace(exact) ? exact
-            : !string.IsNullOrWhiteSpace(root) ? root.TrimEnd('/') + "/v1/traces"
-            : "http://127.0.0.1:4318/v1/traces", UriKind.Absolute);
+            : !string.IsNullOrWhiteSpace(root) ? root.TrimEnd('/') + "/v1/" + signal.ToLowerInvariant()
+            : "http://127.0.0.1:4318/v1/" + signal.ToLowerInvariant(), UriKind.Absolute);
         if (options.Endpoint.Scheme != "https" && !(options.Endpoint.Scheme == "http" && options.Endpoint.IsLoopback))
         {
             throw new InvalidOperationException("OTLP requires HTTPS except on loopback.");
         }
-        options.Headers = configuration["OTEL_EXPORTER_OTLP_TRACES_HEADERS"]
+        options.Headers = configuration[$"OTEL_EXPORTER_OTLP_{signal}_HEADERS"]
             ?? configuration["OTEL_EXPORTER_OTLP_HEADERS"] ?? "";
         options.TimeoutMilliseconds = 5000;
         options.ExportProcessorType = ExportProcessorType.Batch;
@@ -97,8 +107,10 @@ internal static class BackendTelemetry
     private static bool IsTelemetryRequest(Uri? uri, IConfiguration configuration)
     {
         var endpoint = configuration["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] ?? configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+        var logsEndpoint = configuration["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"];
         return uri is not null && (uri.Host is "api.honeycomb.io" or "api.eu1.honeycomb.io"
-            || Uri.TryCreate(endpoint, UriKind.Absolute, out var telemetry) && uri.Authority == telemetry.Authority);
+            || Uri.TryCreate(endpoint, UriKind.Absolute, out var telemetry) && uri.Authority == telemetry.Authority
+            || Uri.TryCreate(logsEndpoint, UriKind.Absolute, out var logs) && uri.Authority == logs.Authority);
     }
 
     internal static bool ShouldTraceRequest(HttpContext context) =>
