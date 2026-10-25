@@ -33,7 +33,7 @@ let config = {
   revision: 4, betaEnabled: true, betaLaunchAt: null, betaUnlocked: false,
   productionEnabled: true, productionLaunchAt: null, productionUnlocked: false,
   timeZone: 'Europe/Prague', teaser: 'Ještě chvíli. Hvězdy hledají správné místo.',
-  initialLoadingMessage: 'Olivander má kocovinu, ale štětec ještě udrží. Pokud vznikne mistrovské dílo, oba budeme překvapení.',
+  initialLoadingMessage: 'Někdo už klepe na dveře osudu. Olivander má kocovinu, a tak se i proroctví postavilo do fronty.',
   personalizedLoadingEnabled: true, personalizedLoadingPrompt: 'Věta hravě a tajemně.',
 };
 let jobs = [{ profileId: 'portrait-fixture', revision: 3, status: 'failed', attempt: 2, errorCode: 'provider_unavailable', updatedAt: Date.now() }];
@@ -108,11 +108,16 @@ try {
   await page.getByLabel('Jméno postavy').fill('Matylda');
   await page.getByLabel('Její svět').fill('Město za zrcadlem');
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Připravit můj portrét' }).click();
+  await page.getByText('Jak se použijí moje údaje').click();
+  await page.getByText(/aby doplnilo informace o postavě a vytvořilo její ilustraci/).waitFor();
+  await page.getByText('Jak se použijí moje údaje').click();
+  await page.getByRole('button', { name: 'Zapsat se do osudu' }).click();
   await page.getByRole('heading', { name: /Něco se chystá, Matylda/ }).waitFor();
   assert.match(await page.locator('.launch-status').innerText(), /Olivander má kocovinu/);
   assert.match(await page.locator('.countdown').innerText(), /dní/);
-  await page.getByText(/Olivander má kocovinu, ale štětec/).waitFor();
+  await page.getByText(/proroctví postavilo do fronty/).waitFor();
+  assert.equal(await page.locator('[aria-current="step"]').count(), 0);
+  assert.doesNotMatch(await page.locator('.launch-copy').innerText(), /Poznáváme postavu|Mícháme barvy|portrét|rešerš|malujeme/i);
   assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
   assert.equal(await page.getByText(/Summary|Appearance|Facts/).count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-countdown.png'), fullPage: true });
@@ -132,9 +137,10 @@ try {
   character.status = 'ready';
   artwork = { status: 'running', loadingMessage: null, finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
-  await page.getByText(/portrét už malujeme/).waitFor();
+  await page.getByText(/Za zamčenými dveřmi/).waitFor();
   const fallbackLoading = await page.locator('.launch-status').innerText();
   assert.ok(fallbackLoading.includes(character.name) && fallbackLoading.includes(character.universe));
+  assert.doesNotMatch(fallbackLoading, /portrét|rešerš|malujeme|avatar/i);
   assert.equal(await page.getByText('NEVER SHOW BEFORE READY').count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-loading-fallback.png'), fullPage: true });
   artwork.loadingMessage = 'Matyldo, město za zrcadlem nám poslalo tvůj spis. Zrcadla požádala o přestávku.';
@@ -155,9 +161,9 @@ try {
   character = { profileId: 'legacy-profile', revision: 8, name: 'Eliška', universe: 'Starý svět', status: 'ready' };
   artwork = null;
   await page.reload({ waitUntil: 'networkidle' });
-  await page.getByText(/Tvá postava je uložená/).waitFor();
+  await page.getByText(/Tvé jméno už je v seznamu/).waitFor();
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Připravit můj portrét' }).click();
+  await page.getByRole('button', { name: 'Zapsat se do osudu' }).click();
   assert(writes.some(write => write.expectedProfileId === 'legacy-profile' && write.expectedRevision === 8));
 
   await page.goto(`${origin}/signin#invite=fixture-invitation-token-1234567890`, { waitUntil: 'networkidle' });

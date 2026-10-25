@@ -104,13 +104,14 @@ it('shows the admin opening text, then a recognized-character update without lea
     await vi.advanceTimersByTimeAsync(5000);
     await flushPromises();
     expect(view.get('.launch-status').text()).toContain('Archivář ze světa „Město za zrcadlem“');
-    expect(view.get('.launch-status').text()).toContain('portrét už malujeme');
+    expect(view.get('.launch-status').text()).toContain('Za zamčenými dveřmi');
     expect(view.text()).not.toContain('UNRELEASED FINAL TEXT');
     generatedMessage = true;
     await vi.advanceTimersByTimeAsync(5000);
     await flushPromises();
     expect(view.get('.launch-status').text()).toContain('katalog právě odmítl evidovat tvé ego');
     expect(view.text()).not.toContain('UNRELEASED FINAL TEXT');
-    expect(view.get('[aria-current="step"]').text()).toBe('Mícháme barvy');
+    expect(view.find('[aria-current="step"]').exists()).toBe(false);
+    expect(view.text()).not.toMatch(/Poznáváme postavu|Mícháme barvy|portrét už malujeme/);
   } finally { view.unmount(); }
 });

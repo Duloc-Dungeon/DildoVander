@@ -15,6 +15,18 @@ internal static class CharacterPortraitTests
             await InterruptedAndRetriesAsync(Path.Combine(root, "retry"));
             await ConcurrentCreationAsync(Path.Combine(root, "concurrency"));
             Check(PortraitContentPolicy.ValidMessage("Hvězdy si pro vás právě zkoušejí slavnostní klobouky."), "Czech Unicode message accepted");
+            Check(PortraitContentPolicy.ValidLoadingMessage("Raven ví, že kouzla se raději objeví včas. Olivander má kocovinu."),
+                "character-specific suspense with the host hangover remains valid loading copy");
+            foreach (var reveal in new[] { "Raven awaits a portrait.", "Teď vzniká malba.", "Brzy uvidíš obraz.",
+                         "Tvé avatarové dobrodružství začíná.", "AI přináší překvapení.", "Probíhá výzkum.",
+                         "Každý krok má svůj řád.", "Poznáváme postavu.", "Mícháme barvy.", "Malujeme tvůj portrét." })
+            {
+                Check(!PortraitContentPolicy.ValidLoadingMessage(reveal), "pre-reveal loading copy hides artifacts and process details");
+            }
+            Check(PortraitContentPolicy.ValidMessage("Raven, tvůj portrét právě dorazil."),
+                "reveal copy may mention the completed portrait");
+            Check(PortraitContentPolicy.ValidLoadingMessage("Stephen zaslechl za zavřenými dveřmi své jméno."),
+                "a fictional character name is not mistaken for a progress step");
             Check(PortraitContentPolicy.ValidMessage("Wanda dorazila pozdě i do vlastního proroctví."), "fictional Wanda is not mistaken for a wand reveal");
             Check(!PortraitContentPolicy.ValidMessage("Your wand is ready")
                 && !PortraitContentPolicy.ValidMessage("Two wands are ready"), "wand reveal remains blocked at whole-word boundaries");

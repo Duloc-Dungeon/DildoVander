@@ -47,7 +47,11 @@ existing authenticated transport, object-URL cleanup and lifecycle checks.
 
 Preparation starts with the administrator's editable hungover-Olivander message.
 Research runs in the background, then a bounded character-specific loading line
-acknowledges the fictional persona. The final mild roast appears only after the
+acknowledges the fictional persona through suspense. Guests see no research,
+painting or numbered process steps, and the primary action does not announce the
+portrait. The full OpenAI data-use explanation remains available beside explicit
+consent. Generated and historical public-facing loading copy is filtered before
+reveal; raw administrator settings remain editable. The final mild roast appears only after the
 owner's image has decoded. Text and image publish together under the existing job
 lease; stale profile revisions, deleted profiles and switched accounts cannot
 reuse another portrait. A failed text request uses bounded Czech copy; image

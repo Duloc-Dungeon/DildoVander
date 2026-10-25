@@ -178,7 +178,7 @@ async function prepareExistingPortrait(): Promise<void> {
     if (current()) beginPolling();
   } catch (cause) {
     if (!current()) return;
-    error.value = cause instanceof Error ? cause.message : 'Přípravu portrétu se nepodařilo spustit.';
+    error.value = cause instanceof Error ? cause.message : 'Přípravu se nepodařilo spustit.';
   } finally { if (current()) busy.value = false; }
 }
 async function retryPortrait(): Promise<void> {
@@ -278,21 +278,18 @@ onBeforeUnmount(() => {
             <AwField id="character-name" :label="copy.name" :hint="copy.nameHint"><input id="character-name" v-model="name" class="aw-input" maxlength="100" autocomplete="off" required /></AwField>
             <AwField id="character-universe" :label="copy.universe" :hint="copy.universeHint"><input id="character-universe" v-model="universe" class="aw-input" maxlength="160" autocomplete="off" required /></AwField>
             <label class="launch-consent"><input v-model="consent" type="checkbox" required /><span>{{ copy.consent }} <RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></span></label>
+            <details class="launch-data-details"><summary>{{ copy.consentDetails }}</summary><p>{{ copy.consentExplanation }}</p></details>
             <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
             <AwButton type="submit" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
           </form>
         </template>
         <template v-else>
-          <ol v-if="state?.artwork" class="launch-progress" :aria-label="copy.progress">
-            <li :class="{ 'is-current': phase === 'research', 'is-done': phase === 'portrait' || phase === 'ready' }" :aria-current="phase === 'research' ? 'step' : undefined">{{ copy.researchStep }}</li>
-            <li :class="{ 'is-current': phase === 'portrait', 'is-done': phase === 'ready' }" :aria-current="phase === 'portrait' ? 'step' : undefined">{{ copy.portraitStep }}</li>
-            <li :class="{ 'is-current': phase === 'ready' }" :aria-current="phase === 'ready' ? 'step' : undefined">{{ copy.readyStep }}</li>
-          </ol>
           <p v-if="hasPortrait" class="launch-final" role="status">{{ finalMessage }}</p>
           <p v-else-if="phase !== 'failed'" class="launch-status" role="status">{{ portrait.pending.value ? copy.displayLoading : loadingMessage }}</p>
           <form v-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait">
             <p>{{ copy.missingPortrait }}</p>
             <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
+            <details class="launch-data-details"><summary>{{ copy.consentDetails }}</summary><p>{{ copy.consentExplanation }}</p></details>
             <AwButton type="submit" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
           </form>
           <AwNotice v-if="error || phase === 'failed'" tone="warning" role="alert">{{ error || copy.failed }} <button class="launch-retry" type="button" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
@@ -335,11 +332,8 @@ onBeforeUnmount(() => {
 .launch-host-note { color: var(--aw-muted); font-size: .75rem; line-height: 1.5; margin-block: 0 .5rem; }
 .launch-status { color: var(--aw-link); line-height: 1.65; padding-block: 1rem; border-block: 1px solid var(--aw-border-subtle); }
 .launch-final { color: var(--aw-ivory); font-size: 1.1rem; line-height: 1.8; max-width: 46ch; }
-.launch-progress { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; padding: 0; margin-block: 0 1.5rem; list-style: none; counter-reset: preparation; color: var(--aw-muted); font-size: .75rem; line-height: 1.6; }
-.launch-progress li { counter-increment: preparation; }
-.launch-progress li::before { content: counter(preparation) '. '; font-variant-numeric: tabular-nums; }
-.launch-progress .is-current { color: var(--aw-accent); font-weight: 600; text-decoration: underline; text-underline-offset: .3em; }
-.launch-progress .is-done { color: var(--aw-ivory); }
+.launch-data-details { color: var(--aw-muted); font-size: .82rem; line-height: 1.65; }
+.launch-data-details summary { min-height: 44px; padding-block: .6rem; cursor: pointer; }
 .launch-form { display: grid; gap: 1.1rem; margin-top: 1.5rem; }
 .launch-consent { display: flex; gap: .5rem; align-items: start; color: var(--aw-muted); font-size: .82rem; line-height: 1.65; cursor: pointer; }
 .launch-consent input { flex-shrink: 0; width: 24px; height: 24px; margin: .1rem .3rem 0 0; accent-color: var(--aw-accent); }

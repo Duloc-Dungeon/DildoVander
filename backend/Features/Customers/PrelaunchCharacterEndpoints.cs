@@ -86,8 +86,10 @@ internal static class PrelaunchCharacterEndpoints
             deadline.CancelAfter(TimeSpan.FromSeconds(20));
             try
             {
-                var message = await provider.GenerateMessageAsync(new(request.Name, request.Universe), null, request.Prompt, deadline.Token);
-                return message is null ? ApiProblem.Create(http, 422, "loading_message_unavailable") : Results.Ok(new { message });
+                var message = await provider.GenerateMessageAsync(new(request.Name, request.Universe), null,
+                    PortraitContentPolicy.LoadingDirection(request.Prompt), deadline.Token);
+                return !PortraitContentPolicy.ValidLoadingMessage(message)
+                    ? ApiProblem.Create(http, 422, "loading_message_unavailable") : Results.Ok(new { message });
             }
             catch (Exception error) when (error is not OutOfMemoryException)
             {
@@ -120,7 +122,9 @@ internal static class PrelaunchCharacterEndpoints
         {
             character = profile is null ? null : new { profile.ProfileId, profile.Revision,
                 name = profile.UserInput.Name, universe = profile.UserInput.World, profile.Status },
-            artwork = portrait is null ? null : new { portrait.Status, portrait.LoadingMessage, portrait.ErrorCode,
+            artwork = portrait is null ? null : new { portrait.Status,
+                loadingMessage = PortraitContentPolicy.ValidLoadingMessage(portrait.LoadingMessage) ? portrait.LoadingMessage : null,
+                portrait.ErrorCode,
                 finalMessage = portrait.Status == "ready"
                     ? portrait.FinalMessage ?? PortraitContentPolicy.FinalMessageFallback(profile!.UserInput) : null,
                 url = portrait.Status == "ready"
@@ -188,7 +192,7 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
             {
                 var experience = await provider.GenerateExperienceAsync(job.Input, job.Enrichment,
                     config.PersonalizedLoadingPrompt, config.PersonalizedLoadingEnabled, experienceDeadline.Token);
-                if (config.PersonalizedLoadingEnabled && PortraitContentPolicy.ValidMessage(experience.LoadingMessage)
+                if (config.PersonalizedLoadingEnabled && PortraitContentPolicy.ValidLoadingMessage(experience.LoadingMessage)
                     && !store.SetPortraitMessage(job, experience.LoadingMessage!)) { return; }
                 if (PortraitContentPolicy.ValidMessage(experience.FinalMessage)) { finalMessage = experience.FinalMessage; }
             }
