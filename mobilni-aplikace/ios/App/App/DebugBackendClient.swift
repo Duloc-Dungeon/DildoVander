@@ -537,9 +537,10 @@ final class DebugBackendClient {
         var request = request
         // Only this explicitly configured backend receives correlation. Local ESP
         // transports and provider URLs do not pass through this boundary.
+        let apiPrefix = profile.baseURL.appendingPathComponent("v1").path + "/"
         guard let url = request.url, url.scheme == profile.baseURL.scheme,
               url.host == profile.baseURL.host, url.port == profile.baseURL.port,
-              url.path.hasPrefix("/v1/") else { throw DebugBackendError.invalidProfile }
+              url.path.hasPrefix(apiPrefix) else { throw DebugBackendError.invalidProfile }
         request.setValue(AccountTransportPolicy.newTraceparent(), forHTTPHeaderField: "traceparent")
         guard profile.usesAccountSession else { return request }
         guard let binding = profile.accountBinding, let authorize = accountAuthorizer else { throw DebugBackendError.invalidProfile }
