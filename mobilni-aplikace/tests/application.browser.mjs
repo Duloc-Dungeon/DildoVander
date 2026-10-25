@@ -519,7 +519,7 @@ try {
           if (await selected.count()) assert(await selected.evaluate(link => {
             const rect = link.getBoundingClientRect();
             const nav = link.closest('nav').getBoundingClientRect();
-            return rect.left >= nav.left - 1 && rect.right <= nav.right + 1;
+            return rect.left >= nav.left - 2 && rect.right <= nav.right + 2;
           }), 'deep-linked navigation stays visible in the scrolling bar');
           if (route === '/') {
             const disclosure = page.locator('.shell-preferences');

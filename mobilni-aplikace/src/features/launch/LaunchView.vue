@@ -109,6 +109,11 @@ async function saveCharacter(): Promise<void> {
     beginPolling();
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Tvoji dva údaje se nepodařilo uložit.';
+    try {
+      // The save may have committed before its response was lost, or on another device.
+      await refreshCharacter(controller?.signal);
+      if (state.value?.character) { error.value = ''; beginPolling(); }
+    } catch { /* Preserve the original error and entered fields while disconnected. */ }
   } finally { busy.value = false; }
 }
 async function prepareExistingPortrait(): Promise<void> {
@@ -197,7 +202,7 @@ onBeforeUnmount(() => {
     <section class="launch-card">
       <div class="launch-art" :class="{ 'is-ready': hasPortrait }" aria-label="Portrét připravované postavy">
         <img v-if="portraitUrl" :src="portraitUrl" alt="Portrét tvé postavy" @load="portraitReady = true" @error="clearPortrait(); error = 'Portrét se nepodařilo načíst.'" />
-        <svg v-else viewBox="0 0 380 460" role="img" aria-label="Tajemná noční obloha s rozzářenou hvězdou">
+        <svg :aria-hidden="hasPortrait" viewBox="0 0 380 460" role="img" aria-label="Tajemná noční obloha s rozzářenou hvězdou">
           <defs><radialGradient id="halo"><stop stop-color="#b8c0ff" stop-opacity=".8"/><stop offset="1" stop-color="#342b68" stop-opacity="0"/></radialGradient><linearGradient id="night" x2="0" y2="1"><stop stop-color="#35316f"/><stop offset="1" stop-color="#10131d"/></linearGradient></defs>
           <rect width="380" height="460" rx="190" fill="url(#night)"/><circle cx="190" cy="190" r="150" fill="url(#halo)"/><path d="M60 340Q170 270 320 350v110H60z" fill="#171a26"/><path d="m190 100 12 58 58 12-58 12-12 58-12-58-58-12 58-12z" fill="#f5e9c8"/><circle cx="102" cy="135" r="3" fill="white"/><circle cx="285" cy="220" r="2" fill="white"/><circle cx="125" cy="260" r="2" fill="white"/><path d="M85 310q105-75 210 0" fill="none" stroke="#b8c0ff" stroke-opacity=".55" stroke-width="2"/></svg>
         <span v-if="!hasPortrait" class="launch-orbit" aria-hidden="true"></span>
@@ -246,7 +251,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .launch-page{max-width:76rem;margin:0 auto;padding:clamp(1rem,4vw,3.5rem);display:grid;align-content:center;min-height:calc(100vh - 12rem);color:var(--aw-ivory)}
 .launch-card{display:grid;grid-template-columns:minmax(17rem,.85fr) minmax(18rem,1.15fr);align-items:center;gap:clamp(2rem,7vw,6rem);padding:clamp(1.25rem,5vw,4rem);border:1px solid var(--aw-border-subtle);border-radius:1.4rem;background:linear-gradient(140deg,var(--aw-surface),color-mix(in srgb,var(--aw-void) 90%,var(--aw-accent) 10%));box-shadow:0 24px 90px #0005}
-.launch-art{position:relative;aspect-ratio:4/4.7;max-height:34rem;overflow:hidden;border-radius:48% 48% 43% 43%;background:#171827;box-shadow:0 0 5rem #7770;margin:auto;width:100%}.launch-art>svg,.launch-art>img{width:100%;height:100%;object-fit:cover;display:block}.launch-art>img{opacity:0;transition:opacity .7s ease}.launch-art.is-ready>img{opacity:1}.launch-orbit{position:absolute;inset:8%;border:1px solid #b8c0ff55;border-radius:50%;animation:orbit 14s linear infinite;pointer-events:none}.launch-orbit:after{content:"";position:absolute;top:8%;left:18%;width:.45rem;height:.45rem;border-radius:50%;background:#eee6ca;box-shadow:0 0 1rem #fff}
+.launch-art{position:relative;aspect-ratio:4/4.7;max-height:34rem;overflow:hidden;border-radius:48% 48% 43% 43%;background:#171827;box-shadow:0 0 5rem #7770;margin:auto;width:100%}.launch-art>svg,.launch-art>img{width:100%;height:100%;object-fit:cover;display:block}.launch-art>img{position:absolute;inset:0;z-index:1;opacity:0;transition:opacity .7s ease}.launch-art.is-ready>img{opacity:1}.launch-orbit{position:absolute;inset:8%;border:1px solid #b8c0ff55;border-radius:50%;animation:orbit 14s linear infinite;pointer-events:none}.launch-orbit:after{content:"";position:absolute;top:8%;left:18%;width:.45rem;height:.45rem;border-radius:50%;background:#eee6ca;box-shadow:0 0 1rem #fff}
 .launch-copy{max-width:38rem}.launch-copy h1{font-size:clamp(2.2rem,5vw,4.3rem);letter-spacing:-.04em;line-height:1.04;margin:.35rem 0 1.25rem}.launch-teaser{color:var(--aw-muted);font-size:1.05rem;line-height:1.75;max-width:55ch}.launch-status{margin:1.4rem 0;color:var(--aw-link);font-style:italic;min-height:1.6rem}.launch-form{display:grid;gap:1rem;margin-top:1.5rem}.launch-consent{display:flex;gap:.75rem;align-items:start;color:var(--aw-muted);font-size:.82rem;line-height:1.55}.launch-consent input{margin-top:.25rem;accent-color:var(--aw-accent)}.launch-consent a{color:var(--aw-ivory)}.countdown{margin-top:2rem;padding-top:1.1rem;border-top:1px solid var(--aw-border-subtle)}.countdown-grid{display:grid;grid-template-columns:repeat(4,minmax(3.5rem,1fr));gap:.75rem;margin:1rem 0}.countdown-grid>div{display:grid;gap:.25rem}.countdown-grid strong{font-variant-numeric:tabular-nums;font-size:clamp(1.8rem,4vw,3rem);letter-spacing:-.06em}.countdown-grid span,.countdown>p:last-child,.countdown-wait,.launch-footnote{color:var(--aw-muted);font-size:.8rem}.launch-footnote{text-align:center;margin:1.5rem 0}.launch-retry{margin-left:.5rem;color:inherit;text-decoration:underline;background:none;border:0;cursor:pointer}.aw-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:.7rem 1.2rem;border-radius:.45rem;text-decoration:none}.aw-button--primary{color:var(--aw-on-accent);background:var(--aw-accent)}
 .launch-account-options{margin:1rem auto;max-width:60rem;color:var(--aw-muted);font-size:.8rem}.launch-account-options summary{cursor:pointer;padding:.5rem}.launch-account-options>a{display:inline-block;margin:.5rem;color:var(--aw-ivory)}
 @keyframes orbit{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.launch-orbit{animation:none}.launch-art>img{transition:none}}
