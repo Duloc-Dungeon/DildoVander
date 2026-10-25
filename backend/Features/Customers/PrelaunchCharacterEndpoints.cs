@@ -39,10 +39,10 @@ internal static class PrelaunchCharacterEndpoints
                 OpenAiConsent: true, PortraitConsent: true), http.RequestAborted);
             return Results.Ok(await ViewAsync(http, store));
         });
-        group.MapGet("/portrait", (long revision, HttpContext http, CharacterProfileStore store) =>
+        group.MapGet("/portrait", (string profileId, long revision, HttpContext http, CharacterProfileStore store) =>
         {
             http.Response.Headers.CacheControl = "private, no-store";
-            var image = store.ReadPortraitImage(Owner(http), revision);
+            var image = store.ReadPortraitImage(Owner(http), profileId, revision);
             return image is null ? ApiProblem.Create(http, 404, "portrait_unavailable") : Results.File(image, "image/webp");
         });
         group.MapPost("/retry", async (HttpContext http, CharacterProfileStore store) =>
@@ -114,14 +114,17 @@ internal static class PrelaunchCharacterEndpoints
     {
         var owner = Owner(http);
         var profile = await store.ReadAsync(owner, http.RequestAborted);
-        var portrait = store.ReadPortrait(owner);
+        var portrait = profile is null ? null : store.ReadPortrait(owner, profile.ProfileId, profile.Revision);
         // Deliberate minimal projection: never return research, sources, generated wands or provider payloads.
         return new
         {
             character = profile is null ? null : new { profile.ProfileId, profile.Revision,
                 name = profile.UserInput.Name, universe = profile.UserInput.World, profile.Status },
             artwork = portrait is null ? null : new { portrait.Status, portrait.LoadingMessage, portrait.ErrorCode,
-                url = portrait.Status == "ready" ? $"/app/v1/prelaunch/character/portrait?revision={profile!.Revision}" : null }
+                finalMessage = portrait.Status == "ready"
+                    ? portrait.FinalMessage ?? PortraitContentPolicy.FinalMessageFallback(profile!.UserInput) : null,
+                url = portrait.Status == "ready"
+                    ? $"/app/v1/prelaunch/character/portrait?profileId={Uri.EscapeDataString(profile!.ProfileId)}&revision={profile.Revision}" : null }
         };
     }
 
@@ -167,36 +170,46 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
         activity?.SetTag("app.attempt", job.Attempt);
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
-        if (!await db.Users.AsNoTracking().AnyAsync(user => user.Id == job.AccountId && !user.Disabled, stoppingToken)
-            || !store.CanDispatchPortrait(job))
+        async Task<bool> IsCurrentAsync() => store.CanDispatchPortrait(job)
+            && await db.Users.AsNoTracking().AnyAsync(user => user.Id == job.AccountId && !user.Disabled, stoppingToken);
+
+        if (!await IsCurrentAsync())
         {
             store.CompletePortrait(job, null, "portrait_account_unavailable");
             return;
         }
         var config = scope.ServiceProvider.GetService<LaunchPolicyStore>()?.Read() ?? LaunchConfiguration.Default;
-        if (config.PersonalizedLoadingEnabled)
+        var finalMessage = PortraitContentPolicy.FinalMessageFallback(job.Input);
+        if (await IsCurrentAsync())
         {
-            using var messageDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            messageDeadline.CancelAfter(TimeSpan.FromSeconds(20));
+            using var experienceDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            experienceDeadline.CancelAfter(TimeSpan.FromSeconds(20));
             try
             {
-                var message = await provider.GenerateMessageAsync(job.Input, job.Enrichment, config.PersonalizedLoadingPrompt, messageDeadline.Token);
-                if (PortraitContentPolicy.ValidMessage(message)) { store.SetPortraitMessage(job, message!); }
+                var experience = await provider.GenerateExperienceAsync(job.Input, job.Enrichment,
+                    config.PersonalizedLoadingPrompt, config.PersonalizedLoadingEnabled, experienceDeadline.Token);
+                if (config.PersonalizedLoadingEnabled && PortraitContentPolicy.ValidMessage(experience.LoadingMessage)
+                    && !store.SetPortraitMessage(job, experience.LoadingMessage!)) { return; }
+                if (PortraitContentPolicy.ValidMessage(experience.FinalMessage)) { finalMessage = experience.FinalMessage; }
             }
             catch (Exception error) when (error is not OutOfMemoryException)
             {
-                // Text personalization is optional; a failure must never prevent the artwork request.
-                logger.LogInformation("Character loading message unavailable {Reason}", CharacterProviderFailure.Code(error));
+                // Text is optional; a failed experience request never blocks the portrait.
+                logger.LogInformation("Character portrait text unavailable {Reason}", CharacterProviderFailure.Code(error));
             }
         }
-        if (!store.CanDispatchPortrait(job)
-            || !await db.Users.AsNoTracking().AnyAsync(user => user.Id == job.AccountId && !user.Disabled, stoppingToken)) { return; }
+        if (!await IsCurrentAsync()) { return; }
         using var imageDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         imageDeadline.CancelAfter(TimeSpan.FromSeconds(180));
         try
         {
             var image = await provider.GeneratePortraitAsync(job, imageDeadline.Token);
-            var completed = store.CompletePortrait(job, image, null);
+            if (!await IsCurrentAsync())
+            {
+                activity?.SetTag("app.outcome", "discarded");
+                return;
+            }
+            var completed = store.CompletePortrait(job, image, null, finalMessage);
             activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
             logger.LogInformation("Character portrait {Outcome} {ProfileId} {Revision} {Attempt}",
                 completed ? "completed" : "discarded", job.ProfileId, job.Revision, job.Attempt);

@@ -23,6 +23,7 @@ internal static class DuelTests
     {
         RulesFixtures();
         DuelBalanceTests.Run();
+        PartyTaskCatalog();
         StoredV2Compatibility();
         await DuelCommentaryTests.RunAsync();
         using var fixture = new Fixture();
@@ -43,6 +44,18 @@ internal static class DuelTests
         [new("strike", "Úder " + suffix, "Fiktivní záblesk hvězd."),
          new("trick", "Klam " + suffix, "Fiktivní ozvěna odvádí pozornost."),
          new("shield", "Štít " + suffix, "Fiktivní závoj zachytí kouzlo.")];
+
+    private static void PartyTaskCatalog()
+    {
+        var winner = new DuelResult(2, 1, "left", "Levá vítězí.", false);
+        var first = DuelPartyTasks.ForResult("stable-task-seed", winner);
+        var second = DuelPartyTasks.ForResult("stable-task-seed", winner);
+        Check(first is not null && first == second && DuelPartyTasks.IsCatalogued(first)
+            && first.Alternative.Length > 0 && first.AlternativeRoast.Length > 0,
+            "winner tasks are deterministic catalogue snapshots with a viable alternative");
+        Check(DuelPartyTasks.ForResult("tie-seed", winner with { Winner = "draw" }) is null,
+            "ties create no losing-party task");
+    }
 
     private static void PersonalizedRulesAndFlow()
     {
@@ -94,7 +107,10 @@ internal static class DuelTests
         Reject(403, () => fixture.Store.Join(duel.Id, grantLeft.Token, joinLeft), "stale grant cannot replay prior join");
         duel = fixture.Store.Join(duel.Id, rotated.Token, joinLeft);
         duel = fixture.Store.Start("device-a", duel.Id, new(duel.Revision, "v2-start"));
-        Check(duel.NarrationMode == "web_only" && duel.Left.Strength == 3 && duel.Right.Defense == 3,
+        Check(duel.NarrationMode == "web_only" && duel.NarrationStatus == "text_only_duel"
+            && JsonSerializer.SerializeToElement(duel, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+                .GetProperty("narrationStatus").GetString() == "text_only_duel"
+            && duel.Left.Strength == 3 && duel.Right.Defense == 3,
             "device-free start is explicitly web only with equal bounded server stats");
         var opening = duel.Revision;
         var firstChoice = new DuelChoiceRequest("left", 1, opening, "strike", "v2-choice-left");
@@ -196,8 +212,9 @@ internal static class DuelTests
             fixture.Store.Tick();
             duel = (await rightClient.GetFromJsonAsync<DuelView>(path))!;
         }
-        Check(duel.State == "Completed" && duel.Result?.Winner == "right" && duel.Rounds.All(round => !round.LeftAutomatic && !round.RightAutomatic),
-            "two clients finish all three named-spell rounds with authoritative reproducible winner");
+        Check(duel.State == "Completed" && duel.Result?.Winner == "right" && duel.Rounds.All(round => !round.LeftAutomatic && !round.RightAutomatic)
+            && duel.PartyTask is { Id.Length: > 0, Alternative.Length: > 0, AlternativeRoast.Length: > 0 },
+            "two clients finish all three named-spell rounds and receive the typed task snapshot over HTTP");
         await app.StopAsync();
     }
 
@@ -448,6 +465,9 @@ internal static class DuelTests
             return fixture.Store.Read(duel.Id);
         }
         var first = Complete("first-commentary");
+        Check(first.Result!.Winner == "draw" ? first.PartyTask is null
+            : first.PartyTask is not null && DuelPartyTasks.IsCatalogued(first.PartyTask),
+            "completed winner results receive one curated task, while ties have no losing party");
         Check(fixture.Store.ClaimCommentary()?.Id == first.Id && fixture.Store.ClaimCommentary() is null,
             "durable commentary claim is single-dispatch per completed result");
         var restarted = fixture.Reopen();
@@ -456,13 +476,35 @@ internal static class DuelTests
             "uncertain billed commentary is never retried after restart; local fallback stays available");
         var second = Complete("second-commentary");
         _ = fixture.Store.ClaimCommentary();
-        var commentary = new DuelCommentary("openai", "fixture-model",
+        var commentary = new DuelCommentary("openai-responses-text", "fixture-model",
             second.Rounds.Select(round => new DuelRoundCommentary(round.Number, "Approved quip", "Approved mishap")).ToArray());
         fixture.Store.CompleteCommentary(second.Id, new(commentary, new("accepted", "fixture-model", 100, 50, 750)));
         Check(fixture.Reopen().Read(second.Id).Commentary?.Rounds.Count == 3,
             "AI composition persists separately without modifying immutable result scores or revision");
+        var publicRead = fixture.Store.Read(second.Id, publicView: true);
+        var ownedRead = fixture.Store.AccountHistory([second.Left.IdentityId], second.Id).Single();
+        static bool SameCommentary(DuelCommentary? actual, DuelCommentary expected) => actual is not null
+            && actual.Provider == expected.Provider && actual.Model == expected.Model
+            && actual.Rounds.SequenceEqual(expected.Rounds);
+        Check(SameCommentary(publicRead.Commentary, commentary) && SameCommentary(ownedRead.Commentary, commentary)
+            && fixture.Store.AccountHistory(["not-owned"], second.Id).Count == 0,
+            "public and authorized owner history retain the same completed commentary without widening identity access");
         Check(fixture.Reopen().Read(second.Id).Result == second.Result
-            && fixture.Reopen().Read(second.Id).Revision == second.Revision, "commentary cannot mutate result artifact");
+            && fixture.Reopen().Read(second.Id).Revision == second.Revision
+            && fixture.Reopen().Read(second.Id).PartyTask == second.PartyTask,
+            "commentary cannot mutate result or the persisted party-task snapshot");
+
+        using var defaultFixture = new Fixture(commentaryEnabled: null);
+        var defaultDuel = defaultFixture.Store.Create("device-a", defaultFixture.CreateRequest("autoplay"));
+        defaultDuel = defaultFixture.Store.Start("device-a", defaultDuel.Id,
+            new(defaultDuel.Revision, "default-commentary-start"));
+        for (var round = 0; round < 3; round++)
+        {
+            defaultFixture.Clock.Advance(TimeSpan.FromSeconds(3));
+            defaultFixture.Store.Tick();
+        }
+        Check(defaultFixture.Store.ClaimCommentary()?.Id == defaultDuel.Id,
+            "unspecified commentary setting enables generation for new completed duels");
     }
 
     private static void NarrationBackpressure()
@@ -644,19 +686,20 @@ internal static class DuelTests
         internal readonly IConfiguration Configuration;
         internal readonly IDataProtectionProvider Protection;
         internal readonly DuelStore Store;
-        internal Fixture(bool commentaryEnabled = false, FakeSlot? slot = null)
+        internal Fixture(bool? commentaryEnabled = false, FakeSlot? slot = null)
         {
             Slot = slot ?? new FakeSlot();
             Directory.CreateDirectory(root);
-            Configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            var settings = new Dictionary<string, string?>
             {
                 ["Backend:DatabasePath"] = Path.Combine(root, "duel.sqlite"),
                 ["Backend:Admin:CredentialSha256"] = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("duel-test-admin"))),
                 ["Devices:0:DeviceId"] = "device-a", ["Devices:1:DeviceId"] = "device-b",
                 ["Keepsake:Enabled"] = "true", ["Keepsake:Origin"] = "https://duel.test",
                 ["Keepsake:PublicDeviceId"] = "device-a",
-                ["Show:DuelCommentaryEnabled"] = commentaryEnabled.ToString()
-            }).Build();
+            };
+            if (commentaryEnabled is { } enabled) { settings["Show:DuelCommentaryEnabled"] = enabled.ToString(); }
+            Configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
             Protection = DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(root, "keys")));
             Store = Reopen();
         }
@@ -700,7 +743,7 @@ internal static class DuelTests
         public bool IsCurrent(string deviceId, string duelId) => Current == duelId;
         public void PublishRound(string deviceId, string duelId, int round, string quip) { }
         public void Release(string deviceId, string duelId) { if (Current == duelId) { Current = null; } }
-        public virtual DuelNarrationBinding BindNarration(string deviceId) => new("web_only", "fixture_no_device");
+        public virtual DuelNarrationBinding BindNarration(string deviceId) => new("web_only", "text_only_duel");
         public virtual bool EnqueueNarration(string deviceId, string duelId, int round, string scene, string wandId, string text) => false;
         public virtual string NarrationState(string deviceId, string duelId) => "idle";
     }

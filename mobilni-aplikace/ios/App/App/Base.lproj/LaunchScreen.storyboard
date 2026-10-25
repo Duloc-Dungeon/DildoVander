@@ -23,8 +23,8 @@
                                 </constraints>
                             </imageView>
                         </subviews>
-                        <!-- Vapour Chrome dark surface (#0f0f11), no template image. -->
-                        <color key="backgroundColor" red="0.058823529411764705" green="0.058823529411764705" blue="0.06666666666666667" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <!-- Wand Night Stand launch surface and original generated brand logo. -->
+                        <color key="backgroundColor" red="0.12941176470588237" green="0.10196078431372549" blue="0.13333333333333333" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
                             <constraint firstItem="wns-brand-mark" firstAttribute="centerX" secondItem="snD-IY-ifK" secondAttribute="centerX" id="wns-mark-center-x"/>
                             <constraint firstItem="wns-brand-mark" firstAttribute="centerY" secondItem="snD-IY-ifK" secondAttribute="centerY" id="wns-mark-center-y"/>

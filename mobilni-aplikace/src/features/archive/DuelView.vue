@@ -9,6 +9,7 @@ import { DuelClient } from './showClient';
 import { duelSpell, duelWandName, duelActions, duelNarration, duelStates, type Duel, type DuelAccess, type DuelAction } from './showContracts';
 import './archive.css';
 import SpellGlyph from './SpellGlyph.vue';
+import DuelPartyTaskPanel from './DuelPartyTaskPanel.vue';
 import { createBattleSummary } from './battleSummary';
 import { Capacitor } from '@capacitor/core';
 import { shareNativeGuestFile } from './nativeGuest';
@@ -46,6 +47,8 @@ function clearExports() {
   if (exportedSummary.value) URL.revokeObjectURL(exportedSummary.value); exportedSummary.value = '';
   if (exportedCard.value) URL.revokeObjectURL(exportedCard.value); exportedCard.value = '';
 }
+watch(() => JSON.stringify([current.value?.id, current.value?.result, current.value?.commentary, current.value?.partyTask]),
+  (value, previous) => { if (previous && value !== previous) clearExports(); }, { flush: 'sync' });
 
 async function exportCard() {
   if (!current.value?.result || cardBusy.value) return;
@@ -67,7 +70,7 @@ async function exportCard() {
     const color = (token: string) => style.getPropertyValue(token).trim();
     const blob = await createBattleSummary(view, artwork, { background: color('--aw-void'), surface: color('--aw-surface'), text: color('--aw-ivory'), muted: color('--aw-muted'), accent: color('--aw-accent') });
     requireCurrentExport();
-    if (Capacitor.isNativePlatform()) await shareNativeGuestFile(new File([blob], 'dildovander-souboj.png', { type: 'image/png' }), requireCurrentExport);
+    if (Capacitor.isNativePlatform()) await shareNativeGuestFile(new File([blob], 'wand-night-stand-souboj.png', { type: 'image/png' }), requireCurrentExport);
     else { if (exportedCard.value) URL.revokeObjectURL(exportedCard.value); exportedCard.value = URL.createObjectURL(blob); }
   } catch (error) { if ((error as Error).name !== 'AbortError') { clearExports(); cardError.value = true; } }
   finally { for (const url of temporary) URL.revokeObjectURL(url); cardBusy.value = false; }
@@ -81,7 +84,8 @@ async function exportSummary() {
     // Public fiction only: no grants, private URLs, account IDs or artwork capabilities.
     const ending = view.result.leftPoints === view.result.rightPoints ? 'Remíza' : `${view[view.result.leftPoints > view.result.rightPoints ? 'left' : 'right'].displayName} vítězí!`;
     const lines = ['Wand Night Stand · Souboj postav', `${view.left.displayName} — ${duelWandName(view.left)}`, `${view.right.displayName} — ${duelWandName(view.right)}`, ending, `${view.result.leftPoints} : ${view.result.rightPoints}`, view.result.ending,
-      ...view.rounds.map(round => `Kolo ${round.number}: ${duelSpell(view.left, round.leftAction)} × ${duelSpell(view.right, round.rightAction)} · ${round.leftScore} : ${round.rightScore}\n${view.commentary?.rounds.find(item => item.round === round.number)?.quip ?? round.quip}`)];
+      ...view.rounds.map(round => `Kolo ${round.number}: ${duelSpell(view.left, round.leftAction)} × ${duelSpell(view.right, round.rightAction)} · ${round.leftScore} : ${round.rightScore}\n${view.commentary?.rounds.find(item => item.round === round.number)?.quip ?? round.quip}\n${view.commentary?.rounds.find(item => item.round === round.number)?.mishap ?? round.mishap}`),
+      ...(view.partyTask ? [`Dobrovolná party výzva: ${view.partyTask.title}\n${view.partyTask.text}\nLehčí varianta: ${view.partyTask.alternative}\n${view.partyTask.alternativeRoast}\nVýzvu lze vynechat. Volba nemění výsledek souboje.`] : [])];
     if (exportedSummary.value) URL.revokeObjectURL(exportedSummary.value);
     exportedSummary.value = URL.createObjectURL(new Blob([lines.join('\n\n')], { type: 'text/plain;charset=utf-8' }));
   } catch (error) { if ((error as Error).name !== 'AbortError') { clearExports(); summaryError.value = true; } }
@@ -98,7 +102,7 @@ const id = computed(() => typeof route.query.duel === 'string' && isUuid(route.q
 const side = computed(() => access.value?.side);
 const locked = computed(() => side.value === 'left' ? current.value?.leftChoiceLocked : current.value?.rightChoiceLocked);
 const choiceOpen = computed(() => current.value?.state === 'Running' && current.value.deadline !== null
-  && ['choice', 'web_only_no_spoken_confirmation'].includes(current.value.narrationStatus));
+  && ['choice', 'text_only_duel', 'web_only_no_spoken_confirmation'].includes(current.value.narrationStatus));
 const mayChoose = computed(() => !!access.value && current.value?.mode === 'interactive' && choiceOpen.value && !locked.value && (!current.value.requiresParticipantConsent || joined.value) && !pending.value && !refreshing.value);
 let timer: ReturnType<typeof setTimeout> | undefined;
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
@@ -205,8 +209,9 @@ function points(participant: 'left' | 'right') { return current.value?.rounds.re
         <h2 id="duel-result-title">Výsledek</h2><p class="archive-duel-verdict">{{ resultTitle }}</p><p class="archive-duel-final-score">{{ current.result.leftPoints }} <span>:</span> {{ current.result.rightPoints }}</p>
         <p v-if="current.result.exhibition">Fiktivní exhibice se nezapočítává jako výhra hosta.</p><p class="archive-wand-lore">{{ current.result.ending }}</p>
         <p class="archive-caption">Uložený souboj · tři kola a jejich kouzla najdeš níže.</p>
-        <div class="archive-actions"><button class="aw-button" :disabled="cardBusy" @click="exportCard">{{ cardBusy ? 'Připravujeme kartu…' : 'Uložit kartu souboje PNG' }}</button><a v-if="exportedCard" class="aw-button" :href="exportedCard" download="dildovander-souboj.png">Stáhnout kartu PNG</a><button class="aw-button aw-button--secondary" :disabled="summaryBusy" @click="exportSummary">Připravit shrnutí ke stažení</button><a v-if="exportedSummary" class="aw-button" :href="exportedSummary" download="dildovander-souboj.txt">Stáhnout shrnutí</a><RouterLink v-if="accountRead" to="/me/keepsakes">Historie soubojů</RouterLink></div><p v-if="cardError || summaryError" role="alert">Souhrn se nepodařilo připravit. Obnov platný stav souboje.</p>
+        <div class="archive-actions"><button class="aw-button" :disabled="cardBusy" @click="exportCard">{{ cardBusy ? 'Připravujeme kartu…' : 'Uložit kartu souboje PNG' }}</button><a v-if="exportedCard" class="aw-button" :href="exportedCard" download="wand-night-stand-souboj.png">Stáhnout kartu PNG</a><button class="aw-button aw-button--secondary" :disabled="summaryBusy" @click="exportSummary">Připravit shrnutí ke stažení</button><a v-if="exportedSummary" class="aw-button" :href="exportedSummary" download="wand-night-stand-souboj.txt">Stáhnout shrnutí</a><RouterLink v-if="accountRead" to="/me/keepsakes">Historie soubojů</RouterLink></div><p v-if="cardError || summaryError" role="alert">Souhrn se nepodařilo připravit. Obnov platný stav souboje.</p>
       </section>
+      <DuelPartyTaskPanel v-if="current.partyTask && winner && winner !== 'draw'" :key="current.id" :task="current.partyTask" :loser="current[winner === 'left' ? 'right' : 'left'].displayName" :winner="current[winner === 'left' ? 'left' : 'right'].displayName" />
       <section v-if="access && current.mode === 'interactive' && !['Completed', 'Cancelled', 'Interrupted'].includes(current.state)" class="archive-duel-choice" aria-labelledby="duel-choice">
         <div class="archive-duel-choice-heading"><div><p class="archive-wand-kicker">{{ locked ? 'Kouzlo je uzamčené' : 'Magie čeká na tvé rozhodnutí' }}</p><h2 id="duel-choice">Tvůj tah · {{ current[access.side].displayName }}</h2></div>
           <p v-if="choiceOpen && countdown !== null" class="archive-duel-countdown" role="timer" :aria-label="`Do uzavření kola zbývá ${countdown} sekund`"><span class="aw-mono">{{ countdown }} <small>s</small></span><span v-if="countdown === 0">Ověřujeme výsledek…</span><span v-else>Kolo {{ current.round }} ze 3</span></p>
@@ -223,7 +228,7 @@ function points(participant: 'left' | 'right') { return current.value?.rounds.re
         <div class="archive-spell-clash"><div v-for="participant in (['left', 'right'] as const)" :key="participant" class="archive-revealed-spell" :data-spell="participant === 'left' ? round.leftAction : round.rightAction"><SpellGlyph :action="participant === 'left' ? round.leftAction : round.rightAction" /><span class="archive-caption">{{ current[participant].displayName }}</span><strong>{{ duelSpell(current[participant], participant === 'left' ? round.leftAction : round.rightAction) }}</strong><small v-if="participant === 'left' ? round.leftAutomatic : round.rightAutomatic">Automatický tah</small></div><span class="archive-clash-mark" aria-hidden="true">×</span></div>
         <p class="archive-round-quip">{{ current.commentary?.rounds.find(item => item.round === round.number)?.quip ?? round.quip }}</p><p class="archive-caption">{{ current.commentary?.rounds.find(item => item.round === round.number)?.mishap ?? round.mishap }}</p>
       </li></ol>
-      <p v-if="current.commentary?.provider === 'openai'" class="archive-caption">Komentář vznikl pomocí OpenAI. Výpočet bodů je oddělený.</p>
+      <p v-if="current.commentary?.provider === 'openai-responses-text' || current.commentary?.provider === 'openai'" class="archive-caption">Příběh vznikl pomocí AI. Výsledek určuje rozhodčí, kterého Olivander dosud nepřesvědčil, aby si dal skleničku.</p>
 
     </template>
   </section>

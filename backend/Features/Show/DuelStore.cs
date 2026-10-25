@@ -25,7 +25,7 @@ internal sealed partial class DuelStore
         this.clock = clock;
         this.identities = identities;
         this.slot = slot;
-        commentaryEnabled = configuration.GetValue<bool>("Show:DuelCommentaryEnabled");
+        commentaryEnabled = configuration.GetValue("Show:DuelCommentaryEnabled", true);
         protector = protection.CreateProtector("DildoVander.DuelGrantReplay.v1");
         connectionString = new SqliteConnectionStringBuilder
         {

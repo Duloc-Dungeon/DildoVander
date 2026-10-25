@@ -7,6 +7,10 @@ import {
 
 /** Customer-facing copy covered by the first CS/EN migration slice. */
 export const customerCopyCs = {
+  'signin.brand-welcome': 'Wand Night Stand. Jedna noc s magií. Bez závazků. Až na ten účet.',
+  'customer.avatar-night': '{{name}}, tvoje podobizna. Olivander by ji podepsal, kdyby právě nevedl dva neslučitelné rozhovory s jedinou sklenicí.',
+  'customer.avatar-loading-night': '{{name}}, tvoje podoba se ještě připravuje. Olivander je na mol, ale já mám naštěstí vlastní víko i úsudek.',
+  'signin.invite-intro': 'Olivander má kocovinu a personální oddělení tvoří zrcadlo. Přihlášení tedy laskavě vyřiď sám.',
   'home.demo-link': 'Vyzkoušet příběh bez kufru',
   'not-found.title': 'Stránka nebyla nalezena',
   'not-found.help': 'Odkaz může být neúplný nebo už není dostupný.',
@@ -849,6 +853,10 @@ export type CustomerCopyCatalog = Readonly<Record<CustomerCopyKey, string>>;
 
 /** English is deliberately checked against every Czech key at compile time. */
 export const customerCopyEn: CustomerCopyCatalog = {
+  'signin.brand-welcome': 'Wand Night Stand. One magical night. No strings attached. Apart from the account.',
+  'customer.avatar-night': '{{name}}, your portrait. Olivander would sign it, if he were not having two incompatible conversations with a single glass.',
+  'customer.avatar-loading-night': '{{name}}, your likeness is still being prepared. Olivander is thoroughly drunk; fortunately I have a lid and a mind of my own.',
+  'signin.invite-intro': 'Olivander is hungover and Human Resources is a mirror. Kindly arrange your own entrance.',
   'home.demo-link': 'Try a story without a suitcase',
   'not-found.title': 'Page not found',
   'not-found.help': 'The link may be incomplete or no longer available.',

@@ -33,9 +33,12 @@ internal sealed record DuelView(string Id, string DeviceId, string EveningId, st
     int Round, DateTimeOffset? Deadline, bool LeftChoiceLocked, bool RightChoiceLocked,
     IReadOnlyList<DuelRound> Rounds, DuelResult? Result, string? Seed, DuelCommentary? Commentary = null,
     string NarrationMode = "unbound", string NarrationStatus = "not_started", string? NarrationUnavailableReason = null,
-    bool RequiresParticipantConsent = false, bool LeftJoined = false, bool RightJoined = false);
+    bool RequiresParticipantConsent = false, bool LeftJoined = false, bool RightJoined = false,
+    DuelPartyTask? PartyTask = null);
 internal sealed record DuelRoundCommentary(int Round, string Quip, string Mishap);
 internal sealed record DuelCommentary(string Provider, string Model, IReadOnlyList<DuelRoundCommentary> Rounds);
+internal sealed record DuelPartyTask(string Id, string Title, string Text, string Alternative,
+    string AlternativeRoast, bool InvolvesWinner);
 internal sealed record DuelCompletionEvent(string Id, string DeviceId, string EveningId,
     int Revision, bool Exhibition);
 
@@ -61,6 +64,7 @@ internal sealed class DuelDocument
     public bool RightJoined { get; set; }
     public DateTimeOffset? Deadline { get; set; }
     public DuelResult? Result { get; set; }
+    public DuelPartyTask? PartyTask { get; set; }
     public string NarrationMode { get; set; } = "unbound";
     public string? NarrationUnavailableReason { get; set; }
     public string NarrationStage { get; set; } = "choice";
@@ -71,7 +75,9 @@ internal sealed class DuelDocument
         RightChoice is not null, Rounds.ToArray(), State == "Completed" ? Result : null,
         State == "Completed" ? Seed : null, NarrationMode: NarrationMode,
         NarrationStatus: NarrationMode == "physical_device" ? NarrationStage
-            : NarrationMode == "web_only" ? "web_only_no_spoken_confirmation" : "not_started",
+            : NarrationMode == "web_only" ? (NarrationUnavailableReason == "text_only_duel"
+                ? "text_only_duel" : "web_only_no_spoken_confirmation") : "not_started",
         NarrationUnavailableReason: NarrationUnavailableReason, RequiresParticipantConsent: RequiresParticipantConsent,
-        LeftJoined: LeftJoined, RightJoined: RightJoined);
+        LeftJoined: LeftJoined, RightJoined: RightJoined,
+        PartyTask: State == "Completed" ? PartyTask : null);
 }

@@ -2,13 +2,13 @@ import { computed } from 'vue';
 import { customerCopy } from '../../application/customerCopy';
 
 const cs = {
-  title: 'Něco se chystá', introduction: 'Začneme jménem a světem, ze kterého přicházíš. Velký nástup si necháme na potom.',
-  teaser: 'Tvoje místo už je připravené. Opona má ovšem vlastní názor na dochvilnost.',
+  title: 'Něco se chystá', introduction: 'Na jednu noc s magií stačí jméno a svět. Olivander má kocovinu; tvé sebevědomí tedy musí zvládnout papírování samo.',
+  teaser: 'Wand Night Stand. Jedna noc s magií. Žádné závazky. Jen účet. Olivander totiž nevěří ani lidem, které si sám vymyslel.',
   invitation: 'Mám pozvánku', name: 'Jméno postavy', universe: 'Její svět',
-  nameHint: 'Tvé jméno pro tento večer.', universeHint: 'Vlastní svět nebo fiktivní univerzum.',
+  nameHint: 'Jméno pro velký nástup. Skromnost můžeš nechat doma.', universeHint: 'Tvůj fiktivní svět. „Z práce“ bohužel není univerzum.',
   consent: 'Souhlasím s odesláním fiktivního jména a univerza poskytovatelům OpenAI pro obohacení postavy a vytvoření její ilustrace.',
   portrait: 'Připravit můj portrét', missingPortrait: 'Tvá postava je uložená. S tvým souhlasem jí teď připravíme i portrét.',
-  loading: 'Portrét se připravuje. Dobré osvětlení má své nároky.',
+  loading: 'Olivander má kocovinu, ale štětec ještě udrží. Chystá se něco jen pro tebe. Pokud to bude mistrovské dílo, oba budeme překvapení.',
   failed: 'Portrét se zatím nepodařilo připravit.', retry: 'Zkusit znovu',
   countdown: 'Každé kouzlo má svůj čas', countdownLabel: 'Čas do otevření',
   days: 'dní', hours: 'hodin', minutes: 'minut', seconds: 'sekund',
@@ -18,15 +18,21 @@ const cs = {
   portraitAlt: 'Portrét tvé postavy', home: 'Wand Night Stand, úvod',
   saved: 'Postava je bezpečně uložená. Tuhle stránku můžeš zavřít a později se vrátit.',
   hostNote: 'Zprávy pořadatele v původním jazyce',
+  readyTitle: 'Tak tady tě máme',
+  finalFallback: 'Tak prosím, {{name}}. Portrét. Jestli jsi čekal osvícení, špatně sis vyložil lampu. Olivander dnes zvládá jen podobizny a vlastní lítost.',
+  progress: 'Příprava tvé postavy', researchStep: 'Poznáváme postavu', portraitStep: 'Mícháme barvy', readyStep: 'Velké odhalení',
+  displayLoading: 'Hotovo. Ještě pověsit rovně. Olivander tvrdí, že se naklání svět, nikoli obraz.',
+  accountLoading: 'Hledáme tvoji složku. Olivander ji zařadil podle intenzity bolesti hlavy.',
+  readFailed: 'Tvoji postavu se nepodařilo načíst. Zkontroluj připojení a zkus to znovu.',
 };
 const en: typeof cs = {
-  title: 'Something is stirring', introduction: 'Start with a name and the world you come from. We will save the grand entrance for later.',
-  teaser: 'Your place is ready. The curtain, however, has its own ideas about punctuality.',
+  title: 'Something is stirring', introduction: 'One magical night requires a name and a world. Olivander is hungover, so your ego will have to do its own paperwork.',
+  teaser: 'Wand Night Stand. One magical night. No strings attached. Just an account. Olivander does not trust people, including the ones he invented.',
   invitation: 'I have an invitation', name: 'Character name', universe: 'Their world',
-  nameHint: 'Your name for the evening.', universeHint: 'An original world or fictional universe.',
+  nameHint: 'A name for your grand entrance. Modesty is optional.', universeHint: 'Your fictional world. “The office” is not a universe.',
   consent: 'I consent to sending the fictional name and universe to OpenAI providers to enrich the character and create an illustration.',
   portrait: 'Prepare my portrait', missingPortrait: 'Your character is saved. With your consent, we can prepare a portrait too.',
-  loading: 'Your portrait is in progress. Good lighting has its demands.',
+  loading: 'Olivander is hungover, but can still hold a brush. Something is being made just for you. If it is a masterpiece, we shall both be surprised.',
   failed: 'We could not prepare the portrait yet.', retry: 'Try again',
   countdown: 'Every spell has its moment', countdownLabel: 'Time until opening',
   days: 'days', hours: 'hours', minutes: 'minutes', seconds: 'seconds',
@@ -36,6 +42,12 @@ const en: typeof cs = {
   portraitAlt: 'Portrait of your character', home: 'Wand Night Stand, home',
   saved: 'Your character is safely saved. You can close this page and come back later.',
   hostNote: 'Your host’s notes · shown in their original language',
+  readyTitle: 'There you are',
+  finalFallback: 'There you are, {{name}}. A portrait. If you expected enlightenment, you misunderstood the lamp. Olivander is only doing likenesses and self-pity today.',
+  progress: 'Preparing your character', researchStep: 'Meeting the character', portraitStep: 'Mixing the colours', readyStep: 'The grand reveal',
+  displayLoading: 'Finished. Just hanging it straight. Olivander insists the world is leaning, not the painting.',
+  accountLoading: 'Finding your file. Olivander sorted them by severity of headache.',
+  readFailed: 'We could not load your character. Check your connection and try again.',
 };
 
 export const launchCopy = computed(() => customerCopy.language.value === 'en' ? en : cs);

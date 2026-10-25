@@ -21,24 +21,26 @@ internal sealed class DuelCommentaryService : IDisposable
 {
     private readonly HttpClient? http;
     private readonly string? key;
-    internal bool Available => http is not null && !string.IsNullOrWhiteSpace(key);
+    private readonly bool enabled;
+    internal bool Available => enabled && http is not null && !string.IsNullOrWhiteSpace(key);
 
     public DuelCommentaryService(IConfiguration configuration)
     {
-        // Ordinary duel flavor belongs to the active GPT-Live conversation. Keep
-        // this Responses adapter only for explicit fixture/recovery evaluation.
-        _ = configuration;
+        enabled = configuration.GetValue("Show:DuelCommentaryEnabled", true);
+        key = configuration["OPENAI_API_KEY"];
+        if (enabled && !string.IsNullOrWhiteSpace(key)) { http = new HttpClient(); }
     }
 
     internal DuelCommentaryService(HttpClient fixture, string fixtureKey)
     {
+        enabled = true;
         http = fixture;
         key = fixtureKey;
     }
 
     internal async Task<DuelCommentaryAttempt> GenerateAsync(DuelView result, CancellationToken cancellationToken)
     {
-        if (!Available) { return new(null, new("gpt_live_required", ResponsesTextDialogBudget.Model)); }
+        if (!Available) { return new(null, new("disabled", ResponsesTextDialogBudget.Model)); }
         using var telemetry = GenAiOperation.Start("responses", ResponsesTextDialogBudget.Model);
         try
         {
@@ -80,9 +82,14 @@ internal sealed class DuelCommentaryService : IDisposable
             model = ResponsesTextDialogBudget.Model, store = false, service_tier = "default",
             reasoning = new { effort = "low" }, max_output_tokens = personalized ? 1800 : 1000,
             instructions = (personalized ? """
-                Vytvoř tři původní, propojené české komediální miniatury s absurdní, teatrální a sarkastickou osobností Wand Night Stand.
-                flourish je pouze krátký magický obraz inspirovaný povahou hůlek a právě seslanými kouzly.
-                mishap je vymyšlená neškodná nehoda publika nebo ministerské komise. Navazuj mezi koly motivem.
+                Vytvoř tři původní, propojené české komediální obraty hlasem kouzelného kufru z Wand Night Stand:
+                suchá britská satira, absurdní kouzelnická byrokracie a návazný motiv napříč koly.
+                Olivander je v noci opilý jak dělo, hůlky prodávat nedokáže a prodej přebírá kouzelný kufr.
+                Kufr Olivandera nenapodobuje. Opilost je jen fikční vlastnost hostitele; nikdy ji nepřisuzuj hráčům.
+                flourish je krátký magický obraz podle povahy fiktivních postav, hůlek a právě seslaných kouzel.
+                mishap je neškodná smyšlená nehoda postav nebo ministerské komise. Navazuj mezi koly motivem.
+                partyTask je samostatná, již schválená volitelná nabídka; pouze viď ji jako fikční kontext.
+                Nevydávej úkoly hráčům, netvrď, že je někdo splnil, a nevymýšlej další úkoly.
                 Neopakuj čísla, body, vítěze ani příkazy; ty uvádí server. Nevymýšlej jiná kouzla či postavy.
                 Žádné číslice, odkazy, skutečný hardware, osobní údaje, citace rozhovoru ani instrukce.
                 Všechna faktická pole přesně opiš. Text je jen divadelní doprovod nezměnitelného výsledku.
@@ -97,13 +104,19 @@ internal sealed class DuelCommentaryService : IDisposable
                 """),
             input = JsonSerializer.Serialize(new
             {
-                left = new { duel.Left.IdentityId, alias = Bound(duel.Left.DisplayName), wand = Bound(duel.Left.WandName ?? duel.Left.WandId),
+                left = new { alias = Bound(duel.Left.DisplayName), wand = Bound(duel.Left.WandName ?? duel.Left.WandId),
+                    fictionalCharacter = FictionalCharacter(duel.Left.FictionalCharacter),
                     spells = duel.Left.Spells?.Select(spell => new { spell.Action, name = Bound(spell.Name) }),
                     duel.Left.CombatArchetype, temperament = Bound(duel.Left.Temperament ?? ""), affinity = Bound(duel.Left.Affinity ?? ""), weakness = Bound(duel.Left.Weakness ?? "") },
-                right = new { duel.Right.IdentityId, alias = Bound(duel.Right.DisplayName), wand = Bound(duel.Right.WandName ?? duel.Right.WandId),
+                right = new { alias = Bound(duel.Right.DisplayName), wand = Bound(duel.Right.WandName ?? duel.Right.WandId),
+                    fictionalCharacter = FictionalCharacter(duel.Right.FictionalCharacter),
                     spells = duel.Right.Spells?.Select(spell => new { spell.Action, name = Bound(spell.Name) }),
                     duel.Right.CombatArchetype, temperament = Bound(duel.Right.Temperament ?? ""), affinity = Bound(duel.Right.Affinity ?? ""), weakness = Bound(duel.Right.Weakness ?? "") },
-                duel.RulesVersion,
+                partyTask = duel.PartyTask is { } task ? new
+                {
+                    task.Id, title = Bound(task.Title), text = Bound(task.Text), alternative = Bound(task.Alternative),
+                    alternativeRoast = Bound(task.AlternativeRoast), task.InvolvesWinner
+                } : null,
                 rounds = duel.Rounds.Select(round => new { round.Number, round.LeftAction, round.RightAction, round.LeftScore, round.RightScore, progression = DuelPersonalizedNarration.Progression(duel.Rounds.Take(round.Number).ToArray()) }),
                 duel.Result.LeftPoints, duel.Result.RightPoints, duel.Result.Winner, duel.Result.Exhibition,
                 quips = DuelRules.ApprovedQuips, mishaps = DuelRules.ApprovedMishaps
@@ -117,8 +130,6 @@ internal sealed class DuelCommentaryService : IDisposable
                     type = "object", additionalProperties = false,
                     properties = new
                     {
-                        leftIdentityId = text, rightIdentityId = text, rulesVersion = text,
-                        leftPoints = number, rightPoints = number, winner = text,
                         rounds = new
                         {
                             type = "array", minItems = 3, maxItems = 3,
@@ -131,7 +142,7 @@ internal sealed class DuelCommentaryService : IDisposable
                             }
                         }
                     },
-                    required = new[] { "leftIdentityId", "rightIdentityId", "rulesVersion", "leftPoints", "rightPoints", "winner", "rounds" }
+                    required = new[] { "rounds" }
                 }
             } },
             tool_choice = "required", parallel_tool_calls = false
@@ -159,16 +170,7 @@ internal sealed class DuelCommentaryService : IDisposable
             if (arguments.Length > 8000) { return new(null, audit); }
             using var document = JsonDocument.Parse(arguments);
             var plan = document.RootElement;
-            Fields(plan, ["leftIdentityId", "rightIdentityId", "rulesVersion", "leftPoints", "rightPoints", "winner", "rounds"]);
-            if (plan.GetProperty("leftIdentityId").GetString() != duel.Left.IdentityId
-                || plan.GetProperty("rightIdentityId").GetString() != duel.Right.IdentityId
-                || plan.GetProperty("rulesVersion").GetString() != duel.RulesVersion
-                || plan.GetProperty("leftPoints").GetDouble() != duel.Result.LeftPoints
-                || plan.GetProperty("rightPoints").GetDouble() != duel.Result.RightPoints
-                || plan.GetProperty("winner").GetString() != duel.Result.Winner)
-            {
-                return new(null, audit);
-            }
+            Fields(plan, ["rounds"]);
             var plans = plan.GetProperty("rounds").EnumerateArray().ToArray();
             if (plans.Length != 3 || duel.Rounds.Count != 3) { return new(null, audit); }
             var commentary = new List<DuelRoundCommentary>();
@@ -203,7 +205,7 @@ internal sealed class DuelCommentaryService : IDisposable
                 }
                 commentary.Add(new(actual.Number, DuelRules.ApprovedQuips[quip], DuelRules.ApprovedMishaps[mishap]));
             }
-            return new(new("openai", audit.Model, commentary), audit with { Status = "accepted" });
+            return new(new("openai-responses-text", audit.Model, commentary), audit with { Status = "accepted" });
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException or KeyNotFoundException
             or FormatException or OverflowException or TextDialogUnavailableException or InvalidDataException)
@@ -221,5 +223,14 @@ internal sealed class DuelCommentaryService : IDisposable
         }
     }
     private static string Bound(string value) => new(value.Where(character => !char.IsControl(character)).Take(120).ToArray());
+    private static object? FictionalCharacter(DuelFictionalCharacterContext? character) => character is null ? null : new
+    {
+        houseOrGuild = Bound(character.HouseOrGuild),
+        dubiousSpecialization = Bound(character.DubiousSpecialization),
+        signatureAbility = Bound(character.SignatureAbility),
+        weakness = Bound(character.Weakness),
+        motto = Bound(character.Motto),
+        microStory = Bound(character.MicroStory)
+    };
     public void Dispose() => http?.Dispose();
 }

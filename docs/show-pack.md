@@ -160,10 +160,12 @@ iOS Simulator build vede kritérium NATIVE v
 Starší CI neprokazuje změněné nativní zdroje. Skutečný iPhone, poslech Live,
 nová hlasová banka, nasazení a měření mechaniky zůstávají samostatné brány.
 
-`Show:DuelCommentaryEnabled=false` ponechává deterministického českého komentátora.
-Zapnutí používá stávající Responses model/credential pro jedinou bounded kompozici
-nad dokončeným výsledkem; pravidla ani body nemění. Nejasný placený pokus se slepě
-neopakuje. Tato dokumentace nespouští poskytovatele ani nemění produkční flags.
+`Show:DuelCommentaryEnabled` má default `true`; `false` ponechává deterministického
+českého komentátora. Zapnutí používá stávající Responses textový model a credential
+pro jedinou bounded kompozici nad dokončeným výsledkem. Duel nepoužívá GPT Live,
+mikrofon ani hlasové přehrávání. Pravidla ani body se nemění a nejasný placený pokus
+se slepě neopakuje. Offline fixtures musí nastavit `false` nebo použít fake transport.
+Tato dokumentace nespouští poskytovatele ani nemění produkční flags.
 
 ## Povel pro skutečný kufr
 

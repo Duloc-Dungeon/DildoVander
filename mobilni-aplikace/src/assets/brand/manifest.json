@@ -42,14 +42,6 @@
       "license": "Distributed with this project under AGPL-3.0-only"
     },
     {
-      "file": "mark.svg",
-      "origin": "Original geometric W and crescent authored for this project",
-      "use": "Shell, countdown masthead and favicon",
-      "sha256": "ac22162fa9be914025b650a646477c035b6b7844db89ecb8079b7e3b580cad93",
-      "bytes": 333,
-      "license": "Distributed with this project under AGPL-3.0-only"
-    },
-    {
       "file": "cormorant-garamond-500.ttf",
       "origin": "Google Fonts Cormorant Garamond, Christian Thalmann",
       "source": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3umX5slCNuHLi8bLeY9MK7whWMhyjypVO7abI26QOD_s06GnM.ttf",
@@ -57,6 +49,45 @@
       "use": "Self-hosted display type, font-display swap",
       "sha256": "1724047c8988ca5155bff667bc48fa52e97d57aabc6b42eebbf986f21a4be20b",
       "bytes": 290496
+    },
+    {
+      "file": "emblem-1024.png",
+      "origin": "Original built-in ImageGen selected full-name logo; resized and encoded using Pillow",
+      "prompt": "Make a final production app icon from ONLY option 5 at bottom right of the supplied logo board: the clearly readable three-line full-name logo WAND / NIGHT / STAND with a golden wand underline. Output a single square 1024x1024 app-icon master, full bleed opaque deep plum background #211a22, NO pre-rounded corners, NO outside frame, NO board, NO labels or numbering. Faithfully keep the selected strong elegant editorial high-contrast serif typography. Exact text and spelling, each word on its own centered line: WAND (brass gold), NIGHT (warm ivory), STAND (brass gold). All letters unmistakably readable and correctly spelled; no monogram, no tangled ligature. Generous balanced safe margin around content ~110 pixels. Letterforms robust enough for an app icon. Beneath STAND a horizontal simple brass magical wand underline with subtle bulb handle at left and modest four-point star at right. Preserve the quietly witty premium late-night magical salon personality of this selected concept. Restrained very subtle warm gold tonal variation, primarily crisp flat graphic silhouette. No extra sparkles around letters, no tiny decoration, no franchise imagery. Beautifully designed coherent finished logo. Fill the entire square edge to edge with plum, let iOS apply its own masking.",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "use": "Original full-name logo source for native app icon and launch mark",
+      "license": "Distributed with this project under AGPL-3.0-only",
+      "sha256": "a36238b17f6194f8bed63b65739a00002094e813cdd2cf245ccea338277da0c0",
+      "bytes": 798370
+    },
+    {
+      "file": "emblem-small.webp",
+      "origin": "Original built-in ImageGen selected full-name logo; resized and encoded using Pillow",
+      "prompt": "Make a final production app icon from ONLY option 5 at bottom right of the supplied logo board: the clearly readable three-line full-name logo WAND / NIGHT / STAND with a golden wand underline. Output a single square 1024x1024 app-icon master, full bleed opaque deep plum background #211a22, NO pre-rounded corners, NO outside frame, NO board, NO labels or numbering. Faithfully keep the selected strong elegant editorial high-contrast serif typography. Exact text and spelling, each word on its own centered line: WAND (brass gold), NIGHT (warm ivory), STAND (brass gold). All letters unmistakably readable and correctly spelled; no monogram, no tangled ligature. Generous balanced safe margin around content ~110 pixels. Letterforms robust enough for an app icon. Beneath STAND a horizontal simple brass magical wand underline with subtle bulb handle at left and modest four-point star at right. Preserve the quietly witty premium late-night magical salon personality of this selected concept. Restrained very subtle warm gold tonal variation, primarily crisp flat graphic silhouette. No extra sparkles around letters, no tiny decoration, no franchise imagery. Beautifully designed coherent finished logo. Fill the entire square edge to edge with plum, let iOS apply its own masking.",
+      "dimensions": [
+        256,
+        256
+      ],
+      "use": "Shared shell and invitation wordmark companion",
+      "license": "Distributed with this project under AGPL-3.0-only",
+      "sha256": "0b954d6a24a19ef56aff567189d6775921cfc50492576061abce0b744b4bdf58",
+      "bytes": 9096
+    },
+    {
+      "file": "emblem-touch.png",
+      "origin": "Original built-in ImageGen selected full-name logo; resized and encoded using Pillow",
+      "prompt": "Make a final production app icon from ONLY option 5 at bottom right of the supplied logo board: the clearly readable three-line full-name logo WAND / NIGHT / STAND with a golden wand underline. Output a single square 1024x1024 app-icon master, full bleed opaque deep plum background #211a22, NO pre-rounded corners, NO outside frame, NO board, NO labels or numbering. Faithfully keep the selected strong elegant editorial high-contrast serif typography. Exact text and spelling, each word on its own centered line: WAND (brass gold), NIGHT (warm ivory), STAND (brass gold). All letters unmistakably readable and correctly spelled; no monogram, no tangled ligature. Generous balanced safe margin around content ~110 pixels. Letterforms robust enough for an app icon. Beneath STAND a horizontal simple brass magical wand underline with subtle bulb handle at left and modest four-point star at right. Preserve the quietly witty premium late-night magical salon personality of this selected concept. Restrained very subtle warm gold tonal variation, primarily crisp flat graphic silhouette. No extra sparkles around letters, no tiny decoration, no franchise imagery. Beautifully designed coherent finished logo. Fill the entire square edge to edge with plum, let iOS apply its own masking.",
+      "dimensions": [
+        180,
+        180
+      ],
+      "use": "Web favicon, home-screen icon and embedded standalone installer logo",
+      "license": "Distributed with this project under AGPL-3.0-only",
+      "sha256": "9cf8b2ff25cad0ae917556dc914774b6228a09cd229cacd345036994b95210da",
+      "bytes": 36056
     }
   ]
 }

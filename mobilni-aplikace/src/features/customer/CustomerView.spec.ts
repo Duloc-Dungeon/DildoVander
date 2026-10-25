@@ -22,6 +22,7 @@ vi.mock('./customerBle', () => ({
   },
 }));
 import CustomerView from './CustomerView.vue';
+vi.mock('./PrivateCharacterAvatar.vue', () => ({ default: { template: '<div />' } }));
 vi.mock('./CustomerWaiting.vue', () => ({ default: { name: 'CustomerWaiting', emits: ['claim'], template: '<div />' } }));
 
 const profile = { profileId: 'profile-1', revision: 1, userInput: { name: 'Luna', world: 'Moon Saga' }, status: 'ready' };

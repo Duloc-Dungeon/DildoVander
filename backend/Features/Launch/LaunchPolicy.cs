@@ -10,10 +10,13 @@ internal sealed record LaunchConfiguration(long Revision, bool BetaEnabled, long
     string TimeZone, string Teaser, string InitialLoadingMessage, bool PersonalizedLoadingEnabled,
     string PersonalizedLoadingPrompt)
 {
+    internal const string DefaultTeaser = "Noční stolek pro velká očekávání. Olivander má kocovinu; na noční zázrak si chvíli počkáš.";
+    internal const string DefaultInitialLoadingMessage = "Olivander má kocovinu; dnes stíháme připravit jen noční stolek. Na velké zázraky si ještě chvíli počkej.";
+    internal const string DefaultPersonalizedLoadingPrompt =
+        "Napiš jednu krátkou českou větu, která postavu pozná přes jediný neškodný veřejný fikční rys z bezpečného shrnutí. Přidej suchý britský humor, slovní hříčku o nočním stolku a připomeň, že Olivander má kocovinu, takže se čeká. Neuváděj zdroje, citace, rešerše ani soukromé údaje.";
+
     internal static LaunchConfiguration Default => new(0, false, null, false, false, null, false,
-        "Europe/Prague", "A little something is getting ready for you.",
-        "A peculiar little surprise is taking shape…", false,
-        "Write one brief, playful, mysterious loading message inspired by the supplied fictional character context. Do not reveal product features or repeat research facts.");
+        "Europe/Prague", DefaultTeaser, DefaultInitialLoadingMessage, true, DefaultPersonalizedLoadingPrompt);
 }
 
 internal sealed record LaunchConfigurationUpdate(long ExpectedRevision, bool BetaEnabled, long? BetaLaunchAt,
@@ -62,6 +65,20 @@ internal sealed class LaunchPolicyStore
                  'Write one brief, playful, mysterious loading message inspired by the supplied fictional character context. Do not reveal product features or repeat research facts.');
             """;
         command.ExecuteNonQuery();
+        using var defaults = connection.CreateCommand();
+        defaults.CommandText = """
+            UPDATE launch_configuration SET teaser=$teaser,initial_loading_message=$message,
+                personalized_loading_enabled=1,personalized_loading_prompt=$prompt
+            WHERE id=1 AND revision=0
+                AND teaser='A little something is getting ready for you.'
+                AND initial_loading_message='A peculiar little surprise is taking shape…'
+                AND personalized_loading_enabled=0
+                AND personalized_loading_prompt='Write one brief, playful, mysterious loading message inspired by the supplied fictional character context. Do not reveal product features or repeat research facts.';
+            """;
+        defaults.Parameters.AddWithValue("$teaser", LaunchConfiguration.DefaultTeaser);
+        defaults.Parameters.AddWithValue("$message", LaunchConfiguration.DefaultInitialLoadingMessage);
+        defaults.Parameters.AddWithValue("$prompt", LaunchConfiguration.DefaultPersonalizedLoadingPrompt);
+        defaults.ExecuteNonQuery();
     }
 
     internal LaunchConfiguration Read()

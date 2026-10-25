@@ -5,11 +5,12 @@ import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from '../identity/AccountDeletion.vue';
-import { account, accountRequest, accountTransport } from '../identity/session';
+import { account, accountRequest } from '../identity/session';
+import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
 import { launchCopy as copy } from './launchCopy';
 import curtain from '../../assets/brand/invitation-curtain.webp';
 import curtainSmall from '../../assets/brand/invitation-curtain-small.webp';
-import brandMark from '../../assets/brand/mark.svg';
+import brandMark from '../../assets/brand/emblem-small.webp';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 
 watch(() => account.value?.id, id => interfaceLanguagePreference.setScope(id), { immediate: true });
@@ -29,20 +30,38 @@ interface LaunchPolicy {
 }
 interface PrelaunchState {
   character: { profileId: string; revision: number; name: string; universe: string; status: string } | null;
-  artwork: { status: string; loadingMessage?: string | null; url?: string | null; errorCode?: string | null } | null;
+  artwork: { status: string; loadingMessage?: string | null; finalMessage?: string | null; url?: string | null; errorCode?: string | null } | null;
 }
 const router = useRouter();
 const policy = ref<LaunchPolicy | null>(null);
 const state = ref<PrelaunchState | null>(null);
+const characterVerified = ref(false);
 const name = ref('');
 const universe = ref('');
 const consent = ref(false);
 const busy = ref(false);
 const error = ref('');
 const remaining = ref(0);
-const portraitReady = ref(false);
-const portraitUrl = ref('');
-const portraitRevision = ref<number | null>(null);
+let characterRead = 0;
+let accountEpoch = 0;
+watch(() => account.value?.id, id => {
+  accountEpoch++;
+  characterRead++;
+  state.value = null;
+  characterVerified.value = false;
+  name.value = '';
+  universe.value = '';
+  consent.value = false;
+  busy.value = false;
+  error.value = '';
+  if (id && controller) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
+}, { flush: 'sync' });
+watch(() => state.value?.character?.profileId, () => { consent.value = false; }, { flush: 'sync' });
+const portrait = usePrivateCharacterPortrait(() => {
+  const character = state.value?.character;
+  return account.value && character && state.value?.artwork?.status === 'ready'
+    ? { accountId: account.value.id, profileId: character.profileId, revision: character.revision } : null;
+});
 let timer: ReturnType<typeof setInterval> | undefined;
 let policyTimer: ReturnType<typeof setInterval> | undefined;
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -55,12 +74,22 @@ const timeParts = computed(() => {
   const total = Math.max(0, Math.floor(remaining.value / 1000));
   return [Math.floor(total / 86400), Math.floor(total / 3600) % 24, Math.floor(total / 60) % 60, total % 60];
 });
-const hasPortrait = computed(() => state.value?.artwork?.status === 'ready' && portraitReady.value);
+const hasPortrait = computed(() => !!portrait.url.value);
 const loadingMessage = computed(() => (policy.value?.personalizedLoadingEnabled ? state.value?.artwork?.loadingMessage : null)
   || policy.value?.initialLoadingMessage || copy.value.loading);
+const finalMessage = computed(() => state.value?.artwork?.finalMessage
+  || copy.value.finalFallback.replace('{{name}}', state.value?.character?.name ?? ''));
+const phase = computed(() => {
+  if (hasPortrait.value) return 'ready';
+  if (portrait.failed.value || state.value?.artwork?.status === 'failed' || state.value?.character?.status === 'failed') return 'failed';
+  if (state.value?.character?.status === 'ready' || state.value?.artwork?.status === 'running' || state.value?.artwork?.status === 'ready') return 'portrait';
+  return state.value?.character ? 'research' : 'entry';
+});
 
 async function refreshPolicy(): Promise<void> {
+  const owner = account.value?.id;
   const value = await accountRequest<LaunchPolicy>('/app/v1/launch');
+  if (owner !== account.value?.id || controller?.signal.aborted) return;
   if (typeof value.serverNow !== 'number' || typeof value.allowed !== 'boolean') throw new Error('Stav pozvánky se nepodařilo ověřit.');
   serverTimeAnchor = value.serverNow;
   monotonicAnchor = performance.now();
@@ -69,32 +98,20 @@ async function refreshPolicy(): Promise<void> {
   if (value.allowed && account.value) await router.replace('/me/character');
 }
 async function refreshCharacter(signal?: AbortSignal): Promise<void> {
-  if (!account.value) return;
+  const owner = account.value?.id;
+  if (!owner) { state.value = null; characterVerified.value = false; return; }
+  const currentRead = ++characterRead;
   const value = await accountRequest<PrelaunchState>('/app/v1/prelaunch/character', 'GET', undefined, signal);
+  if (owner !== account.value?.id || currentRead !== characterRead || signal?.aborted) return;
+  const previousProfile = state.value?.character?.profileId;
   state.value = value;
-  if (!value.character) return;
+  characterVerified.value = true;
+  if (!value.character) {
+    if (previousProfile) { name.value = ''; universe.value = ''; consent.value = false; }
+    return;
+  }
   name.value = value.character.name;
   universe.value = value.character.universe;
-  if (value.artwork?.status === 'ready') await loadPortrait(value.character.revision, signal);
-  else clearPortrait();
-}
-function clearPortrait(): void {
-  if (portraitUrl.value.startsWith('blob:')) URL.revokeObjectURL(portraitUrl.value);
-  portraitUrl.value = '';
-  portraitRevision.value = null;
-  portraitReady.value = false;
-}
-async function loadPortrait(revision: number, signal?: AbortSignal): Promise<void> {
-  if (portraitRevision.value === revision && portraitUrl.value) return;
-  clearPortrait();
-  portraitRevision.value = revision;
-  const response = await accountTransport(`/app/v1/prelaunch/character/portrait?revision=${revision}`, {
-    headers: new Headers({ Accept: 'image/png, image/jpeg, image/webp' }), signal, redirect: 'error',
-  });
-  if (!response.ok) throw new Error('Portrét se zatím nepodařilo zobrazit.');
-  const image = await response.blob();
-  if (!['image/png', 'image/jpeg', 'image/webp'].includes(image.type) || image.size === 0) throw new Error('Server zatím nepředal hotový portrét.');
-  portraitUrl.value = URL.createObjectURL(image);
 }
 function updateCountdown(): void {
   const serverNow = serverTimeAnchor + (performance.now() - monotonicAnchor);
@@ -107,6 +124,8 @@ function updateCountdown(): void {
 }
 async function saveCharacter(): Promise<void> {
   if (busy.value || !account.value || !consent.value || !name.value.trim() || !universe.value.trim()) return;
+  const epoch = accountEpoch;
+  const current = () => epoch === accountEpoch && !controller?.signal.aborted;
   busy.value = true;
   error.value = '';
   const expected = state.value?.character;
@@ -116,20 +135,24 @@ async function saveCharacter(): Promise<void> {
       ...(expected ? { expectedProfileId: expected.profileId } : {}),
       name: name.value.trim(), universe: universe.value.trim(), openAiConsent: true,
     });
+    if (!current()) return;
     await refreshCharacter(controller?.signal);
-    beginPolling();
+    if (current()) beginPolling();
   } catch (cause) {
+    if (!current()) return;
     error.value = cause instanceof Error ? cause.message : 'Tvoji dva údaje se nepodařilo uložit.';
     try {
       // The save may have committed before its response was lost, or on another device.
       await refreshCharacter(controller?.signal);
-      if (state.value?.character) { error.value = ''; beginPolling(); }
+      if (current() && state.value?.character) { error.value = ''; beginPolling(); }
     } catch { /* Preserve the original error and entered fields while disconnected. */ }
-  } finally { busy.value = false; }
+  } finally { if (current()) busy.value = false; }
 }
 async function prepareExistingPortrait(): Promise<void> {
   const existing = state.value?.character;
   if (!existing || state.value?.artwork || !consent.value || busy.value) return;
+  const epoch = accountEpoch;
+  const current = () => epoch === accountEpoch && !controller?.signal.aborted;
   busy.value = true;
   error.value = '';
   try {
@@ -140,26 +163,37 @@ async function prepareExistingPortrait(): Promise<void> {
       universe: existing.universe,
       openAiConsent: true,
     });
+    if (!current()) return;
     await refreshCharacter(controller?.signal);
-    beginPolling();
+    if (current()) beginPolling();
   } catch (cause) {
+    if (!current()) return;
     error.value = cause instanceof Error ? cause.message : 'Přípravu portrétu se nepodařilo spustit.';
-  } finally { busy.value = false; }
+  } finally { if (current()) busy.value = false; }
 }
 async function retryPortrait(): Promise<void> {
   if (!account.value || busy.value) return;
+  const epoch = accountEpoch;
+  const current = () => epoch === accountEpoch && !controller?.signal.aborted;
   busy.value = true;
   error.value = '';
   try {
     if (state.value?.artwork?.status === 'ready' && state.value.character) {
-      clearPortrait();
-      await loadPortrait(state.value.character.revision, controller?.signal);
-      error.value = '';
+      await portrait.retry();
+      if (current()) error.value = '';
       return;
     }
     await accountRequest('/app/v1/prelaunch/character/retry', 'POST', {});
-    beginPolling();
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Nový pokus se nepodařilo spustit.'; }
+    if (current()) beginPolling();
+  } catch (cause) { if (current()) error.value = cause instanceof Error ? cause.message : 'Nový pokus se nepodařilo spustit.'; }
+  finally { if (current()) busy.value = false; }
+}
+async function retryRead(): Promise<void> {
+  if (busy.value) return;
+  busy.value = true;
+  error.value = '';
+  try { await refreshPolicy(); await refreshCharacter(controller?.signal); }
+  catch { error.value = copy.value.readFailed; }
   finally { busy.value = false; }
 }
 function beginPolling(): void {
@@ -204,7 +238,7 @@ onBeforeUnmount(() => {
   if (policyTimer) clearInterval(policyTimer);
   if (pollTimer) clearTimeout(pollTimer);
   document.removeEventListener('visibilitychange', onVisibility);
-  clearPortrait();
+  characterRead++;
 });
 </script>
 
@@ -217,15 +251,17 @@ onBeforeUnmount(() => {
     <section class="launch-card">
       <div class="launch-art" :class="{ 'is-ready': hasPortrait }">
         <picture :aria-hidden="true"><source media="(max-width: 760px)" :srcset="curtainSmall" /><img :src="curtain" alt="" width="960" height="1280" fetchpriority="high" /></picture>
-        <img v-if="portraitUrl" class="launch-portrait" :src="portraitUrl" :alt="copy.portraitAlt" @load="portraitReady = true" @error="clearPortrait(); error = copy.failed" />
+        <img v-if="portrait.url.value" class="launch-portrait" :src="portrait.url.value" :alt="copy.portraitAlt" @error="portrait.fail()" />
       </div>
       <div class="launch-copy">
-        <h1 id="launch-title">{{ copy.title }}<span v-if="state?.character">, {{ state.character.name }}</span>.</h1>
-        <p v-if="language === 'en' && policy?.teaser && (!account || state?.character)" class="launch-host-note">{{ copy.hostNote }}</p>
+        <h1 id="launch-title">{{ hasPortrait ? copy.readyTitle : copy.title }}<span v-if="state?.character">, {{ state.character.name }}</span>.</h1>
+        <p v-if="language === 'en' && (!account || state?.character)" class="launch-host-note">{{ copy.hostNote }}</p>
         <template v-if="!account">
-          <p class="launch-teaser">{{ policy?.teaser || copy.teaser }}</p>
+          <p class="launch-teaser">{{ copy.teaser }}</p>
+          <p v-if="policy?.teaser" class="launch-teaser">{{ policy.teaser }}</p>
           <RouterLink class="aw-button aw-button--primary" to="/signin">{{ copy.invitation }} <span aria-hidden="true">→</span></RouterLink>
         </template>
+        <p v-else-if="!characterVerified" class="launch-status" role="status">{{ copy.accountLoading }}</p>
         <template v-else-if="!state?.character">
           <p class="launch-teaser">{{ copy.introduction }}</p>
           <form class="launch-form" @submit.prevent="saveCharacter">
@@ -237,14 +273,19 @@ onBeforeUnmount(() => {
           </form>
         </template>
         <template v-else>
-          <p class="launch-teaser">{{ policy?.teaser || copy.teaser }}</p>
-          <p v-if="!hasPortrait" class="launch-status" role="status">{{ loadingMessage }}</p>
+          <ol v-if="state?.artwork" class="launch-progress" :aria-label="copy.progress">
+            <li :class="{ 'is-current': phase === 'research', 'is-done': phase === 'portrait' || phase === 'ready' }" :aria-current="phase === 'research' ? 'step' : undefined">{{ copy.researchStep }}</li>
+            <li :class="{ 'is-current': phase === 'portrait', 'is-done': phase === 'ready' }" :aria-current="phase === 'portrait' ? 'step' : undefined">{{ copy.portraitStep }}</li>
+            <li :class="{ 'is-current': phase === 'ready' }" :aria-current="phase === 'ready' ? 'step' : undefined">{{ copy.readyStep }}</li>
+          </ol>
+          <p v-if="hasPortrait" class="launch-final" role="status">{{ finalMessage }}</p>
+          <p v-else-if="phase !== 'failed'" class="launch-status" role="status">{{ portrait.pending.value ? copy.displayLoading : loadingMessage }}</p>
           <form v-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait">
             <p>{{ copy.missingPortrait }}</p>
             <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
             <AwButton type="submit" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
           </form>
-          <AwNotice v-if="error || state?.artwork?.status === 'failed'" tone="warning" role="alert">{{ error || copy.failed }} <button class="launch-retry" type="button" :disabled="busy" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
+          <AwNotice v-if="error || phase === 'failed'" tone="warning" role="alert">{{ error || copy.failed }} <button class="launch-retry" type="button" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
           <section v-if="policy?.launchAt" class="countdown" :aria-label="copy.countdownLabel">
             <p>{{ copy.countdown }}</p>
             <div class="countdown-grid" aria-live="off"><div><strong>{{ timeParts[0] }}</strong><span>{{ copy.days }}</span></div><div><strong>{{ String(timeParts[1]).padStart(2,'0') }}</strong><span>{{ copy.hours }}</span></div><div><strong>{{ String(timeParts[2]).padStart(2,'0') }}</strong><span>{{ copy.minutes }}</span></div><div><strong>{{ String(timeParts[3]).padStart(2,'0') }}</strong><span>{{ copy.seconds }}</span></div></div>
@@ -253,7 +294,7 @@ onBeforeUnmount(() => {
           <p v-else class="countdown-wait">{{ copy.unscheduled }}</p>
           <p class="launch-saved">{{ copy.saved }}</p>
         </template>
-        <AwNotice v-if="error && !state?.character" tone="warning" role="alert">{{ error }} <button class="launch-retry" type="button" @click="refreshPolicy">{{ copy.retry }}</button></AwNotice>
+        <AwNotice v-if="error && !state?.character" tone="warning" role="alert">{{ error }} <button class="launch-retry" type="button" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
       </div>
     </section>
     <footer class="launch-footer">
@@ -276,13 +317,19 @@ onBeforeUnmount(() => {
 .launch-card { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: center; gap: clamp(2rem, 6vw, 7rem); }
 .launch-art { position: relative; aspect-ratio: 3/4; max-height: 48rem; overflow: hidden; background: var(--aw-surface); border-radius: 12px; }
 .launch-art picture, .launch-art picture img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.launch-portrait { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s ease-out; }
+.launch-portrait { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; opacity: 0; animation: portrait-reveal .6s ease-out; }
 .launch-art.is-ready .launch-portrait { opacity: 1; }
 .launch-copy { max-width: 35rem; padding-block: 1rem; min-width: 0; }
 .launch-copy h1 { font-family: var(--aw-font-display); font-size: clamp(2.75rem, 5.8vw, 5.75rem); font-weight: 500; line-height: .98; letter-spacing: -.025em; margin: 0 0 1.5rem; overflow-wrap: anywhere; }
 .launch-teaser { color: var(--aw-muted); font-size: 1.05rem; line-height: 1.75; max-width: 46ch; margin-block: 0 1.5rem; }
 .launch-host-note { color: var(--aw-muted); font-size: .75rem; line-height: 1.5; margin-block: 0 .5rem; }
 .launch-status { color: var(--aw-link); line-height: 1.65; padding-block: 1rem; border-block: 1px solid var(--aw-border-subtle); }
+.launch-final { color: var(--aw-ivory); font-size: 1.1rem; line-height: 1.8; max-width: 46ch; }
+.launch-progress { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; padding: 0; margin-block: 0 1.5rem; list-style: none; counter-reset: preparation; color: var(--aw-muted); font-size: .75rem; line-height: 1.6; }
+.launch-progress li { counter-increment: preparation; }
+.launch-progress li::before { content: counter(preparation) '. '; font-variant-numeric: tabular-nums; }
+.launch-progress .is-current { color: var(--aw-accent); font-weight: 600; text-decoration: underline; text-underline-offset: .3em; }
+.launch-progress .is-done { color: var(--aw-ivory); }
 .launch-form { display: grid; gap: 1.1rem; margin-top: 1.5rem; }
 .launch-consent { display: flex; gap: .5rem; align-items: start; color: var(--aw-muted); font-size: .82rem; line-height: 1.65; cursor: pointer; }
 .launch-consent input { flex-shrink: 0; width: 24px; height: 24px; margin: .1rem .3rem 0 0; accent-color: var(--aw-accent); }
@@ -304,7 +351,8 @@ onBeforeUnmount(() => {
 .launch-account-options { margin-top: .5rem; color: var(--aw-muted); font-size: .8rem; }
 .launch-account-options summary { display: list-item; cursor: pointer; min-height: 44px; padding-block: .75rem; }
 .launch-account-options > a { display: inline-block; padding-block: .75rem; }
-@media (prefers-reduced-motion: reduce) { .launch-portrait { transition: none; } }
+@keyframes portrait-reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .launch-portrait { animation: none; } }
 @media (min-width: 1600px) { .launch-page { padding-top: 3rem; } }
 @media (max-width: 760px) {
   .launch-page { padding-inline: max(1.25rem, env(safe-area-inset-left)) max(1.25rem, env(safe-area-inset-right)); }
@@ -314,7 +362,7 @@ onBeforeUnmount(() => {
   .launch-card { grid-template-columns: 1fr; gap: 1.75rem; }
   .launch-art { aspect-ratio: 5/3; }
   .launch-art picture img { object-position: 50% 65%; }
-  .launch-art.is-ready { aspect-ratio: 4/3; }
+  .launch-art.is-ready { aspect-ratio: 4/5; max-height: 32rem; }
   .launch-copy { padding: 0; max-width: none; }
   .launch-copy h1 { font-size: clamp(2.75rem, 11vw, 4.5rem); }
   .launch-footer { align-items: start; flex-direction: column; gap: .25rem; }

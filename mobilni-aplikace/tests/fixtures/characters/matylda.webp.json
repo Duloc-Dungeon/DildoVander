@@ -1,0 +1,7 @@
+{
+  "origin": "Original built-in ImageGen output, WebP encoding via Pillow; synthetic test fixture only, never shipped to guests",
+  "prompt": "Original fictional character portrait for a clearly synthetic software UI test fixture, not a real person. Matylda, an eccentric adult archivist from an entirely invented mirrored city. Half-body portrait, pale curly hair, sharp amused gaze, ink-stained fingers holding a closed unlettered ledger, sophisticated plum velvet jacket and warm ivory collar with a little antique brass crescent clasp. A fantastical library of irregular mirrors behind her, no readable writing, no recognizable franchise motifs, no weapons, no wands, no real person resemblance. Portrait crop 2:3, face clearly readable at avatar size, head in upper central third. Elegant painterly gouache/lithographic editorial rendering, rich ink-plum #211a22, oxblood shadows, warm paper #f4ecd9, restrained brass #e0bc7e. Dry comic dignity, not cartoonish. This test image must remain in test fixtures and never become a substitute for a real user's generated portrait. No text or watermark.",
+  "license": "AGPL-3.0-only",
+  "width": 512,
+  "height": 768
+}

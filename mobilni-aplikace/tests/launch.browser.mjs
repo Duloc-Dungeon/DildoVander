@@ -25,7 +25,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
-const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/W6kAAAAASUVORK5CYII=', 'base64');
+const image = await readFile(new URL('./fixtures/characters/matylda.webp', import.meta.url));
 let account = { id: 'launch-guest', displayName: 'Host', roles: ['Customer'] };
 let character = null;
 let artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
@@ -33,7 +33,7 @@ let config = {
   revision: 4, betaEnabled: true, betaLaunchAt: null, betaUnlocked: false,
   productionEnabled: true, productionLaunchAt: null, productionUnlocked: false,
   timeZone: 'Europe/Prague', teaser: 'Ještě chvíli. Hvězdy hledají správné místo.',
-  initialLoadingMessage: 'Někdo tu právě rovná hvězdy podle abecedy.',
+  initialLoadingMessage: 'Olivander má kocovinu, ale štětec ještě udrží. Pokud vznikne mistrovské dílo, oba budeme překvapení.',
   personalizedLoadingEnabled: true, personalizedLoadingPrompt: 'Věta hravě a tajemně.',
 };
 let jobs = [{ profileId: 'portrait-fixture', revision: 3, status: 'failed', attempt: 2, errorCode: 'provider_unavailable', updatedAt: Date.now() }];
@@ -61,7 +61,10 @@ try {
       artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
       return json({ character, artwork });
     }
-    if (url.pathname === '/app/v1/prelaunch/character/portrait') return route.fulfill({ status: 200, contentType: 'image/png', body: image });
+    if (url.pathname === '/app/v1/prelaunch/character/portrait') {
+      if (!account || url.searchParams.get('profileId') !== character?.profileId || Number(url.searchParams.get('revision')) !== character?.revision) return json({}, 404);
+      return route.fulfill({ status: 200, contentType: 'image/webp', body: image });
+    }
     if (url.pathname === '/app/v1/prelaunch/character/retry' && request.method() === 'POST') { artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null }; return json({ character, artwork }); }
     if (url.pathname === '/app/v1/admin/users') return json({ users: [], grants: [] });
     if (url.pathname === '/app/v1/admin/operations/status') return json({ modes: null, readiness: { accounts: true, keepsakes: false, keepsakeGeneration: false, passkeyRelyingParty: 'localhost', nativeAssociationConfigured: false }, archive: [] });
@@ -107,9 +110,9 @@ try {
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Připravit můj portrét' }).click();
   await page.getByRole('heading', { name: /Něco se chystá, Matylda/ }).waitFor();
-  assert.match(await page.locator('.launch-copy').innerText(), /Hvězdy hledají/);
+  assert.match(await page.locator('.launch-status').innerText(), /Olivander má kocovinu/);
   assert.match(await page.locator('.countdown').innerText(), /dní/);
-  await page.getByText(/Někdo tu právě rovná/).waitFor();
+  await page.getByText(/Olivander má kocovinu, ale štětec/).waitFor();
   assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
   assert.equal(await page.getByText(/Summary|Appearance|Facts/).count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-countdown.png'), fullPage: true });
@@ -126,9 +129,22 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-english.png'), fullPage: true });
   await page.getByRole('combobox', { name: 'Interface language' }).selectOption('cs');
   await page.setViewportSize({ width: 390, height: 844 });
-  artwork = { status: 'ready', loadingMessage: null, url: null, errorCode: null };
+  character.status = 'ready';
+  artwork = { status: 'running', loadingMessage: 'Matyldo, město za zrcadlem nám poslalo tvůj spis. Zrcadla požádala o přestávku.', finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByText(/Zrcadla požádala o přestávku/).waitFor();
+  assert.equal(await page.getByText('NEVER SHOW BEFORE READY').count(), 0);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-loading.png'), fullPage: true });
+  artwork = { status: 'ready', loadingMessage: null, finalMessage: 'Matyldo, tvůj portrét. Zrcadla z tvého města si oddychla. Čekala jsi snad víc? Olivander dnes nezvládá ani vlastní odraz.', url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByAltText('Portrét tvé postavy').waitFor({ state: 'visible' });
+  await page.getByRole('heading', { name: /Tak tady tě máme, Matylda/ }).waitFor();
+  assert.match(await page.locator('.launch-final').innerText(), /Zrcadla z tvého města/);
+  assert.equal(await page.getByAltText('Portrét tvé postavy').evaluate(image => image.naturalWidth), 512);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-personalized-ready.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({ path: path.join(screenshots, 'launch-desktop-personalized-ready.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
   character = { profileId: 'legacy-profile', revision: 8, name: 'Eliška', universe: 'Starý svět', status: 'ready' };
   artwork = null;
   await page.reload({ waitUntil: 'networkidle' });

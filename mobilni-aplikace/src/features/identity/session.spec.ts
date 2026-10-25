@@ -144,10 +144,12 @@ describe('native account archive transport limits', () => {
 
   it('admits bounded prelaunch portrait images only for the exact versioned route', async () => {
     const identity = await import('./session');
-    const path = '/app/v1/prelaunch/character/portrait?revision=12';
+    const path = '/app/v1/prelaunch/character/portrait?profileId=12345678123442348234123456789abc&revision=12';
     expect(identity.accountTransportResponseLimit(path, 'GET')).toBe(8 * 1024 * 1024);
     expect(identity.accountTransportResponseLimit(path + '&other=1', 'GET')).toBe(1024 * 1024);
     expect(identity.accountTransportResponseLimit(path, 'POST')).toBe(1024 * 1024);
+    expect(identity.accountTransportResponseLimit('/app/v1/prelaunch/character/portrait?revision=12', 'GET')).toBe(1024 * 1024);
+    expect(identity.accountTransportResponseLimit(path + '&profileId=12345678123442348234123456789abc', 'GET')).toBe(1024 * 1024);
   });
 
 });

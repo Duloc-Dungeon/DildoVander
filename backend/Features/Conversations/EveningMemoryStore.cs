@@ -80,6 +80,7 @@ internal sealed partial class EveningMemoryStore
         command.ExecuteNonQuery();
         MigrateHybridMemory(connection, migration);
         MigrateShowChronicle(connection, migration);
+        MigrateCaseVoiceAsides(connection, migration);
         migration.Commit();
     }
 
@@ -423,6 +424,7 @@ internal sealed partial class EveningMemoryStore
                 delete.Parameters.AddWithValue("$next", nextEveningId);
                 delete.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 delete.ExecuteNonQuery();
+                DeleteCaseVoiceAsideHistory(connection, transaction, deviceId, expectedEveningId);
             }
 
             transaction.Commit();

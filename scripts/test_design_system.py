@@ -4,10 +4,22 @@ import json
 from pathlib import Path
 
 from check_design_system import GUIDANCE, PALETTE, inspect
-from generate_design_tokens import outputs
+from generate_design_tokens import outputs, consumer_native_background
 
 
 class IntegrityTests(unittest.TestCase):
+    def test_consumer_launch_color_has_the_same_source_as_the_app(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertEqual(consumer_native_background(root, "#000000"), "#000000")
+            css = root / "mobilni-aplikace/src/application/consumer-brand.css"
+            css.parent.mkdir(parents=True)
+            css.write_text(":root { --aw-void: #211a22; }", encoding="utf-8")
+            self.assertEqual(consumer_native_background(root, "#000000"), "#211a22")
+            css.write_text(":root { --aw-void: var(--unknown); }", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                consumer_native_background(root, "#000000")
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

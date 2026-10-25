@@ -90,6 +90,34 @@ internal sealed record LivePromptSnapshot(string PersonalityId, string Version, 
     internal string LoreVersion { get; init; } = "";
     internal string? PersonaRevisionId { get; init; }
     internal string ConversationLanguage { get; init; } = "cs-CZ";
+    internal string? OpeningAsidePrompt { get; init; }
+    internal LivePromptSnapshot WithOpeningAside(string prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt) || OpeningAsidePrompt is not null) { return this; }
+        var instructions = Instructions + "\nTrusted one-time opening aside: " + prompt;
+        if (LiveTextBudget.UpperBound(instructions) > 16_384)
+        { throw new InvalidDataException("Opening aside exceeds its instruction bound."); }
+        return this with
+        {
+            Instructions = instructions,
+            Sha256 = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(instructions))),
+            OpeningAsidePrompt = prompt
+        };
+    }
+    internal LivePromptSnapshot WithoutOpeningAside()
+    {
+        if (OpeningAsidePrompt is not { } prompt) { return this; }
+        var suffix = "\nTrusted one-time opening aside: " + prompt;
+        if (!Instructions.EndsWith(suffix, StringComparison.Ordinal))
+        { throw new InvalidDataException("Opening aside snapshot was changed unexpectedly."); }
+        var instructions = Instructions[..^suffix.Length];
+        return this with
+        {
+            Instructions = instructions,
+            Sha256 = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(instructions))),
+            OpeningAsidePrompt = null
+        };
+    }
     internal LivePromptSnapshot WithConversationPreferences(
         Kufr.Backend.Features.Customers.CustomerConversationPreferenceSnapshot? preferences, string language)
     {
@@ -119,4 +147,10 @@ internal sealed record LivePromptSnapshot(string PersonalityId, string Version, 
             characterInstructions, options.Policy(personality), options)
         { CatalogVersion = PartyWandCatalog.Version, LoreVersion = CharacterLoreProfiles.Version };
     }
+}
+
+internal static class CaseVoiceAsideEligibility
+{
+    internal static bool IsEligible(bool opening, bool productionCaseSession, LivePromptSnapshot? prompt) =>
+        opening && productionCaseSession && prompt is { Version: "dv01-adult-v1" };
 }

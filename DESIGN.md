@@ -63,7 +63,7 @@ components:
 
 ## Overview
 
-Wand Night Stand is an intimate magical salon: editorial, tactile, quietly theatrical, and lightly witty. The consumer-facing interface pairs an original geometric W-and-crescent mark with curtain and night-flower artwork. Use the self-hosted display face for expressive headings and the established sans-serif UI face for readable controls and supporting copy.
+Wand Night Stand is an intimate magical salon: editorial, tactile, quietly theatrical, and lightly witty. The consumer-facing interface pairs a readable three-line full-name logo and wand underline with curtain and night-flower artwork. Use the self-hosted display face for expressive headings and the established sans-serif UI face for readable controls and supporting copy.
 
 **The Consumer Boundary Rule.** This document governs the consumer identity in the application bundle. The separately maintained shared design system, simulator, offline CAD viewer, and engineering surfaces retain Vapour Chrome. Technical names, firmware, protocols, and device behavior are outside this visual identity.
 
@@ -105,7 +105,7 @@ Depth comes from the original curtain and flower artwork, layered plum surfaces,
 
 ## Shapes
 
-Controls have gently rounded corners, content cards are slightly softer, and art has a modest crop radius. The W-and-crescent mark keeps its own rounded square field. Use these distinct roles rather than making every surface a pill or a nested card.
+Controls have gently rounded corners, content cards are slightly softer, and art has a modest crop radius. The full-name logo has an opaque square master; native platforms apply their own icon mask. Use these distinct roles rather than making every surface a pill or a nested card.
 
 ## Components
 

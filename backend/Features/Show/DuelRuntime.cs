@@ -16,7 +16,12 @@ internal sealed class DuelIdentitySource(KeepsakeStore keepsakes, EveningMemoryS
             ? DuelRules.CharacterSnapshot(identity.IdentityId, identity.WizardAlias, wand)
             : DuelRules.Snapshot(identity.IdentityId, identity.WizardAlias, identity.CatalogWandId);
         var artwork = keepsakes.PublicWandArtworkUrl(identityId, eveningId, deviceId, out var synthetic);
-        return snapshot with { ArtworkUrl = artwork, ArtworkSynthetic = synthetic };
+        return snapshot with
+        {
+            ArtworkUrl = artwork,
+            ArtworkSynthetic = synthetic,
+            FictionalCharacter = DuelFictionalCharacterContext.FromPublicIdentity(identity)
+        };
     }
 }
 
@@ -28,9 +33,8 @@ internal sealed class DuelShowSlot(ShowCoordinator coordinator, ShowDeviceCueBri
     public void Release(string deviceId, string duelId) => coordinator.Release(deviceId, duelId);
     public DuelNarrationBinding BindNarration(string deviceId)
     {
-        var reason = bridge.DeviceNarrationUnavailableReason(deviceId);
-        return !string.IsNullOrEmpty(reason) ? new("web_only", reason)
-            : bridge.HasRecentDevicePoll(deviceId) ? new("physical_device", null) : new("web_only", "device_unavailable");
+        // Duels are a text experience. They must not dispatch speech/audio to a device.
+        return new("web_only", "text_only_duel");
     }
     public bool EnqueueNarration(string deviceId, string duelId, int round, string scene, string wandId, string text)
     {

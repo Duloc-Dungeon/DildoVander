@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
   <a class="skip-link" href="#main-content">{{ customerCopy.text('shell.skip') }}</a>
   <div class="application-shell" :class="{ 'launch-mode': launchExperience }" :style="{ '--application-navigation-height': navigationHeight, '--application-navigation-count': navigation.length }">
     <aside v-if="!launchExperience" class="application-sidebar" :aria-label="customerCopy.text('shell.navigation')">
-      <RouterLink class="application-brand" to="/" :aria-label="customerCopy.text('shell.brand-home')"><img class="brand-mark" src="../assets/brand/mark.svg" alt="" width="44" height="44" /><span>Wand Night Stand<small>{{ customerCopy.text('shell.brand-tagline') }}</small></span></RouterLink>
+      <RouterLink class="application-brand" to="/" :aria-label="customerCopy.text('shell.brand-home')"><img class="brand-mark" src="../assets/brand/emblem-small.webp" alt="" width="44" height="44" /><span>Wand Night Stand<small>{{ customerCopy.text('shell.brand-tagline') }}</small></span></RouterLink>
       <nav ref="navigationElement" class="primary-navigation" :aria-label="customerCopy.text('shell.sections')">
         <RouterLink v-for="item in navigation" :key="item.to" :to="item.to" :class="{ selected: item.to === '/' ? route.path === '/' : route.path.startsWith(item.to) }">
           <span aria-hidden="true">{{ item.symbol }}</span><span>{{ item.label }}</span>

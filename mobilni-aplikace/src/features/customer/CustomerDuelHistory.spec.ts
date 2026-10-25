@@ -32,3 +32,11 @@ describe('account battle history', () => {
     expect(view.text()).not.toContain('Luna'); expect(view.text()).toContain('Historii soubojů se nepodařilo ověřit');
   });
 });
+
+it('shows the saved optional task with the same result and keeps the detail link', async () => {
+  api.request.mockResolvedValue({ items: [{ ...duel, partyTask: { id: 'toast', title: 'Slavnostní přípitek', text: 'Vítěz doplní velkolepý titul.', alternative: 'Přípitek prázdnou sklenicí.', alternativeRoast: 'Hrdinství je v údržbě.', involvesWinner: true } }] });
+  const view = await render();
+  expect(view.text()).toContain('Slavnostní přípitek');
+  expect(view.text()).toContain('Vítěz doplní velkolepý titul.');
+  expect(view.text()).toContain('2 : 1');
+});

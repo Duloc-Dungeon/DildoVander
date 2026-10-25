@@ -312,6 +312,7 @@ internal sealed partial class EveningMemoryStore
                     ShowMemoryEventKind.EveningClosed, deviceId, eveningId, eveningId, 1, "authorized_end_evening"));
                 SaveChronicleEdition(connection, transaction, deviceId, eveningId);
             }
+            DeleteCaseVoiceAsideHistory(connection, transaction, deviceId, eveningId);
             var snapshot = ReadChronicleSnapshot(connection, transaction, deviceId, eveningId);
             transaction.Commit();
             return snapshot;

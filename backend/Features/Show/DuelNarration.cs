@@ -116,6 +116,7 @@ internal sealed partial class DuelStore
     private void CompleteDuel(SqliteConnection connection, SqliteTransaction transaction, DuelDocument duel)
     {
         duel.State = "Completed";
+        duel.PartyTask ??= DuelPartyTasks.ForResult(duel.Seed, duel.Result);
         duel.Deadline = null;
         duel.NarrationExpiresAt = null;
         Save(connection, transaction, duel);

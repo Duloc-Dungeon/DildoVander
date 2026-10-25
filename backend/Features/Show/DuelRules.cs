@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using Kufr.Backend.Features.Keepsakes;
 using Kufr.Backend.Features.Wands;
 
 namespace Kufr.Backend.Features.Show;
@@ -8,7 +9,19 @@ namespace Kufr.Backend.Features.Show;
 internal sealed record DuelIdentitySnapshot(string IdentityId, string DisplayName, string WandId,
     int Strength, int Cunning, int Defense, string? WandName = null, WandSpell[]? Spells = null,
     int? PhysicalSlot = null, string? CombatArchetype = null, string? CombatRulesVersion = null,
-    string? Temperament = null, string? Affinity = null, string? Weakness = null, string? ArtworkUrl = null, bool ArtworkSynthetic = false);
+    string? Temperament = null, string? Affinity = null, string? Weakness = null, string? ArtworkUrl = null,
+    bool ArtworkSynthetic = false, DuelFictionalCharacterContext? FictionalCharacter = null);
+internal sealed record DuelFictionalCharacterContext(string HouseOrGuild, string DubiousSpecialization,
+    string SignatureAbility, string Weakness, string Motto, string MicroStory)
+{
+    internal static DuelFictionalCharacterContext FromPublicIdentity(WizardIdentityCard card) => new(
+        Bound(card.HouseOrGuild, 160), Bound(card.DubiousSpecialization, 160),
+        Bound(card.SignatureAbility, 160), Bound(card.Weakness, 160), Bound(card.Motto, 120),
+        Bound(card.MicroStory, 900));
+
+    private static string Bound(string value, int maximum) =>
+        new string(value.Where(character => !char.IsControl(character)).Take(maximum).ToArray());
+}
 internal sealed record DuelRound(int Number, string LeftAction, string RightAction, int LeftScore,
     int RightScore, bool LeftAutomatic, bool RightAutomatic, string Quip, string Mishap);
 internal sealed record DuelResult(double LeftPoints, double RightPoints, string Winner, string Ending, bool Exhibition);

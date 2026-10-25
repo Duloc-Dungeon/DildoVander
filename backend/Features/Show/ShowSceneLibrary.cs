@@ -18,7 +18,7 @@ internal static class ShowSceneLibrary
         "Proroctví špatného vkusu: krátká absurdní fikce kufru; žádné tajné proroctví hosta.",
         "Spor mezi regály: cituj žárlivost rekvizit bez soukromých historek a změny výběru.",
         "Úředně schválené ticho: jedna strohá pointa po krátké doložené pauze.",
-        "Roast místnosti: terčem je jen kufr a absurdní provoz večera. Žádné konkrétní osoby, vzhled ani domnělá opilost; žádné tvrzení, že vidíš sál."
+        "Roast místnosti: terčem je jen kufr a absurdní provoz večera. V noci je Olivander opilý jak dělo a hůlky prodává kouzelný kufr. Opilost nikdy nepřisuzuj návštěvníkovi ani jiným lidem; žádný vzhled ani tvrzení, že vidíš sál."
     ];
     private static readonly string[][] Beats =
     [

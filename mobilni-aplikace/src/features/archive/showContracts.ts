@@ -46,6 +46,7 @@ export const duelStates: Record<string, string> = {
 export const duelActions: Record<DuelAction, string> = { strike: 'Úder', trick: 'Lest', shield: 'Štít' };
 export interface DuelIdentity { displayName: string; wandId: string; strength: number; cunning: number; defense: number; wandName?: string; spells?: WandSpell[]; physicalSlot?: number; combatArchetype?: CombatArchetype; combatRulesVersion?: string; temperament?: string; affinity?: string; weakness?: string; artworkUrl?: string; artworkSynthetic?: boolean }
 export interface DuelRound { number: number; leftAction: string; rightAction: string; leftScore: number; rightScore: number; leftAutomatic: boolean; rightAutomatic: boolean; quip: string; mishap: string }
+export interface DuelPartyTask { id: string; title: string; text: string; alternative: string; alternativeRoast: string; involvesWinner: boolean }
 export interface Duel {
   id: string; revision: number; rulesVersion?: string; state: string; mode: string; round: number; deadline: string | null;
   left: DuelIdentity; right: DuelIdentity; leftChoiceLocked: boolean; rightChoiceLocked: boolean;
@@ -53,6 +54,16 @@ export interface Duel {
   rounds: DuelRound[]; narrationMode: string; narrationStatus: string;
   result: { ending: string; leftPoints: number; rightPoints: number; exhibition: boolean } | null;
   commentary: { provider: string; rounds: { round: number; quip: string; mishap: string }[] } | null;
+  partyTask?: DuelPartyTask | null;
+}
+function projectPartyTask(raw: unknown): DuelPartyTask | null {
+  const value = object(raw);
+  const result = { id: text(value.id, 80), title: text(value.title, 160), text: text(value.text, 1200),
+    alternative: text(value.alternative, 800), alternativeRoast: text(value.alternativeRoast, 600), involvesWinner: value.involvesWinner === true };
+  return /^[a-z][a-z0-9-]{0,79}$/.test(result.id) && result.title.trim() && result.text.trim()
+    && result.alternative.trim() && result.alternativeRoast.trim() && typeof value.involvesWinner === 'boolean'
+    && ![result.title, result.text, result.alternative, result.alternativeRoast].some(line => /[\u0000-\u001f\u007f]/.test(line))
+    ? result : null;
 }
 export function projectDuel(raw: unknown, id: string): Duel {
   const source = object(raw);
@@ -80,9 +91,11 @@ export function projectDuel(raw: unknown, id: string): Duel {
     narrationMode: text(source.narrationMode, 80), narrationStatus: text(source.narrationStatus, 100),
     rounds: source.rounds.map(raw => { const item = object(raw); return { number: number(item.number), leftAction: text(item.leftAction, 20), rightAction: text(item.rightAction, 20), leftScore: score(item.leftScore), rightScore: score(item.rightScore), leftAutomatic: item.leftAutomatic === true, rightAutomatic: item.rightAutomatic === true, quip: text(item.quip), mishap: text(item.mishap) }; }),
     result: source.state === 'Completed' && source.result ? { ending: text(result.ending), leftPoints: number(result.leftPoints), rightPoints: number(result.rightPoints), exhibition: result.exhibition === true } : null,
+    partyTask: source.state === 'Completed' && source.result && number(result.leftPoints) !== number(result.rightPoints) ? projectPartyTask(source.partyTask) : null,
     commentary: source.commentary && Array.isArray(commentary.rounds) ? { provider: text(commentary.provider, 80), rounds: commentary.rounds.slice(0, 3).map(raw => { const item = object(raw); return { round: number(item.round), quip: text(item.quip), mishap: text(item.mishap) }; }) } : null };
 }
 export function duelNarration(view: Duel) {
+  if (view.narrationMode === 'web_only' && view.narrationStatus === 'text_only_duel') return 'Příběh souboje čteš tady. Kufr si zatím šetří hlas na další oběť.';
   if (view.narrationMode === 'web_only') return 'Pouze webový průběh. Mluvené přehrání v kufru není potvrzené.';
   if (view.narrationMode !== 'physical_device') return 'Přehrání v kufru zatím není potvrzené.';
   if (view.narrationStatus === 'choice') return 'Zařízení potvrdilo předchozí přehrání. Nyní je prostor pro tahy.';

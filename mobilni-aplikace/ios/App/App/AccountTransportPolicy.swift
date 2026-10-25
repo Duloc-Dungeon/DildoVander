@@ -646,8 +646,12 @@ enum AccountTransportPolicy {
         guard method == "GET", let components = URLComponents(string: path), components.scheme == nil,
               components.host == nil, components.fragment == nil,
               components.path == "/app/v1/prelaunch/character/portrait",
-              !components.percentEncodedPath.contains("%"), let query = components.queryItems,
-              query.count == 1, query[0].name == "revision", let value = query[0].value,
+              !components.percentEncodedPath.contains("%"), components.percentEncodedQuery?.contains("%") != true,
+              let query = components.queryItems, query.count == 2,
+              Set(query.map { $0.name }) == Set(["profileId", "revision"]),
+              let profileId = query.first(where: { $0.name == "profileId" })?.value,
+              validLaunchProfileId(profileId),
+              let value = query.first(where: { $0.name == "revision" })?.value,
               value.utf8.count <= 19, value.allSatisfy({ $0.isASCII && $0.isNumber }),
               let revision = Int64(value), revision > 0 else { return false }
         return true

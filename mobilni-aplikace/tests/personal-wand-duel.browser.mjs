@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
-const screenshots = path.join(tmpdir(), 'dildovander-personal-duel');
+const screenshots = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'dildovander-personal-duel');
 await mkdir(screenshots, { recursive: true });
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.ttf': 'font/ttf', '.svg': 'image/svg+xml' };
 const server = createServer(async (request, response) => {
@@ -82,7 +82,7 @@ async function exportedCard(page, name, leftArtwork = true) {
     const colors = x => { const pixels = ctx.getImageData(x, 320, 300, 390).data; const values = new Set(); for (let offset = 0; offset < pixels.length; offset += 32) values.add(`${pixels[offset]},${pixels[offset + 1]},${pixels[offset + 2]}`); return values.size; };
     return { width: canvas.width, height: canvas.height, leftColors: colors(115), rightColors: colors(585) };
   }, [...bytes]);
-  assert.equal(decoded.width, 1000); assert.equal(decoded.height, 1400);
+  assert.equal(decoded.width, 1000); assert(decoded.height >= 1400 && decoded.height <= 6000, 'card grows to fit story and task without unbounded allocation');
   assert(decoded.rightColors > 100, 'right illustration has meaningful decoded pixels');
   if (leftArtwork) assert(decoded.leftColors > 100, 'left illustration has meaningful decoded pixels');
   else assert(decoded.leftColors <= 2, 'withdrawn left artwork never appears in the freshly exported card');
@@ -95,8 +95,17 @@ const view = {
   requiresParticipantConsent: true, leftJoined: false, rightJoined: false,
   left: { displayName: 'Luna · syntetická ukázka', wandId: 'personal-left', wandName: 'Měsíční ozvěna', strength: 2, cunning: 3, defense: 4, combatArchetype: 'defensive', spells: spells('left'), artworkUrl: artworkPaths.left, artworkSynthetic: true, physicalSlot: 2 },
   right: { displayName: 'Sol · syntetická ukázka', wandId: 'personal-right', wandName: 'Jiskra poledne', strength: 4, cunning: 2, defense: 3, combatArchetype: 'offensive', spells: spells('right'), artworkUrl: artworkPaths.right, artworkSynthetic: true, physicalSlot: 2 },
-  narrationMode: 'web_only', narrationStatus: 'web_only_no_spoken_confirmation', rounds: [], result: null, leftChoiceLocked: false, rightChoiceLocked: false,
+  narrationMode: 'web_only', narrationStatus: 'text_only_duel', rounds: [], result: null, leftChoiceLocked: false, rightChoiceLocked: false,
 };
+const partyTask = { id: 'press-conference', title: 'Mimořádná tisková konference',
+  text: 'Porazená Luna vysvětlí, že prohra byla administrativní omyl. Vítězný Sol položí jednu nesmírně důležitou otázku.',
+  alternative: 'Ze sedu proneseš jedinou velkolepou výmluvu. Vítěz ji slavnostně schválí.',
+  alternativeRoast: 'Výbor pro sraby tvou žádost schválil. Statečnost je v údržbě. Olivander už jedná s podlahou.', involvesWinner: true };
+const story = [
+  { round: 1, quip: 'Luna podala žádost o soumrak. Sol ji vrátil s poznámkou, že poledne nemá otevírací dobu pro stížnosti.', mishap: 'Úřední razítko se pokusilo zastínit slunce. Skončilo jako podtácek.' },
+  { round: 2, quip: 'Luna podtácek odvolala. Sol svolal komisi pro světlo a pro jistotu si sedl na jediné křeslo.', mishap: 'Komise zasedla na podtácek. Olivander jí připil a minul vlastní sklenici.' },
+  { round: 3, quip: 'Luna kolem křesla vztyčila štít. Sol zjistil, že království s jedinou židlí se dobývá překvapivě obtížně.', mishap: 'Podtácek byl povýšen. Komise to označila za reformu.' },
+];
 const choices = {}; const posts = []; const errors = [];
 // Server-event fixtures use the documented v3 profiles and scoring. Backend
 // integration and balance tests validate the rules; this test consumes results.
@@ -143,7 +152,7 @@ try {
               assert.equal(choices.left, event.left); assert.equal(choices.right, event.right);
               view.rounds.push({ number: view.round, leftAction: choices.left, rightAction: choices.right, leftScore: event.leftScore, rightScore: event.rightScore, leftAutomatic: false, rightAutomatic: false, quip: `Syntetické kolo ${view.round}: ${spells('left').find(spell => spell.action === choices.left).name} se střetlo s kouzlem ${spells('right').find(spell => spell.action === choices.right).name}.`, mishap: 'Fiktivní komentář bez vlivu na výsledek.' });
               delete choices.left; delete choices.right; view.leftChoiceLocked = false; view.rightChoiceLocked = false;
-              if (view.round === 3) { view.state = 'Completed'; view.deadline = null; view.result = { winner: 'right', ending: 'Sol vítězí v syntetickém souboji. Luna zachraňuje čest posledním štítem.', leftPoints: 1, rightPoints: 2, exhibition: false }; }
+              if (view.round === 3) { view.state = 'Completed'; view.deadline = null; view.result = { winner: 'right', ending: 'Sol vítězí v syntetickém souboji. Luna zachraňuje čest posledním štítem.', leftPoints: 1, rightPoints: 2, exhibition: false }; view.partyTask = partyTask; view.commentary = { provider: 'controlled-text-fixture', model: 'no-provider-call', rounds: story }; }
               else { view.round++; view.deadline = new Date(Date.now() + 15000).toISOString(); }
             }
           }
@@ -209,6 +218,17 @@ try {
   assert.equal(await right.locator('.archive-duel-result').getAttribute('data-result'), 'victory');
   await left.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
   await right.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
+  await left.getByRole('heading', { name: partyTask.title, exact: true }).waitFor();
+  await left.getByText(story[0].quip, { exact: true }).waitFor();
+  const postCountBeforePartyChoice = posts.length;
+  await left.getByRole('button', { name: 'Zvolit lehčí variantu', exact: true }).click();
+  await left.locator('.duel-party-task__reply').getByText(partyTask.alternativeRoast, { exact: true }).waitFor();
+  assert.equal(posts.length, postCountBeforePartyChoice, 'party choice is local and does not write to the game');
+  assert.equal(view.result.leftPoints, 1); assert.equal(view.result.rightPoints, 2);
+  await capture(left, 'mobile-party-alternative.png');
+  await left.getByRole('button', { name: 'Dnes vynechám', exact: true }).click();
+  await left.locator('.duel-party-task__reply').getByText(/Velkolepých záměrů/).waitFor();
+  assert.equal(posts.length, postCountBeforePartyChoice, 'skip never changes scores or creates a server mutation');
   await capture(left, 'mobile-result.png');
   await capture(right, 'desktop-result.png');
   await left.getByRole('button', { name: 'Připravit shrnutí ke stažení', exact: true }).click();

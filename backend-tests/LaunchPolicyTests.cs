@@ -22,6 +22,7 @@ internal static class LaunchPolicyTests
         Directory.CreateDirectory(root);
         try
         {
+            await VerifyConsumerDefaultsAsync(Path.Combine(root, "consumer-defaults"));
             var store = new LaunchPolicyStore(root);
             var clock = new TestClock(DateTimeOffset.FromUnixTimeMilliseconds(1_000));
             var policy = new LaunchAccessService(store, clock);
@@ -89,6 +90,49 @@ internal static class LaunchPolicyTests
         }
 
         Console.WriteLine("PASS launch policy: audience schedules, manual unlock, internal tester exception, optimistic concurrency, audit and persistence");
+    }
+
+    private static async Task VerifyConsumerDefaultsAsync(string root)
+    {
+        Directory.CreateDirectory(root);
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(root, "launch.sqlite")
+        }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE launch_configuration (
+                    id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
+                    beta_enabled INTEGER NOT NULL, beta_launch_at INTEGER NULL, beta_unlocked INTEGER NOT NULL,
+                    production_enabled INTEGER NOT NULL, production_launch_at INTEGER NULL, production_unlocked INTEGER NOT NULL,
+                    time_zone TEXT NOT NULL, teaser TEXT NOT NULL, initial_loading_message TEXT NOT NULL,
+                    personalized_loading_enabled INTEGER NOT NULL, personalized_loading_prompt TEXT NOT NULL);
+                INSERT INTO launch_configuration VALUES
+                    (1,0,0,NULL,0,0,NULL,0,'Europe/Prague','A little something is getting ready for you.',
+                     'A peculiar little surprise is taking shape…',0,
+                     'Write one brief, playful, mysterious loading message inspired by the supplied fictional character context. Do not reveal product features or repeat research facts.');
+                """;
+            command.ExecuteNonQuery();
+        }
+        var store = new LaunchPolicyStore(root);
+        var defaults = store.Read();
+        Check(defaults.Teaser == LaunchConfiguration.DefaultTeaser
+            && defaults.InitialLoadingMessage == LaunchConfiguration.DefaultInitialLoadingMessage
+            && defaults.PersonalizedLoadingEnabled
+            && defaults.Teaser.Contains("noční stolek", StringComparison.OrdinalIgnoreCase)
+            && defaults.Teaser.Contains("kocovinu", StringComparison.OrdinalIgnoreCase)
+            && defaults.InitialLoadingMessage.Contains("noční stolek", StringComparison.OrdinalIgnoreCase)
+            && defaults.InitialLoadingMessage.Contains("počkej", StringComparison.OrdinalIgnoreCase),
+            "untouched legacy defaults migrate to Czech consumer copy and optional personalization");
+        var saved = store.Update("admin", new(defaults.Revision, false, null, false, false, null, false,
+            defaults.TimeZone, defaults.Teaser, defaults.InitialLoadingMessage, false, "explicitly saved prompt"), 1);
+        var reopened = new LaunchPolicyStore(root).Read();
+        Check(!reopened.PersonalizedLoadingEnabled && reopened.PersonalizedLoadingPrompt == "explicitly saved prompt"
+            && reopened.Revision == saved.Revision,
+            "explicit admin personalization settings survive restart without being replaced by new defaults");
+        await Task.CompletedTask;
     }
 
     private static async Task RunAccessBoundaryAsync(string root)

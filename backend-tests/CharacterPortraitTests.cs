@@ -1,5 +1,6 @@
 using Kufr.Backend.Features.Customers;
 using Microsoft.Data.Sqlite;
+using System.Text.Json;
 
 internal static class CharacterPortraitTests
 {
@@ -9,15 +10,36 @@ internal static class CharacterPortraitTests
         try
         {
             await ConsentAndDurabilityAsync(Path.Combine(root, "durable"));
+            await ProfileIdentityFenceAsync(Path.Combine(root, "identity"));
             await RevisionAndDeletionAsync(Path.Combine(root, "fences"));
             await InterruptedAndRetriesAsync(Path.Combine(root, "retry"));
             await ConcurrentCreationAsync(Path.Combine(root, "concurrency"));
             Check(PortraitContentPolicy.ValidMessage("Hvězdy si pro vás právě zkoušejí slavnostní klobouky."), "Czech Unicode message accepted");
+            Check(PortraitContentPolicy.ValidMessage("Wanda dorazila pozdě i do vlastního proroctví."), "fictional Wanda is not mistaken for a wand reveal");
+            Check(!PortraitContentPolicy.ValidMessage("Your wand is ready")
+                && !PortraitContentPolicy.ValidMessage("Two wands are ready"), "wand reveal remains blocked at whole-word boundaries");
             foreach (var secret in new[] { "Your wand is ready", "Kufr už čeká.", "Use <script>hello</script>", "Admin conversation", "Hello\nworld" })
             {
                 Check(!PortraitContentPolicy.ValidMessage(secret), "unsafe generated message rejected");
             }
             Check(!PortraitContentPolicy.ValidMessage(new string('x', 251)), "oversized message rejected");
+            var finalFallback = PortraitContentPolicy.FinalMessageFallback(new("Raven", "wizarding world"));
+            Check(finalFallback.Length <= 250 && finalFallback.Contains("Raven", StringComparison.Ordinal)
+                && finalFallback.Contains("wizarding world", StringComparison.Ordinal)
+                && finalFallback.Contains("kocovin", StringComparison.OrdinalIgnoreCase),
+                "bounded Czech fallback includes character, fictional world and prelaunch Olivander hangover joke");
+            var enrichment = new CharacterEnrichment("Raven", "wizarding world",
+                "Raven is a fictional wizard who speaks with birds. Source: https://example.invalid/private. Account detail.",
+                [], [], ["private ambiguity"], false, [new("Private source", "https://example.invalid/private")],
+                "fixture", "portrait-test", 1, 1, "web_sources");
+            var characterContext = JsonSerializer.Serialize(PortraitContentPolicy.CharacterData(new("Raven", "wizarding world"), enrichment));
+            Check(characterContext.Contains("Raven is a fictional wizard who speaks with birds", StringComparison.Ordinal)
+                && !characterContext.Contains("example.invalid", StringComparison.Ordinal)
+                && !characterContext.Contains("private ambiguity", StringComparison.OrdinalIgnoreCase),
+                "portrait context passes one safe fictional summary trait without source URLs or ambiguity details");
+            Check(PortraitContentPolicy.FinalMessagePrompt.Contains("kocoviny", StringComparison.OrdinalIgnoreCase)
+                && PortraitContentPolicy.SafetyInstructions.Contains("one harmless public fictional trait", StringComparison.Ordinal),
+                "portrait prompt allows one harmless public trait while preserving source and privacy restrictions");
             Console.WriteLine("Character portrait consent, durability, revision/deletion fences, concurrency and bounded retry tests passed.");
         }
         finally
@@ -32,7 +54,7 @@ internal static class CharacterPortraitTests
         var store = new CharacterProfileStore(root);
         var input = new CharacterUserInput("Raven", "Original fiction");
         var local = await store.SaveAsync("local", new(0, input));
-        Check(store.ReadPortrait("local") is null, "local-only character never requests portrait");
+        Check(store.ReadPortrait("local", local.ProfileId, local.Revision) is null, "local-only character never requests portrait");
         var noPortrait = await store.SaveAsync("enrichment-only", new(0, input, OpenAiConsent: true));
         var firstJob = (await store.ClaimAsync())!;
         await store.CompleteAsync(firstJob, Result(firstJob), null);
@@ -45,7 +67,7 @@ internal static class CharacterPortraitTests
         }
         Check(store.ClaimPortrait() is null, "existing enrichment consent alone never starts paid portrait");
         var profile = await store.SaveAsync("portrait", new(0, input, OpenAiConsent: true, PortraitConsent: true));
-        Check(store.ReadPortrait("portrait")?.Status == "queued", "countdown can show immediately before enrichment");
+        Check(store.ReadPortrait("portrait", profile.ProfileId, profile.Revision)?.Status == "queued", "countdown can show immediately before enrichment");
         Check(store.ClaimPortrait() is null, "portrait waits for enrichment");
         var job = (await store.ClaimAsync())!;
         await store.CompleteAsync(job, Result(job), null);
@@ -54,17 +76,19 @@ internal static class CharacterPortraitTests
         Check(portraitJob.AccountId == "portrait" && portraitJob.Enrichment.Summary == "A fictional traveler.", "durable enriched context reaches image job");
         Check(store.ClaimPortrait() is null, "parallel worker cannot claim same live lease");
         Check(store.SetPortraitMessage(portraitJob, "Hvězdy se právě domlouvají."), "loading message publishes before portrait");
-        Check(store.CompletePortrait(portraitJob, [1, 2, 3], null), "current portrait publishes");
-        Check(store.ReadPortraitImage("portrait", profile.Revision)!.SequenceEqual(new byte[] { 1, 2, 3 }), "private image survives restart");
-        Check(store.ReadPortraitImage("local", profile.Revision) is null, "image isolation by authenticated owner");
+        Check(store.CompletePortrait(portraitJob, [1, 2, 3], null, "Postava jménem Raven má velké plány; drobné povinnosti si zjevně nechává na překvapení."), "current portrait publishes");
+        Check(store.ReadPortraitImage("portrait", profile.ProfileId, profile.Revision)!.SequenceEqual(new byte[] { 1, 2, 3 }), "private image survives restart");
+        Check(store.ReadPortraitImage("local", profile.ProfileId, profile.Revision) is null, "image isolation by authenticated owner");
+        Check(store.ReadPortrait("portrait", profile.ProfileId, profile.Revision)?.FinalMessage is not null, "final message survives restart with image");
         Check(!store.CompletePortrait(portraitJob, [4], null), "duplicate completion cannot replace artwork");
         await store.SaveAsync("portrait", new(profile.Revision, input, profile.ProfileId, OpenAiConsent: true, PortraitConsent: true));
-        Check(store.ReadPortrait("portrait")?.Status == "ready" && store.ClaimPortrait() is null, "idempotent retry never regenerates completed image");
+        Check(store.ReadPortrait("portrait", profile.ProfileId, profile.Revision)?.Status == "ready" && store.ClaimPortrait() is null, "idempotent retry never regenerates completed image");
         await store.SaveAsync("enrichment-only", new(noPortrait.Revision, input, noPortrait.ProfileId, OpenAiConsent: true, PortraitConsent: true));
         var oldCharacterPortrait = store.ClaimPortrait()!;
         Check(oldCharacterPortrait.AccountId == "enrichment-only", "existing ready character can explicitly consent to portrait");
         await store.SaveAsync("enrichment-only", new(noPortrait.Revision, input, noPortrait.ProfileId));
-        Check(!store.CanDispatchPortrait(oldCharacterPortrait) && store.ReadPortrait("enrichment-only") is null,
+        Check(!store.CanDispatchPortrait(oldCharacterPortrait)
+            && store.ReadPortrait("enrichment-only", noPortrait.ProfileId, noPortrait.Revision) is null,
             "withdrawing consent cancels queued or in-flight portrait even when enrichment is already ready");
     }
 
@@ -83,7 +107,7 @@ internal static class CharacterPortraitTests
         var current = store.ClaimPortrait()!;
         await store.DeleteAsync("alice", edited.Revision, edited.ProfileId);
         Check(!store.CanDispatchPortrait(current) && !store.CompletePortrait(current, [1], null), "deletion fences in-flight provider");
-        Check(store.ReadPortrait("alice") is null && store.ReadPortraitImage("alice", edited.Revision) is null,
+        Check(store.ReadPortrait("alice", edited.ProfileId, edited.Revision) is null && store.ReadPortraitImage("alice", edited.ProfileId, edited.Revision) is null,
             "profile deletion atomically removes private portrait");
         Check(!new CharacterProfileStore(root).RetryPortrait("alice"), "restart cannot retry deleted asset");
 
@@ -95,6 +119,23 @@ internal static class CharacterPortraitTests
         Check(!store.CanDispatchPortrait(current) && !store.CompletePortrait(current, [1], null), "account deletion prevents resurrection");
     }
 
+    private static async Task ProfileIdentityFenceAsync(string root)
+    {
+        var store = new CharacterProfileStore(root);
+        var first = await store.SaveAsync("alice", new(0, new("First", "Fiction"), OpenAiConsent: true, PortraitConsent: true));
+        var enrichment = (await store.ClaimAsync())!;
+        await store.CompleteAsync(enrichment, Result(enrichment), null);
+        var portrait = store.ClaimPortrait()!;
+        Check(store.CompletePortrait(portrait, [9, 8, 7], null, "První vzkaz."), "first profile artwork completes");
+        var second = await store.SaveAsync("alice", new(first.Revision, new("Second", "Fiction"), first.ProfileId,
+            NewCharacter: true, OpenAiConsent: true, PortraitConsent: true));
+        Check(second.ProfileId != first.ProfileId && second.Revision == first.Revision,
+            "replacement character can reuse numeric revision with a new identity");
+        Check(store.ReadPortraitImage("alice", first.ProfileId, first.Revision) is null
+            && store.ReadPortrait("alice", second.ProfileId, second.Revision)?.Status == "queued",
+            "profile ID prevents old artwork from matching replacement at same revision");
+    }
+
     private static async Task InterruptedAndRetriesAsync(string root)
     {
         var store = new CharacterProfileStore(root);
@@ -104,7 +145,8 @@ internal static class CharacterPortraitTests
         var portrait = store.ClaimPortrait()!;
         Check(store.ClaimPortrait(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 241) is null,
             "expired lease becomes failed without automatic duplicate paid request");
-        Check(store.ReadPortrait("alice") is { Status: "failed", ErrorCode: "portrait_interrupted" }, "interrupted job is recoverable and visible");
+        var profile = await store.ReadAsync("alice", CancellationToken.None);
+        Check(store.ReadPortrait("alice", profile!.ProfileId, profile.Revision) is { Status: "failed", ErrorCode: "portrait_interrupted" }, "interrupted job is recoverable and visible");
         Check(!store.CompletePortrait(portrait, [1], null), "expired lease result cannot publish");
         Check(store.RetryPortrait("alice"), "explicit retry recovers uncertain request");
         for (var attempt = 2; attempt <= 3; attempt++)
