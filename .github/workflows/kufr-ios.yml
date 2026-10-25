@@ -54,6 +54,8 @@ jobs:
         run: bash scripts/test-native-provisioning.sh
       - name: Test native identity origin policy and authentication bridge
         run: bash scripts/test-native-identity.sh
+      - name: Test native diagnostic export files
+        run: bash scripts/test-native-diagnostic-export.sh
       - name: Build unsigned iOS Simulator app
         env:
           CAPTURE_STORE_PREVIEW: ${{ github.workflow == 'Check Kufr iOS' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}

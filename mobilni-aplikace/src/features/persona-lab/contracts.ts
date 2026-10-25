@@ -26,6 +26,7 @@ export interface Turn {
   latencyMs?: number | null; audioBytes?: number | null; decision?: string | null; compartment?: number | null;
 }
 export interface LabEvent {
+  operationId?: string | null;
   id: string; type: string; createdAt: string; code?: string | null; latencyMs?: number | null;
   decision?: string | null; compartment?: number | null; costMicroUsd?: number | null;
   providerSessionId?: string | null;

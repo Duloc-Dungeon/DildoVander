@@ -8,6 +8,7 @@ import { prepareLabImage, type LabImage } from './image';
 import { classifyLabFailure, describeLabFailure, type LabFailure } from './errors';
 import { useLabHardware } from './useLabHardware';
 import { systemDiagnosticsBundle } from './systemDiagnostics';
+import { exportDiagnosticReport } from '../../application/diagnosticExport';
 import { metricLabels, type Analytics, type Catalog, type Evaluation, type LabEngine, type LabSession, type LabSuite, type Metric, type Revision, type Scores, type SessionInput, type SystemDiagnostics } from './contracts';
 
 export function usePersonaLab() {
@@ -365,11 +366,17 @@ export function usePersonaLab() {
       notice.value = rollback ? 'Aktivní konfigurace byla vrácena na vybranou verzi.' : 'Verze byla publikována.';
     });
   }
-  function downloadDiagnostics(): void {
+  async function downloadDiagnostics(): Promise<void> {
     if (!selected.value) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(technicalDiagnostics(selected.value, hardware.uncertain.value && !selected.value.hardware), null, 2)], { type: 'application/json' }));
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `persona-lab-${selected.value.id}-diagnostika.json`; anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    try {
+      const result = await exportDiagnosticReport(
+        technicalDiagnostics(selected.value, hardware.uncertain.value && !selected.value.hardware),
+        `persona-lab-${selected.value.id}-diagnostika.json`,
+      );
+      notice.value = result === 'cancelled' ? 'Sdílení diagnostiky bylo zrušeno.' : 'Diagnostika byla předána k uložení nebo sdílení.';
+    } catch {
+      error.value = 'Export diagnostiky se nepodařil. Zkuste to prosím znovu.';
+    }
   }
   async function loadSystemDiagnostics(): Promise<void> {
     if (!admin.value || diagnosticsLoading.value || disposed || !online.value) return;
@@ -381,11 +388,14 @@ export function usePersonaLab() {
       if (epoch === generation && !(cause instanceof DOMException && cause.name === 'AbortError')) error.value = message(cause);
     } finally { if (epoch === generation) diagnosticsLoading.value = false; }
   }
-  function downloadSystemDiagnostics(): void {
+  async function downloadSystemDiagnostics(): Promise<void> {
     if (!admin.value || !systemDiagnostics.value) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(systemDiagnosticsBundle(systemDiagnostics.value), null, 2)], { type: 'application/json' }));
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'persona-lab-systemova-diagnostika.json'; anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    try {
+      const result = await exportDiagnosticReport(systemDiagnosticsBundle(systemDiagnostics.value), 'persona-lab-systemova-diagnostika.json');
+      notice.value = result === 'cancelled' ? 'Sdílení diagnostiky bylo zrušeno.' : 'Diagnostika byla předána k uložení nebo sdílení.';
+    } catch {
+      error.value = 'Export diagnostiky se nepodařil. Zkuste to prosím znovu.';
+    }
   }
   function clear(): void {
     cancelSpokenEnd(); voiceContext = null; hardware.clear(); generation++; listGeneration++; selectedReadGeneration++; client.invalidate(); cancelRecovery(); voice.dispose(); clearImage(); conversationPending.value = false;

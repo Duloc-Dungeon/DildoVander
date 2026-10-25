@@ -31,6 +31,8 @@ internal sealed record RealtimeTurnContext(
     int OutputTokenLimit = RealtimeProtocol.MaxOutputTokens)
 {
     internal IReadOnlyList<Kufr.Backend.Features.Wands.GeneratedWandSnapshot>? GeneratedWands { get; init; }
+    // Tester chat can begin before explicit personalized wand preparation.
+    internal bool DeferWandSelection { get; init; }
     internal string CostumeContext { get; init; } = "";
     internal string PersonalityId { get; init; } = PersonalityCatalog.DefaultId;
     internal GptLive.LivePromptSnapshot? LivePrompt { get; init; }
@@ -150,7 +152,9 @@ internal static class RealtimeProtocol
             Instructions = Instructions(turn) + "\n" + turn.CostumeContext + "\nServerová pravidla tohoto tahu: "
                 + $"opening={turn.Request.Opening}; requireQuestion={turn.RequireQuestion}; "
                 + $"Dostupné hůlky: {CustomerWandSelection.AvailableForPrompt(turn)}. "
-                + (turn.Request.ReadyMask == 0
+                + (turn.DeferWandSelection
+                    ? "Osobní kandidáti zatím nejsou připraveni. Pokračuj v rozhovoru, nevybírej ani nevymýšlej hůlku. Přípravu a výběr spustí samostatná akce testera."
+                    : turn.Request.ReadyMask == 0
                     ? "Žádná hůlka není dostupná; zavolej end_conversation."
                     : turn.RequireQuestion
                         ? "Polož jednu otázku. Výběr není povolený."
@@ -175,7 +179,7 @@ internal static class RealtimeProtocol
                     Speed = (float)turn.Request.Speed
                 }
             },
-            ToolChoice = turn.Request.ReadyMask == 0
+            ToolChoice = !turn.DeferWandSelection && turn.Request.ReadyMask == 0
                 ? RealtimeDefaultToolChoice.Required
                 : RealtimeDefaultToolChoice.Auto
         };
@@ -263,7 +267,7 @@ internal static class RealtimeProtocol
     private static IReadOnlyList<RealtimeTool> Tools(RealtimeTurnContext turn)
     {
         var tools = new List<RealtimeTool>();
-        if (!turn.RequireQuestion && turn.Request.ReadyMask != 0)
+        if (!turn.DeferWandSelection && !turn.RequireQuestion && turn.Request.ReadyMask != 0)
         {
             tools.Add(new RealtimeFunctionTool("propose_wand")
             {

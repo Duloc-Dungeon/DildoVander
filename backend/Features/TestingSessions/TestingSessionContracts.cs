@@ -10,7 +10,10 @@ internal sealed record TestingSession(string Id, string OwnerId, string VirtualD
     string Engine, string InputMode, string Status, string? CharacterId, DateTimeOffset CreatedAt,
     DateTimeOffset? EndedAt, int Revision, bool OpenAiConsent, bool LongTermConsent = false,
     string? KeepsakeId = null, string? OperationId = null, CharacterConversationSnapshot? CharacterSnapshot = null);
-internal sealed record TestingCharacter(string Id, string OwnerId, CharacterProfile Profile, bool LongTermConsent);
+internal sealed record TestingCharacter(string Id, string OwnerId, CharacterProfile Profile, bool LongTermConsent)
+{
+    public string? EnrichmentOperationId { get; init; }
+}
 internal sealed record TestingSessionRequest(string Engine = "gpt-live-1", string InputMode = "text",
     bool OpenAiConsent = false, bool RecordContent = false, string? OperationId = null, string Platform = "web");
 internal sealed record TestingCharacterRequest(CharacterUserInput UserInput, bool OpenAiConsent = false,
@@ -29,9 +32,13 @@ internal sealed record TestingHardware(bool Connected, bool Ready, string State,
     string LedPattern, string? ServoCommand, string? VibrationCommand, bool CameraAvailable,
     TestingHardwareEvent[] Events, bool FailServo = false);
 internal sealed record TestingMemory(string Status, IReadOnlyList<MemoryRecord> Records);
+internal sealed record TestingCharacterSnapshot(string ProfileId, long Revision, CharacterUserInput UserInput,
+    CharacterEnrichment? Enrichment, long CapturedAt, string Context);
 internal sealed record TestingSessionDetail(TestingSession Session, LabSession Conversation,
     TestingCharacter? Character, TestingHardware Hardware, WandGenerationSession? Wand,
-    KeepsakeView[] Keepsakes, TestingMemory Memory, bool ConversationActive = false);
+    KeepsakeView[] Keepsakes, TestingMemory Memory, bool ConversationActive = false,
+    TestingCharacter? LatestCharacter = null, TestingCharacterSnapshot? CharacterSnapshot = null,
+    LabOperationState? ConversationOperation = null);
 internal sealed class TestingException(int status, string code) : Exception(code)
 {
     internal int Status { get; } = status;

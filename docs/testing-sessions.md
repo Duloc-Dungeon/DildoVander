@@ -6,12 +6,20 @@ an ordinary single-use Tester invitation in account administration; enrollment,
 passkeys, persistent sessions and account deletion use the existing identity
 implementation. Owner/Administrator/Operator roles do not imply Tester.
 
-The view polls active session/duel details every 10 seconds and session/character
-collections every 30 seconds. Refreshes coalesce while a read is in flight.
+The view polls session/duel details every 10 seconds and session/character
+collections every 30 seconds. Active conversation recovery uses detail-only reads
+every two seconds; in-flight text requests use the same bounded cadence for
+operation progress. Refreshes coalesce while a read is in flight.
 Testing-session GETs use a separate bounded rate limit so polling cannot spend
 the account command/sign-in allowance. HTTP 429 pauses reads and commands for the
 server's `Retry-After` delay; the view shows an explicit rejection with a retry
 hint and keeps the request ID. Refresh never repeats a mutation.
+
+After a text turn, reconciliation reads only the selected session. Failure of an
+unrelated character/session collection does not make a successfully refreshed
+conversation stale. An uncertain POST outcome pauses sending until authoritative
+history establishes whether the user turn was saved; it never automatically
+replays the POST. Pending outcomes belong to one session and conversation.
 
 ## Architecture assessment and integration
 
@@ -63,6 +71,12 @@ used by the customer journey. The background worker persists its result separate
 from the HTTP request, and the screen refreshes its status. Before the first turn,
 continuing from Postava selects the latest profile as the conversation snapshot.
 Failed enrichment can be retried explicitly or the saved input can be used alone.
+The Character inspector separates original input, actual persisted enrichment,
+and the immutable conversation snapshot, including its exact character projection.
+It exposes structured fields and copyable JSON inside the authenticated view.
+The latest profile is read directly from the durable profile store, independently
+of collection polling. New enrichment intentionally does not change a conversation
+that already started; before the first turn, continuing captures the current result.
 Session creation does not claim an OpenAI handshake. Saved sessions can be selected
 in Sezení after refresh or application restart; the URL retains the session identity.
 
@@ -152,6 +166,24 @@ provider credentials, bearer authorization and one-use socket tickets. Provider
 session IDs and sanitized error codes are technical evidence. Account-owned chat
 content stays visible only inside the authenticated journey with explicit consent.
 
+Export uses a JSON download in browsers and the maintained
+`KufrDiagnosticExport` Capacitor bridge on iOS. The bridge validates the filename,
+JSON and size, writes a temporary file, and opens the system share sheet for Files
+or another destination. Cancellation is reported separately from successful
+handoff; write/share failures remain visible. Temporary files are removed on
+completion. The report includes the embedded app build identity, platform,
+session/operation/request IDs, technical provider events and enrichment job status.
+Character input, enrichment content and frozen projections stay in the inspector.
+
+Operation events distinguish admission, context preparation, transport connection,
+confirmed provider readiness, first output, provider completion, memory persistence
+and active-operation release. Durations use monotonic clocks; queue delay uses
+the durable job creation timestamp. A transport connection is not provider readiness.
+Live text retains the six-second output quiet boundary and correlated confirmed
+close/final usage; this is visible latency even with a fast provider. Personalized
+Realtime wand preparation is deferred to explicit selection, and the proposal tool
+is unavailable until real candidates exist. Ordinary production flows are unchanged.
+
 ## Build and verification
 
 Linux backend builds compile and bundle the existing portable twin automatically
@@ -170,13 +202,29 @@ dotnet build backend-tests
 dotnet run --project backend-tests --no-build -- --tester-identity
 dotnet run --project backend-tests --no-build -- --testing-resources
 dotnet run --project backend-tests --no-build -- --testing-conversations
+dotnet run --project backend-tests --no-build -- --testing-multiturn
+dotnet run --project backend-tests --no-build -- --testing-character-race
+dotnet run --project backend-tests --no-build -- --testing-diagnostics
 dotnet run --project backend-tests --no-build -- --testing-hardware
 dotnet run --project backend-tests --no-build -- --testing-session-http
 dotnet run --project backend-tests --no-build -- --testing-sessions
 npm test --prefix mobilni-aplikace
+npm run typecheck --prefix mobilni-aplikace
 npm run build --prefix mobilni-aplikace
 node mobilni-aplikace/tests/testing-sessions.browser.mjs
 ```
+
+`--testing-multiturn` executes ten consecutive exchanges for each engine through
+the actual runtime, SDK/protocol parser, testing bridge, SQLite, local memory and
+native virtual hardware using only controlled external sockets. It checks ordered
+history, per-turn release, overlap rejection, provider faults, cancellation,
+server timeout, fresh-runtime resume and recovery. It makes no paid requests.
+Windows tests require the native twin built with
+`python firmware/simulator/native/build_host.py --output backend-tests/bin/Debug/net10.0/testing-native/kufr-native-twin.exe`.
+On macOS, run `bash mobilni-aplikace/scripts/test-native-diagnostic-export.sh`
+from the repository root, then the existing iOS Simulator build workflow. The
+Foundation test checks file handling; share-sheet interaction still requires an
+iOS simulator/device. Browser tests do not establish native acceptance.
 
 ## Opt-in real-provider acceptance
 

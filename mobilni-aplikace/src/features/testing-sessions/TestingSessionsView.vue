@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { Capacitor } from '@capacitor/core';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
@@ -14,26 +15,51 @@ import { technicalDiagnostics } from '../persona-lab/client';
 import { classifyLabFailure, describeLabFailure } from '../persona-lab/errors';
 import { prepareLabImage } from '../persona-lab/image';
 import { requestDiagnostics } from '../../application/requestDiagnostics';
+import { exportDiagnosticReport } from '../../application/diagnosticExport';
+import { applicationBuild } from '../../application/buildIdentity';
 import type { CharacterInput, InputMode } from './contracts';
 const test = useTestingSessions();
 const { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, engine, inputMode, consent,
-  text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, open } = test;
+  text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, turnPhase, uncertainTurn, open } = test;
 const characterDeleteConfirmed = ref(false);
 const longTermConsent = ref(false); const photoConsent = ref(false); const photoFile = ref<File | null>(null); const photoKeepsake = ref('');
-const diagnosticUrl = ref('');
+const diagnosticExportStatus = ref(''); const diagnosticExportError = ref(''); const characterCopyStatus = ref('');
 const showCharacterForm = ref(false); const editingCharacter = ref(false); const deleteConfirmed = ref(false);
 const draft = reactive<CharacterInput>({ name: '', world: '', version: '', description: '', language: 'cs' });
 const selectedCharacter = computed(() => {
   const detail = selected.value;
   if (detail && open.value && !detail.conversation.turns.length) {
-    return characters.value.find(character => character.id === detail.session.characterId) ?? detail.character;
+    return detail.latestCharacter ?? characters.value.find(character => character.id === detail.session.characterId) ?? detail.character;
   }
   return detail?.character;
 });
+const latestCharacter = computed(() => selected.value?.latestCharacter
+  ?? characters.value.find(character => character.id === selected.value?.session.characterId)
+  ?? selected.value?.character ?? null);
+const conversationSnapshot = computed(() => selected.value?.characterSnapshot ?? null);
+const characterInspection = computed(() => ({
+  latestProfile: latestCharacter.value?.profile ?? null,
+  conversationSnapshot: conversationSnapshot.value,
+}));
 type TestStep = 1 | 2 | 3 | 4;
 const step = ref<TestStep>(1);
 const steps = ['Sezení', 'Postava', 'Rozhovor', 'Výsledek'];
 const characterPending = computed(() => ['queued', 'running'].includes(selectedCharacter.value?.profile.status ?? ''));
+const conversationReadiness = computed(() => {
+  if (stale.value) return 'Obnovuji stav rozhovoru';
+  const phase = selected.value?.conversationOperation?.phase;
+  if (phase === 'admitting') return 'Ověřuji požadavek';
+  if (phase === 'preparing_context') return 'Načítám kontext postavy a rozhovoru';
+  if (phase === 'connecting_provider') return 'Připojuji poskytovatele';
+  if (phase === 'waiting_provider') return 'Čekám na odpověď poskytovatele';
+  if (phase === 'finalizing_turn') return 'Ukládám dokončený tah';
+  if (turnPhase.value === 'waiting') return 'Čekám na odpověď poskytovatele';
+  if (turnPhase.value === 'finalizing') return 'Ukládám a ověřuji tah rozhovoru';
+  if (uncertainTurn.value) return 'Ověřuji uloženou historii před povolením dalšího odeslání';
+  if (turnPhase.value === 'recovering' || selected.value?.conversationActive) return 'Obnovuji probíhající požadavek';
+  if (error.value && !errorRejected.value) return 'Požadavek selhal. Obnovte historii před dalším pokusem.';
+  return 'Připraveno na další zprávu';
+});
 const errorMessage = computed(() => {
   if (error.value === 'account_required') return 'Přihlášení vypršelo. Přihlaste se znovu a obnovte stav testu.';
   if (error.value === 'csrf_required') return 'Ověření stránky vypršelo. Obnovte stránku a zkontrolujte stav před opakováním akce.';
@@ -82,7 +108,7 @@ async function saveCharacter(): Promise<void> {
 }
 function switchMode(event: Event): void { test.changeMode((event.target as HTMLSelectElement).value as InputMode); }
 function selectCharacter(event: Event): void { const id = (event.target as HTMLSelectElement).value; if (id) void test.selectCharacter(id); }
-watch(() => selected.value?.session.id, () => { photoFile.value = null; photoConsent.value = false; photoKeepsake.value = ''; if(diagnosticUrl.value)URL.revokeObjectURL(diagnosticUrl.value); diagnosticUrl.value=''; showCharacterForm.value = false; deleteConfirmed.value = false; });
+watch(() => selected.value?.session.id, () => { photoFile.value = null; photoConsent.value = false; photoKeepsake.value = ''; diagnosticExportStatus.value=''; diagnosticExportError.value=''; characterCopyStatus.value=''; showCharacterForm.value = false; deleteConfirmed.value = false; });
 watch(() => selected.value?.session.id, () => {
   step.value = selected.value ? (open.value && !selected.value.conversation.turns.length ? 2 : 3) : 1;
   if (selected.value && !selected.value.character) beginCharacter();
@@ -98,12 +124,28 @@ async function portrait(): Promise<void> {
 }
 async function deleteCharacter():Promise<void>{if(!selectedCharacter.value||!characterDeleteConfirmed.value)return;await test.run(async()=>{await test.client.deleteCharacter(selectedCharacter.value!.id);await test.refreshAfterCommand();characterDeleteConfirmed.value=false;});}
 function choosePhoto(event:Event):void{photoFile.value=(event.target as HTMLInputElement).files?.[0]??null;}
-function exportDiagnostics():void {
-  if(!selected.value)return; if(diagnosticUrl.value)URL.revokeObjectURL(diagnosticUrl.value);
-  const payload={schemaVersion:2,testSessionId:selected.value.session.id,scope:'isolated_testing',requests:requestDiagnostics.value,provider:technicalDiagnostics(selected.value.conversation),virtualHardware:selected.value.hardware.events?.map(({type,code,createdAt,compartment})=>({type,code,createdAt,compartment,source:'simulation'}))};
-  diagnosticUrl.value=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
+async function exportDiagnostics():Promise<void> {
+  if(!selected.value)return;
+  diagnosticExportStatus.value=''; diagnosticExportError.value='';
+  const detail=selected.value;
+  diagnosticExportStatus.value='exporting';
+  const payload={schemaVersion:3,exportedAt:new Date().toISOString(),scope:'isolated_testing',
+    app:{platform:Capacitor.getPlatform(),build:applicationBuild},
+    session:{id:detail.session.id,conversationId:detail.conversation.id,engine:detail.session.engine,inputMode:detail.session.inputMode,status:detail.session.status,conversationStatus:detail.conversation.status,conversationActive:detail.conversationActive===true,operation:detail.conversationOperation ? {operationId:detail.conversationOperation.operationId,phase:detail.conversationOperation.phase,elapsedMs:detail.conversationOperation.elapsedMs} : null},
+    characterEnrichment:detail.latestCharacter ? {characterId:detail.latestCharacter.id,profileId:detail.latestCharacter.profile.profileId,revision:detail.latestCharacter.profile.revision,status:detail.latestCharacter.profile.status,errorCode:detail.latestCharacter.profile.errorCode ?? null,updatedAt:detail.latestCharacter.profile.updatedAt ?? null,operationId:detail.latestCharacter.enrichmentOperationId ?? null} : null,
+    requests:requestDiagnostics.value,provider:technicalDiagnostics(detail.conversation),
+    virtualHardware:detail.hardware.events?.map(({type,code,createdAt,compartment})=>({type,code,createdAt,compartment,source:'simulation'}))};
+  try {
+    const result=await exportDiagnosticReport(payload,'testing-diagnostics.json');
+    diagnosticExportStatus.value=result==='cancelled'?'Export byl zrušen.':result==='shared'?'Diagnostický soubor byl předán ke sdílení nebo uložení.':'Soubor JSON byl stažen.';
+  } catch {
+    diagnosticExportError.value='Diagnostický soubor se nepodařilo exportovat. Zkuste to znovu nebo zkontrolujte oprávnění aplikace.';
+  }
 }
-onBeforeUnmount(()=>{if(diagnosticUrl.value)URL.revokeObjectURL(diagnosticUrl.value);});
+async function copyCharacterInspection():Promise<void> {
+  try { await navigator.clipboard.writeText(JSON.stringify(characterInspection.value,null,2)); characterCopyStatus.value='Strukturovaná data postavy byla zkopírována.'; }
+  catch { characterCopyStatus.value='Kopírování se nezdařilo. Otevřete strukturovaná data a zkopírujte je ručně.'; }
+}
 function localTime(value: string): string { return new Date(value).toLocaleString(); }
 </script>
 
@@ -188,8 +230,23 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
               <AwNotice v-if="selectedCharacter.profile.errorCode" tone="danger">{{ selectedCharacter.profile.errorCode }}</AwNotice>
               <p v-if="selectedCharacter.profile.errorCode" class="aw-muted">Postava je uložená. Dohledání můžete zopakovat nebo pokračovat se zadanými údaji.</p>
               <details><summary>Kontext a AI obohacení postavy</summary>
-                <template v-if="selectedCharacter.profile.enrichment"><p>{{ selectedCharacter.profile.enrichment.summary }}</p><p class="testing-code">{{ selectedCharacter.profile.enrichment.model }} · {{ selectedCharacter.profile.enrichment.evidenceKind }}</p></template>
-                <p v-else class="aw-muted">Žádné potvrzené AI obohacení. Stav: {{ selectedCharacter.profile.status }}.</p>
+                <section aria-label="Původní vstup postavy">
+                  <h3>Původní vstup</h3>
+                  <dl class="testing-identifiers"><div><dt>Jméno</dt><dd>{{ latestCharacter?.profile.userInput.name }}</dd></div><div><dt>Svět / původ</dt><dd>{{ latestCharacter?.profile.userInput.world }}</dd></div><div><dt>Verze</dt><dd>{{ latestCharacter?.profile.userInput.version || 'Neuvedena' }}</dd></div><div><dt>Popis a dodaný kontext</dt><dd>{{ latestCharacter?.profile.userInput.description || 'Neuveden' }}</dd></div></dl>
+                </section>
+                <section aria-label="Aktuální AI obohacení">
+                  <h3>Aktuální uložené AI obohacení · revize {{ latestCharacter?.profile.revision }}</h3>
+                  <p>Stav: {{ latestCharacter?.profile.status ?? 'neznámý' }}</p>
+                  <template v-if="latestCharacter?.profile.enrichment"><p><strong>Rozpoznané jméno:</strong> {{ latestCharacter.profile.enrichment.recognizedName }}</p><p><strong>Rozpoznaný svět:</strong> {{ latestCharacter.profile.enrichment.world || 'Neuveden' }}</p><p><strong>Souhrn:</strong> {{ latestCharacter.profile.enrichment.summary }}</p><p><strong>Model, verze pokynu a důkazy:</strong> {{ latestCharacter.profile.enrichment.model }} · {{ latestCharacter.profile.enrichment.promptVersion || 'neuvedena' }} · {{ latestCharacter.profile.enrichment.evidenceKind }}</p><p v-if="latestCharacter.profile.enrichment.processedAt">Dokončeno: {{ new Date(latestCharacter.profile.enrichment.processedAt * 1000).toLocaleString() }} · vstupní revize {{ latestCharacter.profile.enrichment.inputRevision }}</p><p v-if="latestCharacter.profile.enrichment.needsClarification">AI potřebuje upřesnění.</p><h4>Fakta a zdroje</h4><ul><li v-for="fact in latestCharacter.profile.enrichment.facts ?? []" :key="fact.text">{{ fact.text }}<span v-for="url in fact.sourceUrls" :key="url"> · <a :href="url" target="_blank" rel="noopener noreferrer">{{ url }}</a></span></li></ul><ul><li v-for="source in latestCharacter.profile.enrichment.sources ?? []" :key="source.url"><a :href="source.url" target="_blank" rel="noopener noreferrer">{{ source.title }}</a></li></ul><h4>Náměty k rozhovoru</h4><ul><li v-for="idea in latestCharacter.profile.enrichment.conversationIdeas" :key="idea">{{ idea }}</li></ul><h4>Nejasnosti</h4><ul><li v-for="ambiguity in latestCharacter.profile.enrichment.ambiguities" :key="ambiguity">{{ ambiguity }}</li></ul></template>
+                  <AwNotice v-else-if="latestCharacter?.profile.errorCode" tone="danger">Obohacení selhalo: {{ latestCharacter.profile.errorCode }}. Zadaná postava zůstává uložená.</AwNotice>
+                  <p v-else class="aw-muted">Obohacení není dokončeno. Stav: {{ latestCharacter?.profile.status ?? 'nenačteno' }}.</p>
+                </section>
+                <section aria-label="Neměnný snímek konverzace">
+                  <h3>Kontext zmrazený při zahájení rozhovoru</h3>
+                  <template v-if="conversationSnapshot"><p>Profil {{ conversationSnapshot.profileId }}, revize {{ conversationSnapshot.revision }} · zachyceno {{ new Date(conversationSnapshot.capturedAt * 1000).toLocaleString() }}.</p><p>Jméno: {{ conversationSnapshot.userInput.name }} · svět: {{ conversationSnapshot.userInput.world }}</p><p>Obohacení při zahájení: {{ conversationSnapshot.enrichment ? 'bylo dostupné' : 'nebylo dostupné' }}.</p><p>Dostupná pole při zahájení: jméno, svět, verze, dodaný popis<template v-if="conversationSnapshot.enrichment">, obohacený profil</template>.</p><details v-if="conversationSnapshot.context"><summary>Skutečný kontext předaný rozhovoru</summary><pre class="testing-json">{{ conversationSnapshot.context }}</pre></details><p v-if="latestCharacter && latestCharacter.profile.revision > conversationSnapshot.revision" class="aw-muted">Existuje novější revize profilu. Tento rozhovor ji nepoužívá; jeho kontext zůstává neměnný.</p></template>
+                  <p v-else class="aw-muted">Backend neposkytl uložená metadata snímku konverzace.</p>
+                </section>
+                <details><summary>Strukturovaná data uložená backendem</summary><pre class="testing-json">{{ JSON.stringify(characterInspection, null, 2) }}</pre><AwButton @click="copyCharacterInspection">Kopírovat JSON postavy</AwButton><p v-if="characterCopyStatus" role="status">{{ characterCopyStatus }}</p></details>
                 <AwButton v-if="open" :disabled="busy || !consent || voiceActive || characterPending" @click="test.enrich">Spustit skutečné AI obohacení</AwButton>
               </details>
             </template>
@@ -199,15 +256,15 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
             <div class="testing-section-heading"><h2 id="testing-conversation-title">Rozhovor s DildoVanderem</h2><AwStatus>{{ inputMode }}</AwStatus></div>
             <p v-if="selectedCharacter" class="aw-muted">{{ selectedCharacter.profile.userInput.name }} · {{ selectedCharacter.profile.userInput.world }}</p>
             <AwNotice v-if="error" tone="danger" :title="errorTitle"><p>{{ errorMessage }}</p><p v-if="errorRejected">Server akci odmítl před jejím zpracováním. Počkejte alespoň {{ retrySeconds }} s před dalším pokusem.</p><small v-if="errorMessage !== error">{{ error }}</small><p v-if="errorRequestId" class="testing-code">ID požadavku: {{ errorRequestId }}</p><p>Zpráva se sama znovu neodešle.</p><AwButton :disabled="busy || retrySeconds > 0" @click="test.refresh">Obnovit stav</AwButton></AwNotice>
-            <p v-if="busy || spokenBusy || (selected.conversationActive && !voiceActive)" role="status">DildoVander připravuje odpověď…</p>
+            <p role="status" aria-live="polite">{{ conversationReadiness }}<span v-if="selected.conversationOperation"> · {{ selected.conversationOperation.elapsedMs }} ms · operace {{ selected.conversationOperation.operationId }}</span></p>
             <p v-if="!selected.conversation.turns.length" class="aw-muted">Napište první zprávu. Textový režim nikdy nevyžaduje mikrofon.</p>
             <ol class="testing-chat" aria-label="Uložený rozhovor"><li v-for="turn in selected.conversation.turns" :key="turn.id" :class="`testing-turn-${turn.role}`">
               <strong>{{ turn.role === 'user' ? selectedCharacter?.profile.userInput.name ?? 'Vy' : 'DildoVander' }}</strong><p>{{ turn.text || 'Text není uložený.' }}</p><small v-if="turn.latencyMs != null">{{ turn.latencyMs }} ms · skutečný backend</small>
             </li></ol>
             <p v-if="partial.user" class="testing-partial">Vy · {{ partial.user }}</p><p v-if="partial.assistant" class="testing-partial">DildoVander · {{ partial.assistant }}</p>
             <form v-if="open && inputMode !== 'voice'" class="testing-chat-form" @submit.prevent="test.send">
-              <AwField id="testing-message" label="Vaše zpráva"><textarea id="testing-message" v-model="text" class="aw-input" rows="3" maxlength="4000" :disabled="busy || !selectedCharacter || (voiceActive && captureEnabled && inputMode !== 'hybrid')" /></AwField>
-              <AwButton type="submit" variant="primary" :busy="busy || spokenBusy" :disabled="!text.trim() || !selectedCharacter || !consent || stale || (selected.conversationActive && !voiceActive)">Odeslat skutečnému AI</AwButton>
+              <AwField id="testing-message" label="Vaše zpráva"><textarea id="testing-message" v-model="text" class="aw-input" rows="3" maxlength="4000" :disabled="!selectedCharacter || (voiceActive && captureEnabled && inputMode !== 'hybrid')" /></AwField>
+              <AwButton type="submit" variant="primary" :busy="busy || spokenBusy" :disabled="busy || uncertainTurn || !text.trim() || !selectedCharacter || !consent || stale || (selected.conversationActive && !voiceActive)">Odeslat skutečnému AI</AwButton>
             </form>
             <label v-if="open" class="testing-consent"><input v-model="outputEnabled" type="checkbox" /> Přehrávat skutečný hlas asistenta (také pro psané zprávy, bez mikrofonu)</label>
             <template v-if="open && inputMode !== 'text'">
@@ -245,7 +302,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
               <div><span>Rozhovor</span><strong>{{ voiceActive ? voicePhase : selected.conversation.status }} · {{ selected.session.engine }}</strong></div>
             </div>
             <details v-if="open"><summary>Vložit poruchu pouze do virtuálního kufru</summary><p class="aw-muted">Výslovně vložené chyby simulace; neoznačují výpadek skutečného OpenAI ani backendu.</p><div class="testing-actions"><AwButton :disabled="busy" @click="test.fault('disconnect')">Simulovat odpojení</AwButton><AwButton :disabled="busy" @click="test.fault('servo_failure')">Simulovat chybu serva</AwButton><AwButton :disabled="busy" @click="test.fault('missing_camera')">Simulovat chybějící kameru</AwButton><AwButton :disabled="busy" @click="test.fault('recover')">Zotavit virtuální kufr</AwButton></div></details>
-            <div class="testing-actions"><AwButton @click="exportDiagnostics">Připravit bezpečný diagnostický export</AwButton><a v-if="diagnosticUrl" :href="diagnosticUrl" download="testing-diagnostics.json">Stáhnout technické události</a></div><p class="aw-muted">Export neobsahuje text rozhovoru, obrázky, osobní paměť ani přístupové údaje.</p>
+            <div class="testing-actions"><AwButton :busy="diagnosticExportStatus === 'exporting'" :disabled="diagnosticExportStatus === 'exporting'" @click="exportDiagnostics">Exportovat bezpečné diagnostiky</AwButton></div><p v-if="diagnosticExportStatus" role="status">{{ diagnosticExportStatus }}</p><AwNotice v-if="diagnosticExportError" tone="danger">{{ diagnosticExportError }}</AwNotice><p class="aw-muted">Export neobsahuje text rozhovoru, obrázky, osobní paměť ani přístupové údaje.</p>
             <dl class="testing-identifiers"><div><dt>Účet</dt><dd>{{ account?.id }}</dd></div><div><dt>Testovací sezení</dt><dd>{{ selected.session.id }}</dd></div><div><dt>Rozhovor</dt><dd>{{ selected.conversation.id }}</dd></div><div><dt>Model</dt><dd>{{ selected.session.engine }}</dd></div></dl>
             <p class="aw-muted">Události níže pocházejí z backendu. Přijetí HTTP požadavku samo nepotvrzuje volání OpenAI ani fyzický pohyb.</p>
             <ol class="testing-timeline"><li v-for="event in selected.conversation.events" :key="event.id"><strong>{{ event.type }}</strong> · {{ event.code }}<small>{{ localTime(event.createdAt) }}<template v-if="event.latencyMs != null"> · {{ event.latencyMs }} ms</template><template v-if="event.inputTokens != null"> · {{ event.inputTokens }} vstupních tokenů</template><template v-if="event.outputTokens != null"> · {{ event.outputTokens }} výstupních tokenů</template><template v-if="event.costMicroUsd != null"> · {{ event.costMicroUsd }} µUSD</template></small><span v-if="event.providerSessionId" class="testing-code">Provider session: {{ event.providerSessionId }}</span></li></ol>

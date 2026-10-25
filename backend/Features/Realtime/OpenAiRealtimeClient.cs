@@ -104,7 +104,7 @@ internal sealed class OpenAiRealtimeClient : IDisposable
         {
             return ("no_selection", reason, null);
         }
-        if (call.FunctionName != "propose_wand" || turn.RequireQuestion
+        if (call.FunctionName != "propose_wand" || turn.DeferWandSelection || turn.RequireQuestion
             || root.EnumerateObject().Count() != 2
             || !root.TryGetProperty("compartment", out var selected)
             || !selected.TryGetInt32(out var number)
