@@ -20,6 +20,11 @@ from release_store import publish_model, rollback_model
 
 
 class CadHostTests(unittest.TestCase):
+    def test_operator_readback_never_sends_credential_over_plain_http(self):
+        with patch.dict('os.environ', {'KUFR_MODEL_READBACK_TOKEN': 'synthetic-readback-token-1234567890'}):
+            with self.assertRaisesRegex(ValueError, 'canonical HTTPS'):
+                cad_host.http_bytes('http://models.example.invalid/models/active.json', 1024)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

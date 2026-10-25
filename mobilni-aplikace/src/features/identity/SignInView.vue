@@ -6,9 +6,11 @@ import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AwField from '../../components/AwField.vue';
 import LostAccessHelp from './LostAccessHelp.vue';
+import InvitationSeal from '../launch/InvitationSeal.vue';
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { customerCopy, type CustomerCopyKey } from '../../application/customerCopy';
-import { account, accountsEnabled, initialized, loading, signingOut, refreshIdentity, authenticatePasskey } from './session';
+import { launchAllowed } from '../../application/launchAccess';
+import { account, accountsEnabled, initialized, loading, signingOut, refreshIdentity, authenticatePasskey, signOut } from './session';
 const router = useRouter();
 const route = useRoute();
 const enrollment = ref(false);
@@ -56,14 +58,16 @@ async function submit() {
 </script>
 <template>
   <section class="page-stack identity-page" aria-labelledby="sign-in-title">
-    <header><p class="eyebrow">{{ customerCopy.text('signin.account-eyebrow') }}</p><h1 id="sign-in-title">{{ enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : customerCopy.text('signin.invite-title') : customerCopy.text('signin.title') }}</h1><p>{{ customerCopy.text('signin.account-purpose') }}</p></header>
+    <InvitationSeal v-if="launchAllowed !== true" />
+    <header><p class="eyebrow">DildoVander</p><h1 id="sign-in-title">{{ enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : customerCopy.text('signin.invite-title') : customerCopy.text('signin.title') }}</h1><p>{{ launchAllowed === true ? customerCopy.text('signin.account-purpose') : 'Přihlášení a osobní pozvánky do aplikace.' }}</p></header>
     <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
     <p v-if="loading" role="status">{{ customerCopy.text('signin.loading') }}</p>
     <p v-if="signingOut" role="status">{{ customerCopy.text('signin.signing-out') }}</p>
     <AwNotice v-if="initialized && !accountsEnabled" tone="info">{{ customerCopy.text('signin.accounts-disabled') }}</AwNotice>
-    <div v-if="account" class="aw-card"><p>{{ customerCopy.text('signin.signed-in-as', { name: account.displayName }) }}</p><AwButton variant="primary" :busy="busy" @click="submit">{{ customerCopy.text('signin.reauthenticate') }}</AwButton><p><RouterLink to="/settings">{{ customerCopy.text('signin.open-settings') }}</RouterLink></p></div>
+    <div v-if="account" class="aw-card"><p>{{ customerCopy.text('signin.signed-in-as', { name: account.displayName }) }}</p><AwButton variant="primary" :busy="busy" @click="submit">{{ customerCopy.text('signin.reauthenticate') }}</AwButton><AwButton v-if="enrollment" :disabled="busy || signingOut" @click="signOut">{{ customerCopy.text('signin.invite-other-account') }}</AwButton><p><RouterLink to="/settings">{{ customerCopy.text('signin.open-settings') }}</RouterLink></p></div>
     <form v-else class="aw-card identity-form" @submit.prevent="submit">
-      <template v-if="customerEnrollment">
+      <div v-if="customerEnrollment && launchAllowed !== true" class="identity-hint">Vytváření účtu zatím není otevřené bez pozvánky. <AwButton @click="customerEnrollment = false; error = ''">Zpět k přihlášení</AwButton></div>
+      <template v-else-if="customerEnrollment">
         <AwField id="customer-account-name" :label="customerCopy.text('signin.customer-name')"><input id="customer-account-name" v-model="customerDisplayName" class="aw-input" maxlength="80" autocomplete="nickname" required :disabled="busy" /></AwField>
         <p class="identity-hint">{{ customerCopy.text('signin.customer-purpose') }}</p>
       </template>
@@ -73,17 +77,17 @@ async function submit() {
         <AwField v-else id="account-name" :label="customerCopy.text('signin.invite-name')"><input id="account-name" v-model="displayName" class="aw-input" maxlength="80" autocomplete="nickname" required :disabled="busy" /></AwField>
         <AwField id="account-invite" :label="customerCopy.text('signin.token-label')" :hint="customerCopy.text('signin.token-hint')"><input id="account-invite" v-model="token" class="aw-input" type="password" autocomplete="off" maxlength="256" required :disabled="busy" /></AwField>
       </template>
-      <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut">{{ customerCopy.text(customerEnrollment ? 'signin.customer-create' : enrollment ? enrollmentKind === 'recovery' ? 'signin.recovery-title' : 'signin.invite-create-key' : 'signin.submit-signin') }}</AwButton>
+      <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment && launchAllowed !== true ? 'Účet zatím není otevřený' : customerCopy.text(customerEnrollment ? 'signin.customer-create' : enrollment ? enrollmentKind === 'recovery' ? 'signin.recovery-title' : 'signin.invite-create-key' : 'signin.submit-signin') }}</AwButton>
       <AwButton v-if="customerEnrollment" :disabled="busy" @click="customerEnrollment = false; error = ''">{{ customerCopy.text('signin.back-to-signin') }}</AwButton>
       <template v-else>
         <AwButton :disabled="busy" @click="enrollment = !enrollment; error = ''; token = ''">{{ customerCopy.text(enrollment ? 'signin.have-passkey' : 'signin.have-invite') }}</AwButton>
-        <AwButton v-if="!enrollment" :disabled="busy" @click="customerEnrollment = true; error = ''">{{ customerCopy.text('signin.create-customer') }}</AwButton>
+        <AwButton v-if="!enrollment && launchAllowed === true" :disabled="busy" @click="customerEnrollment = true; error = ''">{{ customerCopy.text('signin.create-customer') }}</AwButton>
       </template>
       <p v-if="enrollment" class="identity-hint">{{ customerCopy.text('signin.enrollment-help') }}</p>
-      <p v-else-if="!customerEnrollment" class="identity-hint">{{ customerCopy.text('signin.customer-enrollment-help') }}</p>
+      <p v-else-if="!customerEnrollment && launchAllowed === true" class="identity-hint">{{ customerCopy.text('signin.customer-enrollment-help') }}</p>
     </form>
-    <LostAccessHelp v-if="!account && !enrollment && !customerEnrollment" />
-    <RouterLink to="/archive">{{ customerCopy.text('signin.public-archive') }}</RouterLink>
+    <LostAccessHelp v-if="launchAllowed === true && !account && !enrollment && !customerEnrollment" />
+    <nav class="signin-help" aria-label="Nápověda"><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></nav>
   </section>
 </template>
 <style scoped>

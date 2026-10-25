@@ -3,6 +3,7 @@ import { onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import { account, authenticatePasskey, deleteAccount, getAccountDeletionStatus } from './session';
+import { launchAllowed } from '../../application/launchAccess';
 import { customerCopy } from '../../application/customerCopy';
 
 const props = withDefaults(defineProps<{ receiptOnly?: boolean }>(), { receiptOnly: false });
@@ -132,8 +133,9 @@ async function submit() {
       <AwButton v-if="!completed" :busy="checking" :disabled="checking" @click="checksRemaining = 60; checkStatus()">{{ customerCopy.text('deletion.check-status') }}</AwButton>
     </template>
     <template v-else>
-      <p>{{ customerCopy.text('deletion.irreversible') }}</p>
-      <p>{{ customerCopy.text('deletion.other-accounts-preserved') }}</p>
+      <p v-if="launchAllowed === true">{{ customerCopy.text('deletion.irreversible') }}</p>
+      <p v-else>Odstranění účtu je trvalé. Odstraní účet a jeho přidružený soukromý obsah z aktivní služby.</p>
+      <p v-if="launchAllowed === true">{{ customerCopy.text('deletion.other-accounts-preserved') }}</p>
       <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
       <AwButton v-if="!verifiedAccountId" :busy="busy" :disabled="busy" @click="verify">{{ customerCopy.text('deletion.verify') }}</AwButton>
       <template v-else>

@@ -11,7 +11,8 @@ internal sealed record CharacterEnrichment(string RecognizedName, string World, 
 internal sealed record CharacterProfile(string ProfileId, long Revision, CharacterUserInput UserInput,
     string Status, CharacterEnrichment? Enrichment, string? ErrorCode, long UpdatedAt);
 internal sealed record CharacterWriteRequest(long ExpectedRevision, CharacterUserInput UserInput,
-    string? ExpectedProfileId = null, bool NewCharacter = false, bool OpenAiConsent = false);
+    string? ExpectedProfileId = null, bool NewCharacter = false, bool OpenAiConsent = false,
+    bool PortraitConsent = false);
 internal sealed record CharacterCorrectionRequest(long ExpectedRevision, string ExpectedProfileId, bool OpenAiConsent = false);
 internal sealed record CharacterConversationSnapshot(string ProfileId, long Revision, CharacterUserInput UserInput,
     CharacterEnrichment? Enrichment, long CapturedAt);

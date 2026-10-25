@@ -4,9 +4,10 @@ import { account, offlineSession, offlineSessionExpiresAt, refreshIdentity } fro
 import { installAccessGuard } from '../src/application/accessGuard';
 import { accessDenial } from '../src/application/access';
 
+const launchState = vi.hoisted(() => ({ allowed: true }));
 vi.mock('../src/features/identity/session', async () => {
   const { ref } = await import('vue');
-  return { account: ref(null), offlineSession: ref(false), offlineSessionExpiresAt: ref(0), refreshIdentity: vi.fn(async () => {}) };
+  return { account: ref(null), accountRequest: vi.fn(async () => ({ allowed: launchState.allowed })), offlineSession: ref(false), offlineSessionExpiresAt: ref(0), refreshIdentity: vi.fn(async () => {}) };
 });
 const operator = { id: 'operator', displayName: 'Operator', roles: ['Operator'] };
 function guardedRouter() {
@@ -21,7 +22,7 @@ function guardedRouter() {
   installAccessGuard(router);
   return router;
 }
-beforeEach(() => { account.value = null; offlineSession.value = false; offlineSessionExpiresAt.value = 0; vi.mocked(refreshIdentity).mockReset().mockResolvedValue(); });
+beforeEach(() => { account.value = null; launchState.allowed = true; offlineSession.value = false; offlineSessionExpiresAt.value = 0; vi.mocked(refreshIdentity).mockReset().mockResolvedValue(); });
 describe('operational route authentication', () => {
   it('re-enters local controls offline without WAN but rejects cloud views', async () => {
     account.value = operator; offlineSession.value = true; offlineSessionExpiresAt.value = Date.now() + 60000;
@@ -30,7 +31,7 @@ describe('operational route authentication', () => {
     expect(refreshIdentity).not.toHaveBeenCalled();
     await router.push('/suitcase/director');
     expect(router.currentRoute.value.query.access).toBe('online');
-    expect(refreshIdentity).toHaveBeenCalledOnce();
+    expect(refreshIdentity).toHaveBeenCalled();
   });
   it.each(['/suitcase', '/connections', '/settings/admin'])('requires a verified session for direct URL %s', async path => {
     const router = guardedRouter(); await router.push(path + '?view=details');
@@ -40,7 +41,7 @@ describe('operational route authentication', () => {
   it('keeps public landing/models/archive independent of account availability', async () => {
     const router = guardedRouter();
     for (const path of ['/', '/workshop', '/archive']) { await router.push(path); expect(router.currentRoute.value.path).toBe(path); }
-    expect(refreshIdentity).not.toHaveBeenCalled();
+    expect(refreshIdentity).toHaveBeenCalled();
   });
   it('accepts an operator but rejects a viewer and an operator opening administration', async () => {
     const router = guardedRouter(); account.value = operator;

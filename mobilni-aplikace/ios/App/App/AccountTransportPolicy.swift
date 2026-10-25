@@ -33,6 +33,7 @@ enum AccountTransportPolicy {
     }
 
     static func accountResponseLimit(path: String, method: String) -> Int {
+        if prelaunchPortrait(path: path, method: method) { return 8 * 1024 * 1024 }
         if method == "GET", path.contains("/keepsakes/"), path.contains("/assets/"),
            testingSessions(path: path, method: method) { return 32 * 1024 * 1024 }
         if method == "GET" && (path == "/app/v1/customer/memory" || accountDataExportDownload(path: path, method: method)) {
@@ -55,6 +56,13 @@ enum AccountTransportPolicy {
 
     static func accountResponseAllowed(path: String, method: String, size: Int) -> Bool {
         size >= 0 && size <= accountResponseLimit(path: path, method: method)
+    }
+
+    static func accountResponseContentTypeAllowed(path: String, method: String, contentType: String?) -> Bool {
+        guard prelaunchPortrait(path: path, method: method) else { return true }
+        guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+        return ["image/png", "image/jpeg", "image/webp"].contains(value)
     }
 
     static func accountHeaderAllowed(path: String, method: String, name: String, value: String) -> Bool {
@@ -265,6 +273,25 @@ enum AccountTransportPolicy {
         // Only the validated immutable bundle data role has this byte policy;
         // active references, manifests and the download index stay JSON-only.
         return type == "application/octet-stream" && path.hasPrefix("/models/bundles/") && limit == 96 * 1024 * 1024
+    }
+
+    static func authenticatedDownloadLimit(path: String) -> Int? {
+        if let limit = publicResourceLimit(path: path) { return limit }
+        guard path.hasPrefix("/downloads/releases/"), !path.contains("%"), !path.contains("\\"),
+              !path.contains("?"), !path.contains("#"), !path.contains("//"), !path.hasSuffix("/") else { return nil }
+        let parts = path.split(separator: "/").map(String.init)
+        guard parts.count == 4, Array(parts.prefix(2)) == ["downloads", "releases"], parts[2].count == 64,
+              parts[2].allSatisfy({ "0123456789abcdef".contains($0) }),
+              parts[3].range(of: "^[A-Za-z0-9_-]+(?:[.][A-Za-z0-9_-]+)*[.](?:zip|pdf|step|stp|stl|3mf|dxf|txt)$", options: .regularExpression) != nil else { return nil }
+        return 2_147_483_648
+    }
+
+    static func authenticatedDownloadMIME(_ contentType: String?, path: String) -> Bool {
+        guard let allowedLimit = authenticatedDownloadLimit(path: path),
+              let type = contentType?.split(separator: ";", maxSplits: 1).first?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+        if publicResourceLimit(path: path) != nil { return publicResourceMIME(type, path: path) }
+        return ["application/octet-stream", "application/zip", "application/pdf", "text/plain", "model/step", "model/stl"].contains(type)
+            && allowedLimit == 2_147_483_648
     }
 
     static func show(path: String, method: String, query: [URLQueryItem]) -> Bool {
@@ -518,6 +545,7 @@ enum AccountTransportPolicy {
         if customerCompletionPage(path: path, method: method) || accountCollectionPage(path: path, method: method) { return true }
         if let parts = URLComponents(string: path), parts.scheme == nil, parts.host == nil, parts.fragment == nil,
            !parts.percentEncodedPath.contains("%"), !path.contains("\\"), path.count <= 4096 {
+            if prelaunchAccount(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }
             if show(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }
             if method == "DELETE", parts.path == "/app/v1/customer/character", let query = parts.queryItems,
                query.count == 2, Set(query.map { $0.name }) == Set(["expectedRevision", "expectedProfileId"]),
@@ -612,6 +640,37 @@ enum AccountTransportPolicy {
             let id = String(path.dropFirst(prefix.count))
             return !id.isEmpty && id.count <= 128 && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
         }
+    }
+
+    private static func prelaunchPortrait(path: String, method: String) -> Bool {
+        guard method == "GET", let components = URLComponents(string: path), components.scheme == nil,
+              components.host == nil, components.fragment == nil,
+              components.path == "/app/v1/prelaunch/character/portrait",
+              !components.percentEncodedPath.contains("%"), let query = components.queryItems,
+              query.count == 1, query[0].name == "revision", let value = query[0].value,
+              value.utf8.count <= 19, value.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let revision = Int64(value), revision > 0 else { return false }
+        return true
+    }
+
+    private static func prelaunchAccount(path: String, method: String, query: [URLQueryItem]) -> Bool {
+        if path == "/app/v1/launch" { return method == "GET" && query.isEmpty }
+        if path == "/app/v1/prelaunch/character" { return query.isEmpty && ["GET", "PUT"].contains(method) }
+        if path == "/app/v1/prelaunch/character/retry" { return method == "POST" && query.isEmpty }
+        if prelaunchPortrait(path: path + (query.isEmpty ? "" : "?" + query.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")), method: method) { return true }
+        if path == "/app/v1/admin/launch" { return query.isEmpty && ["GET", "PUT"].contains(method) }
+        if path == "/app/v1/admin/launch/audit" || path == "/app/v1/admin/launch/artwork" {
+            return method == "GET" && query.isEmpty
+        }
+        if path == "/app/v1/admin/launch/personalization-preview" { return method == "POST" && query.isEmpty }
+        let parts = path.split(separator: "/").map(String.init)
+        return parts.count == 7 && Array(parts.prefix(4)) == ["app", "v1", "admin", "launch"]
+            && parts[4] == "artwork" && validLaunchProfileId(parts[5]) && parts[6] == "retry"
+            && method == "POST" && query.isEmpty
+    }
+
+    private static func validLaunchProfileId(_ value: String) -> Bool {
+        (UUID(uuidString: value) != nil || (value.count == 32 && value.allSatisfy { $0.isASCII && "0123456789abcdefABCDEF".contains($0) }))
     }
 
     private static func accountArchive(path: String, method: String) -> Bool {

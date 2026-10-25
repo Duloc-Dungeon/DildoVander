@@ -19,12 +19,15 @@ internal static class CharacterEndpoints
         services.AddSingleton<CustomerAdmissionAuthority>();
         services.TryAddSingleton<ICharacterEnrichmentProvider, OpenAiCharacterEnrichmentProvider>();
         services.AddHostedService<CharacterEnrichmentWorker>();
+        services.TryAddSingleton<ICharacterPortraitProvider, OpenAiCharacterPortraitProvider>();
+        services.AddHostedService<CharacterPortraitWorker>();
         return services;
     }
 
     internal static void MapCustomerCharacters(this WebApplication app)
     {
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) { return; }
+        app.MapPrelaunchCharacters();
         var group = app.MapGroup("/app/v1/customer/character").RequireAuthorization().RequireRateLimiting("account");
         group.AddEndpointFilter(async (invocation, next) =>
         {

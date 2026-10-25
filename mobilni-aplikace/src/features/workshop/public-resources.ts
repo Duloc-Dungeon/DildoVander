@@ -2,10 +2,11 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { boundedBytes, MAX_MANIFEST_BYTES, MAX_MODEL_BYTES, safeAssetPath } from './model-bundle.mjs';
 import { throwIfAborted } from '../../application/cancellation.mjs';
 import { secureUuid } from '../../application/identifiers.mjs';
+import { account, accountOrigin, assertAuthenticationGeneration, authenticationGenerationSnapshot } from '../identity/session';
 
 export interface PublicResourceBridge {
   publicOrigin(): Promise<{ origin: string }>;
-  publicResource(options: { path: string; maxBytes: number; requestId: string }): Promise<{ status: number; headers: Record<string, string>; bodyBase64: string }>;
+  publicResource(options: { path: string; maxBytes: number; requestId: string; authenticated?: boolean }): Promise<{ status: number; headers: Record<string, string>; bodyBase64: string }>;
   cancelPublicResource(options: { requestId: string }): Promise<void>;
 }
 const bridge = registerPlugin<PublicResourceBridge>('KufrIdentity');
@@ -27,7 +28,7 @@ export function publicResourcePath(value: string | URL, origin: string, maxBytes
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > limit) throw new Error('Neplatná velikost veřejného souboru.');
   return url.pathname;
 }
-export function nativePublicReader(native: PublicResourceBridge, origin: string) {
+export function nativePublicReader(native: PublicResourceBridge, origin: string, authenticated = false) {
   origin = validatePublicOrigin(origin);
   return async (url: string | URL, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> => {
     const path = publicResourcePath(url, origin, maxBytes);
@@ -35,6 +36,7 @@ export function nativePublicReader(native: PublicResourceBridge, origin: string)
     const operation = nativeQueue.then(async () => {
       throwIfAborted(signal);
       const requestId = secureUuid();
+      const generation = authenticated ? authenticationGenerationSnapshot() : undefined;
       let cancelled: Promise<void> | undefined;
       let transfer: ReturnType<PublicResourceBridge['publicResource']> | undefined;
       let aborted!: (reason: unknown) => void;
@@ -45,9 +47,10 @@ export function nativePublicReader(native: PublicResourceBridge, origin: string)
       };
       signal.addEventListener('abort', cancel, { once: true });
       try {
-        transfer = native.publicResource({ path, maxBytes, requestId });
+        transfer = native.publicResource({ path, maxBytes, requestId, ...(authenticated ? { authenticated: true } : {}) });
         const response = await Promise.race([transfer, cancellation]);
         throwIfAborted(signal);
+        if (generation !== undefined) assertAuthenticationGeneration(generation);
         if (!Number.isInteger(response.status) || response.status < 200 || response.status > 599 || typeof response.bodyBase64 !== 'string' || response.bodyBase64.length > Math.ceil(maxBytes / 3) * 4) throw new Error('Veřejná odpověď překročila povolený formát nebo velikost.');
         const bytes = Uint8Array.from(atob(response.bodyBase64), char => char.charCodeAt(0));
         throwIfAborted(signal);
@@ -62,15 +65,23 @@ export function nativePublicReader(native: PublicResourceBridge, origin: string)
 }
 export async function publicResourceClient(signal: AbortSignal) {
   throwIfAborted(signal);
+  const authenticated = Boolean(account.value);
+  const generation = authenticated ? authenticationGenerationSnapshot() : undefined;
   if (Capacitor.isNativePlatform()) {
     const capabilities = await bridge.publicOrigin();
     throwIfAborted(signal);
     const origin = validatePublicOrigin(capabilities.origin);
-    return { origin, read: nativePublicReader(bridge, origin) };
+    if (authenticated && validatePublicOrigin(accountOrigin.value) !== origin) throw new Error('Veřejný prostředek není na původu ověřeného účtu.');
+    if (generation !== undefined) assertAuthenticationGeneration(generation);
+    return { origin, read: nativePublicReader(bridge, origin, authenticated) };
   }
   const origin = location.origin;
   return { origin, read: async (url: string | URL, max: number, requestSignal: AbortSignal) => {
-    publicResourcePath(url, origin, max);
-    return boundedBytes(await fetch(url, { credentials: 'omit', redirect: 'error', cache: 'no-cache', signal: requestSignal }), max, requestSignal);
+      const path = publicResourcePath(url, origin, max);
+      const readGeneration = authenticated ? authenticationGenerationSnapshot() : undefined;
+      throwIfAborted(requestSignal);
+      const response = await fetch(path, { credentials: authenticated ? 'same-origin' : 'omit', redirect: 'error', cache: 'no-store', signal: requestSignal });
+      if (readGeneration !== undefined) assertAuthenticationGeneration(readGeneration);
+      return boundedBytes(response, max, requestSignal);
   } };
 }

@@ -1,9 +1,32 @@
 <script setup lang="ts">
 import { customerCopy } from '../../application/customerCopy';
+import { launchAllowed } from '../../application/launchAccess';
 </script>
 
 <template>
   <article class="page-stack information-page" aria-labelledby="privacy-title">
+    <template v-if="launchAllowed !== true">
+      <p class="eyebrow">DildoVander</p>
+      <h1 id="privacy-title">Soukromí před spuštěním</h1>
+      <p>Tato pozvánková fáze zahrnuje účet, přípravu fiktivní postavy a její portrét.</p>
+      <section>
+        <h2>Jaké údaje používáme</h2>
+        <p>Přístup k účtu chrání přístupový klíč. Pro přípravu postavy uložíme její jméno a univerzum. Tyto údaje použijeme také k vytvoření portrétu a případně personalizované zprávy o načítání, pokud je tato možnost zapnutá.</p>
+      </section>
+      <section>
+        <h2>Zpracování u OpenAI</h2>
+        <p>Pokud s tím při vytvoření postavy výslovně souhlasíte, odešleme její fiktivní jméno a univerzum poskytovatelům OpenAI pro obohacení profilu a vytvoření portrétu. Přístupové klíče účtu se jim neposílají. Informace o zpracování najdete v <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener noreferrer">zásadách ochrany soukromí OpenAI</a>.</p>
+      </section>
+      <section>
+        <h2>Uložení a odstranění</h2>
+        <p>Údaje účtu a postavy zůstávají v účtu, dokud nepožádáte o jeho odstranění. Zpracování portrétu může pokračovat na pozadí i po zavření aplikace. Odstranění účtu můžete zahájit v aplikaci; stav požadavku lze ověřit na stránce <RouterLink to="/account-deletion">odstranění účtu</RouterLink>.</p>
+      </section>
+      <section>
+        <h2>Kontakt</h2>
+        <p>Otázky k soukromí: <a href="mailto:support@dildovander.de?subject=DildoVander%20%E2%80%93%20privacy">support@dildovander.de</a>. Další pomoc najdete na stránce <RouterLink to="/support">podpory</RouterLink>.</p>
+      </section>
+    </template>
+    <template v-else>
     <p class="eyebrow">Wand Night Stand · DildoVander</p>
     <h1 id="privacy-title">{{ customerCopy.text('privacy.title') }}</h1>
     <p>{{ customerCopy.text('privacy.updated') }}</p>
@@ -64,5 +87,6 @@ import { customerCopy } from '../../application/customerCopy';
       <p>{{ customerCopy.text('privacy.data-request') }}</p>
       <p><RouterLink to="/support">{{ customerCopy.text('privacy.support-link') }}</RouterLink></p>
     </section>
+    </template>
   </article>
 </template>

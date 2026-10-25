@@ -71,6 +71,7 @@ try {
     requests.push({ path: url.pathname, method: request.method(), url: request.url() });
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session') return json({ enabled: true, account: sessionAccount, csrfToken: 'isolated-browser-csrf' });
+    if (url.pathname === '/app/v1/launch') return json({ allowed: true, audience: 'production', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false });
     if (sessionAccount && url.pathname === '/app/v1/account') return json({ sessions: [{ id: 'browser-session', installationName: 'Tento prohlížeč', current: true, trusted: false, expiresAt: 1900000000 }], grants: [], associations: [], passkeyCount: 1, passkeys: [{ id: 'browser-passkey', name: 'Můj klíč', createdAt: '2026-10-20T00:00:00Z', isBackedUp: true }], devices: [] });
     if (sessionAccount && url.pathname === '/app/v1/customer/character') {
       if (request.method() === 'PUT') {
@@ -172,7 +173,7 @@ try {
       await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
     }
     assert(requests.slice(beforeDemo).every(request => request.method === 'GET'), 'demo never issues mutations');
-    assert(requests.slice(beforeDemo).filter(request => request.path.startsWith('/app/v1/')).every(request => request.path === '/app/v1/session'), 'demo never reads private customer/account content');
+    assert(requests.slice(beforeDemo).filter(request => request.path.startsWith('/app/v1/')).every(request => ['/app/v1/session', '/app/v1/launch'].includes(request.path)), 'demo never reads private customer/account content');
     assert(requests.slice(beforeDemo).every(request => !/^\/(?:guest\/v1|v1)\//.test(request.path)), 'demo never accesses guest or device APIs');
   }
   sessionAccount = null;
@@ -229,17 +230,8 @@ try {
   assert.notEqual(await lostAccess.getAttribute('open'), null);
   assert(await lostAccess.getByRole('link', { name: 'kontaktujte podporu' }).isVisible());
   assert.match(await lostAccess.innerText(), /pouze vlastník služby/);
-  for (const theme of ['lord-voldemort', 'olivander']) {
-    await selectShellPreference('Vzhled aplikace', theme);
-    await page.setViewportSize({ width: 320, height: 900 });
-    await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
-    assert(await lostAccess.getByRole('link', { name: 'kontaktujte podporu' }).isVisible());
-    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'lost-access guidance must not overflow at narrow width and enlarged text');
-    await lostAccess.screenshot({ path: path.join(screenshots, `lost-access-${theme}-320.png`) });
-  }
+  assert.equal(await page.locator('.shell-preferences').count(), 0, 'sign-in keeps the prelaunch shell free of feature navigation and preferences');
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
-  await selectShellPreference('Vzhled aplikace', 'lord-voldemort');
   await page.goto(origin + '/signin');
   await page.getByRole('button', { name: 'Vytvořit zákaznický účet', exact: true }).click();
   assert.equal(await page.locator('.lost-access-help').count(), 0, 'enrollment keeps its own recovery guidance');
@@ -489,6 +481,7 @@ try {
   await page.getByRole('button', { name: 'Vybrat přihrádku', exact: true }).first().click();
   await page.getByRole('heading', { name: /Spustit výběr/ }).waitFor();
   await nav.getByRole('link', { name: 'Archiv', exact: true }).click(); await nav.getByRole('link', { name: 'Kufr', exact: true }).click();
+  await page.getByRole('heading', { name: /Spustit výběr/ }).waitFor({ state: 'hidden' });
   assert.equal(await page.getByRole('heading', { name: /Spustit výběr/ }).count(), 0, 'navigation invalidates confirmation');
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   assert.equal(requests.filter(request => request.method !== 'GET' && request.path.startsWith('/v1/')).length, 0, 'demo never emits physical network commands');
@@ -512,6 +505,10 @@ try {
       for (const route of ['/', '/connections', '/suitcase', '/suitcase/diagnostics', '/suitcase/director', '/workshop', '/archive', '/archive/duel', '/archive/chronicle', '/keepsake/', '/signin', '/settings', '/settings/admin', '/unavailable-page']) {
         await page.goto(origin + route); await page.getByRole('main').waitFor(); await page.waitForTimeout(100); await fits();
         assert.equal(await page.locator('html').getAttribute('data-theme'), theme);
+        if (new URL(page.url()).pathname === '/signin') {
+          assert.equal(await page.locator('.application-header, .primary-navigation, .application-footer, .shell-preferences').count(), 0, 'prelaunch sign-in does not expose ordinary feature navigation');
+          continue;
+        }
         if (width <= 720) {
           assert(await page.locator('.application-header').evaluate(header => header.getBoundingClientRect().height < 150), 'collapsed mobile header leaves room for the current task');
           assert(await page.locator('.primary-navigation a').evaluateAll(links => links.every(link => {
@@ -545,10 +542,14 @@ try {
             assert.equal(await disclosure.evaluate(element => element.open), false, 'outside interaction dismisses preferences');
           }
         }
-        const installer = page.getByRole('link', { name: 'Aplikace pro iPhone', exact: true });
-        assert.equal(await installer.getAttribute('href'), '/ios/');
-        assert(await installer.isVisible(), 'the iPhone distribution link remains visible');
-        assert(await installer.evaluate(link => link.getBoundingClientRect().height >= 44), 'the iPhone link retains a 44px touch target');
+        if (new URL(page.url()).pathname === '/signin') {
+          assert.equal(await page.locator('.application-header, .primary-navigation, .application-footer').count(), 0, 'sign-in hides ordinary navigation and feature links');
+        } else {
+          const installer = page.getByRole('link', { name: 'Aplikace pro iPhone', exact: true });
+          assert.equal(await installer.getAttribute('href'), '/ios/');
+          assert(await installer.isVisible(), 'the iPhone distribution link remains visible');
+          assert(await installer.evaluate(link => link.getBoundingClientRect().height >= 44), 'the iPhone link retains a 44px touch target');
+        }
         if (route === '/') {
           const homeInstaller = page.getByRole('link', { name: 'Stáhnout aplikaci pro iPhone', exact: true });
           assert.equal(await homeInstaller.getAttribute('href'), '/ios/');
@@ -590,6 +591,7 @@ try {
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (request.method() !== 'GET') return json({ code: 'synthetic_fixture_read_only' }, 405);
     if (pathname === '/app/v1/session') return json({ enabled: true, account: ownerSessionActive ? owner : null, csrfToken: 'synthetic-owner-csrf' });
+    if (pathname === '/app/v1/launch') return json({ allowed: true, audience: 'privileged', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false });
     if (pathname === '/app/v1/account') return json({
       devices: [], associations: [], grants: [], passkeyCount: 1,
       passkeys: [{ id: 'synthetic-key', name: 'Syntetický přístupový klíč', createdAt: '2026-10-20T00:00:00Z', isBackedUp: true }],

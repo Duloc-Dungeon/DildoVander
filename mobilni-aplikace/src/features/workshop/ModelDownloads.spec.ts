@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import ModelDownloads from './ModelDownloads.vue';
-const bridge = vi.hoisted(() => ({ native: false, publicOrigin: vi.fn(), publicResource: vi.fn(), cancelPublicResource: vi.fn() }));
+import { account, accountOrigin } from '../identity/session';
+const bridge = vi.hoisted(() => ({ native: false, publicOrigin: vi.fn(), publicResource: vi.fn(), cancelPublicResource: vi.fn(), shareAuthenticatedResource: vi.fn() }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => bridge.native }, registerPlugin: () => bridge }));
 
 const manifest = { bundleHash: 'a'.repeat(64), modelId: 'synthetic-test-model', revision: 'F2', provenance: { kind: 'cad-export' }, assets: [{ kind: 'model-json', path: 'model.json', sha256: 'b'.repeat(64), bytes: 100 }] };
-beforeEach(() => { vi.clearAllMocks(); bridge.native = false; });
+beforeEach(() => { vi.clearAllMocks(); bridge.native = false; account.value = null; accountOrigin.value = ''; });
 afterEach(() => { vi.unstubAllGlobals(); });
 describe('model downloads', () => {
   it('never requests network or offers manufacturing on fixture/offline surfaces', async () => {
@@ -37,5 +38,20 @@ describe('model downloads', () => {
     expect(bridge.publicResource).toHaveBeenCalledWith({ path: '/downloads/index.json', maxBytes: 262144, requestId: expect.any(String) });
     expect(wrapper.findAll('a').map(link => link.attributes('href'))).toEqual([resourceManifestUrl, `${origin}/models/bundles/${manifest.bundleHash}/model.json`, `${origin}/downloads/${item.path}`]);
     expect(fetch).not.toHaveBeenCalled(); wrapper.unmount();
+  });
+  it('shares authenticated native downloads through the bounded account file bridge', async () => {
+    bridge.native = true; const origin = 'https://public-models.example';
+    account.value = { id: 'fixture', displayName: 'Customer', roles: ['Customer'] };
+    accountOrigin.value = origin;
+    vi.stubGlobal('fetch', vi.fn()); bridge.publicOrigin.mockResolvedValue({ origin });
+    const item = { kind: 'manufacturing', modelId: manifest.modelId, releaseId: 'c'.repeat(64), sha256: 'c'.repeat(64), path: `releases/${'c'.repeat(64)}/F2.zip`, bytes: 1024, label: 'Archiv', version: 'F2', cadVerification: 'verified', physicalAcceptance: false, modelAssetSha256: manifest.assets[0].sha256 };
+    bridge.publicResource.mockResolvedValue({ status: 200, headers: { 'content-type': 'application/json' }, bodyBase64: btoa(JSON.stringify({ schemaVersion: 1, artifacts: [item] })) });
+    bridge.shareAuthenticatedResource.mockResolvedValue({ completed: true });
+    const wrapper = mount(ModelDownloads, { props: { bundle: { manifest, resourceManifestUrl: `${origin}/models/bundles/${manifest.bundleHash}/model-bundle.json` }, offline: false } }); await flushPromises();
+    expect(wrapper.findAll('a')).toHaveLength(0);
+    await wrapper.findAll('button').find(button => button.text().includes('Archiv · F2'))!.trigger('click');
+    expect(bridge.shareAuthenticatedResource).toHaveBeenCalledWith(expect.objectContaining({ path: `/downloads/${item.path}`, filename: 'F2.zip', maxBytes: 1024, expectedBytes: 1024 }));
+    expect(fetch).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 });

@@ -82,10 +82,16 @@ internal static partial class AccountEndpoints
                                 select u.Id).CountAsync();
             if (owners <= 1) { return ApiProblem.Create(context, 409, "last_owner_required"); }
         }
-        if (!(await users.RemoveFromRolesAsync(user, roles)).Succeeded
-            || !(await users.AddToRoleAsync(user, request.Role)).Succeeded)
+        if (!(await users.RemoveFromRolesAsync(user, roles)).Succeeded)
         {
             return Error(context, "role_change_failed");
+        }
+        foreach (var role in AccountRoles.AssignedRoles(request.Role))
+        {
+            if (!(await users.AddToRoleAsync(user, role)).Succeeded)
+            {
+                return Error(context, "role_change_failed");
+            }
         }
         user.Disabled = request.Disabled;
         if (!(await users.UpdateAsync(user)).Succeeded) { return Error(context, "account_change_failed"); }

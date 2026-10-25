@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
+import { launchAllowed } from '../../application/launchAccess';
 import PrivacyView from './PrivacyView.vue';
 import SupportView from './SupportView.vue';
 
@@ -12,6 +13,7 @@ const global = {
 };
 
 beforeEach(() => {
+  launchAllowed.value = true;
   interfaceLanguagePreference.setScope(null);
   interfaceLanguagePreference.setLanguage('cs');
 });

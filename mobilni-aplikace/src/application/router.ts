@@ -8,8 +8,9 @@ export const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: () => import('./HomeView.vue'), meta: { title: 'Domov' } },
     { path: '/demo', name: 'customer-demo', component: () => import('../features/demo/CustomerDemo.vue'), meta: { title: 'Ukázkový příběh' } },
-    { path: '/support', name: 'support', component: () => import('../features/information/SupportView.vue'), meta: { title: 'Podpora Wand Night Stand' } },
+    { path: '/support', name: 'support', component: () => import('../features/information/SupportView.vue'), meta: { title: 'Podpora' } },
     { path: '/privacy', name: 'privacy', component: () => import('../features/information/PrivacyView.vue'), meta: { title: 'Ochrana soukromí' } },
+    { path: '/launch', name: 'launch', component: () => import('../features/launch/LaunchView.vue'), meta: { title: 'Brzy', private: true, requiresAccount: true } },
     { path: '/account-deletion', name: 'account-deletion', component: () => import('../features/identity/AccountDeletionStatusView.vue'), meta: { title: 'Stav smazání účtu', private: true } },
     { path: '/me', redirect: '/me/character' },
     { path: '/me/character', name: 'customer-character', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Moje postava', private: true, requiresAccount: true } },
@@ -33,6 +34,7 @@ export const router = createRouter({
     { path: '/signin', name: 'signin', component: () => import('../features/identity/SignInView.vue'), meta: { title: 'Přihlášení', private: true } },
     { path: '/settings', name: 'settings', component: () => import('../features/identity/SettingsView.vue'), meta: { title: 'Nastavení', private: true, requiresAccount: true, lab: true } },
     { path: '/settings/admin', name: 'admin', component: () => import('../features/identity/AdminView.vue'), meta: { title: 'Správa', private: true, requiresAccount: true, administrator: true, staff: true } },
+    { path: '/settings/admin/launch', name: 'launch-admin', component: () => import('../features/launch/LaunchManagementView.vue'), meta: { title: 'Launch Management', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/admin/customer-sessions', name: 'customer-admin', component: () => import('../features/customer/CustomerAdminView.vue'), meta: { title: 'Zákaznické relace', private: true, requiresAccount: true, staff: true, operation: true } },
     { path: '/app/:pathMatch(.*)*', redirect: '/suitcase' },
     { path: '/companion/:pathMatch(.*)*', redirect: '/suitcase' },

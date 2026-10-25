@@ -17,7 +17,7 @@ export interface AccessMeta { requiresAccount?: unknown; operation?: unknown; ad
 export type AccessDenial = 'signin' | 'operator' | 'administrator' | 'online' | 'customer' | 'staff' | 'tester';
 
 export function isCustomerAccount(account: Account | null): boolean {
-  return !!account?.roles.includes('Customer')
+  return !!account?.roles.some(role => ['Customer', 'Beta'].includes(role))
     && !account.roles.some(role => ['Owner', 'Administrator', 'Operator', 'Viewer'].includes(role));
 }
 

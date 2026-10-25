@@ -7,6 +7,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--character-portraits"]) { await CharacterPortraitTests.RunAsync(); return; }
+if (args is ["--prelaunch-http"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(); return; }
 if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await AiObservabilityTests.RunAsync(); await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--observability-logs"]) { await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--ai-observability"]) { await AiObservabilityTests.RunAsync(); return; }
@@ -47,6 +49,7 @@ if (args is ["--customer-waiting"]) { await CustomerWaitingTests.RunAsync(); ret
 if (args is ["--customer-waiting-admission"]) { await CustomerWaitingAdmissionTests.RunAsync(); return; }
 if (args is ["--customer-admission"]) { await CustomerAdmissionTests.RunAsync(); return; }
 if (args is ["--customer-availability"]) { CustomerAvailabilityTests.Run(); return; }
+if (args is ["--launch-policy"]) { await LaunchPolicyTests.RunAsync(); return; }
 if (args is ["--device-media"]) { await DeviceMediaTransportTests.RunAsync(); return; }
 if (args is ["--customer-data"]) { await CustomerDataAcceptanceTests.RunAsync(); return; }
 if (args is ["--customer-data-startup"]) { await AccountIdentityTests.RunCustomerDataStartupAsync(); return; }
@@ -95,6 +98,9 @@ if (args is ["--keepsake-readiness"])
 }
 if (args is ["--identity"])
 {
+    await LaunchPolicyTests.RunAsync();
+    await CharacterPortraitTests.RunAsync();
+    await AccountIdentityTests.RunPrelaunchHttpAsync();
     await AccountIdentityTests.RunAsync();
     await CustomerProfileTests.RunAsync();
     await CustomerSessionTests.RunAsync();
