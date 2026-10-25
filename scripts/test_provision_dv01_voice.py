@@ -3,12 +3,31 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
 from provision_dv01_voice import provision, PROMPT, SCRIPT_HINT
 
 
 class VoiceProvisioningTests(unittest.TestCase):
+    def test_completed_concurrent_creation_is_reused_under_lock(self):
+        import os
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder) / "voice.json"
+            original_open = os.open
+            def racing_open(path, flags, mode=0o777):
+                descriptor = original_open(path, flags, mode)
+                if str(path).endswith(".pending"):
+                    state.write_text('{"customVoiceId":"voice_concurrent"}', encoding="utf-8")
+                return descriptor
+            def forbidden(*args, **kwargs):
+                self.fail("A completed concurrent creation must not issue another request.")
+            with patch("provision_dv01_voice.os.open", racing_open):
+                saved, created = provision(state, "fixture-key", send=forbidden)
+            self.assertFalse(created)
+            self.assertEqual(saved["customVoiceId"], "voice_concurrent")
+            self.assertFalse(state.with_suffix(".json.pending").exists())
+
     def test_reuses_saved_voice_without_provider_call(self):
         with tempfile.TemporaryDirectory() as folder:
             state = Path(folder) / "voice.json"

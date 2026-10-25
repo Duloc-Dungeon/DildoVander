@@ -88,6 +88,17 @@ def provision(state, key, replace=False, send=urlopen):
     descriptor = os.open(pending, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     os.close(descriptor)
     try:
+        # Another invocation can finish between the first state check and lock
+        # acquisition. Recheck under the lock before creating anything upstream.
+        if state.exists() and not replace:
+            saved = json.loads(state.read_text(encoding="utf-8"))
+            if not re.fullmatch(r"voice_[A-Za-z0-9_-]{1,122}", saved.get("customVoiceId", "")):
+                raise ValueError("Existing voice state is invalid; reconcile it before replacement.")
+            pending.unlink()
+            return saved, False
+        if state.exists() and state.with_name(state.name + ".previous").exists():
+            pending.unlink()
+            raise ValueError("Preserve the previous replacement backup before replacing again.")
         request = Request("https://api.openai.com/v1/audio/voices", method="POST",
             data=json.dumps({"type": "prompt", "name": NAME, "prompt": PROMPT,
                 "model": "auto", "script_hint": SCRIPT_HINT}, ensure_ascii=False).encode("utf-8"),
