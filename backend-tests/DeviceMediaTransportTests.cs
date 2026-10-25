@@ -493,8 +493,12 @@ internal static class DeviceMediaTransportTests
                     Check(json.RootElement.GetProperty("code").GetString() == "conversation_engine_upgrade_required"
                         && providers.IsEmpty && liveProviders.IsEmpty,
                         "production device-media rejects Realtime before either provider connects");
+                    var closed = await ReadAsync(client);
+                    Check(closed.Kind == WebSocketMessageType.Close,
+                        "upgrade event reaches the client before a graceful bounded close");
+                    await client.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "upgrade received", CancellationToken.None);
                 }
-                await CheckDisconnectedAsync(client);
+                else { await CheckDisconnectedAsync(client); }
             }
             await VerifyOrderedFramesAsync(http.BaseAddress!);
             token = access.IssueToken("media-device")!.AccessToken;

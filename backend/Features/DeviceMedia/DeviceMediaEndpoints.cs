@@ -171,8 +171,18 @@ internal static class DeviceMediaEndpoints
         }
         catch (InvalidDataException error) when (error.Message == "conversation_engine_upgrade_required")
         {
-            await socket.SendJsonAsync(new { type = "failed", status = 410,
-                code = "conversation_engine_upgrade_required" }, lifetime.Token);
+            // A TCP abort can discard the just-written upgrade event on Linux.
+            // No other reader is outstanding before provider admission here.
+            using var close = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            close.CancelAfter(TimeSpan.FromSeconds(2));
+            try
+            {
+                await socket.SendJsonAsync(new { type = "failed", status = 410,
+                    code = "conversation_engine_upgrade_required" }, close.Token);
+                await webSocket.CloseAsync(WebSocketCloseStatus.PolicyViolation,
+                    "conversation_engine_upgrade_required", close.Token);
+            }
+            catch (Exception closed) when (closed is OperationCanceledException or WebSocketException) { }
         }
         catch (Exception error) when (error is JsonException or InvalidDataException or InvalidOperationException
             or FormatException or OverflowException or OperationCanceledException or WebSocketException)

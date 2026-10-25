@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 internal static class PersonalityTests
 {
@@ -37,6 +38,9 @@ internal static class PersonalityTests
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
         builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(new Kufr.Backend.Features.Access.DeviceAccessStore(
+            new ConfigurationBuilder().Build(), TimeProvider.System));
+        builder.Services.AddSingleton<RealtimeLiveRegistry>();
         await using var app = builder.Build();
         app.MapRealtimeLive();
         await app.StartAsync();
