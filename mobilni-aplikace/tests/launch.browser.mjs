@@ -95,6 +95,8 @@ try {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal(await page.locator('.application-sidebar, .application-header, .application-footer').count(), 0,
     'unknown guest policy must not flash postlaunch navigation before its response');
+  assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0,
+    'ordinary invitation without an active operation has no hardware control');
   releasePolicy();
   await page.waitForLoadState('networkidle');
   await page.getByRole('heading', { name: /Něco se chystá/ }).waitFor();

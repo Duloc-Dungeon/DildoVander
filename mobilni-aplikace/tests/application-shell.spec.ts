@@ -17,6 +17,7 @@ vi.mock('../src/features/identity/session', async () => {
     offlineSession: ref(false),
     offlineSessionExpiresAt: ref(0),
     refreshIdentity: vi.fn().mockResolvedValue(undefined),
+    accountRequest: vi.fn().mockRejectedValue(new Error('Launch policy unavailable')),
     hasRole: () => false,
   };
 });
@@ -93,6 +94,7 @@ describe('global Director Stop participant',()=>{
   vi.mocked(nativeDebug.cancel).mockReturnValue(forever);nativeDebug.status.value.running=true;
   servoBench.connected.value=true;vi.mocked(servoBench.stop).mockReturnValue(forever);
   const wrapper=mount(App,{global:{plugins:[createPinia()],stubs:{RouterLink:true,RouterView:true}}});
+  expect(wrapper.find('.application-sidebar').exists()).toBe(false);
   const stop=wrapper.findAll('button').find(button=>button.text()==='Stop')!;
   expect(stop.attributes('disabled')).toBeUndefined();await stop.trigger('click');await Promise.resolve();
   expect(remote).toHaveBeenCalledOnce();expect(nativeDebug.cancel).toHaveBeenCalledOnce();expect(servoBench.stop).toHaveBeenCalledOnce();expect(deviceSession.stop).toHaveBeenCalled();

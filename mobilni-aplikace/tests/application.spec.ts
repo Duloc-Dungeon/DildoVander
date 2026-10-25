@@ -125,6 +125,7 @@ describe('application boundaries', () => {
     await router.push('/'); await router.isReady();
     const wrapper = mount(App, { global: { plugins: [router, createPinia()] } });
     wrappers.push(wrapper);
+    await flushPromises();
     expect(wrapper.find('.application-install-link').exists()).toBe(!native);
     expect(wrapper.get('main').text()).toBe('Current operation');
   });
