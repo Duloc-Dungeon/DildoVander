@@ -103,14 +103,14 @@ internal static class PortraitContentPolicy
         var candidate = input.Name.Trim();
         var name = ValidMessage(candidate) ? candidate : "tahle postava";
         var worldCandidate = new string(input.World.Trim().Where(character => !char.IsControl(character)).Take(48).ToArray());
-        var world = ValidMessage(worldCandidate) ? worldCandidate : "jejím světě";
+        var world = ValidMessage(worldCandidate) ? worldCandidate : "Neznámý svět";
         var identity = Encoding.UTF8.GetBytes(input.Name + "\u001f" + input.World);
         var variant = SHA256.HashData(identity)[0] % 3;
         return variant switch
         {
-            0 => $"{name} sní o velkých činech v {world}; nejdřív ale musí přečkat Olivanderovu kocovinu.",
-            1 => $"V {world} chce {name} změnit dějiny; Olivander má kocovinu, takže odbavení potrvá do snídaně.",
-            _ => $"Velké plány {name} v {world} čekají na razítko; Olivanderova kocovina požádala o odklad."
+            0 => $"{name}: velké činy ve světě „{world}“ musejí nejdřív přečkat Olivanderovu kocovinu.",
+            1 => $"{name}: dějiny světa „{world}“ musejí počkat. Olivander má kocovinu, odbavuje až po snídani.",
+            _ => $"{name}: plány ze světa „{world}“ čekají na razítko; Olivanderova kocovina požádala o odklad."
         };
     }
 }
