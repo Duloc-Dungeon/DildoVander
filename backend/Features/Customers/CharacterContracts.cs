@@ -16,7 +16,8 @@ internal sealed record CharacterCorrectionRequest(long ExpectedRevision, string 
 internal sealed record CharacterConversationSnapshot(string ProfileId, long Revision, CharacterUserInput UserInput,
     CharacterEnrichment? Enrichment, long CapturedAt);
 internal sealed record CharacterJob(string Id, string AccountId, string ProfileId, long Revision,
-    CharacterUserInput UserInput, string? RejectedInterpretation, string LeaseToken, int Attempt, bool OpenAiConsent = false);
+    CharacterUserInput UserInput, string? RejectedInterpretation, string LeaseToken, int Attempt, bool OpenAiConsent = false,
+    string? TraceParent = null, long CreatedAt = 0);
 internal sealed record CharacterJobSummary(string ProfileId, long Revision, string Status, int Attempt, string? ErrorCode, long UpdatedAt);
 internal sealed class CharacterException(string code, int status = 400) : Exception(code)
 {

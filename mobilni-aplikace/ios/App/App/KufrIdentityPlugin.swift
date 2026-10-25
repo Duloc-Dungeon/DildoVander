@@ -57,12 +57,13 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
             }
         }
         guard try accountDeviceBinding() == binding else { throw AccountError.verificationFailed }
-        let permitted = ["accept", "content-type", "idempotency-key", "client-turn-id", "boot-id", "generation", "device-revision", "catalog-version", "input-id", "input-sequence", "captured-at", "image-id", "image-source", "image-revision", "image-consent", "x-dv-confirm"]
+        let permitted = ["accept", "content-type", "idempotency-key", "client-turn-id", "boot-id", "generation", "device-revision", "catalog-version", "input-id", "input-sequence", "captured-at", "image-id", "image-source", "image-revision", "image-consent", "x-dv-confirm", "traceparent"]
         var request = original
         request.allHTTPHeaderFields = [:]
         for (name, value) in original.allHTTPHeaderFields ?? [:] {
             if name.lowercased() == "authorization" { continue }
             guard permitted.contains(name.lowercased()), value.count <= 1024, !value.contains("\r"), !value.contains("\n") else { throw AccountError.invalidPath }
+            if name.lowercased() == "traceparent" && !AccountTransportPolicy.validTraceparent(value) { throw AccountError.invalidPath }
             request.setValue(value, forHTTPHeaderField: name)
         }
         request.httpShouldHandleCookies = false
@@ -194,7 +195,7 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
             request.httpMethod = method
             request.setValue(origin.absoluteString, forHTTPHeaderField: "Origin")
-            let permitted = ["accept", "content-type", "x-dv-csrf", "x-dv-confirm", "x-dv-device-id", "idempotency-key", "session-id", "boot-id", "media-epoch", "input-epoch", "input-sequence", "x-dv10-consent"]
+            let permitted = ["accept", "content-type", "x-dv-csrf", "x-dv-confirm", "x-dv-device-id", "idempotency-key", "session-id", "boot-id", "media-epoch", "input-epoch", "input-sequence", "x-dv10-consent", "traceparent"]
             for (name, value) in call.getObject("headers") ?? [:] {
                 guard permitted.contains(name.lowercased()), let text = value as? String, text.count <= 1024,
                       !text.contains("\r"), !text.contains("\n"),
@@ -670,6 +671,7 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
               url.host == origin.host, url.scheme == "https", url.port == origin.port else { throw AccountError.invalidPath }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        request.setValue(AccountTransportPolicy.newTraceparent(), forHTTPHeaderField: "traceparent")
         if path == "/app/v1/session" && method == "GET" { request.timeoutInterval = 5 }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(origin.absoluteString, forHTTPHeaderField: "Origin")

@@ -5,6 +5,7 @@ import { throwIfAborted } from '../../application/cancellation.mjs';
 import { secureUuid } from '../../application/identifiers.mjs';
 import { customerCopy } from '../../application/customerCopy';
 import { beginRequestDiagnostic, clearRequestDiagnostics, diagnosticRequestId } from '../../application/requestDiagnostics';
+import { correlationHeaders } from '../../application/requestCorrelation.mjs';
 
 export interface Account { id: string; displayName: string; roles: string[] }
 export interface ResourceGrant { id: string; userId: string; resourceType: string; resourceId: string; permission: string }
@@ -209,11 +210,11 @@ async function sendAccountTransport(path: string, init: RequestInit): Promise<Re
   if (!path.startsWith('/app/v1/') && !isTwinAccountPath(path) && !isShowAccountPath(path, init.method ?? 'GET') && !isChronicleAdminPath(path, init.method ?? 'GET') && !eveningPath) throw new Error('Neplatná cesta účtu.');
   throwIfAborted(init.signal);
   const method = init.method ?? 'GET';
-  const headers = new Headers(init.headers);
+  const headers = correlationHeaders(init.headers);
   headers.set('Accept', 'application/json');
   if (method !== 'GET') headers.set('X-DV-CSRF', csrfToken);
   if (!native) {
-    const response = await fetch(path, { ...init, method, headers, credentials: 'same-origin', cache: 'no-store' });
+    const response = await fetch(path, { ...init, method, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
     requireCurrentAuthentication(generation);
     return response;
   }
@@ -266,9 +267,10 @@ export async function accountRequest<T>(path: string, method = 'GET', body?: unk
       text = response.body;
     } else {
       const response = await fetch(path, {
-        method, credentials: 'same-origin', cache: 'no-store', signal,
+        method, credentials: 'same-origin', cache: 'no-store', signal, redirect: 'error',
         headers: { Accept: 'application/json', ...(serialized ? { 'Content-Type': 'application/json' } : {}),
-          ...(method !== 'GET' ? { 'X-DV-CSRF': csrfToken } : {}), ...(confirmed ? { 'X-DV-Confirm': 'yes' } : {}) }, body: serialized,
+          ...(method !== 'GET' ? { 'X-DV-CSRF': csrfToken } : {}), ...(confirmed ? { 'X-DV-Confirm': 'yes' } : {}),
+          ...Object.fromEntries(correlationHeaders()) }, body: serialized,
       });
       status = response.status;
       text = await response.text();

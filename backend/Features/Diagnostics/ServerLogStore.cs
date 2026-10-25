@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using System.Diagnostics;
 
 namespace Kufr.Backend.Features.Diagnostics;
 
@@ -53,7 +54,8 @@ internal sealed class ServerLogStore
             {
                 var time = clock.GetUtcNow();
                 var entry = new ServerLogEntry(0, time.ToString("O", CultureInfo.InvariantCulture),
-                    level, eventCode, traceId, route, method, status, durationMs, operationId, conversationId, code, attempt);
+                    level, eventCode, traceId, route, method, status, durationMs, operationId, conversationId, code, attempt,
+                    Activity.Current?.IdFormat == ActivityIdFormat.W3C ? Activity.Current.TraceId.ToHexString() : null);
                 using var connection = Open();
                 using var transaction = connection.BeginTransaction();
                 using var command = connection.CreateCommand();
@@ -150,6 +152,6 @@ internal sealed class ServerLogStore
 
 internal sealed record ServerLogEntry(long Id, string Timestamp, string Level, string EventCode,
     string? TraceId, string? Route, string? Method, int? Status, double? DurationMs,
-    string? OperationId, string? ConversationId, string? Code, int? Attempt = null);
+    string? OperationId, string? ConversationId, string? Code, int? Attempt = null, string? DistributedTraceId = null);
 internal sealed record ServerLogPage(string StoreId, long OldestCursor, long LatestCursor,
     long NextCursor, bool HasMore, bool Truncated, long DroppedWrites, IReadOnlyList<ServerLogEntry> Entries);

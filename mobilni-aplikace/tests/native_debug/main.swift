@@ -28,6 +28,16 @@ struct NativeDebugTests {
             return
         }
         let profile = try DebugBackendProfile(address: "https://debug.example.test", deviceId: "debug-test", credential: "test-secret")
+        let correlationClient = DebugBackendClient()
+        let correlationURL = profile.baseURL.appendingPathComponent("v1/conversations")
+        let firstRequest = try await correlationClient.authorizedRequest(profile, URLRequest(url: correlationURL))
+        let secondRequest = try await correlationClient.authorizedRequest(profile, firstRequest)
+        assert(AccountTransportPolicy.validTraceparent(firstRequest.value(forHTTPHeaderField: "traceparent") ?? ""))
+        assert(firstRequest.value(forHTTPHeaderField: "traceparent") != secondRequest.value(forHTTPHeaderField: "traceparent"))
+        do {
+            _ = try await correlationClient.authorizedRequest(profile, URLRequest(url: URL(string: "https://provider.example/v1/conversations")!))
+            assertionFailure("backend context escaped its configured origin")
+        } catch DebugBackendError.invalidProfile {}
         let retained = try DebugProfileDraft.resolve(address: "https://DEBUG.example.test:443/",
             deviceId: "debug-test", credential: "", saved: profile)
         assert(retained.credential == "test-secret")

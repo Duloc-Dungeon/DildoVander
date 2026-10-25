@@ -7,6 +7,35 @@ tokeny a styl; `src/components/` obsahuje typované Vue komponenty.
 a dostupný Stop. Feature služby vlastní zařízení, účty, archiv a viewer;
 Swift adaptéry dál vlastní Bluetooth, Keychain, audio a nativní transport.
 
+## Request correlation
+
+The account and guest API transports add a fresh W3C `traceparent` for each
+backend HTTP request. Native account/device-backend requests and hands-free
+streams use the same format. The context contains random IDs only, remains in
+memory for that request, and is replaced for retries and polling. It is never
+derived from an account, installation, guest, device or conversation ID.
+The client exports no spans and contains no Honeycomb SDK or ingestion key;
+the header provides backend correlation, without claiming a recorded client
+span. Flags are `00`; backend sampling must make its own decision rather than
+drop all unsampled remote parents. Missing secure browser randomness simply
+omits optional correlation. Requests carrying context reject redirects.
+
+Only relative application backend API routes, or the explicitly configured
+native backend, receive this header. Public downloads, external resources,
+the custom observer endpoint, LAN ESP transport, BLE and provisioning are
+unchanged. Native header policies accept only bounded lowercase version-00
+context with nonzero IDs and flags `00`. No `baggage` or `tracestate` is sent.
+Existing `X-Request-Id` support diagnostics, idempotency keys and cancellation
+request IDs retain their original meaning.
+
+Device diagnostics keep the existing `operationId`/message IDs, boot/session
+and conversation identifiers for their existing lifecycle. These can connect
+authorized backend/device records where the protocol already carries them;
+they are not W3C parents and are not added to client telemetry. This change
+adds no ESP exporter, new BLE fields or trace persistence. Native compilation,
+an installed iPhone, a physical ESP and a production trace are separate
+acceptance checks; browser tests alone do not prove them.
+
 Režie Show Pack je skutečná Vue obrazovka na `/suitcase/director`, dostupná z Provozu.
 Starý vstup `/#director` přesměruje na tuto cestu. Používá přihlášený účet,
 konkrétní nakonfigurovaný kufr a stejný omezený transport na webu i iOS;

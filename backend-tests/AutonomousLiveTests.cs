@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.GptLive;
 using Kufr.Backend.Features.Realtime;
+using Kufr.Backend.Features.Observability;
 using Microsoft.Extensions.Configuration;
 using Kufr.Backend.Features.Character;
 using Kufr.Backend.Features.Show;
@@ -531,6 +533,17 @@ internal static class AutonomousLiveTests
 
     private static async Task VerifyVisualResetAsync(GptLiveOptions options, bool beforeReady = false)
     {
+        Activity? observed = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == BackendTelemetry.SourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == "gen_ai.live") { observed = activity; }
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
         using var clock = new ManualClock(); using var old = new SocketFixture(); using var fresh = new SocketFixture();
         old.BeforeDelivery = () => clock.Advance(50); fresh.BeforeDelivery = () => clock.Advance(50);
         old.DelayStarted = beforeReady;
@@ -550,6 +563,7 @@ internal static class AutonomousLiveTests
         else
         {
             await old.Command("session.instructions.append", lifetime.Token);
+            old.Emit(new { type = "session.usage.updated", usage = new { seconds = 5 } });
             old.Audio();
             Check(await audio.Reader.ReadAsync(lifetime.Token) == 0, "Live initial audio belongs to original provider");
         }
@@ -557,11 +571,15 @@ internal static class AutonomousLiveTests
         generation = 1; previous.TrySetResult();
         await fresh.Command("session.start", lifetime.Token);
         await fresh.Command("session.instructions.append", lifetime.Token);
+        fresh.Emit(new { type = "session.usage.updated", usage = new { seconds = 2 } });
         old.Audio(); fresh.Audio();
         Check(await audio.Reader.ReadAsync(lifetime.Token) == 1 && !run.IsCompleted,
             "blocked Live provider resets without ending application voice session and late old audio never reappears");
         Check(!fresh.Sent.Any(item => item.Contains("revoked cloak")), "Live restart does not replay revoked admission costume");
         lifetime.Cancel(); try { await run; } catch (OperationCanceledException) { }
+        Check(observed?.GetTagItem("app.ai.billable_seconds") is double actualSeconds
+            && actualSeconds == (beforeReady ? 2 : 7),
+            "Live trace sums actual observed seconds across visual restarts without adding reserved cost");
     }
 
     private static async Task VerifyExpressWithoutEvidence(GptLiveOptions options, string control)

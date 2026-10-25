@@ -9,6 +9,23 @@ beforeEach(() => { vi.resetModules(); bridge.native = false; bridge.request.mock
 afterEach(() => { interfaceLanguagePreference.setScope(null); interfaceLanguagePreference.setLanguage('cs'); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe.each([false, true])('request diagnostic wiring (native=%s)', native => {
+  it('sends a fresh bounded traceparent through account transport without replacing request diagnostics', async () => {
+    bridge.native = native;
+    const identity = await import('./session');
+    bridge.accountTransport.mockResolvedValue({ status: 200, headers: {}, bodyBase64: btoa('{}') });
+    request.mockImplementation(async () => Response.json({}));
+    const parents: string[] = [];
+    for (let index = 0; index < 2; index++) {
+      await identity.accountTransport('/app/v1/session', { headers: { traceparent: 'old', baggage: 'private=value' } });
+      const headers = native ? bridge.accountTransport.mock.calls.at(-1)![0].headers : request.mock.calls.at(-1)![1].headers;
+      const bounded = new Headers(headers);
+      expect(bounded.get('traceparent')).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-00$/);
+      expect(bounded.has('baggage')).toBe(false);
+      expect(bounded.has('X-Request-Id')).toBe(false);
+      parents.push(bounded.get('traceparent')!);
+    }
+    expect(parents[0]).not.toBe(parents[1]);
+  });
   it('correlates account requests and application actions without retaining credentials or private bodies', async () => {
     bridge.native = native;
     const identity = await import('./session');

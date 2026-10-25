@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.Observability;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text;
@@ -40,19 +41,29 @@ internal sealed class DuelCommentaryService : IDisposable
 
     internal async Task<DuelCommentaryAttempt> GenerateAsync(DuelView result, CancellationToken cancellationToken)
     {
-        if (!Available) { return new(null, new("configuration_unavailable", ResponsesTextDialogBudget.Model)); }
-        var request = BuildRequest(result);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(8));
-        using var bounded = BoundedSdkTransport.Create(http!, 65_536);
-        var client = new ResponsesClient(new ApiKeyCredential(key!), new ResponsesClientOptions
+        using var telemetry = GenAiOperation.Start("responses", ResponsesTextDialogBudget.Model);
+        try
         {
-            Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
-        });
-        using var content = BinaryContent.Create(BinaryData.FromString(request));
-        var response = await client.CreateResponseAsync(content, new RequestOptions { CancellationToken = deadline.Token });
-        using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
-        return Parse(document.RootElement, result);
+            if (!Available) { return new(null, new("configuration_unavailable", ResponsesTextDialogBudget.Model)); }
+            var request = BuildRequest(result);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(TimeSpan.FromSeconds(8));
+            using var bounded = BoundedSdkTransport.Create(http!, 65_536);
+            var client = new ResponsesClient(new ApiKeyCredential(key!), new ResponsesClientOptions
+            {
+                Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
+            });
+            using var content = BinaryContent.Create(BinaryData.FromString(request));
+            var response = await client.CreateResponseAsync(content, new RequestOptions { CancellationToken = deadline.Token });
+            using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
+            telemetry.ReadUsage(document.RootElement);
+            return Parse(document.RootElement, result);
+        }
+        catch (Exception telemetryError)
+        {
+            telemetry.Fail(telemetryError, cancellationToken);
+            throw;
+        }
     }
 
     internal static string BuildRequest(DuelView duel)

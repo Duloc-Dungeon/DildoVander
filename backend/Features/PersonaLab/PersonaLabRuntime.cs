@@ -145,6 +145,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
 
     internal LabSession End(string owner, string id)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("persona_lab.session.end");
         lock (admissionGate)
         {
             store.Session(owner, id);
@@ -209,6 +210,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         Func<byte[], CancellationToken, Task>? audioOutput = null,
         Func<string?, CancellationToken, Task>? providerReady = null)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("persona_lab.turn");
         LabContract.Text(text, 4000);
         return await RunAsync(owner, id, async (session, lifetime) =>
         {

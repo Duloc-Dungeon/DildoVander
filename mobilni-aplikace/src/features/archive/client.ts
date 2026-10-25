@@ -1,6 +1,7 @@
 export interface ArchiveAsset { id: string; kind: string; mediaType: string; length: number; sha256?: string; editionId?: string }
 export interface Story { title: string; text: string }
 import { secureUuid } from '../../application/identifiers.mjs';
+import { backendFetch } from '../../application/requestCorrelation.mjs';
 import type { Prophecy } from './showContracts';
 import { projectGeneratedWand, type GeneratedWand } from './generatedWand';
 export interface WizardIdentity {
@@ -141,7 +142,7 @@ export class ArchiveClient {
   private uploadKeys = new WeakMap<Blob, string>();
   // Window.fetch requires its global receiver in real browsers. Calling a stored
   // native function as this.transport(...) binds ArchiveClient instead.
-  constructor(private transport: typeof fetch = (input, init) => fetch(input, init), private sessionLock?: (action: () => Promise<void>) => Promise<void>) {}
+  constructor(private transport: typeof fetch = backendFetch, private sessionLock?: (action: () => Promise<void>) => Promise<void>) {}
   invalidate() { this.generation++; this.controller.abort(); this.controller = new AbortController(); this.csrf = undefined; this.keys.clear(); this.uploadKeys = new WeakMap(); }
   capture() {
     const generation = this.generation;

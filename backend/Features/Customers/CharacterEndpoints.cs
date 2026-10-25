@@ -6,6 +6,7 @@ using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Keepsakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Kufr.Backend.Features.Observability;
 
 namespace Kufr.Backend.Features.Customers;
 
@@ -103,6 +104,9 @@ internal sealed class CharacterEnrichmentWorker(IServiceScopeFactory scopes, Cha
                     await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
                     continue;
                 }
+                using var jobTrace = new JobTelemetry("character.enrichment.process", job.Id, job.Attempt, job.TraceParent, job.CreatedAt);
+                var activity = jobTrace.Activity;
+                activity?.SetTag("app.phase", "authorization");
                 logs?.Write("info", "character_job_started", operationId: Guid.Parse(job.Id).ToString(), attempt: job.Attempt);
                 using var scope = scopes.CreateScope();
                 var accounts = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
@@ -110,16 +114,19 @@ internal sealed class CharacterEnrichmentWorker(IServiceScopeFactory scopes, Cha
                     .Select(user => (bool?)user.Disabled).SingleOrDefaultAsync(stoppingToken);
                 if (disabled is null)
                 {
+                    activity?.SetTag("app.outcome", "discarded");
                     await store.FenceAccountDeletionAsync(job.AccountId, stoppingToken);
                     continue;
                 }
                 if (disabled.Value)
                 {
+                    activity?.SetTag("app.outcome", "rejected");
                     await store.CompleteAsync(job, null, "account_unavailable", stoppingToken);
                     continue;
                 }
                 if (job.Attempt > 3)
                 {
+                    activity?.SetTag("app.outcome", "attempt_limit");
                     await store.CompleteAsync(job, null, "character_job_interrupted", stoppingToken);
                     continue;
                 }
@@ -127,33 +134,44 @@ internal sealed class CharacterEnrichmentWorker(IServiceScopeFactory scopes, Cha
                 {
                     using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                     deadline.CancelAfter(TimeSpan.FromSeconds(45));
-                    if (!await store.CanDispatchAsync(job, deadline.Token)) { continue; }
+                    if (!await store.CanDispatchAsync(job, deadline.Token))
+                    { activity?.SetTag("app.outcome", "discarded"); continue; }
+                    activity?.SetTag("app.phase", "provider");
                     var enrichment = await provider.EnrichAsync(job, deadline.Token);
                     // Recheck revocation after network work and before publishing a result.
                     disabled = await accounts.Users.AsNoTracking().Where(user => user.Id == job.AccountId)
                         .Select(user => (bool?)user.Disabled).SingleOrDefaultAsync(stoppingToken);
                     if (disabled is null)
                     {
+                        activity?.SetTag("app.outcome", "discarded");
                         await store.FenceAccountDeletionAsync(job.AccountId, stoppingToken);
                         continue;
                     }
                     if (disabled.Value)
                     {
+                        activity?.SetTag("app.outcome", "rejected");
                         await store.CompleteAsync(job, null, "account_unavailable", stoppingToken);
                         continue;
                     }
+                    activity?.SetTag("app.phase", "persistence");
                     var completed = await store.CompleteAsync(job, enrichment, null, stoppingToken);
+                    activity?.SetTag("app.phase", "completed");
+                    activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
                     logs?.Write("info", completed ? "character_job_completed" : "character_job_discarded",
                         operationId: Guid.Parse(job.Id).ToString(), attempt: job.Attempt);
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+                catch (OperationCanceledException error) when (stoppingToken.IsCancellationRequested)
+                { BackendTelemetry.Failed(activity, error, stoppingToken); break; }
                 catch (Exception error)
                 {
+                    BackendTelemetry.Failed(activity, error, stoppingToken);
                     logger.LogWarning("Character enrichment failed for job {JobId} ({ErrorType}).", job.Id, error.GetType().Name);
                     var code = CharacterProviderFailure.Code(error);
+                    activity?.SetTag("app.failure_code", code);
                     if (CharacterProviderFailure.IsTransient(error) && job.Attempt < 3)
                     {
                         var retried = await store.RetryAsync(job, stoppingToken);
+                        activity?.SetTag("app.outcome", retried ? "retry_scheduled" : "discarded");
                         logs?.Write("warning", retried ? "character_job_retry_scheduled" : "character_job_discarded",
                             status: CharacterProviderFailure.Status(error), operationId: Guid.Parse(job.Id).ToString(), code: code, attempt: job.Attempt);
                         continue;

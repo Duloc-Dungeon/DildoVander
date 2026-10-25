@@ -58,6 +58,7 @@ internal sealed partial class DuelStore
 
     public DuelView Create(string deviceId, DuelCreateRequest request)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("duel.create");
         ValidateKey(request.OperationKey);
         if (request.Mode is not ("autoplay" or "interactive" or "exhibition")
             || !request.ConsentConfirmed || request.LeftIdentityId == request.RightIdentityId)
@@ -130,6 +131,7 @@ internal sealed partial class DuelStore
 
     public DuelView Start(string deviceId, string id, DuelCommand request)
     {
+        using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("duel.start");
         ValidateKey(request.OperationKey);
         lock (gate)
         {

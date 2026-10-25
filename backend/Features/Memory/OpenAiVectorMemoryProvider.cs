@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.Observability;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -40,41 +41,55 @@ internal sealed class OpenAiVectorMemoryProvider : IDisposable
     private async Task<JsonDocument> Request(HttpMethod method, string path, CancellationToken token,
         HttpContent? content = null, bool missingAllowed = false)
     {
-        if (!HasKey) { content?.Dispose(); throw new MemoryProviderException("key_missing"); }
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-        deadline.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
-        using var request = new HttpRequestMessage(method, new Uri("https://api.openai.com/v1/" + path)) { Content = content };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        request.Headers.TryAddWithoutValidation("OpenAI-Beta", "assistants=v2");
+        using var telemetry = GenAiOperation.Start("vector_store", null);
         try
         {
-            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-            if (missingAllowed && response.StatusCode == HttpStatusCode.NotFound) return JsonDocument.Parse("{\"deleted\":true}");
-            if (!response.IsSuccessStatusCode)
-                throw new MemoryProviderException("http_" + (int)response.StatusCode,
-                    response.StatusCode == HttpStatusCode.TooManyRequests || (int)response.StatusCode >= 500,
-                    response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : null));
-            if (response.Content.Headers.ContentLength > 1_048_576 || response.Content.Headers.ContentType?.MediaType != "application/json")
-                throw new MemoryProviderException("invalid_response");
-            using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-            var bytes = new byte[1_048_577]; var used = 0;
+            if (!HasKey) { content?.Dispose(); throw new MemoryProviderException("key_missing"); }
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
+            using var request = new HttpRequestMessage(method, new Uri("https://api.openai.com/v1/" + path)) { Content = content };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+            request.Headers.TryAddWithoutValidation("OpenAI-Beta", "assistants=v2");
             try
             {
-                while (used < bytes.Length)
+                using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
+                telemetry.SetHttpStatus((int)response.StatusCode);
+                if (missingAllowed && response.StatusCode == HttpStatusCode.NotFound) return JsonDocument.Parse("{\"deleted\":true}");
+                if (!response.IsSuccessStatusCode)
+                    throw new MemoryProviderException("http_" + (int)response.StatusCode,
+                        response.StatusCode == HttpStatusCode.TooManyRequests || (int)response.StatusCode >= 500,
+                        response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : null));
+                if (response.Content.Headers.ContentLength > 1_048_576 || response.Content.Headers.ContentType?.MediaType != "application/json")
+                    throw new MemoryProviderException("invalid_response");
+                using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
+                var bytes = new byte[1_048_577]; var used = 0;
+                try
                 {
-                    var read = await stream.ReadAsync(bytes.AsMemory(used), deadline.Token);
-                    if (read == 0) break; used += read;
+                    while (used < bytes.Length)
+                    {
+                        var read = await stream.ReadAsync(bytes.AsMemory(used), deadline.Token);
+                        if (read == 0) break; used += read;
+                    }
+                    if (used > 1_048_576) throw new MemoryProviderException("response_too_large");
+                    var document = JsonDocument.Parse(Encoding.UTF8.GetString(bytes, 0, used));
+                    RejectDuplicateFields(document.RootElement);
+                    return document;
                 }
-                if (used > 1_048_576) throw new MemoryProviderException("response_too_large");
-                var document = JsonDocument.Parse(Encoding.UTF8.GetString(bytes, 0, used));
-                RejectDuplicateFields(document.RootElement);
-                return document;
+                finally { CryptographicOperations.ZeroMemory(bytes); }
             }
-            finally { CryptographicOperations.ZeroMemory(bytes); }
+            catch (OperationCanceledException error) when (!token.IsCancellationRequested)
+            {
+                telemetry.Fail(error, token);
+                throw new MemoryProviderException("timeout", true);
+            }
+            catch (HttpRequestException) { throw new MemoryProviderException("network_unavailable", true); }
+            catch (JsonException) { throw new MemoryProviderException("invalid_json"); }
         }
-        catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new MemoryProviderException("timeout", true); }
-        catch (HttpRequestException) { throw new MemoryProviderException("network_unavailable", true); }
-        catch (JsonException) { throw new MemoryProviderException("invalid_json"); }
+        catch (Exception telemetryError)
+        {
+            telemetry.Fail(telemetryError, token);
+            throw;
+        }
     }
     private static void RejectDuplicateFields(JsonElement element)
     {

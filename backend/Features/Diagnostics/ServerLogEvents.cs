@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Routing;
+using Kufr.Backend.Features.Observability;
 
 namespace Kufr.Backend.Features.Diagnostics;
 
@@ -9,7 +10,14 @@ internal static class ServerLogEvents
     {
         context.TraceIdentifier = Guid.NewGuid().ToString();
         context.Response.Headers["X-Request-Id"] = context.TraceIdentifier;
+        var activity = Activity.Current;
+        if (activity?.IdFormat == ActivityIdFormat.W3C)
+        {
+            context.Response.Headers["X-Trace-Id"] = activity.TraceId.ToHexString();
+            activity.SetTag("app.request_id", context.TraceIdentifier);
+        }
         var start = Stopwatch.GetTimestamp();
+        using var business = RequestOperation.Name(context) is { } name ? BackendTelemetry.StartOperation(name) : null;
         string? failure = null;
         try { await next(context); }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -17,9 +25,29 @@ internal static class ServerLogEvents
         catch (Exception) { failure = "unhandled_error"; throw; }
         finally
         {
+            if (failure is not null)
+            {
+                activity?.SetTag("error.type", failure);
+                activity?.SetTag("app.outcome", failure);
+                if (failure != "client_disconnected") { activity?.SetStatus(ActivityStatusCode.Error); }
+            }
+            else
+            {
+                activity?.SetTag("app.outcome", context.Response.StatusCode >= 400 ? "rejected" : "completed");
+            }
+            activity?.SetTag("app.operation_id", Operation(context));
+            activity?.SetTag("app.conversation_id", Conversation(context));
             var route = Route(context);
             var status = failure == "unhandled_error" ? 500
                 : context.RequestAborted.IsCancellationRequested ? 499 : context.Response.StatusCode;
+            business?.SetTag("app.request_id", context.TraceIdentifier);
+            business?.SetTag("app.operation_id", Operation(context));
+            business?.SetTag("app.conversation_id", Conversation(context));
+            business?.SetTag("app.outcome", failure ?? (status >= 400 ? "rejected" : "completed"));
+            business?.SetTag("app.failure_code", context.Items["diagnosticCode"] as string);
+            business?.SetTag("app.phase", status is 401 or 403 ? "authorization" : status == 400 ? "validation" : "execution");
+            business?.SetTag("http.response.status_code", status);
+            if (status >= 500) { business?.SetStatus(ActivityStatusCode.Error); }
             // Polling/PCM uploads and the log reader itself would overwhelm the
             // useful history. Their failures remain visible.
             var sessionCheck = route == "/app/v1/session" && context.Request.Method == "GET";

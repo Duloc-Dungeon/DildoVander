@@ -96,6 +96,9 @@ internal sealed partial class TwinHost : BackgroundService
     public object Health() => hosts.Values.Select(host => new { instanceId = host.Id, ready = host.Ready, error = host.Error }).ToArray();
     public async Task<TwinCommandResult> CommandAsync(string id, TwinSession session, TwinCommand command, CancellationToken cancellation)
     {
+        using var activity = command.Action is "clock" or "inspect" ? null
+            : Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("device.twin.command");
+        activity?.SetTag("app.operation_id", command.OperationId);
         if (session.Principal.Role != "control" || session.Principal.Mode != "simulation"
             || session.Principal.InstanceId != id || !hosts.TryGetValue(id, out var host))
         {
@@ -179,6 +182,7 @@ internal sealed partial class TwinHost : BackgroundService
         }
         // A disconnected observer does not replay an admitted physical input.
         var result = await completion.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+        activity?.SetTag("app.device.outcome", result.Accepted ? "accepted" : "rejected");
         return result with { ExternalRequest = null, Private = null };
     }
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(hosts.Values.Select(host => RunAsync(host, stoppingToken)));

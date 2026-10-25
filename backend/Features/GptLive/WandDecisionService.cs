@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.Observability;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text;
@@ -58,34 +59,44 @@ internal sealed class WandDecisionService : IDisposable
 
     internal async Task<WandDecisionResult> DecideAsync(WandDecisionInput input, CancellationToken token)
     {
-        if (input.ReadyMask is < 0 or > 63 || input.Evidence.Count > 64 || input.AvailabilityRevision < 0)
-            throw new ArgumentException("Invalid decision input.");
-        var candidates = Candidates(input).ToArray();
-        if (candidates.Length == 0)
-            return new(WandDecisionStatus.NoAvailableWand, null, [], "", input.Revision, input.AvailabilityRevision);
-        if (input.Evidence.Count == 0)
-            return new(WandDecisionStatus.NeedsInformation, null, [], "Chybí odpověď hosta.", input.Revision, input.AvailabilityRevision);
-        if (!input.Policy.AllowEarlySelection && input.AnswerCandidates < input.Policy.UsualAnswers)
-            return new(WandDecisionStatus.NeedsInformation, null, [], "Pro tuto konverzační politiku chybí další navazující odpověď hosta.", input.Revision, input.AvailabilityRevision);
-        await slot.WaitAsync(token);
+        using var telemetry = GenAiOperation.Start("responses", Model);
         try
         {
-            if (fixture is not null) return Validate(await fixture(input, token), input);
-            if (http is null) throw new InvalidOperationException("Decision provider unavailable.");
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-            deadline.CancelAfter(TimeSpan.FromSeconds(45));
-            var body = BuildRequest(input, Model);
-            using var bounded = BoundedSdkTransport.Create(http, 65_536, ["application/json"]);
-            var client = new ResponsesClient(new ApiKeyCredential(key!), new ResponsesClientOptions
+            if (input.ReadyMask is < 0 or > 63 || input.Evidence.Count > 64 || input.AvailabilityRevision < 0)
+                throw new ArgumentException("Invalid decision input.");
+            var candidates = Candidates(input).ToArray();
+            if (candidates.Length == 0)
+                return new(WandDecisionStatus.NoAvailableWand, null, [], "", input.Revision, input.AvailabilityRevision);
+            if (input.Evidence.Count == 0)
+                return new(WandDecisionStatus.NeedsInformation, null, [], "Chybí odpověď hosta.", input.Revision, input.AvailabilityRevision);
+            if (!input.Policy.AllowEarlySelection && input.AnswerCandidates < input.Policy.UsualAnswers)
+                return new(WandDecisionStatus.NeedsInformation, null, [], "Pro tuto konverzační politiku chybí další navazující odpověď hosta.", input.Revision, input.AvailabilityRevision);
+            await slot.WaitAsync(token);
+            try
             {
-                Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
-            });
-            using var content = BinaryContent.Create(BinaryData.FromString(body));
-            var response = await client.CreateResponseAsync(content, new RequestOptions { CancellationToken = deadline.Token });
-            using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
-            return Parse(document.RootElement, input, Model);
+                if (fixture is not null) return Validate(await fixture(input, token), input);
+                if (http is null) throw new InvalidOperationException("Decision provider unavailable.");
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                deadline.CancelAfter(TimeSpan.FromSeconds(45));
+                var body = BuildRequest(input, Model);
+                using var bounded = BoundedSdkTransport.Create(http, 65_536, ["application/json"]);
+                var client = new ResponsesClient(new ApiKeyCredential(key!), new ResponsesClientOptions
+                {
+                    Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
+                });
+                using var content = BinaryContent.Create(BinaryData.FromString(body));
+                var response = await client.CreateResponseAsync(content, new RequestOptions { CancellationToken = deadline.Token });
+                using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
+                telemetry.ReadUsage(document.RootElement);
+                return Parse(document.RootElement, input, Model);
+            }
+            finally { slot.Release(); }
         }
-        finally { slot.Release(); }
+        catch (Exception telemetryError)
+        {
+            telemetry.Fail(telemetryError, token);
+            throw;
+        }
     }
 
     internal static string BuildRequest(WandDecisionInput input, string model = ResponsesTextDialogBudget.Model)

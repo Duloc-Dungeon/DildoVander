@@ -21,6 +21,7 @@ using Kufr.Backend.Features.Show;
 using Kufr.Backend.Features.PersonaLab;
 using Kufr.Backend.Features.Tonight;
 using Kufr.Backend.Features.TestingSessions;
+using Kufr.Backend.Features.Observability;
 
 var provisioning = args.Contains("--memory-provision");
 var accountProvisioning = AccountProvisioning.IsCommand(args);
@@ -33,6 +34,7 @@ if (twinConfiguration is not null)
     TwinProviderCredentials.Load(builder.Configuration);
 }
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 4096);
+builder.Services.AddBackendTelemetry(builder.Configuration, builder.Environment);
 builder.Services.AddAccountIdentity(builder.Configuration);
 if (accountProvisioning)
 {
@@ -50,7 +52,8 @@ if (showOrigins.Any(origin => !Uri.TryCreate(origin, UriKind.Absolute, out var u
     throw new InvalidOperationException("Show:AllowedOrigins must contain exact HTTPS or loopback origins.");
 }
 builder.Services.AddCors(options => options.AddPolicy("show-operator", policy =>
-    policy.WithOrigins(showOrigins).WithMethods("GET", "POST").WithHeaders("Authorization", "Content-Type")));
+    policy.WithOrigins(showOrigins).WithMethods("GET", "POST").WithHeaders("Authorization", "Content-Type", "traceparent")
+        .WithExposedHeaders("X-Request-Id", "X-Trace-Id")));
 builder.Services.AddSingleton<TwinAccess>();
 builder.Services.AddSingleton<TwinMediaSettingsStore>();
 builder.Services.AddSingleton<TwinMediaSessions>();

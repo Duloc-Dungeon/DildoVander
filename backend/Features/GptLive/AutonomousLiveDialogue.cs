@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.Observability;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -61,6 +62,36 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
         Func<LiveOutcome, CancellationToken, Task>? finalize = null,
         Func<CancellationToken, Task>? resumeInput = null)
     {
+        using var telemetry = GenAiOperation.Start("live", GptLiveProtocol.Model, streaming: true);
+        try
+        {
+            return await RunCoreAsync(telemetry, call, audio, visitor, pause, playback, availability, stopInput,
+                token, memoryAccess, decisionTiming, terminalState, cancelAudio, recentStyles, stylePlayed,
+                directorTiming, transcript, visualContext, visualRevision, finalize, resumeInput);
+        }
+        catch (Exception error)
+        {
+            telemetry.Fail(error, token);
+            throw;
+        }
+    }
+
+    private async Task<LiveOutcome> RunCoreAsync(GenAiOperation telemetry, RealtimeCall call, Func<byte[], CancellationToken, Task> audio,
+        Func<string, CancellationToken, Task> visitor, Func<CancellationToken, Task> pause,
+        Func<LivePlaybackRequest, CancellationToken, Task<LivePlaybackConfirmation>> playback,
+        Func<(int ReadyMask, int Revision, bool Current)> availability, Func<CancellationToken, Task> stopInput,
+        CancellationToken token, MemoryAccess? memoryAccess = null, Action<double, WandDecisionStatus>? decisionTiming = null,
+        Action<string>? terminalState = null,
+        Func<long, CancellationToken, Task>? cancelAudio = null,
+        IReadOnlyList<string>? recentStyles = null,
+        Action<string, bool>? stylePlayed = null,
+        Action<double>? directorTiming = null,
+        Func<LiveTranscriptSegment, bool>? transcript = null,
+        Func<(int Revision, string Context)>? visualContext = null,
+        Func<VisualResponseRevision>? visualRevision = null,
+        Func<LiveOutcome, CancellationToken, Task>? finalize = null,
+        Func<CancellationToken, Task>? resumeInput = null)
+    {
         var turn = call.Context with { CostumeContext = visualContext?.Invoke().Context ?? call.Context.CostumeContext };
         connection.VisualGeneration = visualRevision?.Invoke().Generation ?? 0;
         var visualState = visualRevision?.Invoke();
@@ -83,6 +114,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
             {
                 var state = visualRevision?.Invoke();
                 var id = Guid.NewGuid().ToString("N");
+                telemetry.SetPhase(GenAiPhase.ProviderHandshake);
                 await connection.SendAsync(GptLiveProtocol.AutonomousStart(context, id), token);
                 var pending = connection.ReceiveAsync(token);
                 if (state is not null && (state.Generation != connection.VisualGeneration
@@ -93,6 +125,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                     var current = visualRevision!();
                     if (current.Generation < 0 || !availability().Current) { throw new OperationCanceledException(token); }
                     retiredVoiceCost = checked(retiredVoiceCost + GptLiveProtocol.VoiceReservation);
+                    telemetry.SetPhase(GenAiPhase.Reconnecting);
                     await connection.RestartAsync(current.Generation, token);
                     try { using var retired = await pending; } catch (Exception) { }
                     var safe = memory is not null && memoryAccess is not null ? memory.RecoveryContext(memoryAccess).Text : call.LabHardware is null ? "" : call.Context.EveningContext;
@@ -112,6 +145,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                 { throw new InvalidDataException("Live startup correlation failed."); }
                 connection.CaptureSessionId(started.RootElement);
                 call.LabHardware?.ProviderReady(connection.ProviderSessionId);
+                telemetry.SetPhase(GenAiPhase.Ready);
                 visualState = visualRevision?.Invoke();
                 turn = context;
                 return;
@@ -133,6 +167,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
         await StartProviderAsync(turn);
         connection.ObserveInput(inputActivity.Observe);
         connection.AudioReady();
+        telemetry.SetPhase(GenAiPhase.Input);
         // The phone starts capture on listening. Advertising it before the
         // correlated provider acknowledgement can overflow its bounded PCM queue.
         if (resumeInput is not null) { await resumeInput(token); }
@@ -179,6 +214,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
         var paidCalls = 0;
         long cost = 0, reserved = 0;
         double seconds = 0;
+        double retiredObservedSeconds = 0;
         var alternativeCount = 0;
         int? excluded = null;
         var speechBlocked = false;
@@ -291,7 +327,11 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
             var retiredReceive = receive;
             receive = null;
             retiredVoiceCost = checked(retiredVoiceCost + GptLiveProtocol.VoiceReservation);
+            // Telemetry sums observed usage only. Aborting a retired session can
+            // prevent its final usage update, so this remains an observed lower bound.
+            retiredObservedSeconds += seconds;
             seconds = 0;
+            telemetry.SetPhase(GenAiPhase.Reconnecting);
             await connection.RestartAsync(current.Generation, token);
             if (retiredReceive is not null)
             {
@@ -309,6 +349,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                 History = turn.History.Select(item => new DialogExchange(item.VisitorText, "")).ToArray(), LiveInput = input };
             await StartProviderAsync(restart);
             connection.AudioReady();
+            telemetry.SetPhase(GenAiPhase.Input);
             audioSuppressed = false; directiveAccepted = true; directiveCommand = null;
             recoveryBoundary = false;
             deliveredVisual = (-1, "");
@@ -596,6 +637,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                     {
                         case "session.input_transcript.delta":
                             if (!projection.Append(value, true)) break;
+                            telemetry.SetPhase(GenAiPhase.Input);
                             var inputSegment = projection.Segments[^1];
                             if (transcript?.Invoke(inputSegment) == false) { throw new OperationCanceledException(token); }
                             changedAt = Elapsed();
@@ -650,6 +692,8 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                             break;
                         case "session.output_transcript.delta":
                             if (!projection.Append(value, false)) { break; }
+                            telemetry.SetPhase(GenAiPhase.Response);
+                            telemetry.OutputChunk();
                             var outputSegment = projection.Segments[^1];
                             if (transcript?.Invoke(outputSegment) == false) { throw new OperationCanceledException(token); }
                             lastOutput = Elapsed();
@@ -680,6 +724,8 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                                 providerBytes = checked(providerBytes + pcm.Length);
                                 lastProviderAudio = Elapsed();
                                 if (pcm.Length == 0 || pcm.Length % 2 != 0 || providerBytes > 24_000 * 2 * 190) throw new InvalidDataException("Invalid Live audio.");
+                                telemetry.SetPhase(GenAiPhase.Response);
+                                telemetry.OutputChunk(pcm.Length);
                                 if (audioSuppressed && !recoveryBoundary) { Report("character_audio_suppressed"); }
                                 if (audioSuppressed && recoveryBoundary && !speechBlocked)
                                 {
@@ -733,8 +779,10 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                         case "session.usage.updated": case "session.closed":
                             var currentSeconds = value.GetProperty("usage").GetProperty("seconds").GetDouble(); _ = GptLiveProtocol.VoiceCost(currentSeconds);
                             if (currentSeconds < seconds) throw new InvalidDataException("Live usage regressed."); seconds = currentSeconds;
+                            telemetry.SetBillableSeconds(retiredObservedSeconds + seconds);
                             if (value.GetProperty("type").GetString() == "session.closed")
                             {
+                                telemetry.Disconnect(GenAiDisconnectCause.Completed);
                                 if (!closing || terminal is null || value.GetProperty("reason").GetString() != "close_requested"
                                     || GptLiveProtocol.RequiredString(value, "client_event_id", 128) != closeId) throw new InvalidDataException("Unexpected Live close.");
                                 await EnsureShowNotStoppedAsync();
@@ -859,6 +907,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                     // revocation can still restart this application session.
                     await EnsureShowNotStoppedAsync();
                     closeId = Guid.NewGuid().ToString("N");
+                    telemetry.SetPhase(GenAiPhase.Closing);
                     await connection.CloseAsync(token, closeId);
                     closing = true;
                     closeAt = Elapsed();

@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ArchiveClient, GuestError, downloadName, mediaEssence, parseClaim } from './client';
+import { backendFetch, correlationHeaders } from '../../application/requestCorrelation.mjs';
 
 export interface NativeGuestBridge {
   guestCapabilities(): Promise<{ available: boolean; origin?: string }>;
@@ -79,6 +80,7 @@ export function createNativeGuestTransport(native: NativeGuestBridge): typeof fe
     else if (init.body instanceof Blob) bytes = new Uint8Array(await init.body.arrayBuffer());
     else if (init.body !== undefined && init.body !== null) throw new GuestError(400);
     check(); if (bytes && bytes.length > maximumUpload) throw new GuestError(413);
+    correlationHeaders(headers).forEach((value, key) => { headers[key] = value; });
     const response = await native.guestRequest({ path, method: init.method ?? 'GET', headers, bodyBase64: bytes ? bytesToBase64(bytes) : undefined });
     check();
     if (!Number.isInteger(response.status) || response.status < 200 || response.status > 599) throw new GuestError(503);
@@ -92,7 +94,7 @@ export function createNativeGuestTransport(native: NativeGuestBridge): typeof fe
 }
 let sessionQueue: Promise<void> = Promise.resolve();
 export function createGuestTransport(): typeof fetch {
-  return Capacitor.isNativePlatform() ? createNativeGuestTransport(bridge) : (input, init) => fetch(input, init);
+  return Capacitor.isNativePlatform() ? createNativeGuestTransport(bridge) : backendFetch;
 }
 export function createArchiveClient() {
   if (!Capacitor.isNativePlatform()) return new ArchiveClient();
