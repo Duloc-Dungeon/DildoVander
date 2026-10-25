@@ -112,8 +112,9 @@ export function technicalDiagnostics(session: LabSession, hardwareUncertain = fa
     revisionId: session.config.id, status: session.status, createdAt: session.createdAt, endedAt: session.endedAt,
     turns: session.turns.map(({ id, role, createdAt, latencyMs, audioBytes, decision, compartment }) =>
       ({ id, role, createdAt, latencyMs, audioBytes, decision, compartment })),
-    events: session.events.map(({ id, type, createdAt, code, latencyMs, decision, compartment, costMicroUsd, providerSessionId, inputTokens, outputTokens }) =>
+    events: session.events.map(({ id, type, createdAt, code, latencyMs, decision, compartment, costMicroUsd, providerSessionId, inputTokens, outputTokens, operationId }) =>
       ({ id, type, createdAt, code, latencyMs, decision, compartment, costMicroUsd, inputTokens, outputTokens,
+        operationId: typeof operationId === 'string' && /^[0-9a-f-]{36}$/i.test(operationId) ? operationId : null,
         providerSessionId: typeof providerSessionId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(providerSessionId) ? providerSessionId : null })),
   };
 }

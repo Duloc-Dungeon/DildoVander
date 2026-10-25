@@ -14,6 +14,7 @@ if (args is ["--tester-identity"]) { await AccountIdentityTests.RunTesterIdentit
 if (args is ["--passkey-labels"]) { await AccountIdentityTests.RunPasskeyLabelsAsync(); return; }
 if (args is ["--testing-hardware"]) { await TestingHardwareTests.RunAsync(); return; }
 if (args is ["--testing-conversations"]) { await TestingConversationTests.RunAsync(); return; }
+if (args is ["--testing-multiturn"]) { await TestingMultiTurnTests.RunAsync(); return; }
 if (args is ["--testing-resources"]) { await TestingResourcesTests.RunAsync(); return; }
 if (args is ["--testing-session-http"]) { await AccountIdentityTests.RunTestingSessionHttpAsync(); return; }
 if (args is ["--testing-sessions"]) { await TestingSessionsTests.RunAsync(); return; }
@@ -197,6 +198,7 @@ await GptLiveTests.RunAsync();
 await DeviceMediaTransportTests.RunAsync();
 await AccountIdentityTests.RunTesterIdentityAsync();
 await TestingConversationTests.RunAsync();
+await TestingMultiTurnTests.RunAsync();
 await TestingHardwareTests.RunAsync();
 await TestingResourcesTests.RunAsync();
 await TestingCharacterRaceTests.RunAsync();

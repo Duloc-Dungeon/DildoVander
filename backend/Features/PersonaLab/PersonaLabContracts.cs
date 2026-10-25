@@ -18,7 +18,9 @@ internal sealed record LabTurn(string Id, string Role, string Text, DateTimeOffs
     long? LatencyMs = null, int? AudioBytes = null, string? Decision = null, int? Compartment = null);
 internal sealed record LabEvent(string Id, string Type, DateTimeOffset CreatedAt, string? Code = null,
     long? LatencyMs = null, string? Decision = null, int? Compartment = null, long? CostMicroUsd = null,
-    string? ProviderSessionId = null, long? InputTokens = null, long? OutputTokens = null);
+    string? ProviderSessionId = null, long? InputTokens = null, long? OutputTokens = null,
+    string? OperationId = null);
+internal sealed record LabOperationState(string OperationId, string Phase, long ElapsedMs);
 internal sealed record LabTurnComment(string TurnId, string Comment);
 internal sealed record LabEvaluation(Dictionary<string, int> Scores, string Comment, LabTurnComment[] TurnComments);
 internal sealed record LabSession(string Id, string OwnerId, string Label, string Engine, string ScenarioId,

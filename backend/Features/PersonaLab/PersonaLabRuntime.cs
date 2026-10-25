@@ -6,6 +6,7 @@ using System.Text.Json;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.GptLive;
 using Kufr.Backend.Features.Realtime;
+using Kufr.Backend.Features.Diagnostics;
 
 namespace Kufr.Backend.Features.PersonaLab;
 
@@ -38,11 +39,12 @@ internal sealed class LabTicketRegistry(TimeProvider? clock = null)
 
 internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveClient live, OpenAiRealtimeClient realtime,
     PersonaLabImages? images = null, PersonaLabOptions? options = null,
-    ITestingConversationBridge? testing = null) : IDisposable
+    ITestingConversationBridge? testing = null, ServerLogStore? logs = null) : IDisposable
 {
     private readonly PersonaLabStore store = store;
     private readonly Lock admissionGate = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> active = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, OperationProgress> progress = new(StringComparer.Ordinal);
     private readonly HashSet<CancellationToken> inputRevocations = [];
     private readonly HashSet<CancellationToken> explicitCancellations = [];
     private readonly ConcurrentDictionary<string, LabTurn[]> ephemeral = new(StringComparer.Ordinal);
@@ -55,6 +57,9 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
     internal bool RealtimeAvailable => realtime.Available;
     internal int ActiveCount => active.Count;
     internal bool IsActive(string id) => active.ContainsKey(id);
+    internal LabOperationState? Operation(string id) => progress.TryGetValue(id, out var current)
+        ? new(current.Id, current.Phase, (long)Stopwatch.GetElapsedTime(current.Started).TotalMilliseconds) : null;
+    private sealed record OperationProgress(string Id, long Started, string Phase, string? TraceId);
     internal IDisposable ReserveScript(string owner, string id, out Guid scriptOwner)
     {
         lock (admissionGate)
@@ -208,13 +213,15 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
     internal async Task<LabSession> TurnAsync(string owner, string id, string text, CancellationToken token,
         Guid? scriptOwner = null, string? platform = null,
         Func<byte[], CancellationToken, Task>? audioOutput = null,
-        Func<string?, CancellationToken, Task>? providerReady = null)
+        Func<string?, CancellationToken, Task>? providerReady = null, string? requestId = null)
     {
         using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("persona_lab.turn");
         LabContract.Text(text, 4000);
         return await RunAsync(owner, id, async (session, lifetime) =>
         {
+            var preparation = Stopwatch.StartNew();
             var context = Context(session, text, out var omitted);
+            SaveEvent(session, LabContract.Event("context_prepared", "ready", preparation.ElapsedMilliseconds));
             if (omitted > 0) { SaveEvent(session, LabContract.Event("context_trimmed", "oldest_turns_omitted")); }
             await using var transport = await ConnectAsync(session, lifetime);
             var timer = Stopwatch.StartNew();
@@ -225,14 +232,15 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
                 var reply = await transport.Realtime!.GenerateTurnAsync(context, null,
                     async (pcm, cancellation) =>
                     {
+                        if (audioBytes == 0) { SaveEvent(session, LabContract.Event("first_response", "audio", timer.ElapsedMilliseconds)); }
                         audioBytes += pcm.Length;
                         if (audioOutput is not null) { await audioOutput(pcm, cancellation); }
                     }, (_, _) => Task.CompletedTask, lifetime,
-                    responseReady: providerReady is null ? null : async cancellation =>
+                    responseReady: async cancellation =>
                     {
-                        SaveEvent(session, LabContract.Event("provider_session", "ready", providerSessionId: transport.Realtime.ProviderSessionId));
+                        SaveEvent(session, LabContract.Event("provider_session", "ready", timer.ElapsedMilliseconds, providerSessionId: transport.Realtime.ProviderSessionId));
                         readyRecorded = true;
-                        await providerReady(transport.Realtime.ProviderSessionId, cancellation);
+                        if (providerReady is not null) { await providerReady(transport.Realtime.ProviderSessionId, cancellation); }
                     },
                     visualImage: () => images?.Read(owner, id));
                 if (!readyRecorded) { SaveEvent(session, LabContract.Event("provider_session", "ready", providerSessionId: transport.Realtime.ProviderSessionId)); }
@@ -248,7 +256,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
                 SaveTurn(session, "user", text, lifetime);
                 await transport.Live!.SendAsync(GptLiveProtocol.AutonomousStart(context, transport.StartId), lifetime);
                 await StartLiveAsync(transport, lifetime);
-                SaveEvent(session, LabContract.Event("provider_session", "ready", providerSessionId: transport.Live.ProviderSessionId));
+                SaveEvent(session, LabContract.Event("provider_session", "ready", timer.ElapsedMilliseconds, providerSessionId: transport.Live.ProviderSessionId));
                 if (providerReady is not null) { await providerReady(transport.Live.ProviderSessionId, lifetime); }
                 // Live advances on the input-audio timeline even when the test
                 // visitor supplied text. Pace real PCM silence rather than
@@ -265,9 +273,12 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
                     catch (OperationCanceledException) when (inputLifetime.IsCancellationRequested) { }
                 }
             }
+            SaveEvent(session, LabContract.Event("turn_finalizing", "persisting_memory", timer.ElapsedMilliseconds));
+            var persistence = Stopwatch.StartNew();
             await CompleteTestingTurnAsync(session, lifetime);
+            SaveEvent(session, LabContract.Event("turn_persisted", "completed", persistence.ElapsedMilliseconds));
             return Detail(owner, id);
-        }, token, scriptOwner, platform);
+        }, token, scriptOwner, platform, requestId);
     }
 
     internal async Task VoiceAsync(string owner, string id, WebSocket socket,
@@ -591,7 +602,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
     }
 
     private async Task<T> RunAsync<T>(string owner, string id, Func<LabSession, CancellationToken, Task<T>> action,
-        CancellationToken requestToken, Guid? scriptOwner = null, string? platform = null)
+        CancellationToken requestToken, Guid? scriptOwner = null, string? platform = null, string? requestId = null)
     {
         var executionPlatform = LabContract.ExecutionPlatform(platform);
         var session = Detail(owner, id);
@@ -615,6 +626,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
                 { throw new LabException(409, session.Status == "open" ? "lab_session_busy" : "lab_session_closed"); }
                 try
                 {
+                    progress[id] = new(Guid.NewGuid().ToString(), Stopwatch.GetTimestamp(), "admitting", requestId);
                     // Persist admission independently of the capped event stream, under the same fence as End.
                     store.Change(owner, id, current => current.Status == "open"
                         ? current with { ExecutionPlatforms = [.. current.ExecutionPlatforms, executionPlatform] }
@@ -624,6 +636,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
                 catch
                 {
                     active.TryRemove(id, out _);
+                    progress.TryRemove(id, out _);
                     throw;
                 }
             }
@@ -631,7 +644,10 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         catch { capacity.Release(); throw; }
         try
         {
+            SaveEvent(session, LabContract.Event("operation_admitted", "preparing_context"));
+            var admission = Stopwatch.StartNew();
             await ValidateTestingAsync(session, lifetime.Token);
+            SaveEvent(session, LabContract.Event("admission_validated", "ready", admission.ElapsedMilliseconds));
             return await action(Detail(owner, id), lifetime.Token);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
@@ -662,13 +678,26 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         }
         finally
         {
+            OperationProgress? finished;
             lock (admissionGate)
             {
                 active.TryRemove(id, out _);
+                progress.TryRemove(id, out finished);
                 inputRevocations.Remove(lifetime.Token);
                 explicitCancellations.Remove(lifetime.Token);
             }
             capacity.Release();
+            if (finished is not null)
+            {
+                // Release owns readiness. Diagnostics must never keep capacity
+                // occupied or turn a completed provider reply into a retryable POST.
+                try
+                {
+                    SaveEvent(session, LabContract.Event("operation_released", "ready",
+                        (long)Stopwatch.GetElapsedTime(finished.Started).TotalMilliseconds) with { OperationId = finished.Id }, finished.TraceId);
+                }
+                catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or IOException or LabException) { }
+            }
         }
     }
     private async Task<LabProviderTransport> ConnectAsync(LabSession session, CancellationToken token)
@@ -722,7 +751,8 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         {
             PersonalityId = PersonalityCatalog.OllivanderId, LivePrompt = snapshot,
             LiveInput = history, InstructionOverride = instructions,
-            GeneratedWands = session.Testing?.Candidates
+            GeneratedWands = session.Testing?.Candidates,
+            DeferWandSelection = session.Testing is { Candidates.Length: 0 }
         };
 
         List<object> Input()
@@ -796,6 +826,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
             var type = GptLiveProtocol.RequiredString(value, "type", 100);
             if (type == "session.output_transcript.delta")
             {
+                if (output.Length == 0) { SaveEvent(session, LabContract.Event("first_response", "transcript", timer.ElapsedMilliseconds)); }
                 output.Append(GptLiveProtocol.RequiredString(value, "delta", 16000));
                 lastOutputAt = timer.ElapsedMilliseconds;
                 if (output.Length > 16000) { throw new LabException(409, "lab_transcript_limit"); }
@@ -923,8 +954,25 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
             return turn;
         }
     }
-    private void SaveEvent(LabSession session, LabEvent entry) =>
-        store.Change(session.OwnerId, session.Id, current => current with { Events = [.. current.Events, entry] });
+    private void SaveEvent(LabSession session, LabEvent entry, string? requestTraceId = null)
+    {
+        progress.TryGetValue(session.Id, out var current);
+        if (entry.OperationId is not null && entry.OperationId != current?.Id) { current = null; }
+        entry = entry with { OperationId = entry.OperationId ?? current?.Id };
+        var phase = entry.Type switch
+        {
+            "operation_admitted" => "preparing_context",
+            "connection_started" => "connecting_provider",
+            "provider_session" => "waiting_provider",
+            "turn_finalizing" => "finalizing_turn",
+            _ => null
+        };
+        if (current is not null && phase is not null)
+        { progress.TryUpdate(session.Id, current with { Phase = phase }, current); }
+        store.Change(session.OwnerId, session.Id, value => value with { Events = [.. value.Events, entry] });
+        logs?.Write(entry.Type is "provider_failure" or "connection_interrupted" ? "warning" : "info", "lab_" + entry.Type, current?.TraceId ?? requestTraceId, operationId: entry.OperationId,
+            conversationId: session.Id, code: entry.Code, durationMs: entry.LatencyMs);
+    }
 
     private void ExpireEphemeral()
     {

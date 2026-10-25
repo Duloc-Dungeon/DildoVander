@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.ClientModel;
 using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Diagnostics;
@@ -160,6 +161,8 @@ internal sealed class TestingResources : IDisposable
             if (job is null) continue;
             using var jobTrace = new JobTelemetry("testing.character.enrichment.process", job.Id, job.Attempt, job.TraceParent, job.CreatedAt);
             logs?.Write("info", "testing_character_job_started", operationId: Guid.Parse(job.Id).ToString(), attempt: job.Attempt);
+            logs?.Write("info", "testing_character_queue_delay", operationId: Guid.Parse(job.Id).ToString(),
+                durationMs: Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - job.CreatedAt) * 1000, attempt: job.Attempt);
 
             if (job.Attempt > 3)
             {
@@ -173,6 +176,7 @@ internal sealed class TestingResources : IDisposable
             timeout.CancelAfter(TimeSpan.FromSeconds(45));
             try
             {
+                var processing = Stopwatch.StartNew();
                 using var provider = characterOverride is null ? new OpenAiCharacterEnrichmentProvider(Configuration, store) : null;
                 if (!await store.CanDispatchAsync(job, timeout.Token))
                 { jobTrace.Activity?.SetTag("app.outcome", "discarded"); return true; }
@@ -187,6 +191,8 @@ internal sealed class TestingResources : IDisposable
                     return true;
                 }
                 var enrichment = await pending!;
+                logs?.Write("info", "testing_character_provider_completed", operationId: Guid.Parse(job.Id).ToString(),
+                    durationMs: processing.Elapsed.TotalMilliseconds, attempt: job.Attempt);
                 timeout.Token.ThrowIfCancellationRequested();
                 if (sessionStore.IsFenced(job.AccountId))
                 {
@@ -195,10 +201,11 @@ internal sealed class TestingResources : IDisposable
                     return true;
                 }
                 jobTrace.Activity?.SetTag("app.phase", "persistence");
+                var persistence = Stopwatch.StartNew();
                 var completed = await store.CompleteAsync(job, enrichment, null, timeout.Token);
                 jobTrace.Activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
                 logs?.Write("info", completed ? "testing_character_job_completed" : "testing_character_job_discarded",
-                    operationId: Guid.Parse(job.Id).ToString(), attempt: job.Attempt);
+                    operationId: Guid.Parse(job.Id).ToString(), durationMs: persistence.Elapsed.TotalMilliseconds, attempt: job.Attempt);
             }
             catch (OperationCanceledException error) when (token.IsCancellationRequested)
             {

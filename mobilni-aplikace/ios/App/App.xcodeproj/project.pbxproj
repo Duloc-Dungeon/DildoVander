@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AE3000000000000000000101 /* DiagnosticExportFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE3000000000000000000001 /* DiagnosticExportFile.swift */; };
+        AE3000000000000000000102 /* KufrDiagnosticExportPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE3000000000000000000002 /* KufrDiagnosticExportPlugin.swift */; };
         AEA000000000000000000102 /* CustomerBleProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEA000000000000000000002 /* CustomerBleProtocol.swift */; };
         AEA000000000000000000101 /* KufrCustomerBlePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEA000000000000000000001 /* KufrCustomerBlePlugin.swift */; };
         AE9000000000000000000102 /* AccountTransportPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE9000000000000000000002 /* AccountTransportPolicy.swift */; };
@@ -34,6 +36,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        AE3000000000000000000001 /* DiagnosticExportFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticExportFile.swift; sourceTree = "<group>"; };
+        AE3000000000000000000002 /* KufrDiagnosticExportPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KufrDiagnosticExportPlugin.swift; sourceTree = "<group>"; };
         AEA000000000000000000002 /* CustomerBleProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomerBleProtocol.swift; sourceTree = "<group>"; };
         AEA000000000000000000001 /* KufrCustomerBlePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KufrCustomerBlePlugin.swift; sourceTree = "<group>"; };
         AE9000000000000000000002 /* AccountTransportPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountTransportPolicy.swift; sourceTree = "<group>"; };
@@ -96,6 +100,8 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				AE3000000000000000000001 /* DiagnosticExportFile.swift */,
+				AE3000000000000000000002 /* KufrDiagnosticExportPlugin.swift */,
 				AE1000000000000000000004 /* KufrBridgeViewController.swift */,
                 AE2000000000000000000001 /* KufrProvisioningPlugin.swift */,
                 AEA000000000000000000001 /* KufrCustomerBlePlugin.swift */,
@@ -205,6 +211,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				AE3000000000000000000101 /* DiagnosticExportFile.swift in Sources */,
+				AE3000000000000000000102 /* KufrDiagnosticExportPlugin.swift in Sources */,
                 AE2000000000000000000101 /* KufrProvisioningPlugin.swift in Sources */,
                 AEA000000000000000000101 /* KufrCustomerBlePlugin.swift in Sources */,
                 AEA000000000000000000102 /* CustomerBleProtocol.swift in Sources */,

@@ -112,6 +112,8 @@ internal static class TestingSessionsTests
             var remembered=await service.DetailAsync("alice",created.Id,default);
             Check(remembered.Memory.Records.Any(m=>m.Text.Contains("repair clocks")),"canonical isolated memory persists actual permitted user evidence");
             var selected=await service.SelectAsync("alice",created.Id,default);
+            Check(!PersonaLabRuntime.Context(selected.Conversation,"Continue",out _).DeferWandSelection,
+                "explicit preparation enables real candidate selection for subsequent conversation context");
             Check(selected.Wand?.SelectedWand?.Name.Contains("Marta")==true,"generated identity is character dependent, physical slot remains a position");
             Check(selected.Hardware.Events.Any(e=>e.Type=="presentation_completed"&&e.OperationId==Guid.ParseExact(created.Id,"N").ToString("D")),
                 "virtual effects come from actual terminal production C++ acknowledgement");

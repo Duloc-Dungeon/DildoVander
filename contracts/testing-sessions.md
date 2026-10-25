@@ -36,10 +36,34 @@ without duplicating it. Character reads expose the current background status and
 result. Clients select the latest profile before beginning a conversation; later
 enrichment does not change an already started conversation's snapshot.
 
+Session detail preserves `character` as the frozen profile for compatibility.
+`latestCharacter` separately contains the current persisted profile and its
+`enrichmentOperationId`, when a durable job exists. It is null after profile
+deletion; retained ended sessions and their frozen context remain readable.
+`characterSnapshot` exposes the captured profile ID/revision, user input,
+enrichment, Unix-seconds `capturedAt`, and the actual persisted character `context`.
+Snapshot metadata/context are captured coherently with concurrent selection.
+These authenticated content fields must never enter a technical diagnostic export.
+
+`conversationOperation`, while active, contains `operationId`, `phase`, and
+monotonic `elapsedMs`. Phases distinguish admission, context preparation, provider
+connection, waiting for output and turn finalization. Persisted technical events
+carry the same operation ID, including `operation_released` after the concurrency
+guard is removed on success, failure, cancellation or timeout. Provider readiness
+continues to require the engine's confirmed protocol event.
+
 After a failed text request the client reads the saved conversation, since the
 server may have persisted the user turn before provider failure. It never replays
 the mutation on refresh, and blocks a new HTTP turn while conversationActive is
 reported by the server.
+
+Collection refresh failures do not override authoritative selected-session
+readiness. A completed text request needs one detail reconciliation GET, with no
+automatic collection waterfall or POST replay. Ambiguous outcomes are scoped to
+the original session/conversation and must reconcile before another submission.
+Realtime Tester conversations without prepared personalized candidates omit the
+proposal tool until explicit selection prepares those candidates; physical
+readiness and generated candidate authority remain separate.
 
 The existing Lab session gets a server-only Testing context and bridge. The
 public Lab session request cannot supply that context. Managed session end and

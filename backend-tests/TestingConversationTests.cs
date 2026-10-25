@@ -83,7 +83,8 @@ internal static class TestingConversationTests
             Check(cancelled.Status == "open" && cancellable.ActiveCount == 0
                 && cancelled.Turns.Count(turn => turn.Role == "assistant") == 1,
                 "cancelling an in-flight provider handshake retains the resumable session and never adds an assistant reply");
-            Check(cancelled.Events.Last().Type == "request_cancelled" && cancelled.Events.Last().Code == "user_cancelled",
+            Check(cancelled.Events[^2].Type == "request_cancelled" && cancelled.Events[^2].Code == "user_cancelled"
+                && cancelled.Events[^1].Type == "operation_released" && cancelled.Events[^1].OperationId==cancelled.Events[^2].OperationId,
                 "deliberate cancellation is distinct from provider timeout/failure");
             using var client = new TextClientSocket();
             var connectionsBeforeTextSocket = sockets.Count;

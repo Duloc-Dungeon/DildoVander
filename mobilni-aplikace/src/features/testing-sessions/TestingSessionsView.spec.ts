@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createMemoryHistory, createRouter } from 'vue-router';
-import type { TestCharacter } from './contracts';
-const api = vi.hoisted(() => ({ transport: vi.fn(), setAccount: vi.fn(), microphone: vi.fn(), connect: vi.fn(), dispose: vi.fn(), sendText: vi.fn(), output: vi.fn() }));
+import type { CharacterConversationSnapshot, TestCharacter, TestSessionDetail } from './contracts';
+const api = vi.hoisted(() => ({ transport: vi.fn(), setAccount: vi.fn(), microphone: vi.fn(), connect: vi.fn(), dispose: vi.fn(), sendText: vi.fn(), output: vi.fn(), exportReport: vi.fn() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
   const account = ref({ id: 'tester-1', displayName: 'Tester One', roles: ['Tester'] });
@@ -13,12 +13,13 @@ vi.mock('../persona-lab/voice', () => ({ LabVoice: class {
   constructor(private observer: {phase:(value:string)=>void}){}
   connect = (...args:unknown[]) => { api.connect(...args); this.observer.phase('listening'); return Promise.resolve(); };  dispose = api.dispose; setOutputEnabled = api.output; sendText = api.sendText; interrupt = vi.fn();
 } }));
+vi.mock('../../application/diagnosticExport', () => ({ exportDiagnosticReport: api.exportReport, diagnosticExportHistory: () => [] }));
 import TestingSessionsView from './TestingSessionsView.vue';
 const person: TestCharacter = { id: 'character-1', profile: { profileId: 'profile-1', revision: 1, userInput: { name: 'Alena', world: 'Vlastní svět', description: 'Knihovnice.' }, status: 'ready', enrichment: { recognizedName: 'Alena', summary: 'Skutečně vrácené obohacení.', model: 'character-model', evidenceKind: 'provider', conversationIdeas: [], ambiguities: [] } } };
 function fixture() {
   return { session: { id: 'session-1', ownerId: 'tester-1', virtualDeviceId: 'virtual-1', labSessionId: 'lab-1', engine: 'gpt-live-1', inputMode: 'text', status: 'open', characterId: person.id, createdAt: '2026-10-24T10:00:00Z', endedAt: null, revision: 1 },
     conversation: { id: 'lab-1', ownerId: 'tester-1', label: 'Test', engine: 'gpt-live-1', status: 'open', createdAt: '2026-10-24T10:00:00Z', endedAt: null, turns: [] as {id:string;role:string;text:string;createdAt:string}[], events: [] as {id:string;type:string;code:string;createdAt:string}[], config: {id:'baseline'}, recordContent: true },
-    character: person as typeof person | null, conversationActive: false, hardware: { connected: true, ready: true, state: 'ready', currentAction: 'idle', compartments: Array.from({length:6},(_,index)=>({slot:index+1,state:'retracted',wandName:null})), selectedCompartment: null, ledPattern: 'idle', servoCommand:null,vibrationCommand:null,cameraAvailable:true,events:[] }, wand:null,keepsakes:[],memory:{status:'empty',records:[]},duels:[] };
+    character: person as typeof person | null, latestCharacter: null as TestCharacter | null, characterSnapshot: null as CharacterConversationSnapshot | null, conversationActive: false, conversationOperation: null as TestSessionDetail['conversationOperation'], hardware: { connected: true, ready: true, state: 'ready', currentAction: 'idle', compartments: Array.from({length:6},(_,index)=>({slot:index+1,state:'retracted',wandName:null})), selectedCompartment: null, ledPattern: 'idle', servoCommand:null,vibrationCommand:null,cameraAvailable:true,events:[] }, wand:null,keepsakes:[],memory:{status:'empty',records:[]},duels:[] };
 }
 let detail: ReturnType<typeof fixture>; let wrappers: VueWrapper[] = [];
 async function render(path = '/testing-sessions?session=session-1') {
@@ -31,7 +32,7 @@ async function render(path = '/testing-sessions?session=session-1') {
 }
 function button(wrapper: VueWrapper, text: string) { const result = wrapper.findAll('button').find(item=>item.text()===text); if(!result)throw new Error(`Missing button ${text}`); return result; }
 beforeEach(() => {
-  vi.clearAllMocks(); api.sendText.mockReturnValue(true); detail = fixture(); api.setAccount({id:'tester-1',displayName:'Tester One',roles:['Tester']});
+  vi.clearAllMocks(); api.sendText.mockReturnValue(true); api.exportReport.mockResolvedValue('downloaded'); detail = fixture(); api.setAccount({id:'tester-1',displayName:'Tester One',roles:['Tester']});
   Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:api.microphone}});
   api.transport.mockImplementation(async (path:string,init:RequestInit={}) => {
     const method = init.method ?? 'GET';
@@ -113,6 +114,53 @@ describe('hardware-free testing journey', () => {
     expect(wrapper.get('.testing-character').text()).toContain('character_provider_unavailable');
     expect(wrapper.get('.testing-character').text()).toContain('pokračovat se zadanými údaji');
     expect(button(wrapper, 'Pokračovat k rozhovoru').attributes('disabled')).toBeUndefined();
+  });
+  it('distinguishes the latest enriched profile from the immutable conversation snapshot', async () => {
+    detail.latestCharacter = { ...person, profile: { ...person.profile, revision: 2,
+      enrichment: { ...person.profile.enrichment!, summary: 'Novější uložené obohacení.' } } };
+    detail.characterSnapshot = { profileId: 'profile-1', revision: 1, capturedAt: 1792836000,
+      userInput: person.profile.userInput, enrichment: person.profile.enrichment,
+      context: '{"userInput":{"name":"Alena"},"enrichment":{"summary":"Skutečně vrácené obohacení."}}' };
+    const { wrapper } = await render();
+    await wrapper.get('.testing-steps button:nth-child(2)').trigger('click'); await flushPromises();
+    const inspector = wrapper.findAll('details').find(item => item.text().startsWith('Kontext a AI obohacení postavy'));
+    expect(inspector).toBeDefined(); await inspector!.find('summary').trigger('click');
+    expect(wrapper.get('.testing-character').text()).toContain('Novější uložené obohacení.');
+    expect(wrapper.get('.testing-character').text()).toContain('revize 1');
+    expect(wrapper.get('.testing-character').text()).toContain('Tento rozhovor ji nepoužívá');
+    expect(wrapper.get('.testing-character').text()).toContain('Skutečný kontext předaný rozhovoru');
+  });
+  it('shows the server confirmed provider phase while a text operation is active', async () => {
+    detail.conversationActive = true;
+    detail.conversationOperation = { operationId: 'operation-1', phase: 'waiting_provider', elapsedMs: 1250 };
+    const { wrapper } = await render();
+    expect(wrapper.get('.testing-conversation [role="status"]').text()).toContain('Čekám na odpověď poskytovatele');
+    expect(button(wrapper, 'Odeslat skutečnému AI').attributes('disabled')).toBeDefined();
+  });
+  it('explains enrichment completed after capture at the same input revision without blocking an existing chat', async () => {
+    detail.latestCharacter = person;
+    detail.characterSnapshot = { profileId: 'profile-1', revision: 1, capturedAt: 1792836000,
+      userInput: { name: 'Alena', world: 'Library' }, enrichment: null, context: '{"enrichment":null}' };
+    detail.conversation.turns.push({ id: 'old-user', role: 'user', text: 'Existing conversation', createdAt: '2026-10-24T10:00:00Z' });
+    const { wrapper } = await render();
+    await wrapper.get('.testing-steps button:nth-child(2)').trigger('click'); await flushPromises();
+    expect(wrapper.get('.testing-character').text()).toContain('Tento rozhovor ji nepoužívá');
+    expect(wrapper.get('.testing-character').text()).toContain('Dostupná pole při zahájení: jméno, svět.');
+    detail.latestCharacter = { ...person, profile: { ...person.profile, status: 'running' } };
+    await button(wrapper, 'Obnovit stav').trigger('click'); await flushPromises();
+    expect(button(wrapper, 'Pokračovat k rozhovoru').attributes('disabled')).toBeUndefined();
+  });
+  it('exports app build and sanitized enrichment status without character content', async () => {
+    detail.latestCharacter = { ...person, enrichmentOperationId: 'enrich-op-1', profile: { ...person.profile, errorCode: 'character_provider_unavailable' } };
+    const { wrapper } = await render();
+    await wrapper.get('details.testing-diagnostics summary').trigger('click');
+    await button(wrapper, 'Exportovat bezpečné diagnostiky').trigger('click'); await flushPromises();
+    const payload = api.exportReport.mock.calls[0][0];
+    expect(payload.app).toHaveProperty('platform'); expect(payload.app).toHaveProperty('build');
+    expect(payload.characterEnrichment).toMatchObject({ profileId: 'profile-1', revision: 1,
+      status: 'ready', errorCode: 'character_provider_unavailable', operationId: 'enrich-op-1' });
+    expect(JSON.stringify(payload)).not.toContain('Skutečně vrácené obohacení.');
+    expect(JSON.stringify(payload)).not.toContain('Knihovnice.');
   });
   it('navigates an ended session without trying to mutate its frozen character', async () => {
     detail.session.status = 'ended'; detail.conversation.status = 'ended';
@@ -210,7 +258,7 @@ describe('hardware-free testing journey', () => {
     api.transport.mockImplementation((path:string,init:RequestInit)=>path==='/app/v1/testing-sessions/session-1' ? Promise.resolve(Response.json({...detail,conversationActive:reads++===0})) : original(path,init));
     vi.useFakeTimers();await wrapper.get('#testing-message').setValue('Pokračuj v tématu.');await wrapper.get('.testing-chat-form').trigger('submit');await flushPromises();
     expect(api.transport.mock.calls.filter(([path])=>path.endsWith('/turns'))).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(220);await flushPromises();
+    await vi.advanceTimersByTimeAsync(270);await flushPromises();
     expect(api.transport.mock.calls.filter(([path])=>path.endsWith('/turns'))).toHaveLength(1);
     expect(wrapper.text()).toContain('Odpověď skutečného adaptéru.');
   });

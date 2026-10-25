@@ -12,6 +12,7 @@ export function useTestingSessions() {
   const route = useRoute(); const router = useRouter();
   const identity = () => account.value ? `${account.value.id}:${account.value.roles.join(',')}` : '';
   const client = new TestingSessionsClient(identity); const lab = new PersonaLabClient(identity);
+  const progressClient = new TestingSessionsClient(identity);
   const sessions = shallowRef<TestSession[]>([]); const characters = shallowRef<TestCharacter[]>([]);
   const selected = shallowRef<TestSessionDetail | null>(null);
   const error = ref(''); const notice = ref(''); const busy = ref(false); const loading = ref(false); const stale = ref(false);
@@ -21,6 +22,9 @@ export function useTestingSessions() {
   const engine = ref<LabEngine>('gpt-live-1'); const inputMode = ref<InputMode>('text'); const consent = ref(false);
   const text = ref(''); const outputEnabled = ref(false); const captureEnabled = ref(false); const voicePhase = ref<VoicePhase>('idle');
   const partial = ref({ user: '', assistant: '' }); const spokenBusy = ref(false); const providerConfirmed = ref(false);
+  const turnPhase = ref<'idle' | 'waiting' | 'finalizing' | 'recovering'>('idle');
+  const uncertainTurn = ref(false);
+  const progressPaused = ref(false);
   const permitted = computed(() => account.value?.roles.includes('Tester') === true);
   const voiceActive = computed(() => ['connecting', 'waiting', 'listening', 'speaking'].includes(voicePhase.value));
   const open = computed(() => selected.value?.session.status === 'open');
@@ -28,6 +32,7 @@ export function useTestingSessions() {
   let refreshPending: { epoch: number; request: number; collections: boolean; promise: Promise<void> } | undefined;
   let nextCollectionRefreshAt = 0;
   let operationId: string | null = null; let pendingSpokenText = ''; let retiringSessionId:string|null=null;
+  let pendingTextTurn: { sessionId: string; conversationId: string; input: string; priorTurnIds: Set<string> } | undefined;
   let voice = makeVoice();
   function makeVoice(): LabVoice {
     const currentEpoch = epoch; const currentId = selected.value?.session.id;
@@ -52,10 +57,10 @@ export function useTestingSessions() {
   }
   function stopVoice(): void { if(voiceActive.value && selected.value)retiringSessionId=selected.value.session.id; pendingSpokenText = ''; spokenBusy.value = false; providerConfirmed.value = false; voice.dispose(); captureEnabled.value = false; voicePhase.value = 'idle'; partial.value = { user: '', assistant: '' }; }
   function invalidate(identityChanged = false): void {
-    epoch++; readEpoch++; client.invalidate(identityChanged); lab.invalidate(); stopVoice();
+    epoch++; readEpoch++; client.invalidate(identityChanged); progressClient.invalidate(identityChanged); lab.invalidate(); stopVoice();
     selected.value = null; sessions.value = []; characters.value = []; error.value = ''; notice.value = '';
     errorRequestId.value = ''; errorRejected.value = false; errorFromRefresh = false; stale.value = false;
-    text.value = ''; busy.value = false; loading.value = false; operationId = null; retiringSessionId=null; consent.value = false;
+    text.value = ''; busy.value = false; loading.value = false; operationId = null; retiringSessionId=null; pendingTextTurn=undefined; uncertainTurn.value=false; turnPhase.value='idle'; progressPaused.value=false; consent.value = false;
   }
   function message(cause: unknown): string {
     if (typeof cause === 'string') return cause;
@@ -71,9 +76,25 @@ export function useTestingSessions() {
   function clearError(): void {
     error.value = ''; errorRequestId.value = ''; errorRejected.value = false; errorFromRefresh = false;
   }
+  function clearPendingTextTurn(): void {
+    pendingTextTurn = undefined;
+    uncertainTurn.value = false;
+  }
+  function reconcilePendingTextTurn(detail: TestSessionDetail): void {
+    const pending = pendingTextTurn;
+    if (!pending || detail.session.id !== pending.sessionId || detail.conversation.id !== pending.conversationId) return;
+    const saved = detail.conversation.turns.some(turn => turn.role === 'user'
+      && turn.text === pending.input && !pending.priorTurnIds.has(turn.id));
+    if (saved) {
+      clearPendingTextTurn();
+    } else if (detail.conversationActive !== true) {
+      if (!text.value) text.value = pending.input;
+      clearPendingTextTurn();
+    }
+  }
   async function run(action: () => Promise<void>): Promise<void> {
     if (busy.value || !permitted.value) return;
-    const current = epoch; ++readEpoch; busy.value = true; error.value = ''; notice.value = '';
+    const current = epoch; ++readEpoch; progressClient.invalidate(); busy.value = true; error.value = ''; notice.value = '';
     errorRequestId.value = ''; errorRejected.value = false; errorFromRefresh = false;
     try { await action(); }
     catch (cause) { if (current === epoch && !(cause instanceof DOMException && cause.name === 'AbortError')) recordError(cause); }
@@ -88,9 +109,38 @@ export function useTestingSessions() {
     // command's reconciliation. Commands request their own fresh reads below.
     return busy.value ? Promise.resolve() : refreshState();
   }
-  function refreshAfterCommand(): Promise<void> {
-    ++readEpoch;
-    return refreshState();
+  function refreshAfterCommand(includeCollections = true): Promise<void> {
+    ++readEpoch; progressClient.invalidate();
+    return refreshState(includeCollections);
+  }
+  let progressReadPending: Promise<void> | undefined;
+  function refreshProgress(): Promise<void> {
+    const currentDetail = selected.value;
+    if (progressReadPending || progressPaused.value || !busy.value || !currentDetail
+      || !['waiting', 'finalizing'].includes(turnPhase.value)) return Promise.resolve();
+    const currentEpoch = epoch; const currentRead = readEpoch;
+    const sessionId = currentDetail.session.id; const conversationId = currentDetail.conversation.id;
+    let task!: Promise<void>;
+    task = (async () => {
+      try {
+        const detail = await progressClient.session(sessionId);
+        if (disposed || currentEpoch !== epoch || currentRead !== readEpoch || !busy.value
+          || turnPhase.value === 'recovering' || selected.value?.session.id !== sessionId
+          || selected.value.conversation.id !== conversationId || detail.session.id !== sessionId
+          || detail.conversation.id !== conversationId) return;
+        selected.value = { ...selected.value,
+          conversationActive: detail.conversationActive,
+          conversationOperation: detail.conversationOperation,
+        };
+      } catch {
+        // Progress reads are advisory. The command's result and normal detail
+        // reconciliation remain authoritative and own user-visible failures.
+      } finally {
+        if (progressReadPending === task) progressReadPending = undefined;
+      }
+    })();
+    progressReadPending = task;
+    return task;
   }
   function refreshState(includeCollections = true): Promise<void> {
     if (!permitted.value || disposed) return Promise.resolve();
@@ -113,9 +163,16 @@ export function useTestingSessions() {
       if (epoch !== current || request !== readEpoch) return;
       if (list.status === 'fulfilled') sessions.value = list.value;
       if (people.status === 'fulfilled') characters.value = people.value;
-      if (detail.status === 'fulfilled' && detail.value && selected.value?.session.id === id) selected.value = detail.value;
-      const failure = [detail, people, list].find(result => result.status === 'rejected');
-      stale.value = !!failure;
+      if (detail.status === 'fulfilled' && detail.value && selected.value?.session.id === id) {
+        selected.value = detail.value;
+        reconcilePendingTextTurn(detail.value);
+        if (detail.value.conversationActive !== true && turnPhase.value === 'recovering') turnPhase.value = 'idle';
+      }
+      const detailFailure = detail.status === 'rejected' ? detail : undefined;
+      const failure = detailFailure ?? [people, list].find(result => result.status === 'rejected');
+      // Collection failures must remain visible, but they do not make the
+      // selected conversation stale when its authoritative detail succeeded.
+      stale.value = !!detailFailure;
       if (failure?.status === 'rejected') {
         if (!(failure.reason instanceof DOMException && failure.reason.name === 'AbortError') && (!error.value || errorFromRefresh)) recordError(failure.reason, true);
       } else if (errorFromRefresh) {
@@ -131,6 +188,10 @@ export function useTestingSessions() {
       if (current !== epoch || request !== readEpoch) return;
       selected.value = detail; inputMode.value = detail.session.inputMode; engine.value = detail.session.engine;
       text.value = ''; stale.value = false;
+      if (pendingTextTurn && (pendingTextTurn.sessionId !== detail.session.id
+        || pendingTextTurn.conversationId !== detail.conversation.id)) clearPendingTextTurn();
+      reconcilePendingTextTurn(detail);
+      if (turnPhase.value === 'recovering' && detail.conversationActive !== true) turnPhase.value = 'idle';
       await router.replace({ path: '/testing-sessions', query: { session: id } });
     });
   }
@@ -140,6 +201,9 @@ export function useTestingSessions() {
       operationId ??= crypto.randomUUID();
       const session = await client.create(engine.value, inputMode.value, consent.value, operationId);
       operationId = null; stopVoice(); selected.value = await client.session(session.id);
+      if (pendingTextTurn && (pendingTextTurn.sessionId !== selected.value.session.id
+        || pendingTextTurn.conversationId !== selected.value.conversation.id)) clearPendingTextTurn();
+      text.value = '';
       await router.replace({ path: '/testing-sessions', query: { session: session.id } });
       await refreshAfterCommand();
     });
@@ -177,18 +241,20 @@ export function useTestingSessions() {
     });
   }
   async function awaitRetired(id:string):Promise<void> {
-    const initialEpoch=epoch;const deadline=Date.now()+10000;
+    const initialEpoch=epoch;const deadline=performance.now()+10000;let delayMs=250;
     for(;;){
       if(epoch!==initialEpoch || selected.value?.session.id!==id)throw new DOMException('Testing session changed.','AbortError');
       const detail=await client.session(id);
       if(epoch!==initialEpoch || selected.value?.session.id!==id)throw new DOMException('Testing session changed.','AbortError');
       if(detail.conversationActive!==true){selected.value=detail;if(retiringSessionId===id)retiringSessionId=null;return;}
-      if(Date.now()>=deadline)throw new Error('Předchozí poskytovatelské spojení se ještě uzavírá. Obnovte stav a zkuste zprávu znovu.');
-      await new Promise<void>(resolve=>setTimeout(resolve,200));
+      const remaining=deadline-performance.now();
+      if(remaining<=0)throw new Error('Předchozí poskytovatelské spojení se ještě uzavírá. Obnovte stav a zkuste zprávu znovu.');
+      await new Promise<void>(resolve=>setTimeout(resolve,Math.min(delayMs,remaining)));
+      delayMs=Math.min(1000,Math.round(delayMs*1.6));
     }
   }
   async function send(): Promise<void> {
-    if (!selected.value || !text.value.trim() || !open.value || !consent.value || spokenBusy.value || busy.value || stale.value) return;
+    if (!selected.value || !text.value.trim() || !open.value || !consent.value || spokenBusy.value || busy.value || stale.value || uncertainTurn.value) return;
     if (!voiceActive.value && selected.value.conversationActive) {
       recordError('Předchozí požadavek ještě probíhá. Vyčkejte a obnovte stav.');
       return;
@@ -205,11 +271,32 @@ export function useTestingSessions() {
     await run(async () => {
       if(wasConnected)await awaitRetired(selected.value!.session.id);
       const id = selected.value!.conversation.id;
+      const priorTurnIds = new Set(selected.value!.conversation.turns.map(turn => turn.id));
+      const sessionId = selected.value!.session.id;
+      turnPhase.value = 'waiting';
       try {
-        updateConversation(await lab.text(id, input)); text.value = ''; await refreshAfterCommand();
+        text.value = '';
+        updateConversation(await lab.text(id, input));
+        turnPhase.value = 'finalizing';
+        progressPaused.value = true;
+        try { await refreshAfterCommand(false); }
+        finally { progressPaused.value = false; }
+        turnPhase.value = 'idle';
       } catch (cause) {
-        // A gateway/provider failure may follow a saved turn. Read server truth without replaying it.
-        await refreshAfterCommand();
+        // A gateway/provider failure may follow a saved turn. Reconcile before
+        // retaining the draft so a manual retry cannot silently duplicate it.
+        turnPhase.value = 'recovering';
+        pendingTextTurn = { sessionId, conversationId: id, input, priorTurnIds };
+        uncertainTurn.value = true;
+        try {
+          progressPaused.value = true;
+          await refreshAfterCommand(false);
+        } catch {
+          // Preserve the original provider/request error; the next explicit
+          // status refresh remains available from the error notice.
+        } finally {
+          progressPaused.value = false;
+        }
         throw cause;
       }
     });
@@ -264,7 +351,7 @@ export function useTestingSessions() {
     if (!selected.value) return;
     const id = selected.value.session.id; stopVoice();
     await run(async () => {
-      await client.delete(id); selected.value = null; text.value = ''; await router.replace('/testing-sessions'); await refreshAfterCommand();
+      await client.delete(id); selected.value = null; text.value = ''; clearPendingTextTurn(); await router.replace('/testing-sessions'); await refreshAfterCommand();
     });
   }
   async function load(): Promise<void> {
@@ -277,16 +364,26 @@ export function useTestingSessions() {
   watch(outputEnabled, value => voice.setOutputEnabled(value));
   const refreshTimer = setInterval(() => {
     if (document.hidden || busy.value || client.cooldownRemainingMs() > 0) return;
-    const includeCollections = Date.now() >= nextCollectionRefreshAt;
+    const recoveringConversation = selected.value?.conversationActive === true;
+    if (recoveringConversation) return;
+    const includeCollections = !recoveringConversation && Date.now() >= nextCollectionRefreshAt;
     void refreshState(includeCollections);
   }, 10000);
+  const activeOperationTimer = setInterval(() => {
+    if (document.hidden || busy.value || selected.value?.conversationActive !== true || client.cooldownRemainingMs() > 0) return;
+    void refreshState(false);
+  }, 2000);
+  const progressTimer = setInterval(() => {
+    if (document.hidden || progressPaused.value || !busy.value || !['waiting', 'finalizing'].includes(turnPhase.value)) return;
+    void refreshProgress();
+  }, 2000);
   const clockTimer = setInterval(() => { clock.value = Date.now(); }, 1000);
   const hidden = () => { if (document.hidden) stopVoice(); else void refresh(); };
   const online = () => void refresh();
   document.addEventListener('visibilitychange', hidden); window.addEventListener('online', online);
-  onBeforeUnmount(() => { disposed = true; invalidate(); clearInterval(refreshTimer); clearInterval(clockTimer); document.removeEventListener('visibilitychange', hidden); window.removeEventListener('online', online); });
+  onBeforeUnmount(() => { disposed = true; invalidate(); clearInterval(refreshTimer); clearInterval(activeOperationTimer); clearInterval(progressTimer); clearInterval(clockTimer); document.removeEventListener('visibilitychange', hidden); window.removeEventListener('online', online); });
   const retrySeconds = computed(() => Math.ceil(Math.max(0, client.cooldownUntil() - clock.value) / 1000));
   return { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, engine, inputMode, consent,
-    text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, open, client, run, refresh, refreshAfterCommand, resume, start, saveCharacter, selectCharacter,
+    text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, turnPhase, uncertainTurn, open, client, run, refresh, refreshAfterCommand, resume, start, saveCharacter, selectCharacter,
     enrich, send, selectWand, generate, fault, startVoice, startSpokenText, stopVoice, changeMode, end, cancel, remove, interrupt: () => voice.interrupt() };
 }
