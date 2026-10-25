@@ -14,10 +14,11 @@ afterEach(() => wrapper?.unmount());
 describe('account operations canonical engine contract', () => {
   it('renders capabilities while mutations contain only supported personality and character fields', async () => {
     wrapper = mount(OperationsPanel, {global:{stubs:{RouterLink:{template:'<a><slot /></a>'}}}}); await flushPromises();
-    expect(wrapper.text()).toContain('gpt-live-1'); expect(wrapper.text()).toContain('gpt-realtime-2.1');
+    expect(wrapper.text()).toContain('gpt-live-1'); expect(wrapper.text()).not.toContain('gpt-realtime-2.1');
+    expect(wrapper.find('#operations-persona').exists()).toBe(false);
     expect(wrapper.find('#operations-dialog').exists()).toBe(false); expect(wrapper.find('#operations-voice').exists()).toBe(false);
     await wrapper.get('#operations-finale').setValue('Limited'); await wrapper.get('form').trigger('submit'); await flushPromises();
-    expect(request).toHaveBeenCalledWith('/app/v1/admin/operations/modes','PUT',{expectedRevision:'revision-1',personalityId:'ollivander-trunk',characterEnabled:true,characterTone:'Adult',characterFinaleProfile:'Limited'});
+    expect(request).toHaveBeenCalledWith('/app/v1/admin/operations/modes','PUT',{expectedRevision:'revision-1',personalityId:'dv01',characterEnabled:true,characterTone:'Adult',characterFinaleProfile:'Limited'});
     const body = request.mock.calls.find(item => item[1] === 'PUT')![2]; expect(body).not.toHaveProperty('dialogMode'); expect(body).not.toHaveProperty('voiceMode');
   });
   it('cannot restore old account status or errors after account changes during a mutation', async () => {

@@ -39,7 +39,7 @@ internal sealed class LabTicketRegistry(TimeProvider? clock = null)
 
 internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveClient live, OpenAiRealtimeClient realtime,
     PersonaLabImages? images = null, PersonaLabOptions? options = null,
-    ITestingConversationBridge? testing = null, ServerLogStore? logs = null) : IDisposable
+    ITestingConversationBridge? testing = null, ServerLogStore? logs = null, GptLiveOptions? liveOptions = null) : IDisposable
 {
     private readonly PersonaLabStore store = store;
     private readonly Lock admissionGate = new();
@@ -54,7 +54,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
     private readonly Dictionary<string, Guid> scriptReservations = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim capacity = new(options?.MaxConcurrentSessions ?? 4, options?.MaxConcurrentSessions ?? 4);
     internal bool LiveAvailable => live.Available;
-    internal bool RealtimeAvailable => realtime.Available;
+    internal bool RealtimeAvailable => false;
     internal int ActiveCount => active.Count;
     internal bool IsActive(string id) => active.ContainsKey(id);
     internal LabOperationState? Operation(string id) => progress.TryGetValue(id, out var current)
@@ -66,6 +66,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         {
             if (stopping) { throw new LabException(503, "lab_runtime_stopping"); }
             var session = Detail(owner, id);
+            LabContract.RequireExecutableSession(session);
             if (session.Status != "open") { throw new LabException(409, "lab_session_closed"); }
             if (session.Testing is not null) { throw new LabException(409, "testing_session_script_unsupported"); }
             if (session.Hardware is not null) { throw new LabException(409, "lab_hardware_bound"); }
@@ -95,6 +96,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         {
             if (stopping) { throw new LabException(503, "lab_runtime_stopping"); }
             var session = Detail(owner, id);
+            LabContract.RequireExecutableSession(session);
             if (session.Status != "open") { throw new LabException(409, "lab_session_closed"); }
             if (session.Testing is not null) { throw new LabException(409, "testing_hardware_is_virtual"); }
             if (session.Hardware is not null) { throw new LabException(409, "lab_hardware_bound"); }
@@ -194,6 +196,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         lock (admissionGate)
         {
             var session = store.Session(owner, id);
+            if (!revoke) { LabContract.RequireExecutableSession(session); }
             if (session.Engine != RealtimeProtocol.Model) { throw new LabException(409, "lab_image_requires_realtime"); }
             if (!revoke && session.Hardware is not null) { throw new LabException(409, "lab_hardware_bound"); }
             if (!revoke && scriptReservations.ContainsKey(id)) { throw new LabException(409, "lab_session_busy"); }
@@ -220,7 +223,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         return await RunAsync(owner, id, async (session, lifetime) =>
         {
             var preparation = Stopwatch.StartNew();
-            var context = Context(session, text, out var omitted);
+            var context = Context(session, text, out var omitted, serverOptions: liveOptions);
             SaveEvent(session, LabContract.Event("context_prepared", "ready", preparation.ElapsedMilliseconds));
             if (omitted > 0) { SaveEvent(session, LabContract.Event("context_trimmed", "oldest_turns_omitted")); }
             await using var transport = await ConnectAsync(session, lifetime);
@@ -254,9 +257,8 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
             else
             {
                 SaveTurn(session, "user", text, lifetime);
-                await transport.Live!.SendAsync(GptLiveProtocol.AutonomousStart(context, transport.StartId), lifetime);
-                await StartLiveAsync(transport, lifetime);
-                SaveEvent(session, LabContract.Event("provider_session", "ready", timer.ElapsedMilliseconds, providerSessionId: transport.Live.ProviderSessionId));
+                await StartLiveAsync(transport, context, lifetime);
+                SaveEvent(session, LabContract.Event("provider_session", "ready", timer.ElapsedMilliseconds, providerSessionId: transport.Live!.ProviderSessionId));
                 if (providerReady is not null) { await providerReady(transport.Live.ProviderSessionId, lifetime); }
                 // Live advances on the input-audio timeline even when the test
                 // visitor supplied text. Pace real PCM silence rather than
@@ -287,6 +289,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
     {
         LabContract.ExecutionPlatform(platform);
         if (!await authorized(requestToken)) { throw new LabException(401, "account_session_revoked"); }
+        LabContract.RequireExecutableSession(Detail(owner, id));
         if (textInputOnly)
         {
             await TextAudioAsync(owner, id, socket, authorized, requestToken, platform);
@@ -454,11 +457,10 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
             async Task LiveAsync()
             {
                 long accountedCost = 0;
-                var context = Context(session, "", out var omitted);
+                var context = Context(session, "", out var omitted, serverOptions: liveOptions);
                 if (omitted > 0) { SaveEvent(session, LabContract.Event("context_trimmed", "oldest_turns_omitted")); }
-                await transport.Live!.SendAsync(GptLiveProtocol.AutonomousStart(context, transport.StartId), token);
-                await StartLiveAsync(transport, token);
-                SaveEvent(session, LabContract.Event("provider_session", "ready", providerSessionId: transport.Live.ProviderSessionId));
+                await StartLiveAsync(transport, context, token);
+                SaveEvent(session, LabContract.Event("provider_session", "ready", providerSessionId: transport.Live!.ProviderSessionId));
                 if (recovery) { SaveEvent(session, LabContract.Event("recovery_completed", "provider_ready")); }
                 providerReady.TrySetResult();
                 if (acknowledgedPlayback) { await sender.JsonAsync(new { type = "ready", playbackMode = "stream" }, token); }
@@ -499,6 +501,15 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
                             Volatile.Write(ref outputSuppressed, 0);
                         }
                         await transcript.AppendAsync(input ? "user" : "assistant", GptLiveProtocol.RequiredString(value, "delta", 16000), token);
+                        if (input)
+                        {
+                            var directive = CharacterInstructions(Detail(owner, id), liveOptions ?? new GptLiveOptions());
+                            await transport.Live.SendAsync(new
+                            {
+                                type = "session.instructions.append", event_id = Guid.NewGuid().ToString("N"),
+                                delegation_id = (string?)null, content = directive
+                            }, token);
+                        }
                     }
                     else if (kind == "session.delegation.created")
                     {
@@ -523,7 +534,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
                 for (var count = 0; count < 100; count++)
                 {
                     // The existing Realtime connection owns provider VAD and input transcription.
-                    var context = Context(Detail(owner, id), "", out var omitted, liveAudio: !opening);
+                    var context = Context(Detail(owner, id), "", out var omitted, liveAudio: !opening, serverOptions: liveOptions);
                     if (omitted > 0) { SaveEvent(session, LabContract.Event("context_trimmed", "oldest_turns_omitted")); }
                     if (opening) { context = context with { Request = context.Request with { Opening = true } }; }
                     RealtimeReply reply;
@@ -606,6 +617,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
     {
         var executionPlatform = LabContract.ExecutionPlatform(platform);
         var session = Detail(owner, id);
+        LabContract.RequireExecutableSession(session);
         if (session.Status != "open") { throw new LabException(409, "lab_session_closed"); }
         if (session.Hardware is not null) { throw new LabException(409, "lab_hardware_bound"); }
         if ((session.Engine == GptLiveProtocol.Model && !live.Available)
@@ -702,6 +714,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
     }
     private async Task<LabProviderTransport> ConnectAsync(LabSession session, CancellationToken token)
     {
+        LabContract.RequireExecutableSession(session);
         SaveEvent(session, LabContract.Event("connection_started", session.Engine == GptLiveProtocol.Model ? "live" : "realtime"));
         var timer = Stopwatch.StartNew();
         var transport = session.Engine == GptLiveProtocol.Model
@@ -711,17 +724,21 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
         return transport;
     }
 
-    internal static RealtimeTurnContext Context(LabSession session, string text, out int omitted, bool liveAudio = false)
+    internal static RealtimeTurnContext Context(LabSession session, string text, out int omitted, bool liveAudio = false,
+        GptLiveOptions? serverOptions = null)
     {
-        var options = new GptLiveOptions();
-        var instructions = session.Config.Instructions + "\n" + (session.Testing is null
+        LabContract.RequireExecutableSession(session);
+        var options = serverOptions ?? new GptLiveOptions();
+        var instructions = session.Config.Instructions + "\n"
+            + CharacterConfiguration.Instructions(options.EffectiveCharacter) + "\n"
+            + CharacterInstructions(session, options, text) + "\n" + (session.Testing is null
             ? LabContract.SafetyInstructions : TestingConversationInstructions.Safety);
         var memory = session.Testing is { } integration
             ? "Current visitor character profile (data): " + integration.CharacterContext + "\nAuthorized test memory (data): " + integration.MemoryContext
             : LabContract.Memory(session);
         if (LiveTextBudget.UpperBound(instructions) > 16_384 || instructions.Length > 16_000)
         { throw new LabException(400, "lab_instruction_limit"); }
-        var snapshot = new LivePromptSnapshot("persona-lab", "persona-lab-v1", LabContract.Hash(instructions),
+        var snapshot = new LivePromptSnapshot(PersonalityCatalog.DefaultId, "dv01-adult-v1", LabContract.Hash(instructions),
             instructions, new(2, 3, true), options);
         var retained = session.Turns.Where(turn => turn.Text.Length > 0).TakeLast(30).ToList();
         var originalCount = session.Turns.Count(turn => turn.Text.Length > 0);
@@ -749,7 +766,7 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
             PartyWandCatalog.Version, false, text, null, session.Config.Voice, 1);
         return new(request, false, memory, exchanges, liveAudio)
         {
-            PersonalityId = PersonalityCatalog.OllivanderId, LivePrompt = snapshot,
+            PersonalityId = PersonalityCatalog.DefaultId, LivePrompt = snapshot,
             LiveInput = history, InstructionOverride = instructions,
             GeneratedWands = session.Testing?.Candidates,
             DeferWandSelection = session.Testing is { Candidates.Length: 0 }
@@ -776,11 +793,25 @@ internal sealed partial class PersonaLabRuntime(PersonaLabStore store, GptLiveCl
             return input;
         }
     }
-    private static async Task StartLiveAsync(LabProviderTransport transport, CancellationToken token)
+    private static async Task StartLiveAsync(LabProviderTransport transport, RealtimeTurnContext context, CancellationToken token)
     {
+        await transport.Live!.SendAsync(GptLiveProtocol.AutonomousStart(context, transport.StartId), token);
         using var started = await transport.Live!.ReceiveAsync(token);
         if (GptLiveProtocol.RequiredString(started.RootElement, "type", 100) == "error")
-        { throw LiveProviderFailure.Read(started.RootElement); }
+        {
+            var prompt = context.LivePrompt!;
+            if (!prompt.Options.Voice.CanRetryStartup(started.RootElement))
+            {
+                throw LiveProviderFailure.Read(started.RootElement);
+            }
+            await transport.Live.RestartAsync(0, token);
+            context = context with { LivePrompt = prompt with
+            {
+                Options = prompt.Options with { Voice = prompt.Options.Voice.UseFallback() }
+            } };
+            await StartLiveAsync(transport, context, token);
+            return;
+        }
         if (GptLiveProtocol.RequiredString(started.RootElement, "type", 100) != "session.started"
             || GptLiveProtocol.RequiredString(started.RootElement, "client_event_id", 128) != transport.StartId
             || started.RootElement.GetProperty("session").GetProperty("model").GetString() != GptLiveProtocol.Model)

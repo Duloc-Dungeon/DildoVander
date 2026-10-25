@@ -26,9 +26,10 @@ internal static class CharacterDirectorTests
     private static void DefaultsAndIsolation()
     {
         var policy = new CharacterPolicy();
-        Check(!policy.Enabled && policy.HostTone == CharacterTone.Adult && policy.FinaleProfile == FinaleProfile.Blocked,
-            "opt-in adult policy with explicitly blocked finale by default");
-        var disabled = new CharacterSession("disabled", policy);
+        Check(policy.Enabled && policy.HostTone == CharacterTone.Adult && policy.FinaleProfile == FinaleProfile.Blocked,
+            "mandatory adult DV01 policy with explicitly blocked finale by default");
+        // Pure director recovery coverage; production configuration cannot disable DV01.
+        var disabled = new CharacterSession("disabled", policy with { Enabled = false });
         disabled.AcceptInput("a", 1, "Jsem nejlepší kouzelník v místnosti");
         Check(disabled.Anchors.Count == 0 && CharacterDirector.Evaluate(disabled, CharacterPhase.Opening, 0).PromptText == "",
             "disabled feature has no scene activity");

@@ -21,6 +21,36 @@ using Kufr.Backend.Features.Memory;
 
 internal static class AutonomousLiveTests
 {
+    internal static async Task RunVoiceFallbackAsync()
+    {
+        using var clock = new ManualClock();
+        using var rejected = new SocketFixture { StartupError = "voice_not_found" };
+        using var accepted = new SocketFixture();
+        var reconnects = 0;
+        await using var connection = new GptLiveConnection(rejected, _ =>
+        {
+            reconnects++;
+            return Task.FromResult<WebSocket>(accepted);
+        });
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var decisions = new WandDecisionService((_, _) => throw new Exception("Voice test must not decide a wand."));
+        var options = new GptLiveOptions { Voice = new("voice_revoked_fixture") };
+        var run = new AutonomousLiveDialogue(connection, decisions, clock).RunAsync(Call(options, lifetime),
+            (_, _) => Task.CompletedTask, (_, _) => Task.CompletedTask, _ => Task.CompletedTask,
+            (_, _) => throw new Exception("Voice startup cannot imply playback."),
+            () => (63, 7, true), _ => Task.CompletedTask, lifetime.Token);
+        var fallbackStart = await accepted.Command("session.start", lifetime.Token);
+        await accepted.Command("session.instructions.append", lifetime.Token);
+        using var payload = JsonDocument.Parse(fallbackStart);
+        Check(reconnects == 1 && payload.RootElement.GetProperty("session").GetProperty("model").GetString() == "gpt-live-1"
+            && payload.RootElement.GetProperty("session").GetProperty("audio").GetProperty("output")
+                .GetProperty("voice").GetString() == "vesper",
+            "revoked custom voice opens one new Live session using the built-in fallback");
+        lifetime.Cancel();
+        try { await run; } catch (OperationCanceledException) { }
+        Console.WriteLine("Custom voice rejection fake Live transport test passed.");
+    }
+
     internal static async Task RunCharacterAsync()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -32,8 +62,8 @@ internal static class AutonomousLiveTests
             && options.Character.FinaleProfile == FinaleProfile.Blocked, "opt-in adult and explicit blocked finale");
         var candidate = LivePromptSnapshot.Create(PersonalityCatalog.OllivanderId, options);
         var legacy = LivePromptSnapshot.Create(PersonalityCatalog.OllivanderId, options with { Character = new() });
-        Check(candidate.Version == "dv01-adult-v1" && legacy.Version == "autonomous-live-v3"
-            && candidate.Sha256 != legacy.Sha256, "separate version leaves feature-off snapshot intact");
+        Check(candidate.Version == "dv01-adult-v1" && legacy.Version == candidate.Version
+            && candidate.Sha256 == legacy.Sha256, "legacy settings always execute the same DV01 baseline");
         Check(!AutonomousLiveDialogue.LimitedTerminalReady("Poslední slovo a Knihovní bouře.")
             && AutonomousLiveDialogue.LimitedTerminalReady("Výběr mám. Mechanika mi nepotvrdila konec, zatím na to nesahej."),
             "limited publication rejects catalog identity, remains distinct from named");
@@ -61,7 +91,12 @@ internal static class AutonomousLiveTests
         await VerifyDeletionBeforeQuietAsync(options);
         await VerifyCharacterCancellation(options);
         await VerifySplitVoiceControl(options);
-        await VerifyConversation(options, correction: false, personalized: true);
+        foreach (var profile in new[] { FinaleProfile.Blocked, FinaleProfile.Limited })
+        {
+            var personalizedOptions = options with { Character = options.Character with { FinaleProfile = profile } };
+            await VerifyConversation(personalizedOptions, correction: false, personalized: true);
+            await VerifyConversation(personalizedOptions, correction: false, personalized: true, repairVerdict: true);
+        }
         await VerifyPcmCancellationFence(options);
         foreach (var control in new[] { "To řekl kamarád.", "To není pravda.", "To byl vtip." })
         { await VerifyCharacterEvidenceWithdrawal(options, control); }
@@ -244,7 +279,7 @@ internal static class AutonomousLiveTests
             var store = new ConversationStore(clock, journal, dialog, eveningMemory: memory,
                 voiceRunner: voice, liveOptions: options, show: show);
             var modes = store.ReadServerModes();
-            Check(store.ChangeServerModes(new(modes.Revision, PersonalityId: PersonalityCatalog.OllivanderId,
+            Check(store.ChangeServerModes(new(modes.Revision, PersonalityId: PersonalityCatalog.DefaultId,
                 CharacterEnabled: true, CharacterTone: "Adult", CharacterFinaleProfile: "Limited")).Status == 200,
                 "actual owner enables frozen limited character profile");
             using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -885,14 +920,15 @@ internal static class AutonomousLiveTests
         var options = defaults with { Mode = LiveActorMode.AutonomousActor, DelegationContextWaitMs = 0, OutputPauseMs = 500, TerminalQuietMs = 1000 };
         var olli = LivePromptSnapshot.Create(PersonalityCatalog.OllivanderId, options);
         var party = LivePromptSnapshot.Create(PersonalityCatalog.DefaultId, options);
-        Check(olli.Policy == new LiveConversationPolicy(2, 3, true) && party.Policy == new LiveConversationPolicy(4, 7, false), "per-personality policy");
-        Check(olli.Instructions.Contains("Jsi Mistr hůlek") && party.Instructions.Contains("Jsi Stínový čaroděj")
-            && !party.Instructions.Contains("dvě zodpovězené"), "dedicated adaptation never overwrites party identity");
-        Check(!olli.Instructions.Contains("Vyslov dodanou") && !party.Instructions.Contains("server nedodá repliku"), "autonomous prompt has no mandatory scripted-response gate");
-        Check(olli.Sha256 != PersonalityCatalog.Inventory.Single(p => p.Id == PersonalityCatalog.OllivanderId).PromptSha256, "source hash and derived prompt hash differ");
+        Check(olli.Policy == new LiveConversationPolicy(2, 3, true) && party.Policy == olli.Policy,
+            "historical selection arguments cannot override the sole DV01 policy");
+        Check(olli.Instructions.Contains("Jsi Mistr hůlek") && party.Instructions == olli.Instructions
+            && party.PersonalityId == PersonalityCatalog.DefaultId, "one canonical production identity");
+        Check(olli.Sha256 != PersonalityCatalog.Inventory.Single().PromptSha256,
+            "authored source and effective policy snapshot hashes are distinct");
         var overrideOptions = options with { UsualAnswersOverride = 3, MaximumAnswersOverride = 4 };
-        Check(LivePromptSnapshot.Create(PersonalityCatalog.OllivanderId, overrideOptions).Instructions.Contains("otázek: 3; nejvýše 4")
-            && overrideOptions.Policy(PersonalityCatalog.OllivanderId).MaximumAnswers == 4, "one documented admin-policy priority");
+        Check(overrideOptions.Policy(PersonalityCatalog.DefaultId).MaximumAnswers == 4,
+            "bounded backend decision policy remains configurable");
         await VerifyVisualResetAsync(options);
         await VerifyVisualResetAsync(options, beforeReady: true);
         VerifyProjection(options);
@@ -902,8 +938,8 @@ internal static class AutonomousLiveTests
         using var noModel = new WandDecisionService((_, _) => throw new Exception("Unnecessary model call"));
         var input = new WandDecisionInput(2, 0, 7, [new("a", "nevím")], olli.Policy, 2, false);
         Check((await noModel.DecideAsync(input, CancellationToken.None)).Status == WandDecisionStatus.NoAvailableWand, "empty ReadyMask is deterministic");
-        Check((await noModel.DecideAsync(input with { ReadyMask = 63, Policy = party.Policy, AnswerCandidates = 2 }, CancellationToken.None)).Status
-            == WandDecisionStatus.NeedsInformation, "party keeps its own policy without an early paid decision or Ollivander cadence");
+        Check((await noModel.DecideAsync(input with { ReadyMask = 63, Evidence = [] }, CancellationToken.None)).Status
+            == WandDecisionStatus.NeedsInformation, "DV01 missing evidence never creates a paid selection call");
         var request = WandDecisionService.BuildRequest(input with { ReadyMask = 63 });
         Check(!request.Contains("\"reply\"") && request.Contains("decide_wand") && request.Contains("gpt-6.1-sol"), "structured facts use existing model without a monologue contract");
         var escaped = WandDecisionService.BuildRequest(input with { ReadyMask = 63, Evidence = Enumerable.Range(0, 8)
@@ -1240,10 +1276,13 @@ internal static class AutonomousLiveTests
         if (options.Character.Enabled) { name = "Výběr mám"; }
         if (personalized)
         {
-            name = call.Context.GeneratedWands!.Single().Name;
-            Check(result.Contains(name) && !result.Contains("Poslední slovo"), "actual backend delegation delivers personalized identity without legacy title");
+            var generatedName = call.Context.GeneratedWands!.Single().Name;
+            Check(!result.Contains(generatedName) && !result.Contains("Poslední slovo"),
+                "personalized backend selection respects the same anonymous finale publication profile");
+            if (repairVerdict) { name = generatedName; }
         }
-        if (naturalVerdict) name = "Poslední slovo";
+        if (naturalVerdict && !repairVerdict) { name = "Výběr mám"; }
+        if (repairVerdict && !personalized) { name = "Poslední slovo"; }
         socket.Transcript(false, name + " —", 3000, 4000);
         socket.Audio();
         await audioConsumed.Reader.ReadAsync(lifetime.Token);
@@ -1254,12 +1293,12 @@ internal static class AutonomousLiveTests
         await audioConsumed.Reader.ReadAsync(lifetime.Token);
         if (repairVerdict)
         {
-            clock.Advance(3000);
-            var repair = await socket.Command("session.instructions.append", lifetime.Token);
-            Check(repair.Contains("Dokonči verdikt") && repair.Contains("Poslední slovo")
-                && !playerRequests.Reader.TryRead(out _), "an ambiguous announcement receives one focused repair before any playback publication");
-            socket.Transcript(false, "Jasanová hůlka Poslední slovo, tak už nezdržuj", 7000, 8000); socket.Audio();
-            await audioConsumed.Reader.ReadAsync(lifetime.Token);
+            clock.Advance(40_000);
+            try { await run.WaitAsync(lifetime.Token); throw new Exception("Named finale was published."); }
+            catch (InvalidDataException) { }
+            Check(!playerRequests.Reader.TryRead(out _) && !socket.Sent.Any(command => command.Contains("Dokonči verdikt")),
+                "forbidden named speech cannot repair into a reveal or publish playback/physical authority");
+            return;
         }
         if (acknowledge)
         {
@@ -1313,7 +1352,6 @@ internal static class AutonomousLiveTests
             Check(!socket.Sent.Any(s => s.Contains("session.close")), "guest speech blocks a drained checkpoint before its transcript arrives");
             socket.Transcript(true, "Přestaň mluvit", 6100, 6500);
             await consumed.Reader.ReadAsync(lifetime.Token);
-            await socket.Command("session.instructions.append", lifetime.Token);
             lifetime.Cancel();
             try { await run; throw new Exception("Interrupted verdict accepted"); } catch (OperationCanceledException) { }
             Check(!socket.Sent.Any(s => s.Contains("session.close")), "late local drain cannot finalize an interrupted verdict"); return;
@@ -1354,7 +1392,9 @@ internal static class AutonomousLiveTests
         await socket.Command("session.instructions.append", lifetime.Token);
         socket.Delegate("before-context", 2000);
         socket.Emit(new { type = "session.usage.updated", usage = new { seconds = 1 } });
-        var recovery = await socket.Command("session.instructions.append", lifetime.Token);
+        string recovery;
+        do { recovery = await socket.Command("session.instructions.append", lifetime.Token); }
+        while (!recovery.Contains("before-context", StringComparison.Ordinal));
         Check(recovery.Contains("before-context") && recovery.Contains("spolehlivý"), "missing transcript has bounded recovery with a known delegation ID");
         lifetime.Cancel();
         try { await run; } catch (OperationCanceledException) { }
@@ -1489,8 +1529,11 @@ internal static class AutonomousLiveTests
             await AdvanceUntilAsync(noSwearingApplied, run, clock, lifetime.Token);
             Check(binding.Read().Instructions.Contains("Do not swear.", StringComparison.Ordinal),
                 "actual autonomous guest input commits no-swearing opt-out");
-            Check(firstSocket.Sent.Any(text => text.Contains("Do not swear.", StringComparison.Ordinal)),
-                "autonomous Live immediately receives the updated trusted tone directive");
+            string toneCommand;
+            do { toneCommand = await firstSocket.Command("session.instructions.append", lifetime.Token); }
+            while (!toneCommand.Contains("Do not swear.", StringComparison.Ordinal));
+            Check(toneCommand.Contains("Do not swear.", StringComparison.Ordinal),
+                "autonomous Live receives the updated trusted tone directive");
 
             firstSocket.Emit(new { type = "error", error = new
                 { code = "server_error", type = "server_error", message = "Private provider content" } });
@@ -1666,7 +1709,7 @@ internal static class AutonomousLiveTests
             Memory = new(archive, provider, memoryOptions, TimeProvider.System);
             Conversations = new(TimeProvider.System, journal, eveningMemory: archive, liveOptions: options);
             var mode = Conversations.ReadServerModes();
-            Check(Conversations.ChangeServerModes(new(mode.Revision, PersonalityId: PersonalityCatalog.OllivanderId)).Status == 200,
+            Check(Conversations.ChangeServerModes(new(mode.Revision, PersonalityId: PersonalityCatalog.DefaultId)).Status == 200,
                 "memory integration persona configured");
         }
         internal RealtimeCall Admit(CancellationToken token, bool gptLive = true)
@@ -1715,6 +1758,7 @@ internal static class AutonomousLiveTests
         internal Action? BeforeDelivery;
         internal double TimelineOffset;
         internal bool DelayStarted;
+        internal string? StartupError;
         public override WebSocketCloseStatus? CloseStatus => null;
         public override string? CloseStatusDescription => null;
         public override WebSocketState State => WebSocketState.Open;
@@ -1733,7 +1777,8 @@ internal static class AutonomousLiveTests
         {
             var text = System.Text.Encoding.UTF8.GetString(bytes); Sent.Enqueue(text); commands.Writer.TryWrite(text);
             using var doc = JsonDocument.Parse(text); var root = doc.RootElement; var kind = root.GetProperty("type").GetString()!;
-            if (kind == "session.start" && !DelayStarted) Emit(new { type = "session.started", client_event_id = root.GetProperty("event_id").GetString(), session = new { model = "gpt-live-1" } });
+            if (kind == "session.start" && StartupError is not null) Emit(new { type = "error", error = new { code = StartupError } });
+            else if (kind == "session.start" && !DelayStarted) Emit(new { type = "session.started", client_event_id = root.GetProperty("event_id").GetString(), session = new { model = "gpt-live-1" } });
             else if (kind.EndsWith(".append") && kind != "session.input_audio.append") Emit(new { type = kind.Replace(".append", ".appended"), client_event_id = root.GetProperty("event_id").GetString() });
             else if (kind == "session.close") Emit(new { type = "session.closed", client_event_id = root.GetProperty("event_id").GetString(), reason = "close_requested", usage = new { seconds = 12 } });
             return Task.CompletedTask;

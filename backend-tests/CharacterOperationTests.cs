@@ -31,21 +31,22 @@ internal static class CharacterOperationTests
                 var options = new GptLiveOptions { Mode = LiveActorMode.AutonomousActor };
                 var store = new ConversationStore(TimeProvider.System, journal, dialog, voiceRunner: voice, liveOptions: options);
                 var modes = store.ReadServerModes();
-                var changed = store.ChangeServerModes(new(modes.Revision, PersonalityId: PersonalityCatalog.OllivanderId,
+                var changed = store.ChangeServerModes(new(modes.Revision, PersonalityId: PersonalityCatalog.DefaultId,
                     CharacterEnabled: true, CharacterTone: "Chaos", CharacterFinaleProfile: profile.ToString()));
                 Require(changed.Status == 200, "admin explicit profile accepted before start");
                 var enabledModes = store.ReadServerModes();
-                var incompatible = store.ChangeServerModes(new(enabledModes.Revision, PersonalityId: PersonalityCatalog.DefaultId));
-                Require(incompatible.Status == 409 && incompatible.Error == "character_requires_autonomous_ollivander"
-                    && store.ReadServerModes().PersonalityId == PersonalityCatalog.OllivanderId
+                var historical = store.ChangeServerModes(new(enabledModes.Revision, PersonalityId: PersonalityCatalog.OllivanderId));
+                Require(historical.Status == 409 && historical.Error == "only_dv01_personality_supported"
+                    && store.ReadServerModes().PersonalityId == PersonalityCatalog.DefaultId
                     && store.ReadServerModes().Revision == enabledModes.Revision,
-                    "ordinary personality-only change cannot silently leave enabled DV01 on another persona");
+                    "historical personality cannot be activated or replace DV01");
                 var boot = Guid.NewGuid(); var device = "synthetic-device";
                 var created = store.Create(device, Guid.NewGuid(), "create"u8,
                     new(device, boot, 0, PartyWandCatalog.Version, "cs-CZ", new(true, false))).Response!;
                 var active = store.ReadServerModes();
-                Require(store.ChangeServerModes(new(active.Revision, CharacterEnabled: false)).Status == 200,
-                    "ordinary disabling applies to next session even with active conversation");
+                Require(store.ChangeServerModes(new(active.Revision, CharacterEnabled: false)).Status == 200
+                    && store.ReadServerModes().CharacterEnabled,
+                    "mandatory DV01 remains enabled even when legacy settings request disable");
                 var request = new RealtimeTurnRequest(Guid.NewGuid(), boot, 0, 63, 7, PartyWandCatalog.Version, true, "", null, "marin", 1);
                 var admission = store.BeginRealtimeTurn(device, created.ConversationId, Guid.NewGuid(), "call"u8.ToArray(),
                     request, true, CancellationToken.None, CancellationToken.None, handsFree: true, gptLive: true);

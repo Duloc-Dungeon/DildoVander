@@ -58,8 +58,8 @@ internal static class PersonaLabEndpoints
         });
         group.MapGet("/catalog", (PersonaLabStore store, PersonaLabRuntime runtime) => Results.Json(new
         {
-            capabilities = new { live = runtime.LiveAvailable, realtime = runtime.RealtimeAvailable, voice = true,
-                text = true, simulationOnly = false, defaultMode = "simulation", hardwareContext = true, imageRealtime = true },
+            capabilities = new { live = runtime.LiveAvailable, realtime = false, activeEngine = GptLiveProtocol.Model, voice = true,
+                text = true, simulationOnly = false, defaultMode = "simulation", hardwareContext = true, imageRealtime = false },
             activeRevisionId = store.ActiveRevisionId, versions = store.Revisions(),
             scenarios = LabContract.Scenarios, memoryFixtures = LabContract.Fixtures
         }));
@@ -124,6 +124,7 @@ internal static class PersonaLabEndpoints
             LabContract.ExecutionPlatform(request.Platform);
             var owner = Owner(http);
             var session = store.Session(owner, id);
+            LabContract.RequireExecutableSession(session);
             if (session.Status != "open") { throw new LabException(409, "lab_session_closed"); }
             var origin = http.Request.Headers.Origin.ToString();
             var configuration = http.RequestServices.GetRequiredService<AccountConfiguration>();

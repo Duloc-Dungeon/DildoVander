@@ -13,7 +13,7 @@ internal static class OperatorOverrideTests
         Check(!binding.IsCurrent("evidence-1:availability-9:mask61", now), "availability mask invalidates forced slot");
         Check(!binding.IsCurrent(binding.Fingerprint, now.AddSeconds(30)), "expiry is exclusive at exact boundary");
         var input = new WandDecisionInput(7, 63, 9, [new("input:7", "Hostův aktuální vstup")],
-            new GptLiveOptions().Policy(PersonalityCatalog.OllivanderId), 1, true);
+            new GptLiveOptions().Policy(PersonalityCatalog.DefaultId), 1, true);
         var result = WandDecisionService.OperatorOverride(input, 2);
         Check(result.Status == WandDecisionStatus.ValidProposal && result.Compartment == 2
             && result.DecisionRevision == 7 && result.AvailabilityRevision == 9

@@ -6,7 +6,7 @@ import { liveActionBlocker, operatorReadiness } from '../device_connection/Opera
 
 const snapshot = device.snapshot;
 const workspace = ref<'voice' | 'dance' | 'text' | 'manual'>('voice');
-const mode = ref<'off' | 'realtime' | 'gpt-live'>('off');
+const mode = ref<'off' | 'gpt-live'>('off');
 const voice = ref<'marin' | 'cedar' | 'coral'>('marin');
 const voiceDraft = ref(false);
 const imageConsent = ref(false);
@@ -15,7 +15,9 @@ const intent = ref<{ kind: 'select' | 'reload'; compartment: number; revision?: 
 const cancelConfirmation = ref<ComponentPublicInstance>();
 const readiness = computed(() => snapshot.value ? operatorReadiness(snapshot.value) : null);
 const manualReady = computed(() => snapshot.value?.controlMode === 'manual' && snapshot.value.phase === 'ready' && !snapshot.value.busy);
-const voiceBlocker = computed(() => snapshot.value ? liveActionBlocker(snapshot.value, 'voice') : 'Nejprve připojte skutečný kufr.');
+const voiceBlocker = computed(() => snapshot.value?.voice?.mode === 'realtime'
+  ? 'Toto zařízení hlásí vyřazený GPT Realtime režim. Nastavte GPT Live před spuštěním rozhovoru.'
+  : snapshot.value ? liveActionBlocker(snapshot.value, 'voice') : 'Nejprve připojte skutečný kufr.');
 const danceBlocker = computed(() => snapshot.value ? liveActionBlocker(snapshot.value, 'dance') : 'Nejprve připojte skutečný kufr.');
 const compartments = [1, 2, 3, 4, 5, 6];
 const fixtureText = computed(() => snapshot.value?.source === 'e2-simulator');
@@ -32,7 +34,7 @@ watch(snapshot, (state, previous) => {
   if (!state || state.phase === 'disconnected' || state.phase === 'stopped' || (previous?.controlMode === 'manual' && state.controlMode !== 'manual')) text.value = '';
   if (!state?.voice?.cameraAvailable) imageConsent.value = false;
   if (workspace.value === 'text' && !fixtureText.value) { workspace.value = 'voice'; text.value = ''; }
-  if (!voiceDraft.value && state?.voice) { mode.value = state.voice.mode; voice.value = state.voice.voice; }
+  if (!voiceDraft.value && state?.voice) { mode.value = state.voice.mode === 'realtime' ? 'off' : state.voice.mode; voice.value = state.voice.voice; }
 });
 watch(workspace, clearIntent);
 watch(intent, async action => { if (action) { await nextTick(); if (intent.value) cancelConfirmation.value?.$el.focus(); } });
@@ -69,7 +71,7 @@ function submit(): void { if (fixtureText.value && text.value.trim() && device.s
       <section v-if="workspace === 'voice'" class="aw-card" aria-labelledby="voice-heading">
         <h2 id="voice-heading">Hlas kufru</h2><p>Kufr poslouchá svým mikrofonem a odpovídá reproduktorem. Spuštění používá AI a OpenAI účet; přepis uchovává paměť večera.</p>
         <form class="suitcase-form" @submit.prevent="configure">
-          <label class="aw-field">Hlasový režim<select v-model="mode" class="aw-input" :disabled="!snapshot.voice?.canConfigure" @change="voiceDraft = true"><option value="off">Vypnutý</option><option value="gpt-live" :disabled="!snapshot.voice?.available">GPT Live · gpt-live-1</option><option value="realtime" :disabled="!snapshot.voice?.available">GPT Realtime 2.1 · gpt-realtime-2.1</option></select></label>
+          <label class="aw-field">Hlasový režim<select v-model="mode" class="aw-input" :disabled="!snapshot.voice?.canConfigure" @change="voiceDraft = true"><option value="off">Vypnutý</option><option value="gpt-live" :disabled="!snapshot.voice?.available">GPT Live · gpt-live-1</option></select></label>
           <label class="aw-field">Hlas<select v-model="voice" class="aw-input" :disabled="!snapshot.voice?.canConfigure" @change="voiceDraft = true"><option value="marin">Marin</option><option value="cedar">Cedar</option><option value="coral">Coral</option></select></label>
           <AwButton type="submit" :disabled="!snapshot.voice?.canConfigure || snapshot.source !== 'native-device'">Použít nastavení hlasu</AwButton>
         </form>

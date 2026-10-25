@@ -44,7 +44,7 @@ beforeEach(async () => {
   harness.provisioning.pairLocal.mockImplementation(async () => { harness.paired = true; return { deviceId: 'kufr-1', host: '192.168.0.62' }; });
   harness.debug.status.mockResolvedValue({ configured: true, running: false, phase: 'idle', mode: 'fake',
     engines, server: { revision: 'rev-7', engines,
-      activeConversations: 0, lifetime: 'until_restart', personalityId: 'ollivander-trunk', characterEnabled: false,
+      activeConversations: 0, lifetime: 'until_restart', personalityId: 'dv01', characterEnabled: false,
       characterTone: 'Adult', characterFinaleProfile: 'Blocked', personalities: [] } });
   await deviceSession.disconnectBle(); deviceSession.snapshot.value = null;
 });
@@ -79,9 +79,9 @@ describe('native Vue connection and service journeys', () => {
     expect(harness.debug.startConversation).not.toHaveBeenCalled(); expect(harness.debug.changeServerModes).not.toHaveBeenCalled();
     const finale = wrapper.findAll('select').find(item => item.find('option[value="Blocked"]').exists())!;
     expect(finale.findAll('option').map(item => item.attributes('value'))).toEqual(['Blocked', 'Limited']);
-    await finale.setValue('Limited'); await button('Použít DV01 pro nové rozhovory').trigger('click'); await flushPromises();
+    await finale.setValue('Limited'); await button('Použít tón a finále DV01').trigger('click'); await flushPromises();
     expect(harness.debug.changeServerModes).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 'rev-7',
-      characterFinaleProfile: 'Limited', personalityId: 'ollivander-trunk' }));
+      characterFinaleProfile: 'Limited', personalityId: 'dv01', characterEnabled: true }));
     expect(deviceSession.snapshot.value).toBeNull();
   });
   it('normal native diagnostics uses the signed-in exact-device account without a service credential or admin modes', async () => {

@@ -112,9 +112,7 @@
         },
         "mode": {
           "enum": [
-            "off",
-            "realtime",
-            "gpt-live"
+            "off", "gpt-live"
           ]
         },
         "voice": {

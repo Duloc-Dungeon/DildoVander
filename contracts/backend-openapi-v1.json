@@ -3,7 +3,7 @@
   "info": {
     "title": "Kufr device backend API",
     "version": "1.0.0-draft",
-    "description": "Device authentication and exactly two continuous production conversation engines: GPT-Live and Realtime 2.1. Conversation contract version 2 advertises versioned configured capabilities, ordered audio transport, private revisioned images and manual-only memory archives. Retired standalone/scripted entry points return an explicit 410 upgrade requirement. The backend returns validated data and never commands physical actuators. Sensitive responses use Cache-Control: no-store."
+    "description": "Device authentication and the sole production personality DV01 and sole dialogue engine GPT-Live; Realtime 2.1 is a dormant source backup. Conversation contract version 2 advertises versioned configured capabilities, ordered audio transport, private revisioned images and manual-only memory archives. Retired standalone/scripted entry points return an explicit 410 upgrade requirement. The backend returns validated data and never commands physical actuators. Sensitive responses use Cache-Control: no-store."
   },
   "servers": [{ "url": "https://localhost:7043", "description": "Local development only" }],
   "security": [{ "DeviceAccess": [] }],
@@ -736,7 +736,7 @@
             }
           }
         },
-        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live or /realtime-live session. No retired conversational engine is used as a compatibility shim.",
+        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live session. No retired conversational engine is used as a compatibility shim.",
         "deprecated": true,
         "security": []
       }
@@ -745,7 +745,7 @@
       "post": {
         "operationId": "submitTranscription",
         "summary": "Retired conversation entry; client upgrade required",
-        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live or /realtime-live session. No retired conversational engine is used as a compatibility shim.",
+        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live session. No retired conversational engine is used as a compatibility shim.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ConversationId"
@@ -771,7 +771,7 @@
       "post": {
         "operationId": "streamRealtimeTurn",
         "summary": "Retired conversation entry; client upgrade required",
-        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live or /realtime-live session. No retired conversational engine is used as a compatibility shim.",
+        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live session. No retired conversational engine is used as a compatibility shim.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ConversationId"
@@ -797,7 +797,7 @@
       "post": {
         "operationId": "submitSpeech",
         "summary": "Retired conversation entry; client upgrade required",
-        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live or /realtime-live session. No retired conversational engine is used as a compatibility shim.",
+        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live session. No retired conversational engine is used as a compatibility shim.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ConversationId"
@@ -915,7 +915,7 @@
             }
           }
         },
-        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live or /realtime-live session. No retired conversational engine is used as a compatibility shim.",
+        "description": "This endpoint always returns 410 conversation_engine_upgrade_required before authentication, body parsing, provider work or conversation creation. Upgrade to one continuous /gpt-live session. No retired conversational engine is used as a compatibility shim.",
         "deprecated": true,
         "security": []
       }
@@ -1206,8 +1206,8 @@
     "/v1/conversations/{id}/realtime-live": {
       "post": {
         "operationId": "streamRealtimeConversation",
-        "summary": "Stream a bounded hands-free conversation with automatic voice activity detection",
-        "description": "Continuous gpt-realtime-2.1 session using the official SDK and the same application persona, guest identity, durable history, image context and validated physical-selection boundary. Fresh conversation/opening=true start; at most 4096 start bytes. Each listening event carries its inputId; ordered audio-stream frames or firmware /audio chunks bind to that input. Visitor transcript, audio, pause, completed and heartbeat events are application events. /played acknowledges the exact completed operation before the next turn. Stop, expired auth, disconnect or context deletion cancels obsolete work. No input/audio replay after unknown outcome. Retired realtime-turns is HTTP410, never a production text/PTT adapter.",
+        "summary": "Dormant backup: upgrade to GPT-Live required",
+        "description": "Always returns 410 conversation_engine_upgrade_required before authentication or provider work. Retained Realtime source requires deliberate engineering recovery.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ConversationId"
@@ -1216,67 +1216,20 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RealtimeLiveStart"
+        "responses": {
+          "410": {
+            "description": "Explicit client upgrade requirement; no inference or physical input is admitted.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineUpgradeProblem"
+                }
               }
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "NDJSON RealtimeLiveEvent lines below 64 KiB; at most 20 MB per stream",
-            "headers": {
-              "Cache-Control": {
-                "schema": {
-                  "type": "string",
-                  "const": "no-store"
-                }
-              },
-              "X-Accel-Buffering": {
-                "schema": {
-                  "type": "string",
-                  "const": "no"
-                }
-              }
-            },
-            "content": {
-              "application/x-ndjson": {
-                "schema": {
-                  "$ref": "#/components/schemas/RealtimeLiveEvent"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "401": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "404": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem",
-            "description": "Includes realtime_unavailable and realtime_stream_not_replayable"
-          },
-          "413": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "429": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "503": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
+        "deprecated": true,
+        "security": []
       }
     },
     "/v1/conversations/{id}/realtime-live/{streamId}/audio": {
@@ -2407,17 +2360,10 @@
             "format": "uuid"
           },
           "personalityId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "pattern": "^[a-z0-9-]{1,64}$"
+            "const": "dv01"
           },
           "characterEnabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "const": true
           },
           "characterTone": {
             "type": [
@@ -2460,7 +2406,8 @@
         }
       },
       "ServerModes": {
-        "type": "object", "additionalProperties": false,
+        "type": "object",
+        "additionalProperties": false,
         "required": [
           "revision",
           "activeConversations",
@@ -2479,10 +2426,24 @@
             "type": "string",
             "format": "uuid"
           },
-          "activeConversations": { "type": "integer", "minimum": 0 },
-          "personalityId": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$" },
-          "personalities": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/components/schemas/PersonalityInfo" } },
-          "personalityLifetime": { "const": "persistent" },
+          "activeConversations": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "personalityId": {
+            "const": "dv01"
+          },
+          "personalities": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/components/schemas/PersonalityInfo"
+            }
+          },
+          "personalityLifetime": {
+            "const": "persistent"
+          },
           "lifetime": {
             "const": "until_restart"
           },
@@ -2490,7 +2451,7 @@
             "$ref": "#/components/schemas/ConversationEngineCapabilities"
           },
           "characterEnabled": {
-            "type": "boolean"
+            "const": true
           },
           "characterTone": {
             "enum": [
@@ -4004,123 +3965,137 @@
             "prefixItems": [
               {
                 "$ref": "#/components/schemas/GptLiveCapability"
-              },
-              {
-                "$ref": "#/components/schemas/RealtimeCapability"
               }
             ],
             "items": false,
-            "minItems": 2,
-            "maxItems": 2
+            "minItems": 1,
+            "maxItems": 1
           }
         }
       },
       "BackendDiagnostics": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "engines",
-          "conversationContractVersion",
-          "catalogVersion",
-          "audioFormat",
-          "liveActorMode",
-          "personalityId",
-          "liveDecisionModel",
-          "liveTerminalQuietMs",
-          "characterEnabled",
-          "characterTone",
-          "characterFinaleProfile",
-          "characterVersion",
-          "characterVisualRoast",
-          "characterNamedFinale",
-          "characterAudio",
-          "characterEventReady",
-          "memoryEnabled",
-          "cloudIndexingEnabled",
-          "longTermPersonalEnabled",
-          "memoryProvider"
-        ],
-        "properties": {
-          "engines": {
-            "$ref": "#/components/schemas/ConversationEngineCapabilities"
-          },
-          "conversationContractVersion": {
-            "const": 2
-          },
-          "catalogVersion": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "audioFormat": {
-            "const": "pcm16-mono-24000"
-          },
-          "liveActorMode": {
-            "const": "AutonomousActor"
-          },
-          "personalityId": {
-            "enum": [
-              "party-original",
-              "ollivander-trunk"
-            ]
-          },
-          "liveDecisionModel": {
-            "enum": [
-              "gpt-6.1-sol",
-              "gpt-6-luna"
-            ]
-          },
-          "liveTerminalQuietMs": {
-            "type": "integer",
-            "minimum": 500,
-            "maximum": 10000
-          },
-          "characterEnabled": {
-            "type": "boolean"
-          },
-          "characterTone": {
-            "enum": [
-              "Reserved",
-              "Dry",
-              "Adult",
-              "Chaos"
-            ]
-          },
-          "characterFinaleProfile": {
-            "enum": [
-              "Blocked",
-              "Limited"
-            ]
-          },
-          "characterVersion": {
-            "const": "dv01-v1"
-          },
-          "characterVisualRoast": {
-            "const": "costume_observations_only"
-          },
-          "characterNamedFinale": {
-            "const": "blocked"
-          },
-          "characterAudio": {
-            "const": "unsegmented_live_stream"
-          },
-          "characterEventReady": {
-            "const": false
-          },
-          "memoryEnabled": {
-            "type": "boolean"
-          },
-          "cloudIndexingEnabled": {
-            "type": "boolean"
-          },
-          "longTermPersonalEnabled": {
-            "type": "boolean"
-          },
-          "memoryProvider": {
-            "$ref": "#/components/schemas/MemoryProviderStatus"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engines",
+        "conversationContractVersion",
+        "catalogVersion",
+        "audioFormat",
+        "liveActorMode",
+        "personalityId",
+        "liveDecisionModel",
+        "liveTerminalQuietMs",
+        "characterEnabled",
+        "characterTone",
+        "characterFinaleProfile",
+        "characterVersion",
+        "characterVisualRoast",
+        "characterNamedFinale",
+        "characterAudio",
+        "characterEventReady",
+        "memoryEnabled",
+        "cloudIndexingEnabled",
+        "longTermPersonalEnabled",
+        "memoryProvider"
+      ],
+      "properties": {
+        "engines": {
+          "$ref": "#/components/schemas/ConversationEngineCapabilities"
+        },
+        "conversationContractVersion": {
+          "const": 2
+        },
+        "catalogVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "audioFormat": {
+          "const": "pcm16-mono-24000"
+        },
+        "liveActorMode": {
+          "const": "AutonomousActor"
+        },
+        "personalityId": {
+          "const": "dv01"
+        },
+        "liveDecisionModel": {
+          "enum": [
+            "gpt-6.1-sol",
+            "gpt-6-luna"
+          ]
+        },
+        "liveTerminalQuietMs": {
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 10000
+        },
+        "characterEnabled": {
+          "const": true
+        },
+        "characterTone": {
+          "enum": [
+            "Reserved",
+            "Dry",
+            "Adult",
+            "Chaos"
+          ]
+        },
+        "characterFinaleProfile": {
+          "enum": [
+            "Blocked",
+            "Limited"
+          ]
+        },
+        "characterVersion": {
+          "const": "dv01-v1"
+        },
+        "characterVisualRoast": {
+          "const": "costume_observations_only"
+        },
+        "characterNamedFinale": {
+          "const": "blocked"
+        },
+        "characterAudio": {
+          "const": "unsegmented_live_stream"
+        },
+        "characterEventReady": {
+          "const": false
+        },
+        "memoryEnabled": {
+          "type": "boolean"
+        },
+        "cloudIndexingEnabled": {
+          "type": "boolean"
+        },
+        "longTermPersonalEnabled": {
+          "type": "boolean"
+        },
+        "memoryProvider": {
+          "$ref": "#/components/schemas/MemoryProviderStatus"
+        },
+        "liveVoice": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "customVoiceConfigured",
+            "fallbackVoice",
+            "configurationStatus"
+          ],
+          "properties": {
+            "customVoiceConfigured": {
+              "type": "boolean"
+            },
+            "fallbackVoice": {
+              "type": "string"
+            },
+            "configurationStatus": {
+              "type": "string"
+            }
           }
         }
-      },
+      }
+    },
       "AudioStreamFrame": {
         "type": "object",
         "additionalProperties": false,

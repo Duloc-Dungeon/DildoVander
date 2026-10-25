@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--dv01-consolidation"]) { GptLiveVoiceTests.Run(); await AutonomousLiveTests.RunVoiceFallbackAsync(); await PersonalityTests.RunAsync(); return; }
 if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await AiObservabilityTests.RunAsync(); await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--observability-logs"]) { await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--ai-observability"]) { await AiObservabilityTests.RunAsync(); return; }
@@ -195,6 +196,8 @@ await AutonomousLiveTests.RunCharacterAsync();
 await CostumeImageTests.RunAsync();
 await BoundedSdkTransportTests.RunAsync();
 await RealtimeTests.RunAsync();
+GptLiveVoiceTests.Run();
+await AutonomousLiveTests.RunVoiceFallbackAsync();
 await GptLiveTests.RunAsync();
 await DeviceMediaTransportTests.RunAsync();
 await AccountIdentityTests.RunTesterIdentityAsync();

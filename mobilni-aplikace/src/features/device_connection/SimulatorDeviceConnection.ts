@@ -232,6 +232,7 @@ export class ProtocolDeviceConnection {
   }
 
   configureVoice(mode: VoiceSettings['mode'], voice: VoiceSettings['voice']): boolean {
+    if (mode === 'realtime') return false;
     return !this.dance.state().canStop && this.voice.configure(mode, voice);
   }
   startVoice(imageConsent = false, testContext?: string): boolean {

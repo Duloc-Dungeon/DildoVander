@@ -27,6 +27,7 @@ internal sealed class ShowAmbientPreview : IDisposable
     private readonly TimeProvider clock;
     private readonly SpeechOptions speech;
     private readonly string mode;
+    private readonly bool allowConfiguredTestProvider;
     private readonly CancellationTokenSource lifetime;
     private readonly ITimer cleanup;
     private Task work = Task.CompletedTask;
@@ -34,11 +35,15 @@ internal sealed class ShowAmbientPreview : IDisposable
     private bool disposed;
 
     public ShowAmbientPreview(IConfiguration configuration, OperationJournal journal, ShowSpeechProvider voice,
-        TimeProvider clock)
+        TimeProvider clock) : this(configuration, journal, voice, clock, allowConfiguredTestProvider: false) { }
+
+    internal ShowAmbientPreview(IConfiguration configuration, OperationJournal journal, ShowSpeechProvider voice,
+        TimeProvider clock, bool allowConfiguredTestProvider)
     {
         this.journal = journal;
         this.voice = voice;
         this.clock = clock;
+        this.allowConfiguredTestProvider = allowConfiguredTestProvider;
         mode = configuration["Show:DeviceCueSpeechMode"] ?? "configured";
         if (mode is not ("configured" or "fake" or "off"))
         { throw new InvalidOperationException("Unsupported Show:DeviceCueSpeechMode."); }
@@ -62,6 +67,8 @@ internal sealed class ShowAmbientPreview : IDisposable
             var replay = journal.FindExisting(device, Route(device), operation, Hash(line));
             if (replay is not null)
             { return Failed(operation, line, replay.Conflict ? 409 : 410, replay.Conflict ? "preview_operation_mismatch" : "preview_expired"); }
+            if (mode == "configured" && !allowConfiguredTestProvider)
+            { return Failed(operation, line, 503, "gpt_live_required"); }
             if (disposed || lifetime.IsCancellationRequested || mode == "off" || mode != "fake" && !voice.Enabled)
             { return Failed(operation, line, 503, "preview_unavailable"); }
             if (generating || entries.Count >= MaximumEntries)

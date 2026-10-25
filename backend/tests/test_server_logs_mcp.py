@@ -39,12 +39,12 @@ class MCPTests(unittest.TestCase):
             with self.subTest(attempt=invalid), self.assertRaises(mcp.DiagnosticError):
                 mcp.project('/v1/admin/logs', {**page, 'entries': [{**page['entries'][0], 'attempt': invalid}]})
 
-    def test_status_projects_only_the_two_retained_engine_contracts(self):
+    def test_status_projects_only_the_live_engine_contract(self):
         source = {**STATUS, 'engines': capabilities(False), 'privateGuest': 'private-secret'}
         source['engines']['engines'][0]['providerRaw'] = 'private-secret'
         projected = mcp.project('/v1/admin/logs/status', source)
         self.assertEqual(projected['engines']['primaryEngine'], 'gpt-live')
-        self.assertEqual(len(projected['engines']['engines']), 2)
+        self.assertEqual(len(projected['engines']['engines']), 1)
         self.assertNotIn('private-secret', json.dumps(projected))
         for field, value in [('model', 'retired-model'), ('ready', 'true'), ('unavailableReason', 'private-secret')]:
             invalid = {**STATUS, 'engines': capabilities(False)}

@@ -51,7 +51,7 @@ describe('Vue suitcase journeys', () => {
     expect(submit).not.toHaveBeenCalled();
   });
   it('requires device voice availability and consumes one photo consent only for an explicit start', async () => {
-    device.snapshot.value = state({ voice: { available: true, cameraAvailable: true, mode: 'realtime', voice: 'cedar',
+    device.snapshot.value = state({ voice: { available: true, cameraAvailable: true, mode: 'gpt-live', voice: 'cedar',
       phase: 'idle', error: null, pending: false, canConfigure: true, canStart: true, canStop: false, status: 'Ready' } });
     const start = vi.spyOn(device, 'startVoice').mockImplementation(() => true);
     wrapper = mount(SuitcaseView, mountOptions); await wrapper.get('input[type="checkbox"]').setValue(true);
@@ -59,6 +59,15 @@ describe('Vue suitcase journeys', () => {
     expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false);
     device.snapshot.value = { ...device.snapshot.value!, controlMode: 'manual' }; await nextTick();
     expect(button('Spustit hlas na kufru').attributes('disabled')).toBeDefined();
+  });
+  it('blocks a connected device that still reports retired Realtime mode', async () => {
+    device.snapshot.value = state({ voice: { available: true, mode: 'realtime', voice: 'cedar',
+      phase: 'idle', error: null, pending: false, canConfigure: true, canStart: true, canStop: false, status: 'Ready' } });
+    const start = vi.spyOn(device, 'startVoice').mockImplementation(() => true);
+    wrapper = mount(SuitcaseView, mountOptions);
+    expect(wrapper.text()).toContain('vyřazený GPT Realtime režim');
+    await button('Spustit hlas na kufru').trigger('click');
+    expect(start).not.toHaveBeenCalled();
   });
   it('connections clearly separates native-only pairing from explicit browser targets', () => {
     wrapper = mount(ConnectionsView, mountOptions);

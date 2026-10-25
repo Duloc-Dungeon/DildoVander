@@ -24,8 +24,13 @@ internal static class DeviceMediaProtocol
     {
         using var document = JsonDocument.Parse(bytes);
         var root = document.RootElement;
+        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("engine", out var requested)
+            && requested.ValueKind == JsonValueKind.String && requested.GetString() == "realtime")
+        {
+            throw new InvalidDataException("conversation_engine_upgrade_required");
+        }
         if (!Fields(root, "type", "engine", "request") || root.GetProperty("type").GetString() != "open"
-            || root.GetProperty("engine").GetString() is not ("gpt-live" or "realtime")
+            || root.GetProperty("engine").GetString() != "gpt-live"
             || root.GetProperty("request").ValueKind != JsonValueKind.Object)
         {
             throw new InvalidDataException("invalid_media_open");

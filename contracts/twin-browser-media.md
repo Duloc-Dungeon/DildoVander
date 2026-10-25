@@ -26,7 +26,7 @@ capture, consumed-byte/drain acknowledgements, and immediate local cancellation.
 
 Existing ASCII control lines and one JSON reply remain supported. Extra commands:
 
-- `MEDIA_START sessionUUID requestUUID realtime|gpt-live voice speed photoConsent main|short micAvailable speakerAvailable cameraAvailable`
+- `MEDIA_START sessionUUID requestUUID gpt-live legacyVoice speed1 photoConsent main|short micAvailable speakerAvailable cameraAvailable`
   Availability flags are0/1. Camera availability means browser API capability;
   permission/capture still require explicit activation and preview acceptance.
 - `MEDIA_CANCEL sessionUUID`
@@ -115,7 +115,7 @@ control scope for the selected native simulation. Observe/ingest/live cannot
 access settings writes or media payloads. Only one media actor owns an instance.
 
 - GET/PUT `/v1/twin/instances/{id}/settings`: expectedRevision plus engine
-  fake|realtime|gpt-live, voice cedar|marin|coral, speed0.8–1.2 (GPT-Live1),
+  fake|gpt-live, voice cedar|marin|coral, speed0.8–1.2 (GPT-Live1),
   photoConsent, and presentationVariant main|short. Revision is decimal string.
   Availability reports provider/media capabilities without keys. Changes reject
   active operations or explicitly stop and close the old owned session first.

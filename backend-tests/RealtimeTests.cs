@@ -49,8 +49,8 @@ internal static class RealtimeTests
                 "Realtime 2.1 uses medium reasoning through the official SDK wire serializer");
             Require(RealtimeProtocol.ContextData(turn).Contains("previous visitor"), "opening receives explicitly scoped returning-guest archive");
             Require(options.RootElement.GetProperty("instructions").GetString()!
-                .StartsWith(PartyDialoguePrompt.DecisionInstructions, StringComparison.Ordinal),
-                "Realtime receives the shared Live voice persona and its own selection tools");
+                .StartsWith(PersonalityCatalog.DecisionInstructions(PersonalityCatalog.DefaultId), StringComparison.Ordinal),
+                "dormant Realtime protocol retains explicit authored context and its own selection tools");
             Require(RealtimeProtocol.SessionOptions(turn).Instructions
                 == RealtimeProtocol.SessionOptions(turn with { OutputTokenLimit = 512 }).Instructions,
                 "reservation fallback cannot change the opening intention");

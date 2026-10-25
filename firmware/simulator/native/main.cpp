@@ -173,7 +173,7 @@ class Host final {
 
     if (command == "MEDIA_START" && words.size() == 11) {
       ConversationRuntimeSnapshot snapshot;
-      const bool settings = (words[3] == "realtime" || words[3] == "gpt-live") &&
+      const bool settings = words[3] == "gpt-live" &&
           (words[4] == "cedar" || words[4] == "marin" || words[4] == "coral") &&
           VoiceSpeed(words[5], words[3] == "gpt-live") &&
           (words[6] == "true" || words[6] == "false") && (words[7] == "main" || words[7] == "short") &&

@@ -34,6 +34,7 @@ internal static class PersonaLabTests
         try
         {
             PersistenceAndOwnership(root);
+            HistoricalRevisionMigration(root);
             LegacyExecutionPlatforms(root);
             DialogueRecallScenario();
             DiagnosticsPrivacyAndBounds(root);
@@ -115,7 +116,7 @@ internal static class PersonaLabTests
         Check(LabRubric.InspectTurn(script[7], answer).Any(check => check.Name == "memory-provenance-not-exercised"
             && check.Status == "not_exercised"), "lexical recall never claims verified identity or memory provenance");
     }
-    private static LivePromptSnapshot Baseline() => LivePromptSnapshot.Create(PersonalityCatalog.OllivanderId, new GptLiveOptions());
+    private static LivePromptSnapshot Baseline() => LivePromptSnapshot.Create(PersonalityCatalog.DefaultId, new GptLiveOptions());
     private static void PersistenceAndOwnership(string root)
     {
         var path = Path.Combine(root, "isolated.sqlite");
@@ -123,7 +124,7 @@ internal static class PersonaLabTests
         var baseline = store.ActiveRevisionId;
         Check(store.PublishedOverride() is null, "source baseline preserves existing production builder");
         var first = store.CreateSession("alice", new(baseline, "gpt-live-1", "first-visit", "empty", "A"));
-        var ios = store.CreateSession("alice", new(baseline, "gpt-realtime-2.1", "first-visit", "empty", "iOS diagnostic", Platform: "ios"));
+        var ios = store.CreateSession("alice", new(baseline, "gpt-live-1", "first-visit", "empty", "iOS diagnostic", Platform: "ios"));
         Check(ios.Platform == "ios" && store.Session("alice", ios.Id).Platform == "ios", "explicit iOS diagnostic platform persists without changing ownership");
         Reject(() => store.CreateSession("alice", new(baseline, "gpt-live-1", "first-visit", "empty", "bad platform", Platform: "android")), 400,
             "unsupported diagnostic platform rejected by authoritative store");
@@ -135,7 +136,7 @@ internal static class PersonaLabTests
         Reject(() => store.CreateSession("alice", new(baseline, "gpt-live-1", "first-visit", "production-guest-id", "bad")), 400, "arbitrary memory identity rejected");
         Reject(() => store.CreateSession("alice", new(null!, "gpt-live-1", "first-visit", "empty", "bad")), 400, "null session revision is a controlled bad request");
         Check(!LabContract.Memory(first).Contains("production-guest-id", StringComparison.Ordinal), "memory context uses server fixture only");
-        var draft = store.CreateRevision(new(baseline, "Sharper", "Test exact instructions.", "gpt-realtime-2.1", "marin"));
+        var draft = store.CreateRevision(new(baseline, "Sharper", "Test exact instructions.", "gpt-live-1", "marin"));
         Check(store.ActiveRevisionId == baseline && store.PublishedOverride() is null, "draft cannot alter active production instructions");
         var published = store.Publish(draft.Id, baseline);
         Check(published.Status == "published" && store.PublishedOverride()?.Id == draft.Id, "explicit publication activates immutable revision");
@@ -184,6 +185,54 @@ internal static class PersonaLabTests
         Check(unexercised.All(assertion => assertion.Status == "not_exercised" && !assertion.Passed),
             "text alone cannot pass actual network recovery, audio interruption or unrequested tool failure");
     }
+
+    private static void HistoricalRevisionMigration(string root)
+    {
+        var path = Path.Combine(root, "historical-revision.sqlite");
+        var baseline = Baseline();
+        var initial = new PersonaLabStore(path, baseline);
+        var activeId = initial.ActiveRevisionId;
+        var legacyId = "baseline-" + baseline.Sha256[..16];
+        var historical = initial.Revisions().Single(revision => revision.Id == activeId) with
+        {
+            Id = legacyId,
+            Engine = "gpt-realtime-2.1",
+            SourceVersion = "autonomous-live-v3"
+        };
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        { DataSource = path, Pooling = false }.ToString()))
+        {
+            connection.Open();
+            using var transaction = connection.BeginTransaction();
+            using var updateRevision = connection.CreateCommand();
+            updateRevision.Transaction = transaction;
+            updateRevision.CommandText = "UPDATE lab_documents SET id=$legacy,json=$json WHERE kind='revision' AND id=$active";
+            updateRevision.Parameters.AddWithValue("$legacy", legacyId);
+            updateRevision.Parameters.AddWithValue("$active", activeId);
+            updateRevision.Parameters.AddWithValue("$json", JsonSerializer.Serialize(historical, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            Check(updateRevision.ExecuteNonQuery() == 1, "historical active revision fixture persisted");
+            using var updateState = connection.CreateCommand();
+            updateState.Transaction = transaction;
+            updateState.CommandText = "UPDATE lab_state SET active=$legacy,source_baseline=1 WHERE id=1";
+            updateState.Parameters.AddWithValue("$legacy", legacyId);
+            updateState.ExecuteNonQuery();
+            transaction.Commit();
+        }
+
+        var migrated = new PersonaLabStore(path, baseline);
+        Check(migrated.ActiveRevisionId != legacyId && migrated.PublishedOverride() is null,
+            "startup moves the active pointer from an old persona revision to the deterministic DV01 baseline");
+        Check(migrated.Revisions().Single(revision => revision.Id == legacyId).Instructions == baseline.Instructions,
+            "historical revision remains readable after the active pointer migrates");
+        Reject(() => migrated.Publish(legacyId, migrated.ActiveRevisionId, rollback: true), 410,
+            "historical persona cannot be reactivated through a revision rollback");
+        Reject(() => migrated.CreateRevision(new(legacyId, "Legacy child", "Old persona-derived draft.", "gpt-live-1", "cedar")), 410,
+            "historical revision cannot seed a new production DV01 revision");
+        Reject(() => migrated.CreateSession("owner", new(migrated.ActiveRevisionId, "gpt-realtime-2.1", "first-visit", "empty", "old-engine")), 410,
+            "Realtime cannot be selected for a new Persona Lab session");
+        Reject(() => migrated.CreateRevision(new(migrated.ActiveRevisionId, "Old engine", "Historical engine request.", "gpt-realtime-2.1", "cedar")), 410,
+            "Realtime cannot be selected for a new Persona Lab revision");
+    }
     private static LabEvaluation Evaluation() => new(LabContract.Metrics.ToDictionary(x => x, _ => 4), "Human observation", []);
     private static void DiagnosticsPrivacyAndBounds(string root)
     {
@@ -197,7 +246,7 @@ internal static class PersonaLabTests
         for (var index = 0; index < 21; index++)
         {
             var owner = secret + (index % 2);
-            var session = store.CreateSession(owner, new(store.ActiveRevisionId, "gpt-realtime-2.1", "first-visit", "empty",
+            var session = store.CreateSession(owner, new(store.ActiveRevisionId, "gpt-live-1", "first-visit", "empty",
                 secret, secret, RecordContent: true, Platform: "ios"));
             sessions.Add(store.Change(owner, session.Id, value => value with
             {
@@ -259,10 +308,10 @@ internal static class PersonaLabTests
     {
         var store = new PersonaLabStore(Path.Combine(root, "deleted-suite-results.sqlite"), Baseline());
         var baseline = store.ActiveRevisionId;
-        var removed = store.CreateSession("alice", new(baseline, "gpt-realtime-2.1", "first-visit", "empty", "delete"));
-        var retained = store.CreateSession("alice", new(baseline, "gpt-realtime-2.1", "stop", "empty", "keep"));
-        var foreign = store.CreateSession("bob", new(baseline, "gpt-realtime-2.1", "first-visit", "empty", "foreign"));
-        var suite = store.CreateSuite("alice", new(baseline, "gpt-realtime-2.1", "empty", ["first-visit", "stop"], "deletion regression"));
+        var removed = store.CreateSession("alice", new(baseline, "gpt-live-1", "first-visit", "empty", "delete"));
+        var retained = store.CreateSession("alice", new(baseline, "gpt-live-1", "stop", "empty", "keep"));
+        var foreign = store.CreateSession("bob", new(baseline, "gpt-live-1", "first-visit", "empty", "foreign"));
+        var suite = store.CreateSuite("alice", new(baseline, "gpt-live-1", "empty", ["first-visit", "stop"], "deletion regression"));
         var stale = suite with { Results = [new("first-visit", removed.Id, "completed", []), new("stop", retained.Id, "completed", [])] };
         store.SaveSuite(stale);
         store.InterruptRunningSuites();
@@ -364,9 +413,11 @@ internal static class PersonaLabTests
         var newCall = Admit("published-device", published);
         Check(oldCall.Context.LivePrompt!.PersonaRevisionId is null, "publication does not mutate existing production conversation");
         Check(newCall.Context.LivePrompt!.PersonaRevisionId == draft.Id
-            && newCall.Context.LivePrompt.Instructions == draft.Instructions, "new production conversation receives published exact instructions");
+            && newCall.Context.LivePrompt.Instructions.StartsWith(draft.Instructions, StringComparison.Ordinal)
+            && newCall.Context.LivePrompt.Instructions.Contains("Trusted application host ceiling"), "new production conversation receives authored revision with authoritative DV01 policy");
         lab.Publish(baseline, draft.Id, rollback: true);
-        Check(newCall.Context.LivePrompt.Instructions == draft.Instructions, "rollback does not mutate in-flight provider context");
+        Check(newCall.Context.LivePrompt.Instructions.StartsWith(draft.Instructions, StringComparison.Ordinal)
+            && newCall.Context.LivePrompt.Instructions.Contains("Trusted application host ceiling"), "rollback does not mutate in-flight provider context");
         var rolledBack = Create("rollback-device");
         var rollbackCall = Admit("rollback-device", rolledBack);
         Check(rollbackCall.Context.LivePrompt!.PersonaRevisionId is null, "new conversation after rollback uses source persona");

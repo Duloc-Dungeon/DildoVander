@@ -21,6 +21,7 @@ internal static class ShowDeviceCueTests
 {
     internal static async Task RunAsync()
     {
+        await ConfiguredProductionSpeechRequiresLiveAsync();
         await NarrationUsesOneBackgroundClaimAsync();
         await CancellationAndFailedClaimsNeverReplayAsync();
         await QueueAndExpiryBoundsAsync();
@@ -30,6 +31,21 @@ internal static class ShowDeviceCueTests
         await ExplicitFakeModeAsync();
         await ActualDuelBridgeCompositionAsync();
         Console.WriteLine("Device cue mailbox tests passed with fake provider only; hardware playback remains separate evidence.");
+    }
+
+    private static Task ConfiguredProductionSpeechRequiresLiveAsync()
+    {
+        using var fixture = new Fixture();
+        using var provider = new ShowSpeechProvider(fixture.Runner);
+        var productionBridge = new ShowDeviceCueBridge(fixture.Configuration, fixture.Show,
+            fixture.Journal, provider, fixture.Clock);
+        productionBridge.Poll(Device, fixture.Request());
+        var duel = fixture.Occupy();
+        Check(productionBridge.DeviceNarrationUnavailableReason(Device) == "gpt_live_required"
+            && !productionBridge.EnqueueDuelLine(Device, duel, 0, "wake", 2, "Souboj začíná.")
+            && fixture.Calls == 0 && fixture.Sql("SELECT count(*) FROM turn_operations") == 0,
+            "normal configured show narration requires GPT-Live and never dispatches standalone TTS");
+        return Task.CompletedTask;
     }
 
     private static async Task NarrationUsesOneBackgroundClaimAsync()
@@ -375,6 +391,7 @@ internal static class ShowDeviceCueTests
         internal readonly OperationJournal Journal;
         internal readonly ShowCoordinator Show;
         internal readonly ShowDeviceCueBridge Bridge;
+        internal readonly VoiceProviderRunner Runner;
         internal readonly Guid Boot = Guid.NewGuid();
         internal readonly TaskCompletionSource<byte[]> Audio = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal readonly TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -398,7 +415,7 @@ internal static class ShowDeviceCueTests
             var memory = new EveningMemoryStore(configuration, Journal, Clock);
             EveningId = memory.GetStatus(Device).EveningId;
             Show = new ShowCoordinator(configuration, Journal, memory, Clock);
-            var provider = new VoiceProviderRunner((_, _) => Task.FromResult("unused"),
+            Runner = new VoiceProviderRunner((_, _) => Task.FromResult("unused"),
                 async (_, options, token) =>
                 {
                     Interlocked.Increment(ref Calls);
@@ -409,8 +426,8 @@ internal static class ShowDeviceCueTests
                     // the next synthetic response after the first cue drains.
                     return (await Audio.Task.WaitAsync(token)).ToArray();
                 });
-            provider.SetEnabled(true);
-            Bridge = new ShowDeviceCueBridge(configuration, Show, Journal, provider, Clock);
+            Runner.SetEnabled(true);
+            Bridge = new ShowDeviceCueBridge(configuration, Show, Journal, Runner, Clock);
         }
         internal ShowDeviceCuePoll Request()
         {
@@ -450,6 +467,7 @@ internal static class ShowDeviceCueTests
             Bridge.CancelAll();
             Audio.TrySetResult(Wav());
             Bridge.DrainAudioWork().GetAwaiter().GetResult();
+            Runner.Dispose();
             Journal.Dispose();
             SqliteConnection.ClearAllPools();
             Directory.Delete(directory, true);

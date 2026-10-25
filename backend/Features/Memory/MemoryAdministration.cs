@@ -21,7 +21,7 @@ internal static class MemoryAdministration
         {
             if (!admin.Authenticate(c)) { return ApiProblem.Create(c, 401, "admin_credential_required"); }
             if (string.IsNullOrWhiteSpace(deviceId) || string.IsNullOrWhiteSpace(conversationId)
-                || !PersonalityCatalog.Contains(personalityId)) { return ApiProblem.Create(c, 400, "invalid_request"); }
+                || !CanReadPersonalityMemory(personalityId)) { return ApiProblem.Create(c, 400, "invalid_request"); }
             var permission = store.GuestPermission(deviceId, conversationId);
             var access = new MemoryAccess(deviceId, store.GetStatus(deviceId).EveningId, conversationId, personalityId, permission);
             var records = store.LocalMemory(access);
@@ -102,7 +102,7 @@ internal static class MemoryAdministration
                     || string.IsNullOrWhiteSpace(r.ConversationId) || string.IsNullOrWhiteSpace(r.Text)
                     || string.IsNullOrWhiteSpace(r.SourceReference) || r.ExpectedRevision < 0 || r.ExpectedEpoch is < 0)
                     return ApiProblem.Create(c, 400, "invalid_request");
-                if (!PersonalityCatalog.Contains(r.PersonalityId)) return ApiProblem.Create(c, 400, "invalid_personality");
+                if (!CanReadPersonalityMemory(r.PersonalityId)) return ApiProblem.Create(c, 400, "invalid_personality");
                 var permission = store.GuestPermission(r.DeviceId, r.ConversationId);
                 var record = store.WriteMemory(new(r.DeviceId, r.EveningId, r.ConversationId, r.PersonalityId, permission),
                     new(id, r.Scope, r.Kind, r.Text, r.SourceReference, r.ExpectedRevision, r.ExpectedEpoch));
@@ -130,6 +130,9 @@ internal static class MemoryAdministration
         });
         return routes;
     }
+
+    private static bool CanReadPersonalityMemory(string personalityId) =>
+        PersonalityCatalog.Contains(personalityId) || PersonalityCatalog.IsHistorical(personalityId);
     private static async Task<T> Read<T>(HttpContext c)
     {
         var buffer = new byte[4097]; var used = 0;

@@ -22,6 +22,10 @@ internal sealed class TwinMediaSettingsStore
             {
                 if (new FileInfo(path).Length > 4096) { throw new InvalidDataException("Twin settings limit."); }
                 var persisted = JsonSerializer.Deserialize<TwinMediaSettings>(File.ReadAllBytes(path), TwinSnapshot.JsonOptions);
+                if (persisted?.Engine == "realtime")
+                {
+                    persisted = persisted with { Engine = "gpt-live", Speed = 1 };
+                }
                 if (persisted is null || !Valid(persisted.Revision, persisted.Engine, persisted.Voice, persisted.Speed, persisted.PresentationVariant))
                 { throw new InvalidDataException("Invalid persisted Twin settings."); }
                 current = persisted with { Availability = Availability() };
@@ -36,10 +40,11 @@ internal sealed class TwinMediaSettingsStore
         lock (gate)
         {
             if (!settings.TryGetValue(id, out var previous)) { return (null, "settings_unavailable"); }
+            if (change.Engine == "realtime") { return (null, "conversation_engine_upgrade_required"); }
             if (change.ExpectedRevision != previous.Revision) { return (null, "settings_revision_mismatch"); }
             if (!Valid(change.ExpectedRevision, change.Engine, change.Voice, change.Speed, change.PresentationVariant))
             { return (null, "invalid_settings"); }
-            if (change.Engine != "fake" && !previous.Availability.Realtime) { return (null, "provider_not_authorized_or_configured"); }
+            if (change.Engine != "fake" && !previous.Availability.GptLive) { return (null, "provider_not_authorized_or_configured"); }
             var revision = ulong.Parse(previous.Revision, CultureInfo.InvariantCulture);
             if (revision == ulong.MaxValue) { return (null, "settings_revision_limit"); }
             var next = new TwinMediaSettings((revision + 1).ToString(CultureInfo.InvariantCulture), change.Engine,
@@ -67,10 +72,10 @@ internal sealed class TwinMediaSettingsStore
     {
         var provider = configuration.GetValue<bool>("DigitalTwin:ExternalServicesAuthorized")
             && !string.IsNullOrWhiteSpace(configuration["OPENAI_API_KEY"]);
-        return new(true, provider, provider, true, true, true);
+        return new(true, false, provider, true, true, true);
     }
     private static bool Valid(string revision, string engine, string voice, double speed, string variant) =>
-        TwinSnapshot.Decimal(revision, out _) && engine is "fake" or "realtime" or "gpt-live"
+        TwinSnapshot.Decimal(revision, out _) && engine is "fake" or "gpt-live"
         && voice is "cedar" or "marin" or "coral" && double.IsFinite(speed) && speed is >= .8 and <= 1.2
         && (engine != "gpt-live" || speed == 1) && variant is "main" or "short";
 }

@@ -82,7 +82,7 @@ class Wire:
         body = json.dumps(event, separators=(",", ":")).encode()
         return self.command(f"MEDIA_EVENT {self.session} {self.state['epoch']} {len(body)}", body)
 
-    def start(self, engine="realtime", photo=False, camera=True):
+    def start(self, engine="gpt-live", photo=False, camera=True):
         self.session = str(uuid.uuid4())
         self.request = str(uuid.uuid4())
         started = self.command(f"MEDIA_START {self.session} {self.request} {engine} cedar 1 {str(photo).lower()} main 1 1 {int(camera)}")
@@ -347,7 +347,7 @@ class MediaTests(unittest.TestCase):
     def test_cancel_pending_http_wakes_and_late_result_cannot_restart(self):
         self.wire.session = str(uuid.uuid4())
         request_id = str(uuid.uuid4())
-        self.wire.command(f"MEDIA_START {self.wire.session} {request_id} realtime cedar 1 false main 1 1 0")
+        self.wire.command(f"MEDIA_START {self.wire.session} {request_id} gpt-live cedar 1 false main 1 1 0")
         pending, _ = self.wire.service("conversation-create")
         before = time.monotonic()
         self.wire.command(f"MEDIA_CANCEL {self.wire.session}")
@@ -585,7 +585,7 @@ class MediaTests(unittest.TestCase):
         self.wire.command("TICK 12000")
         self.wire.session = str(uuid.uuid4())
         request_id = str(uuid.uuid4())
-        started = self.wire.command(f"MEDIA_START {self.wire.session} {request_id} realtime cedar 1.15 false short 1 1 0")
+        started = self.wire.command(f"MEDIA_START {self.wire.session} {request_id} gpt-live cedar 1 false short 1 1 0")
         self.assertTrue(started["commandResult"]["accepted"])
         delete, _ = self.wire.service("conversation-delete")
         self.assertEqual(delete["path"], f"/v1/conversations/{previous_conversation}")
@@ -649,7 +649,7 @@ class MediaTests(unittest.TestCase):
 
     def test_hardware_availability_and_identity_validation(self):
         session, request = str(uuid.uuid4()), str(uuid.uuid4())
-        result = self.wire.command(f"MEDIA_START {session} {request} realtime cedar 1 false main 0 1 0")
+        result = self.wire.command(f"MEDIA_START {session} {request} gpt-live cedar 1 false main 0 1 0")
         self.assertFalse(result["commandResult"]["accepted"])
         result = self.wire.command(f"MEDIA_START {session} {request} gpt-live coral 1.2 false main 1 1 0")
         self.assertFalse(result["commandResult"]["accepted"])
@@ -702,8 +702,8 @@ class DeviceSocketTests(unittest.TestCase):
         request, _ = wire.service("conversation-delete")
         wire.result(request, 204)
 
-    def test_shared_socket_binary_output_played_receipt_and_terminal_both_engines(self):
-        for engine in ("realtime", "gpt-live"):
+    def test_shared_socket_binary_output_played_receipt_and_terminal_live(self):
+        for engine in ("gpt-live",):
             with self.subTest(engine=engine):
                 self.opening(engine)
                 self.started()
@@ -714,9 +714,18 @@ class DeviceSocketTests(unittest.TestCase):
                     responseGeneration=0, result=dict(reply="Socket fixture", decision="no_selection", reason="", proposal=None), costMicroUsd=0))
                 drain, _ = self.wire.output("drain")
                 self.wire.ack(drain)
-                # An idle read poll lets the shared owner observe asynchronous drain.
-                request, _ = self.wire.service("media-socket-receive")
-                self.wire.result(request, 204)
+                # Local drain completes on another thread. Keep serving idle reads
+                # until the shared owner emits the actual played control.
+                deadline = time.monotonic() + 3
+                while not any(header["kind"] == "media-socket-send" for header, _ in self.wire.services):
+                    self.assertLess(time.monotonic(), deadline, "drained playback did not emit played")
+                    self.wire.command("SNAPSHOT")
+                    for index, (header, _) in enumerate(self.wire.services):
+                        if header["kind"] == "media-socket-receive":
+                            self.wire.services.pop(index)
+                            self.wire.result(header, 204)
+                            break
+                    time.sleep(.005)
                 request, body = self.wire.service("media-socket-send")
                 control = json.loads(body)
                 self.assertEqual(control["type"], "played")
@@ -730,7 +739,7 @@ class DeviceSocketTests(unittest.TestCase):
                 self.wire.output("completed")
 
     def test_shared_socket_cancel_generation_rejects_old_output_ack(self):
-        for engine in ("realtime", "gpt-live"):
+        for engine in ("gpt-live",):
             with self.subTest(engine=engine):
                 self.opening(engine)
                 self.started()
@@ -763,7 +772,7 @@ class DeviceSocketTests(unittest.TestCase):
                 self.wire.output("completed")
 
     def test_shared_socket_input_credit_stale_ack_and_disconnect_never_replay(self):
-        for engine in ("realtime", "gpt-live"):
+        for engine in ("gpt-live",):
             with self.subTest(engine=engine):
                 self.opening(engine)
                 input_id = str(uuid.uuid4())
@@ -793,7 +802,7 @@ class DeviceSocketTests(unittest.TestCase):
                 self.assertFalse(any(h["kind"] == "media-socket-send" for h, _ in self.wire.services))
 
     def test_shared_socket_malformed_credit_binary_and_disconnect_fail_closed(self):
-        for engine in ("realtime", "gpt-live"):
+        for engine in ("gpt-live",):
             for fault in ("credit", "binary", "disconnect"):
                 with self.subTest(engine=engine, fault=fault):
                     self.opening(engine)
@@ -812,7 +821,7 @@ class DeviceSocketTests(unittest.TestCase):
                     self.assertFalse(any(h["kind"] in ("pcm", "completed") for h, _ in self.wire.media))
 
     def test_shared_socket_stop_fences_pending_receive_and_late_result(self):
-        for engine in ("realtime", "gpt-live"):
+        for engine in ("gpt-live",):
             with self.subTest(engine=engine):
                 self.opening(engine)
                 request, _ = self.wire.service("media-socket-receive")
@@ -840,7 +849,7 @@ class DeviceSocketTests(unittest.TestCase):
                 self.wire.output("failed")
 
     def test_shared_socket_malformed_and_failed_connect_have_no_legacy_fallback(self):
-        for engine in ("realtime", "gpt-live"):
+        for engine in ("gpt-live",):
             with self.subTest(engine=engine):
                 self.wire.start(engine)
                 request, _ = self.wire.service("media-socket-open")

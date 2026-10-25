@@ -108,6 +108,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
         var providerTimelineOffset = 0d;
         var visualResets = 0;
         long retiredVoiceCost = 0;
+        var voiceFallbackAttempted = false;
         async Task StartProviderAsync(RealtimeTurnContext context)
         {
             while (true)
@@ -137,6 +138,17 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                 using var started = await pending;
                 if (GptLiveProtocol.RequiredString(started.RootElement, "type", 100) == "error")
                 {
+                    if (!voiceFallbackAttempted && context.LivePrompt is { } prompt
+                        && prompt.Options.Voice.CanRetryStartup(started.RootElement))
+                    {
+                        voiceFallbackAttempted = true;
+                        context = context with { LivePrompt = prompt with
+                        {
+                            Options = prompt.Options with { Voice = prompt.Options.Voice.UseFallback() }
+                        } };
+                        await connection.RestartAsync(connection.VisualGeneration, token);
+                        continue;
+                    }
                     throw LiveProviderFailure.Read(started.RootElement);
                 }
                 if (GptLiveProtocol.RequiredString(started.RootElement, "type", 100) != "session.started"
@@ -407,8 +419,8 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
             terminalDrained = false;
             BeginTerminalFinale(result);
             waiting = null;
-            var text = personalWands is not null ? ResultContext(result, speechCatalog)
-                : character is null ? ResultContext(result) : CharacterResultContext(result, options.Character.FinaleProfile);
+            var text = character is not null ? CharacterResultContext(result, options.Character.FinaleProfile)
+                : ResultContext(result, speechCatalog);
             await Direct(result.Status == WandDecisionStatus.NeedsInformation ? CharacterPhase.Responding : CharacterPhase.Ready);
             if (personalWands is null && character is not null && result.Status == WandDecisionStatus.ValidProposal && result.Compartment is { } slot
                 && CharacterLoreProfiles.ForConfirmedSelection(slot, turn.Request.CatalogVersion) is { } lore)
@@ -422,7 +434,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                     + string.Join(" / ", lines.Select(line => line.Text))
                     + " Styl: " + profile.SpeechStyle + ". Jde o fikci; nevyslovuj název ani slot a netvrď provedený pohyb.", delegation, token);
             }
-            if (personalWands is not null && result.Status == WandDecisionStatus.ValidProposal)
+            if (character is null && personalWands is not null && result.Status == WandDecisionStatus.ValidProposal)
             {
                 var personal = personalWands.Single(w => w.PhysicalSlot == result.Compartment);
                 await tracker.AppendAsync("thinking", ShowRepertoire.PersonalizedContext(personal), delegation, token);
@@ -969,6 +981,11 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                     }
                     await Direct(projection.Intent == LiveRequestIntent.Repeat ? CharacterPhase.Repair
                         : terminal is null ? CharacterPhase.Responding : CharacterPhase.Ready);
+                    if (turn.GuestTone is { } effectiveTone && control is CharacterSignalKind.NoSwearing
+                        or CharacterSignalKind.ToneDown or CharacterSignalKind.ToneUp or CharacterSignalKind.WithdrawRoast)
+                    {
+                        await tracker.AppendAsync("instructions", effectiveTone.Read().Instructions, null, token);
+                    }
                 }
                 if (character is null && turn.GuestTone is { } guestTone && !closing
                     && projection.ContentVersion != lastGuestToneContentVersion && projection.ContentVersion > 0
@@ -1099,7 +1116,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                     var last = tasks.Values.LastOrDefault();
                     if (last is not null) { waiting = last with { State = "awaiting_context" }; waitingSince = Elapsed(); }
                 }
-                if ((character is null || personalWands is not null) && terminal is { Status: WandDecisionStatus.ValidProposal } && !closing && !terminalInputPending
+                if (character is null && terminal is { Status: WandDecisionStatus.ValidProposal } && !closing && !terminalInputPending
                     && !announcementPrompted && resultAccepted && terminalSpeech && !TerminalMentionsResult()
                     && !LiveTerminalSpeech.Unfinished(ActualTerminal())
                     && inputActivity.QuietFor(options.InputQuietMs)
@@ -1169,7 +1186,7 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
         string ActualTerminal() => string.Concat(projection.Segments.Skip(terminalSegment).Where(s => s.Speaker == "assistant").Select(s => s.Text)).Trim();
         bool TerminalMentionsResult()
         {
-            if (character is not null && personalWands is null) { return LimitedTerminalReady(ActualTerminal()); }
+            if (character is not null) { return LimitedTerminalReady(ActualTerminal(), speechCatalog); }
             return LiveTerminalSpeech.Ready(ActualTerminal(),
                 terminal!.Status == WandDecisionStatus.ValidProposal ? terminal.Compartment : null,
                 speechCatalog) && (personalWands is null || !LiveTerminalSpeech.MentionsAnyCatalogTitle(ActualTerminal(), PartyWandCatalog.Available(63)));
@@ -1183,12 +1200,13 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
             ? "Backend výběr ověřil, ale fyzické finále je v této konfiguraci blokované. Oznam krátkou neosobní provozní opravu, bez názvu a slotu. Žádný reveal nebude vydán."
             : "Backend má platnou strukturovanou volbu. Omezené finále: neuváděj katalogový název, číslo slotu ani faktické vlastnosti. Jeden aktuální callback nebo neosobní ceremonie; mechanika zatím není potvrzená. Hůlka zůstává rekvizitou.";
     }
-    internal static bool LimitedTerminalReady(string speech)
+    internal static bool LimitedTerminalReady(string speech, IReadOnlyList<PartyWandCatalog.WandEntry>? candidates = null)
     {
         if (LiveTerminalSpeech.Unfinished(speech)) { return false; }
         // This check is after streaming; it blocks proposal publication, never
         // claims to undo words already heard or to validate every semantic fact.
         return !LiveTerminalSpeech.MentionsAnyCatalogTitle(speech, PartyWandCatalog.Available(63))
+            && (candidates is null || !LiveTerminalSpeech.MentionsAnyCatalogTitle(speech, candidates))
             && !LiveTerminalSpeech.MentionsCompartmentIdentifier(speech)
             && !System.Text.RegularExpressions.Regex.IsMatch(speech, @"(?i)už.{0,20}(vyjela|vyjel|vysunut)|vezmi.{0,10}(ji|hůlku)");
     }

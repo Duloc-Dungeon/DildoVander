@@ -157,7 +157,7 @@ internal static class PersonaLabHardwareTests
         var opening = fixture.Turn(opening: true);
         Check(fixture.Begin(id, opening with { DeviceRevision = fixture.Target.ExpectedRevision + 1 }).Code == "lab_hardware_configuration_mismatch",
             "first turn requires the exact admitted device revision");
-        Check(fixture.Begin(id, opening, gptLive: true).Code == "lab_hardware_configuration_mismatch", "selected engine cannot be switched");
+        Check(fixture.Begin(id, opening, gptLive: false).Code == "lab_hardware_configuration_mismatch", "selected engine cannot be switched");
         var first = fixture.Begin(id, opening).Call!;
         Check(first.Context.Request.Voice == "marin" && first.Context.LivePrompt!.Instructions.Contains("FROZEN_LAB_PROMPT", StringComparison.Ordinal),
             "server derives frozen voice and persona instead of trusting device options");
@@ -453,7 +453,9 @@ internal static class PersonaLabHardwareTests
                 var conversations = new ConversationStore(clock, journal, eveningMemory: memory, personaLab: store);
                 var calls = 0;
                 realtime = new OpenAiRealtimeClient(_ => { Interlocked.Increment(ref calls); throw new InvalidOperationException("Provider calls are forbidden in deterministic hardware tests."); });
-                live = new GptLiveClient(new ConfigurationBuilder().Build());
+                live = new GptLiveClient(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                { ["OPENAI_API_KEY"] = "fixture-only-not-a-key" }).Build(), _ =>
+                { Interlocked.Increment(ref calls); throw new InvalidOperationException("Provider calls are forbidden in deterministic hardware tests."); });
                 runtime = new PersonaLabRuntime(store, live, realtime);
                 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
                 builder.Logging.ClearProviders();
@@ -493,7 +495,7 @@ internal static class PersonaLabHardwareTests
                 await hardware.StartAsync(CancellationToken.None);
                 var fixture = new Fixture { App = app, Config = config, Journal = journal, Memory = memory,
                     Conversations = conversations, Store = store, Runtime = runtime, Hardware = hardware, Clock = clock, Access = access };
-                fixture.revision = store.CreateRevision(new(store.ActiveRevisionId, "Hardware fixture", "FROZEN_LAB_PROMPT", RealtimeProtocol.Model, "marin")).Id;
+                fixture.revision = store.CreateRevision(new(store.ActiveRevisionId, "Hardware fixture", "FROZEN_LAB_PROMPT", GptLiveProtocol.Model, "marin")).Id;
                 fixture.readProviderCalls = () => calls;
                 fixture.disposeProviders = () => { vector.Dispose(); live.Dispose(); realtime.Dispose(); };
                 return fixture;
@@ -513,12 +515,12 @@ internal static class PersonaLabHardwareTests
         private Func<int> readProviderCalls = () => 0;
         private Action disposeProviders = () => { };
         internal LabSession Session(string owner) => Store.CreateSession(owner,
-            new(revision, RealtimeProtocol.Model, "returning-visitor", "returning", "Hardware test"));
+            new(revision, GptLiveProtocol.Model, "returning-visitor", "returning", "Hardware test"));
         internal CreateConversationRequest CreateRequest(string token) => new("suitcase-a", Target.BootId, 1, PartyWandCatalog.Version,
             "cs-CZ", new(true, false)) { TestContext = token };
         internal RealtimeTurnRequest Turn(bool opening) => new(Guid.NewGuid(), Target.BootId, 1, 63, 7,
             PartyWandCatalog.Version, opening, "", null, "cedar", 1);
-        internal RealtimeAdmission Begin(string id, RealtimeTurnRequest request, bool gptLive = false) => Conversations.BeginRealtimeTurn(
+        internal RealtimeAdmission Begin(string id, RealtimeTurnRequest request, bool gptLive = true) => Conversations.BeginRealtimeTurn(
             "suitcase-a", id, Guid.NewGuid(), JsonSerializer.SerializeToUtf8Bytes(request), request, true,
             CancellationToken.None, CancellationToken.None, handsFree: true, gptLive: gptLive);
         internal async Task<(string Token, DateTimeOffset ExpiresAt)> MintAsync(Actor actor, LabSession session)

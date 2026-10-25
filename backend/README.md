@@ -35,8 +35,8 @@ Z adresáře `` použij pinned SDK přes `global.json` a
 Pro cross-origin webového operátora nastav přesný `Show:AllowedOrigins` seznam.
 `Show:DuelCommentaryEnabled` má default false; běžné testy nepoužívají poskytovatele.
 
-Produkční rozhovor má dva enginy: **GPT Live `gpt-live-1`** (výchozí) a
-**GPT Realtime 2.1 `gpt-realtime-2.1`** (výslovná alternativa). Live tvoří
+Produkční rozhovor používá jedinou osobnost **DV01** a **GPT Live `gpt-live-1`**.
+GPT Realtime 2.1 `gpt-realtime-2.1` je neaktivní zdrojová záloha. Live tvoří
 běžnou řeč sám. Sol rozhoduje jen o skutečné hůlce; samostatná vision služba
 zpracovává fotografie. Deterministické adaptéry jsou testovací pomůcky.
 
@@ -50,7 +50,8 @@ CI, nasazení a skutečný iPhone/kufr.
 ASP.NET Core/.NET 10 vlastní identitu rozhovoru, katalog, paměť a validované
 návrhy. ESP32-S3 se připojuje přímo přes HTTPS, vlastní fyzickou sekvenci a
 ověřuje dostupnost, revizi, kalibraci a Stop. Telefon není cloudový prostředník.
-`GptLive` a `Realtime` vlastní protokoly; `Conversations` společný lifecycle.
+`GptLive` vlastní aktivní protokol; `Conversations` společný lifecycle. `Realtime` zůstává neaktivní záloha.
+[Provisioning vlastního hlasu a fallback](../docs/dv01-voice.md) je pouze backendová operace.
 
 - `POST /v1/conversations` založí aplikační rozhovor idempotentně.
 - `POST /v1/conversations/{id}/gpt-live` nebo `/realtime-live` otevře engine.
@@ -82,7 +83,7 @@ rostoucí `Image-Revision` a `Image-Consent: true` při výslovném přiložení
 Server kontroluje vlastníka/generaci; UUID nelze přebindovat jinému rozhovoru.
 
 Fotografie může přibýt během hovoru. Vision má vlastní souběh; chyba nezruší
-hlas. Live dostává ohraničené pozorování; Realtime také skutečný `input_image`.
+hlas. Live dostává ohraničené pozorování; neaktivní Realtime záloha uchovává historickou podporu `input_image`.
 Text uvnitř fotografie je nedůvěryhodný. Kostým není identita ani souhlas
 s osobním roastem. `PUT /costume-context` opraví popis. `DELETE /image` se
 stejnou korelací a `Image-Revision` zneplatní i opožděný upload dané revize,

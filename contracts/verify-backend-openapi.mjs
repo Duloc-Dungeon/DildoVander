@@ -94,21 +94,22 @@ validate('FirmwareEnvelope', { schemaVersion: 0, payload: 'e30=', signature: 'ME
 validate('FirmwareEnvelope', { schemaVersion: 1, payload: 'e30=', signature: 'MEYCIQD12345', privateKey: 'secret' }, false);
 assert.deepEqual(document.paths['/v1/admin/modes'].get.security, [{ ServerAdmin: [] }]);
 assert.deepEqual(document.paths['/v1/admin/modes'].put.security, [{ ServerAdmin: [] }]);
-const engines = { schemaVersion: 1, primaryEngine: 'gpt-live', engines: [
+const legacyEngines = { schemaVersion: 1, primaryEngine: 'gpt-live', engines: [
   { engine: 'gpt-live', model: 'gpt-live-1', ready: true, unavailableReason: null,
     voices: ['cedar','marin','coral'], speed: {supported:false,min:1,max:1,default:1}, inputModes:['audio'], cameraSources:['phone','suitcase'] },
   { engine: 'realtime', model: 'gpt-realtime-2.1', ready: true, unavailableReason: null,
     voices: ['cedar','marin','coral'], speed: {supported:true,min:0.8,max:1.2,default:1}, inputModes:['audio'], cameraSources:['phone','suitcase'] },
 ] };
+const engines = { ...legacyEngines, engines: [legacyEngines.engines[0]] };
 const serverModes = { revision: '00000000-0000-4000-8000-000000000001', engines,
-  activeConversations: 0, lifetime: 'until_restart', personalityId: 'party-original', personalityLifetime: 'persistent',
-  characterEnabled:false,characterTone:'Adult',characterFinaleProfile:'Blocked',characterVersion:'dv01-v1',
-  personalities: [{ id: 'party-original', name: 'Původní party kufr', description: 'Původní personalita', promptSha256: 'a'.repeat(64) }] };
+  activeConversations: 0, lifetime: 'until_restart', personalityId: 'dv01', personalityLifetime: 'persistent',
+  characterEnabled:true,characterTone:'Adult',characterFinaleProfile:'Blocked',characterVersion:'dv01-v1',
+  personalities: [{ id: 'dv01', name: 'Původní party kufr', description: 'Původní personalita', promptSha256: 'a'.repeat(64) }] };
 validate('ServerModes', serverModes, true);
 validate('ServerModes', { ...serverModes, personalityLifetime: 'until_restart' }, false);
 validate('ServerModes', { ...serverModes, dialogMode: 'responses', voiceMode: 'openai' }, false);
 validate('PersonalityInfo', { ...serverModes.personalities[0], promptSha256: 'bad' }, false);
-validate('ServerModeChange', { expectedRevision: serverModes.revision, personalityId: 'ollivander-trunk' }, true);
+validate('ServerModeChange', { expectedRevision: serverModes.revision, personalityId: 'ollivander-trunk' }, false);
 validate('ServerModeChange', { expectedRevision: serverModes.revision, dialogMode: 'responses', voiceMode: 'openai' }, false);
 validate('ServerModeChange', { expectedRevision: 'stale' }, false);
 validate('ServerModes', { ...serverModes, credential: 'secret' }, false);
@@ -120,19 +121,19 @@ validate('GptLiveCapability', {...engines.engines[0],ready:false,unavailableReas
 validate('GptLiveCapability', {...engines.engines[0],model:'retired-model'}, false);
 validate('GptLiveCapability', {...engines.engines[0],ready:false}, false);
 validate('GptLiveCapability', {...engines.engines[0],inputModes:['text','audio']}, false);
-validate('RealtimeCapability', {...engines.engines[1],ready:'true'}, false);
+validate('RealtimeCapability', {...legacyEngines.engines[1],ready:'true'}, false);
 const memoryProvider = {provider:'openai_vector_store',configured:true,degraded:false,configurationStatus:'configured',
   lastVerifiedAt:null,pending:0,failed:0,deleting:0,storedBytes:0,capacityBytes:1000000,rejectedWrites:0};
 const diagnostics = { engines,conversationContractVersion:2,catalogVersion:'ollivander-private-party-v1',audioFormat:'pcm16-mono-24000',
-  liveActorMode:'AutonomousActor',personalityId:'party-original',liveDecisionModel:'gpt-6.1-sol',liveTerminalQuietMs:1500,
-  characterEnabled:false,characterTone:'Adult',characterFinaleProfile:'Blocked',characterVersion:'dv01-v1',
+  liveActorMode:'AutonomousActor',personalityId:'dv01',liveDecisionModel:'gpt-6.1-sol',liveTerminalQuietMs:1500,
+  characterEnabled:true,characterTone:'Adult',characterFinaleProfile:'Blocked',characterVersion:'dv01-v1',
   characterVisualRoast:'costume_observations_only',characterNamedFinale:'blocked',characterAudio:'unsegmented_live_stream',characterEventReady:false,
   memoryEnabled:true,cloudIndexingEnabled:true,longTermPersonalEnabled:true,memoryProvider};
 validate('BackendDiagnostics', diagnostics, true);
 validate('BackendDiagnostics', {...diagnostics,liveActorMode:'LegacyBackendScripted'}, false);
 validate('BackendDiagnostics', {...diagnostics,credential:'secret'}, false);
 validate('BackendDiagnostics', {...diagnostics,privateSource:'guest detail'}, false);
-const retiredRoutes = ['opening','turns','transcriptions','speech','realtime-turns'];
+const retiredRoutes = ['opening','turns','transcriptions','speech','realtime-turns','realtime-live'];
 for (const route of retiredRoutes) {
   const endpoint = document.paths['/v1/conversations/{id}/'+route].post;
   assert.equal(endpoint.deprecated,true);

@@ -220,7 +220,8 @@ internal static class OperationEpochFlowTests
                 ["Backend:DatabasePath"] = Path.Combine(directory, "journal.sqlite")
             }).Build();
             journal = new OperationJournal(configuration, TimeProvider.System);
-            Store = new ConversationStore(TimeProvider.System, journal, liveOptions: new() { Mode = LiveActorMode.AutonomousActor });
+            Store = new ConversationStore(TimeProvider.System, journal, liveOptions: new() { Mode = LiveActorMode.AutonomousActor,
+                Character = new(FinaleProfile: Kufr.Backend.Features.Character.FinaleProfile.Limited) });
             var request = new CreateConversationRequest(DeviceId, BootId, 0, PartyWandCatalog.Version, "cs-CZ", new(true, false), epoch);
             var created = Store.Create(DeviceId, Guid.NewGuid(), JsonSerializer.SerializeToUtf8Bytes(request, RealtimeProtocol.JsonOptions), request);
             ConversationId = created.Response?.ConversationId ?? throw new Exception("Epoch fixture conversation admission failed.");

@@ -32,31 +32,25 @@ beforeEach(() => {
 });
 afterEach(() => { wrapper?.unmount(); nativeDebug.dispose(); vi.restoreAllMocks(); });
 describe('phone Vue engine and consent journeys', () => {
-  it('offers only live/realtime with metadata voices and no retired text or PTT actions', async () => {
+  it('starts GPT Live with server managed voice and no engine or voice selector', async () => {
     wrapper = mount(PhoneTestPanel); await flushPromises();
-    expect(wrapper.get('[data-engine]').findAll('option').map(item => item.attributes('value'))).toEqual(['', 'gpt-live', 'realtime']);
-    expect(wrapper.get('[data-voice]').findAll('option').map(item => item.text())).toEqual(['cedar']);
-    expect(wrapper.get('[data-speed]').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('[data-engine]').exists()).toBe(false);
+    expect(wrapper.find('[data-voice]').exists()).toBe(false);
     expect(wrapper.find('textarea').exists()).toBe(false); expect(bridge.startConversation).not.toHaveBeenCalled();
-    await wrapper.get('[data-engine]').setValue('realtime'); await wrapper.get('[data-speed]').setValue('1.15');
-    nativeDebug.status.value = { ...nativeDebug.status.value, engines: capabilities() }; await flushPromises();
-    expect((wrapper.get('[data-speed]').element as HTMLInputElement).value).toBe('1.15');
     await button('Spustit AI rozhovor').trigger('click'); await flushPromises();
-    expect(bridge.startConversation).toHaveBeenCalledWith({ expectedMode: 'openai', readyMask: 63, costumeDescription: undefined, engine: 'realtime', voice: 'marin', speed: 1.15 });
+    expect(bridge.startConversation).toHaveBeenCalledWith({ expectedMode: 'openai', readyMask: 63, costumeDescription: undefined, engine: 'gpt-live', voice: 'marin', speed: 1 });
   });
-  it('never silently changes the selected unavailable engine or starts without capabilities', async () => {
+  it('starts no conversation when GPT Live is unavailable or capabilities are missing', async () => {
     nativeDebug.status.value.engines!.engines[0]!.ready = false;
     wrapper = mount(PhoneTestPanel); await flushPromises();
-    expect((wrapper.get('[data-engine]').element as HTMLSelectElement).value).toBe('gpt-live');
     expect(button('Spustit AI rozhovor').attributes('disabled')).toBeDefined();
     nativeDebug.status.value = { ...nativeDebug.status.value, engines: undefined }; await flushPromises();
     expect(button('Spustit AI rozhovor').attributes('disabled')).toBeDefined(); expect(bridge.startConversation).not.toHaveBeenCalled();
   });
-  it('blocks an unrelated retired saved preference until explicit engine choice', async () => {
+  it('ignores an old saved Realtime preference and starts with GPT Live', async () => {
     window.localStorage.setItem('kufr.conversation.engine.v1', 'chained'); wrapper = mount(PhoneTestPanel); await flushPromises();
-    expect((wrapper.get('[data-engine]').element as HTMLSelectElement).value).toBe('');
-    expect(button('Spustit AI rozhovor').attributes('disabled')).toBeDefined();
-    expect(wrapper.text()).toContain('Uložený režim už není podporován');
+    await button('Spustit AI rozhovor').trigger('click'); await flushPromises();
+    expect(bridge.startConversation).toHaveBeenCalledWith(expect.objectContaining({ engine: 'gpt-live' }));
   });
   it('requires explicit identity and consent confirmation and consumes it once for a new guest', async () => {
     wrapper = mount(PhoneTestPanel); await flushPromises(); await wrapper.get('[data-guest-id]').setValue('Guest-042');

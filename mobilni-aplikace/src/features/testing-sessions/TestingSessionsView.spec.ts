@@ -232,14 +232,14 @@ describe('hardware-free testing journey', () => {
     await wrapper.get('#testing-conversation-input').setValue('text');await flushPromises();expect(api.dispose).toHaveBeenCalled();expect(wrapper.text()).toContain('Dříve uložená zpráva');
     expect(api.transport.mock.calls.filter(([path,init])=>path==='/app/v1/testing-sessions'&&init?.method==='POST')).toHaveLength(0);
   });
-  it.each(['gpt-live-1', 'gpt-realtime-2.1'] as const)('streams consecutive microphone turns with %s and preserves them on stop', async engine => {
-    detail.session.engine = engine; detail.conversation.engine = engine;
+  it('streams consecutive GPT Live microphone turns and preserves them on stop', async () => {
+    detail.session.engine = 'gpt-live-1'; detail.conversation.engine = 'gpt-live-1';
     const { wrapper } = await render();
     await wrapper.get('input[type=checkbox]').setValue(true);
     await wrapper.get('#testing-conversation-input').setValue('voice'); await flushPromises();
     expect(api.connect).not.toHaveBeenCalled();
     expect(wrapper.find('#testing-message').exists()).toBe(false);
-    expect(wrapper.get('.testing-conversation').text()).toContain(engine === 'gpt-live-1' ? 'GPT Live' : 'Realtime 2.1');
+    expect(wrapper.get('.testing-conversation').text()).toContain('GPT Live');
     await button(wrapper, 'Zapnout mikrofon a hlasové spojení').trigger('click'); await flushPromises();
     expect(api.output).toHaveBeenLastCalledWith(true);
     expect(wrapper.get('.testing-conversation [role="status"]').text()).toContain('Mikrofon je aktivní');
@@ -261,6 +261,15 @@ describe('hardware-free testing journey', () => {
     expect(api.dispose).toHaveBeenCalled();
     expect(wrapper.findAll('.testing-chat li')).toHaveLength(4);
     expect(button(wrapper, 'Zapnout mikrofon a hlasové spojení').exists()).toBe(true);
+  });
+  it('keeps historical Realtime transcripts readable without reopening dialogue', async () => {
+    detail.session.engine = 'gpt-realtime-2.1'; detail.conversation.engine = 'gpt-realtime-2.1';
+    detail.conversation.turns.push({ id: 'old', role: 'assistant', text: 'Archivovaná odpověď', createdAt: '2026-10-24T10:00:00Z' });
+    const { wrapper } = await render(); await wrapper.get('input[type=checkbox]').setValue(true);
+    expect(wrapper.text()).toContain('Archivovaná odpověď');
+    expect(wrapper.find('#testing-message').exists()).toBe(false);
+    expect(wrapper.findAll('button').some(item => item.text().includes('Zapnout mikrofon'))).toBe(false);
+    expect(api.connect).not.toHaveBeenCalled();
   });
   it('refreshes the frozen character context after real enrichment before the first turn',async()=>{
     const {wrapper}=await render();await wrapper.get('input[type=checkbox]').setValue(true);
@@ -304,6 +313,7 @@ describe('hardware-free testing journey', () => {
   });
   it('starts with an idempotent operation and puts the returned session ID into the resumable route', async () => {
     const {wrapper,router}=await render('/testing-sessions');await wrapper.get('input[type=checkbox]').setValue(true);
+    expect(wrapper.find('#testing-model').exists()).toBe(false);
     await button(wrapper,'Založit test a vybrat postavu').trigger('click');await flushPromises();
     const call=api.transport.mock.calls.find(([path,init])=>path==='/app/v1/testing-sessions'&&init?.method==='POST');
     expect(JSON.parse(call![1].body)).toMatchObject({engine:'gpt-live-1',inputMode:'text',openAiConsent:true,recordContent:true,operationId:expect.any(String)});

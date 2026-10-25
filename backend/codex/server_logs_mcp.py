@@ -87,9 +87,9 @@ def project(path, value):
         capabilities = value.get('engines')
         if (not isinstance(capabilities, dict) or type(capabilities.get('schemaVersion')) is not int
                 or capabilities['schemaVersion'] != 1 or capabilities.get('primaryEngine') != 'gpt-live'
-                or not isinstance(capabilities.get('engines'), list) or len(capabilities['engines']) != 2):
+                or not isinstance(capabilities.get('engines'), list) or len(capabilities['engines']) != 1):
             fail()
-        expected_models = {'gpt-live': 'gpt-live-1', 'realtime': 'gpt-realtime-2.1'}
+        expected_models = {'gpt-live': 'gpt-live-1'}
         projected = []
         seen = set()
         for engine in capabilities['engines']:

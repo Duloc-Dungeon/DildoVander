@@ -35,9 +35,10 @@ let activePage;
 const now = '2026-10-20T12:00:00Z';
 
 function fixture(admin) {
-  const baseline = { id: 'baseline-browser', parentId: null, name: 'Výchozí persona', instructions: 'Syntetická persona pro prohlížečový test.', engine: 'gpt-live-1', voice: 'cedar', status: 'baseline', sha256: 'a'.repeat(64), sourceVersion: 'browser-fixture', createdAt: now, publishedAt: null, revision: 1 };
+  const baseline = { id: 'baseline-browser', parentId: null, name: 'Výchozí persona', instructions: 'Syntetická persona pro prohlížečový test.', engine: 'gpt-live-1', voice: 'cedar', status: 'baseline', sha256: 'a'.repeat(64), sourceVersion: 'dv01-live-v1', createdAt: now, publishedAt: null, revision: 1 };
+  const oldLive = { ...baseline, id: 'legacy-live-browser', name: 'Historická DV01', sourceVersion: 'dv01-legacy-v1', revision: 0 };
   return {
-    admin, authenticated: false, imageRealtime: false, versions: [baseline], activeRevisionId: baseline.id, sessions: [], suites: [], evaluations: [], writes: [], requests: [], blocked: [], unknown: [], sockets: 0,
+    admin, authenticated: false, imageRealtime: false, versions: [baseline, oldLive], activeRevisionId: baseline.id, sessions: [], suites: [], evaluations: [], writes: [], requests: [], blocked: [], unknown: [], sockets: 0,
     scenarios: [{ id: 'first-visit', name: 'První návštěva', description: 'Syntetický host bez produkčního kontextu.', openingText: 'Ahoj, jsem fiktivní tester.',
       scriptSha256: 'c'.repeat(64), script: [{ index: 1, input: 'Ahoj, jsem fiktivní tester.', checks: ['reply'] }, { index: 2, input: 'Oprava: jsem knihovník.', checks: ['reply', 'memory'] }] }],
     memoryFixtures: [{ id: 'returning', name: 'Vrácený host', description: 'Výhradně syntetická paměť.', current: 'Fiktivní knihovník Áda.', evening: 'Testovací večer.', returning: 'Fiktivní zachráněná kniha.' }],
@@ -152,7 +153,7 @@ async function installFixtures(context, state) {
         assert.equal(request.headers()['x-dv-confirm'], 'yes', 'sensitive draft/publication uses explicit confirmation header');
         state.writes.push({ suffix, body: structuredClone(body) });
         if (suffix === '/revisions') {
-          const revision = { ...body, id: `draft-${state.versions.length}`, status: 'draft', sha256: 'b'.repeat(64), sourceVersion: 'browser-draft', createdAt: now, publishedAt: null, revision: state.versions.length + 1 };
+          const revision = { ...body, id: `draft-${state.versions.length}`, status: 'draft', sha256: 'b'.repeat(64), sourceVersion: 'dv01-live-v1', createdAt: now, publishedAt: null, revision: state.versions.length + 1 };
           state.versions.unshift(revision); return json(revision);
         }
         assert.equal(body.expectedActiveRevisionId, state.activeRevisionId, 'publication uses the exact active revision');
@@ -200,9 +201,10 @@ async function viewerJourney(width) {
     page = await context.newPage(); activePage = page;
     page.setDefaultTimeout(12000); page.on('pageerror', error => errors.push(error.message));
     await signInViaProtectedLink(page);
+    assert.deepEqual(await page.locator('#lab-revision option').evaluateAll(options => options.map(option => option.value)), ['baseline-browser'], 'legacy GPT Live revisions remain archived and are not selectable');
     assert.equal(await page.getByRole('button', { name: 'Konfigurace', exact: true }).count(), 0, 'Viewer has no admin configuration controls');
     await page.getByLabel('Název testu', { exact: true }).fill(`Syntetický test ${width}`);
-    await page.getByLabel('Konverzační model', { exact: true }).selectOption('gpt-realtime-2.1');
+    assert.equal(await page.getByLabel('Konverzační model', { exact: true }).count(), 0, 'dialogue engine is fixed to GPT Live');
     await page.getByRole('button', { name: 'Připravit sezení', exact: true }).click();
     await page.getByLabel('Vaše zpráva', { exact: true }).fill('Jsem pouze fiktivní knihovník Áda.');
     await page.getByRole('button', { name: 'Odeslat do modelu', exact: true }).click();
@@ -406,15 +408,15 @@ async function adminJourney() {
     await page.getByLabel('Potvrzuji změnu aktivní konfigurace na vybranou verzi.', { exact: false }).check();
     await publish.click();
     await page.getByText('Verze byla publikována.', { exact: true }).waitFor();
-    assert.equal(state.activeRevisionId, 'draft-1');
-    await page.getByLabel('Výchozí verze / historie', { exact: true }).selectOption('baseline-browser');
+    assert.equal(state.activeRevisionId, 'draft-2');
+    await page.getByLabel('Výchozí verze DV01', { exact: true }).selectOption('baseline-browser');
     const rollback = page.getByRole('button', { name: 'Vrátit tuto verzi', exact: true });
     assert.equal(await rollback.isDisabled(), true, 'rollback also requires a fresh confirmation');
     await page.getByLabel('Potvrzuji změnu aktivní konfigurace na vybranou verzi.', { exact: false }).check();
     await rollback.click();
     await page.getByText('Aktivní konfigurace byla vrácena na vybranou verzi.', { exact: true }).waitFor();
     assert.equal(state.activeRevisionId, 'baseline-browser');
-    assert.deepEqual(state.writes.map(write => write.suffix), ['/revisions', '/revisions/draft-1/publish', '/rollback']);
+    assert.deepEqual(state.writes.map(write => write.suffix), ['/revisions', '/revisions/draft-2/publish', '/rollback']);
     await layout(page, 'administrator-1440-rollback');
     assert.equal(state.requests.filter(request => request.path.endsWith('/diagnostics')).length, 0, 'system diagnostics are not loaded by visiting Configuration');
     const system = page.locator('.lab-system-diagnostics');
@@ -454,9 +456,7 @@ try {
   }
   await viewerJourney(1440);
   await viewerJourney(390);
-  await imageJourney(1440);
-  await imageJourney(390);
-  await adminJourney();
+await adminJourney();
   await writeFile(path.join(screenshots, 'manifest.json'), JSON.stringify({ evidence: 'synthetic_browser_only', origin, reports, limitations: ['No real passkey, microphone, provider, iPhone, device, or audio-acoustic acceptance.', 'Voice success/audio/interrupt socket flow is covered by backend fake runtime tests; this browser harness covers permission denial and text recovery.'] }, null, 2));
   console.log(JSON.stringify({ passed: true, screenshots, reports: reports.map(({ role, viewport }) => ({ role, viewport })) }));
 } catch (error) {

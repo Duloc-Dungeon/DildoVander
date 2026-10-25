@@ -24,7 +24,7 @@ vi.mock('../suitcase/deviceSession', async () => {
     startLabVoice: vi.fn(() => false), stopLabVoice: vi.fn(() => false), labConnectionEpoch: () => 1, configureVoice: vi.fn(() => false) } };
 });
 vi.mock('../suitcase/deviceAssociation', async () => { const { ref } = await import('vue'); return { deviceAssociation: { canOperate: ref(false), refresh: vi.fn(async () => {}) } }; });
-const revision = { id: 'revision', parentId: null, name: 'Základ', instructions: 'Testovací instrukce', engine: 'gpt-live-1', voice: 'cedar', status: 'baseline', createdAt: '2026-10-20T10:00:00Z', publishedAt: null, revision: 1 };
+const revision = { id: 'revision', parentId: null, name: 'Základ', instructions: 'Testovací instrukce', engine: 'gpt-live-1', voice: 'cedar', status: 'baseline', sourceVersion: 'dv01-live-v1', createdAt: '2026-10-20T10:00:00Z', publishedAt: null, revision: 1 };
 const fixture = { id: 'empty', name: 'Prázdná paměť', description: 'Syntetická testovací paměť', current: '', evening: '', returning: '' };
 const scenario = { id: 'intro', name: 'První setkání', description: 'Syntetický scénář', openingText: 'Dobrý večer.' };
 let session: LabSession;
@@ -122,7 +122,8 @@ describe('Persona Lab user journeys', () => {
     const wrapper = await render();
     expect(api.transport.mock.calls.every(([, init]) => init.method === 'GET')).toBe(true);
     expect(api.voiceConnect).not.toHaveBeenCalled(); expect(wrapper.text()).toContain('SIMULACE');
-    expect(wrapper.get('#lab-engine').text()).toContain('gpt-realtime-2.1');
+    expect(wrapper.find('#lab-engine').exists()).toBe(false);
+    expect(wrapper.text()).toContain('DV01 · GPT Live');
     await wrapper.get('.lab-setup').trigger('submit'); await flushPromises();
     const request = api.transport.mock.calls.find(([path, init]) => path.endsWith('/sessions') && init.method === 'POST');
     expect(JSON.parse(request![1].body)).toMatchObject({ recordContent: false, engine: 'gpt-live-1', scenarioId: 'intro', fixtureId: 'empty' });
@@ -193,114 +194,50 @@ describe('Persona Lab user journeys', () => {
     expect(JSON.parse(request![1].body)).toEqual({ expectedActiveRevisionId: 'revision' });
     expect(wrapper.text()).toContain('Verze byla publikována');
   });
-  it('previews an image locally and requires consent before any provider attachment', async () => {
-    session.engine = 'gpt-realtime-2.1';
-    const baseline = api.transport.getMockImplementation()!;
-    api.prepareImage.mockResolvedValue({ previewUrl: 'blob:synthetic-preview', dataBase64: 'AA==', width: 512, height: 341, bytes: 40000 });
-    api.transport.mockImplementation(async (path: string, init: RequestInit) => {
-      if (path.endsWith('/catalog')) {
-        const response = await baseline(path, init); const data = await response.json(); data.capabilities.imageRealtime = true; data.capabilities.realtime = true;
-        return new Response(JSON.stringify(data));
-      }
-      if (path.endsWith('/image')) return new Response(JSON.stringify({ ...session, hasImage: true }));
-      return baseline(path, init);
-    });
+  it('keeps historical Realtime sessions readable and blocks new dialogue', async () => {
+    session.engine = 'gpt-realtime-2.1'; session.turns[0]!.text = 'Historická odpověď';
     const wrapper = await render(); await wrapper.get('#lab-existing').setValue('session');
-    const input = wrapper.get('#lab-image-input');
-    Object.defineProperty(input.element, 'files', { configurable: true, value: [new File(['synthetic'], 'test.jpg', { type: 'image/jpeg' })] });
-    await input.trigger('change'); await flushPromises();
-    expect(wrapper.get('.lab-image img').attributes('src')).toBe('blob:synthetic-preview');
-    expect(api.transport.mock.calls.some(([path]) => path.endsWith('/image'))).toBe(false);
-    let attach = wrapper.findAll('button').find(button => button.text() === 'Připojit fotografii k dalšímu vstupu')!;
-    expect(attach.attributes('disabled')).toBeDefined();
-    expect(wrapper.get('.lab-image label.lab-check').text()).toContain('fotografie společnosti OpenAI');
-    await wrapper.get('.lab-image input[type="checkbox"]').setValue(true); await attach.trigger('click'); await flushPromises();
-    const request = api.transport.mock.calls.find(([path]) => path.endsWith('/image'));
-    expect(JSON.parse(request![1].body)).toEqual({ mimeType: 'image/jpeg', dataBase64: 'AA==', consent: true });
-  });
-  it('separates explicit camera and library inputs and discards a local preview without a server request', async () => {
-    session.engine = 'gpt-realtime-2.1';
-    enableImages();
-    const revoke = vi.spyOn(URL, 'revokeObjectURL');
-    api.prepareImage.mockResolvedValue({ previewUrl: 'blob:local-only', dataBase64: 'AA==', width: 10, height: 10, bytes: 100 });
-    const wrapper = await render(); await wrapper.get('#lab-existing').setValue('session');
-    expect(wrapper.get('#lab-image-input').attributes('capture')).toBeUndefined();
-    expect(wrapper.get('#lab-camera-input').attributes('capture')).toBe('user');
-    await choosePhoto(wrapper, '#lab-image-input');
-    await button(wrapper, 'Odstranit místní náhled').trigger('click'); await flushPromises();
-    expect(wrapper.find('.lab-image img').exists()).toBe(false);
-    expect(revoke).toHaveBeenCalledWith('blob:local-only');
-    expect(api.transport.mock.calls.some(([path]) => path.endsWith('/image'))).toBe(false);
-  });
-  it('cancels pending local preparation when the preview is discarded', async () => {
-    session.engine = 'gpt-realtime-2.1'; enableImages();
-    let finish!: (value: unknown) => void;
-    api.prepareImage.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-    const revoke = vi.spyOn(URL, 'revokeObjectURL');
-    const wrapper = await render(); await wrapper.get('#lab-existing').setValue('session');
-    await choosePhoto(wrapper, '#lab-camera-input');
-    const signal = api.prepareImage.mock.calls[0][1] as AbortSignal;
-    await button(wrapper, 'Odstranit místní náhled').trigger('click');
-    expect(signal.aborted).toBe(true);
-    finish({ previewUrl: 'blob:late-preview', dataBase64: 'AA==', width: 10, height: 10, bytes: 100 }); await flushPromises();
-    expect(wrapper.find('.lab-image img').exists()).toBe(false);
-    expect(revoke).toHaveBeenCalledWith('blob:late-preview');
-    expect(api.transport.mock.calls.some(([path]) => path.endsWith('/image'))).toBe(false);
-  });
-  it('stops voice and clears the local preview while retaining server attachment evidence on failed revocation', async () => {
-    session.engine = 'gpt-realtime-2.1'; session.hasImage = true; enableImages();
-    api.prepareImage.mockResolvedValue({ previewUrl: 'blob:attached', dataBase64: 'AA==', width: 10, height: 10, bytes: 100 });
-    const baseline = api.transport.getMockImplementation()!;
-    let finish!: (response: Response) => void;
-    api.transport.mockImplementation((path: string, init: RequestInit) => path.endsWith('/image') && init.method === 'DELETE'
-      ? new Promise(resolve => { finish = resolve; }) : baseline(path, init));
-    const wrapper = await render(); await wrapper.get('#lab-existing').setValue('session');
-    await choosePhoto(wrapper, '#lab-image-input');
-    api.voiceObserver!.phase('listening');
-    await button(wrapper, 'Odebrat fotografii z testu').trigger('click');
-    expect(api.voiceDispose).toHaveBeenCalled();
-    expect(wrapper.find('.lab-image img').exists()).toBe(false);
-    finish(new Response(JSON.stringify({ code: 'server_unavailable' }), { status: 503 })); await flushPromises();
-    expect(wrapper.text()).toContain('Server potvrdil dočasné připojení fotografie');
-    expect(wrapper.text()).not.toContain('Server potvrdil odebrání fotografie');
-    expect(button(wrapper, 'Odebrat fotografii z testu').exists()).toBe(true);
-  });
-  it('withdraws an attached image during a pending text response and fences the obsolete response', async () => {
-    session.engine = 'gpt-realtime-2.1'; session.hasImage = true; enableImages();
-    const baseline = api.transport.getMockImplementation()!;
-    let finish!: (response: Response) => void;
-    let requestSignal: AbortSignal | null = null;
-    api.transport.mockImplementation((path: string, init: RequestInit) => {
-      if (path.endsWith('/turns')) { requestSignal = init.signal ?? null; return new Promise(resolve => { finish = resolve; }); }
-      if (path.endsWith('/image') && init.method === 'DELETE') return Promise.resolve(new Response(JSON.stringify({ ...session, hasImage: false })));
-      return baseline(path, init);
-    });
-    const wrapper = await render(); await wrapper.get('#lab-existing').setValue('session');
-    await wrapper.get('#lab-message').setValue('Syntetický vstup s fotografií');
+    expect(wrapper.text()).toContain('Historická odpověď');
+    expect(wrapper.text()).toContain('archivované sezení');
+    expect(wrapper.find('#lab-engine').exists()).toBe(false);
+    expect(wrapper.get('#lab-message').attributes('disabled')).toBeDefined();
     await wrapper.get('.lab-composer').trigger('submit'); await flushPromises();
+    expect(api.transport.mock.calls.filter(([path]) => path.endsWith('/turns'))).toHaveLength(0);
+  });
+  it('keeps old GPT Live sessions and revisions readable but prevents execution', async () => {
+    const oldRevision = { ...revision, id: 'old-live', name: 'Předchozí DV01', engine: 'gpt-live-1' as const,
+      status: 'baseline' as const, sourceVersion: 'dv01-legacy-v1' };
+    session.config = oldRevision;
+    session.turns[0]!.text = 'Odpověď z archivované revize';
+    const baseTransport = api.transport.getMockImplementation()!;
+    api.transport.mockImplementation(async (path: string, init: RequestInit) => {
+      const response = await baseTransport(path, init);
+      if (!path.endsWith('/catalog')) return response;
+      const catalog = await response.json(); catalog.versions.push(oldRevision);
+      return new Response(JSON.stringify(catalog), { status: 200 });
+    });
+    const wrapper = await render(); await wrapper.get('#lab-existing').setValue('session');
+    expect(wrapper.text()).toContain('Odpověď z archivované revize');
+    expect(wrapper.text()).toContain('archivované sezení');
+    expect(wrapper.get('#lab-message').attributes('disabled')).toBeDefined();
+    expect(wrapper.findAll('button').some(item => item.text() === 'Spustit hlas')).toBe(false);
+    expect(directorStop.value?.canStop()).toBe(false);
+    expect(Array.from((wrapper.get('#lab-revision').element as HTMLSelectElement).options).map(item => item.value)).toEqual(['revision']);
+    await wrapper.get('#lab-message').setValue('Nemělo by se odeslat');
+    await wrapper.get('.lab-composer').trigger('submit'); await flushPromises();
+    expect(api.transport.mock.calls.filter(([path]) => path.endsWith('/turns'))).toHaveLength(0);
+    expect(api.voiceConnect).not.toHaveBeenCalled();
+  });
+  it('keeps historical image withdrawal available without reopening Realtime', async () => {
+    session.engine = 'gpt-realtime-2.1'; session.hasImage = true;
+    const baseline = api.transport.getMockImplementation()!;
+    api.transport.mockImplementation((path: string, init: RequestInit) => path.endsWith('/image') && init.method === 'DELETE'
+      ? new Response(JSON.stringify({ ...session, hasImage: false })) : baseline(path, init));
+    const wrapper = await render(); await wrapper.get('#lab-existing').setValue('session');
     await button(wrapper, 'Odebrat fotografii z testu').trigger('click'); await flushPromises();
-    expect((requestSignal as unknown as AbortSignal).aborted).toBe(true);
     expect(api.transport.mock.calls.filter(([path, init]) => path.endsWith('/image') && init.method === 'DELETE')).toHaveLength(1);
     expect(wrapper.text()).toContain('Server potvrdil odebrání fotografie');
-    finish(new Response(JSON.stringify({ ...session, hasImage: true, label: 'Obsolete photo response' }))); await flushPromises();
-    expect(wrapper.text()).not.toContain('Obsolete photo response');
-    expect(wrapper.text()).not.toContain('Server potvrdil dočasné připojení fotografie');
     expect(wrapper.findAll('button').some(item => item.text() === 'Odebrat fotografii z testu')).toBe(false);
-  });
-  it('prepares an explicit new Realtime visual session while preserving the selected Live test', async () => {
-    enableImages(); session.recordContent = true;
-    const baseline = api.transport.getMockImplementation()!;
-    api.transport.mockImplementation(async (path: string, init: RequestInit) => path.endsWith('/sessions') && init.method === 'POST'
-      ? new Response(JSON.stringify({ ...session, ...JSON.parse(init.body as string), id: 'visual-session', turns: [] })) : baseline(path, init));
-    const wrapper = await render(); await wrapper.get('#lab-existing').setValue('session');
-    await button(wrapper, 'Připravit nový vizuální test · Realtime 2.1').trigger('click'); await flushPromises();
-    const request = api.transport.mock.calls.find(([path, init]) => path.endsWith('/sessions') && init.method === 'POST')!;
-    expect(JSON.parse(request[1].body)).toMatchObject({ revisionId: 'revision', engine: 'gpt-realtime-2.1', scenarioId: 'intro', fixtureId: 'empty', recordContent: true, label: session.label });
-    expect(wrapper.get('#lab-existing').element).toHaveProperty('value', 'visual-session');
-    expect(wrapper.find('#lab-existing option[value="session"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('gpt-realtime-2.1');
-    expect(api.voiceConnect).not.toHaveBeenCalled();
-    expect(api.transport.mock.calls.some(([path]) => /\/(?:turns|ticket|image)$/.test(path))).toBe(false);
   });
   it('ends only the active owned session for a split Live user command without double-counting its first chunk', async () => {
     vi.useFakeTimers();
@@ -355,22 +292,6 @@ describe('Persona Lab user journeys', () => {
     api.voiceObserver!.turn({ id: 'terminal', role: 'assistant', text: 'Hotovo.', decision: 'no_selection', createdAt: '' }); await flushPromises();
     expect(api.voiceDispose).toHaveBeenCalled();
     expect(api.transport.mock.calls.filter(([path]) => path.endsWith('/end'))).toHaveLength(1);
-    expect(wrapper.text()).toContain('Sezení ukončené');
-  });
-  it.each(['user', 'assistant'] as const)('honors a finalized Realtime %s terminal input and deduplicates End while the request is pending', async role => {
-    session.engine = 'gpt-realtime-2.1'; enableImages();
-    const baseline = api.transport.getMockImplementation()!;
-    let finish!: (response: Response) => void;
-    api.transport.mockImplementation((path: string, init: RequestInit) => path.endsWith('/end')
-      ? new Promise(resolve => { finish = resolve; }) : baseline(path, init));
-    const wrapper = await render(); await wrapper.get('#lab-existing').setValue('session'); await startSpokenVoice(wrapper);
-    const observer = api.voiceObserver!;
-    observer.turn({ id: 'final', role, text: role === 'user' ? 'please end this test' : 'Hotovo.', decision: role === 'assistant' ? 'no_selection' : undefined, createdAt: '' });
-    observer.turn({ id: 'duplicate', role: 'assistant', text: 'Hotovo.', decision: 'no_selection', createdAt: '' });
-    await button(wrapper, 'Ukončit test').trigger('click'); await flushPromises();
-    expect(api.voiceEnd).toHaveBeenCalledTimes(1);
-    expect(api.transport.mock.calls.filter(([path]) => path.endsWith('/end'))).toHaveLength(1);
-    finish(new Response(JSON.stringify({ ...session, status: 'ended' }))); await flushPromises();
     expect(wrapper.text()).toContain('Sezení ukončené');
   });
   it('does not claim model audio delivery while browser permission or connection is pending', async () => {

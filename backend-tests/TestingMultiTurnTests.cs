@@ -16,7 +16,7 @@ internal static class TestingMultiTurnTests
 {
     internal static async Task RunAsync()
     {
-        foreach (var engine in new[] { GptLiveProtocol.Model, RealtimeProtocol.Model })
+        foreach (var engine in new[] { GptLiveProtocol.Model })
         {
             await RunEngineAsync(engine);
         }

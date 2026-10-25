@@ -105,7 +105,7 @@ internal static class TwinMediaTests
         var settings = await ReadAsync(prefix + "/settings", owner);
         Check(settings.GetProperty("engine").GetString() == "fake" && !settings.GetProperty("availability").GetProperty("realtime").GetBoolean(), "offline default/no provider");
         using (var forbidden = await SendAsync(HttpMethod.Put, prefix + "/settings", owner, new
-            { expectedRevision = "0", engine = "realtime", voice = "cedar", speed = 1, photoConsent = false, presentationVariant = "short" }))
+            { expectedRevision = "0", engine = "gpt-live", voice = "cedar", speed = 1, photoConsent = false, presentationVariant = "short" }))
         { Check(forbidden.StatusCode == HttpStatusCode.Conflict, "real API needs operator authorization"); }
         using (var changed = await SendAsync(HttpMethod.Put, prefix + "/settings", owner, new
             { expectedRevision = "0", engine = "fake", voice = "marin", speed = 1, photoConsent = false, presentationVariant = "short" }))
@@ -202,7 +202,8 @@ internal static class TwinMediaTests
             if (!state.GetProperty("active").GetBoolean()) { break; }
             await Task.Delay(15);
         }
-        Check(inputs == 4 && drains == 5 && captions > 0 && retiredInputChecked && !state.GetProperty("active").GetBoolean()
+        Check(inputs == PersonalityCatalog.FakeQuestions(PersonalityCatalog.DefaultId)
+            && drains == PersonalityCatalog.FakeQuestions(PersonalityCatalog.DefaultId) + 1 && captions > 0 && retiredInputChecked && !state.GetProperty("active").GetBoolean()
             && (!state.TryGetProperty("error", out var mediaError) || mediaError.ValueKind == JsonValueKind.Null), "full production fake dialogue completion");
         var store = app.Services.GetRequiredService<TwinStore>();
         for (var count = 0; count < 50 && store.Read("sim-media")!.Snapshot.Reported.Slot == 0; count++) { await Task.Delay(20); }
