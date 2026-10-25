@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import type { CharacterConversationSnapshot, TestCharacter, TestSessionDetail } from './contracts';
+import type { VoiceObserver } from '../persona-lab/voice';
+let voiceObserver: VoiceObserver;
 const api = vi.hoisted(() => ({ transport: vi.fn(), setAccount: vi.fn(), microphone: vi.fn(), connect: vi.fn(), dispose: vi.fn(), sendText: vi.fn(), output: vi.fn(), exportReport: vi.fn() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
@@ -10,7 +12,7 @@ vi.mock('../identity/session', async () => {
   return { account, accountOrigin: ref('https://backend.test'), accountTransport: api.transport };
 });
 vi.mock('../persona-lab/voice', () => ({ LabVoice: class {
-  constructor(private observer: {phase:(value:string)=>void}){}
+  constructor(private observer: VoiceObserver){ voiceObserver = observer; }
   connect = (...args:unknown[]) => { api.connect(...args); this.observer.phase('listening'); return Promise.resolve(); };  dispose = api.dispose; setOutputEnabled = api.output; sendText = api.sendText; interrupt = vi.fn();
 } }));
 vi.mock('../../application/diagnosticExport', () => ({ exportDiagnosticReport: api.exportReport, diagnosticExportHistory: () => [] }));
@@ -222,11 +224,43 @@ describe('hardware-free testing journey', () => {
   it('requires explicit voice activation and preserves the same conversation when switching input modes', async () => {
     detail.conversation.turns.push({id:'earlier',role:'user',text:'Dříve uložená zpráva',createdAt:'2026-10-24T10:00:00Z'});
     const {wrapper}=await render();await wrapper.get('input[type=checkbox]').setValue(true);
-    await wrapper.get('#testing-input').setValue('hybrid');await flushPromises();
+    await wrapper.get('#testing-conversation-input').setValue('hybrid');await flushPromises();
     expect(api.connect).not.toHaveBeenCalled();expect(wrapper.text()).toContain('Dříve uložená zpráva');
     await button(wrapper,'Zapnout mikrofon a hlasové spojení').trigger('click');await flushPromises();expect(api.connect).toHaveBeenCalledWith(expect.any(Function),'lab-1','https://backend.test');
-    await wrapper.get('#testing-input').setValue('text');await flushPromises();expect(api.dispose).toHaveBeenCalled();expect(wrapper.text()).toContain('Dříve uložená zpráva');
+    expect(api.output).toHaveBeenLastCalledWith(true);
+    expect(wrapper.get('.testing-conversation .testing-consent input').element).toHaveProperty('checked', true);
+    await wrapper.get('#testing-conversation-input').setValue('text');await flushPromises();expect(api.dispose).toHaveBeenCalled();expect(wrapper.text()).toContain('Dříve uložená zpráva');
     expect(api.transport.mock.calls.filter(([path,init])=>path==='/app/v1/testing-sessions'&&init?.method==='POST')).toHaveLength(0);
+  });
+  it.each(['gpt-live-1', 'gpt-realtime-2.1'] as const)('streams consecutive microphone turns with %s and preserves them on stop', async engine => {
+    detail.session.engine = engine; detail.conversation.engine = engine;
+    const { wrapper } = await render();
+    await wrapper.get('input[type=checkbox]').setValue(true);
+    await wrapper.get('#testing-conversation-input').setValue('voice'); await flushPromises();
+    expect(api.connect).not.toHaveBeenCalled();
+    expect(wrapper.find('#testing-message').exists()).toBe(false);
+    expect(wrapper.get('.testing-conversation').text()).toContain(engine === 'gpt-live-1' ? 'GPT Live' : 'Realtime 2.1');
+    await button(wrapper, 'Zapnout mikrofon a hlasové spojení').trigger('click'); await flushPromises();
+    expect(api.output).toHaveBeenLastCalledWith(true);
+    expect(wrapper.get('.testing-conversation [role="status"]').text()).toContain('Mikrofon je aktivní');
+    for (let index = 0; index < 2; index++) {
+      voiceObserver.transcript('user', `Živá otázka ${index}`);
+      voiceObserver.transcript('assistant', `Průběžná odpověď ${index}`);
+      voiceObserver.phase('speaking'); await flushPromises();
+      expect(wrapper.get('.testing-conversation [role="status"]').text()).toContain('přehrává průběžně');
+      expect(wrapper.findAll('.testing-partial').map(item => item.text())).toEqual([`Vy · Živá otázka ${index}`, `DildoVander · Průběžná odpověď ${index}`]);
+      for (const role of ['user', 'assistant'] as const) {
+        voiceObserver.turn({ id: `${role}-${index}`, role, text: `${role} ${index}`, createdAt: '2026-10-25T10:00:00Z' });
+      }
+      voiceObserver.phase('listening'); await flushPromises();
+      expect(wrapper.findAll('.testing-partial')).toHaveLength(0);
+    }
+    expect(wrapper.findAll('.testing-chat li')).toHaveLength(4);
+    expect(api.connect).toHaveBeenCalledTimes(1);
+    await button(wrapper, 'Vypnout mikrofon').trigger('click'); await flushPromises();
+    expect(api.dispose).toHaveBeenCalled();
+    expect(wrapper.findAll('.testing-chat li')).toHaveLength(4);
+    expect(button(wrapper, 'Zapnout mikrofon a hlasové spojení').exists()).toBe(true);
   });
   it('refreshes the frozen character context after real enrichment before the first turn',async()=>{
     const {wrapper}=await render();await wrapper.get('input[type=checkbox]').setValue(true);
@@ -254,6 +288,7 @@ describe('hardware-free testing journey', () => {
     const {wrapper}=await render();await wrapper.get('input[type=checkbox]').setValue(true);
     await wrapper.get('#testing-input').setValue('hybrid');await flushPromises();
     await button(wrapper,'Zapnout mikrofon a hlasové spojení').trigger('click');await flushPromises();
+    await wrapper.get('.testing-conversation .testing-consent input').setValue(false);
     const original=api.transport.getMockImplementation()!;let reads=0;
     api.transport.mockImplementation((path:string,init:RequestInit)=>path==='/app/v1/testing-sessions/session-1' ? Promise.resolve(Response.json({...detail,conversationActive:reads++===0})) : original(path,init));
     vi.useFakeTimers();await wrapper.get('#testing-message').setValue('Pokračuj v tématu.');await wrapper.get('.testing-chat-form').trigger('submit');await flushPromises();
