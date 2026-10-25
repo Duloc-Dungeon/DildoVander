@@ -22,6 +22,7 @@ using Kufr.Backend.Features.PersonaLab;
 using Kufr.Backend.Features.Tonight;
 using Kufr.Backend.Features.TestingSessions;
 using Kufr.Backend.Features.Observability;
+using Kufr.Backend.Features.Launch;
 
 var provisioning = args.Contains("--memory-provision");
 var accountProvisioning = AccountProvisioning.IsCommand(args);
@@ -36,6 +37,7 @@ if (twinConfiguration is not null)
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 4096);
 builder.Services.AddBackendTelemetry(builder.Configuration, builder.Environment);
 builder.Services.AddAccountIdentity(builder.Configuration);
+builder.Services.AddLaunchManagement(builder.Configuration);
 if (accountProvisioning)
 {
     await using var accountApp = builder.Build();
@@ -182,7 +184,9 @@ app.UseRateLimiter();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
 await app.InitializeAccountsAsync();
 app.UseAccountIdentity();
+app.UseLaunchAccessPolicy();
 app.MapAccountEndpoints();
+app.MapLaunchEndpoints();
 app.MapCustomerCharacters();
 app.MapCustomerSessions(includeSessionResults: keepsakeArchiveConfigured);
 app.MapCustomerConversationPreferences();

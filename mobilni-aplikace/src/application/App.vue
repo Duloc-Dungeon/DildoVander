@@ -14,9 +14,12 @@ import { accessDenial, canEnterStaffArea, canOperateSuitcase, isCustomerAccount 
 import { accessRedirect } from './accessGuard';
 import ShellPreferences from './ShellPreferences.vue';
 import { customerCopy } from './customerCopy';
+import { launchAllowed, refreshLaunchAccess } from './launchAccess';
 
 const route = useRoute();
 const router = useRouter();
+const launchExperience = computed(() => route.path === '/launch' || route.path === '/signin'
+  || (launchAllowed.value !== true && ['/privacy', '/support', '/account-deletion'].includes(route.path)));
 const browserMode = !Capacitor.isNativePlatform();
 const main = ref<HTMLElement>();
 const navigationElement = ref<HTMLElement>();
@@ -106,7 +109,10 @@ watch(() => route.path, () => {
 });
 const removeRouterError = router.onError(() => { viewError.value = customerCopy.text('shell.page-error'); });
 function refreshSession(): void {
-  if (!document.hidden) void refreshIdentity().catch(() => { /* Offline local operation remains available. */ });
+  if (!document.hidden) {
+    void refreshIdentity().catch(() => { /* Offline local operation remains available. */ });
+    void refreshLaunchAccess();
+  }
 }
 onMounted(() => {
   refreshSession();
@@ -130,8 +136,8 @@ onBeforeUnmount(() => {
 
 <template>
   <a class="skip-link" href="#main-content">{{ customerCopy.text('shell.skip') }}</a>
-  <div class="application-shell" :style="{ '--application-navigation-height': navigationHeight, '--application-navigation-count': navigation.length }">
-    <aside class="application-sidebar" :aria-label="customerCopy.text('shell.navigation')">
+  <div class="application-shell" :class="{ 'launch-mode': launchExperience }" :style="{ '--application-navigation-height': navigationHeight, '--application-navigation-count': navigation.length }">
+    <aside v-if="!launchExperience" class="application-sidebar" :aria-label="customerCopy.text('shell.navigation')">
       <RouterLink class="application-brand" to="/" :aria-label="customerCopy.text('shell.brand-home')"><span class="brand-mark" aria-hidden="true">DV</span><span>DildoVander<small>{{ customerCopy.text('shell.brand-tagline') }}</small></span></RouterLink>
       <nav ref="navigationElement" class="primary-navigation" :aria-label="customerCopy.text('shell.sections')">
         <RouterLink v-for="item in navigation" :key="item.to" :to="item.to" :class="{ selected: item.to === '/' ? route.path === '/' : route.path.startsWith(item.to) }">
@@ -141,7 +147,7 @@ onBeforeUnmount(() => {
       <div class="sidebar-details"><span class="eyebrow">{{ customerAccount ? customerCopy.text('shell.my-space') : 'Vapour Chrome' }}</span><p>{{ customerAccount ? customerCopy.text('shell.customer-guidance') : customerCopy.text('shell.public-guidance') }}</p><RouterLink v-if="canEnterStaffArea(account)" to="/me/character">{{ customerCopy.text('shell.customer-view') }}</RouterLink><RouterLink v-if="canOperateSuitcase(account)" to="/admin/customer-sessions">{{ customerCopy.text('shell.customer-sessions') }}</RouterLink></div>
     </aside>
     <div class="application-body">
-      <header class="application-header">
+      <header v-if="!launchExperience" class="application-header">
         <div v-if="canOperateSuitcase(account)" class="connection-context"><RouterLink to="/connections">{{ targetLabel }}</RouterLink><span v-if="servoBench.connected.value" class="context-detail">USB servo servis · Stop vypíná PWM, napájení není měřené</span><span v-else-if="phoneActive" class="context-detail">Aktivní telefonní zkouška · oddělená od hlasu kufru</span><span v-else-if="deviceSession.message.value" class="context-detail">{{ deviceSession.message.value }}</span></div>
         <p v-else class="connection-context">{{ customerAccount ? customerCopy.text('shell.customer-area') : customerCopy.text('shell.public') }}</p>
         <div class="header-actions">
@@ -150,16 +156,16 @@ onBeforeUnmount(() => {
           <AwButton v-if="!customerAccount && (canEnterStaffArea(account) || deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" variant="danger" :disabled="!deviceCanStop && !phoneActive && !directorCanStop && !servoBench.connected.value" :busy="stopBusy" @click="stop">Stop</AwButton>
         </div>
       </header>
-      <div class="notification-stack" :aria-label="customerCopy.text('shell.notifications')"><AwNotice v-for="notice in notifications" :key="notice.id" :tone="notice.tone"><div class="notification-content">{{ notice.message }}<button :aria-label="customerCopy.text('shell.close-notice')" @click="dismissNotice(notice.id)">×</button></div></AwNotice></div>
+      <div v-if="!launchExperience" class="notification-stack" :aria-label="customerCopy.text('shell.notifications')"><AwNotice v-for="notice in notifications" :key="notice.id" :tone="notice.tone"><div class="notification-content">{{ notice.message }}<button :aria-label="customerCopy.text('shell.close-notice')" @click="dismissNotice(notice.id)">×</button></div></AwNotice></div>
       <main id="main-content" ref="main" class="application-main" tabindex="-1">
-        <AwNotice v-if="offlineSession" tone="warning">{{ customerCopy.text('shell.offline') }}</AwNotice>
+        <AwNotice v-if="offlineSession && !launchExperience" tone="warning">{{ customerCopy.text('shell.offline') }}</AwNotice>
         <AwNotice v-if="viewError" tone="danger"><p>{{ viewError }}</p><AwButton @click="router.go(0)">{{ customerCopy.text('shell.reload') }}</AwButton></AwNotice>
         <RouterView v-else-if="routeAccessible" v-slot="{ Component, route: renderedRoute }">
           <KeepAlive :key="identityKey"><component :is="Component" v-if="renderedRoute.meta.keepAlive" :key="renderedRoute.name" /></KeepAlive>
           <component :is="Component" v-if="!renderedRoute.meta.keepAlive" :key="renderedRoute.meta.requiresAccount ? `${String(renderedRoute.name)}:${identityKey}` : renderedRoute.name" />
         </RouterView>
       </main>
-      <footer class="application-footer"><span>DildoVander</span><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink><a v-if="browserMode" class="application-install-link" href="/ios/">{{ customerCopy.text('shell.iphone') }}</a><span>{{ customerCopy.text('shell.verification') }}</span></footer>
+      <footer v-if="!launchExperience" class="application-footer"><span>DildoVander</span><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink><a v-if="browserMode" class="application-install-link" href="/ios/">{{ customerCopy.text('shell.iphone') }}</a><span>{{ customerCopy.text('shell.verification') }}</span></footer>
     </div>
   </div>
 </template>

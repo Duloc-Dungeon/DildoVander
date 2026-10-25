@@ -39,6 +39,9 @@ internal static class DeviceAccessEndpoints
             : null;
     }
 
+    public static string? AuthenticateCredential(HttpContext context, DeviceAccessStore access) =>
+        TryReadBearer(context, out var credential) ? access.VerifyCredential(credential) : null;
+
     public static async Task<string?> AuthenticateCurrentAsync(HttpContext context, DeviceAccessStore access)
     {
         var deviceId = Authenticate(context, access);

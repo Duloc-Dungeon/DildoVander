@@ -16,6 +16,9 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .skip-link { position: fixed; z-index: 30; left: 1rem; top: -5rem; background: var(--aw-accent); color: var(--aw-on-accent); padding: 1rem; }
 .skip-link:focus { top: 1rem; }
 .application-shell { display: grid; grid-template-columns: 15rem minmax(0, 1fr); min-height: 100dvh; }
+.application-shell.launch-mode { display: block; padding: 0; }
+.launch-mode .application-sidebar, .launch-mode .application-header, .launch-mode .application-footer, .launch-mode .notification-stack { display: none; }
+.launch-mode .application-main { max-width: none; padding: 0; }
 .application-sidebar { position: sticky; top: 0; height: 100dvh; overflow-y: auto; padding: 2rem 1rem; border-right: 1px solid var(--aw-border-subtle); display: flex; flex-direction: column; gap: 3rem; background: var(--aw-surface); }
 .application-brand { display: flex; align-items: center; gap: .75rem; padding-inline: .5rem; color: var(--aw-ivory); text-decoration: none; font-weight: 600; letter-spacing: -.03em; }
 .application-brand small { display: block; font-size: .68rem; color: var(--aw-muted); font-weight: 400; letter-spacing: 0; margin-top: .25rem; }

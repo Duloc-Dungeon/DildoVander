@@ -9,7 +9,7 @@ vi.mock('./session', async () => {
   return {account,accountOrigin:ref('https://example.test'),accountRequest:api.request,authenticatePasskey:api.reauthenticate,
     refreshIdentity:vi.fn(),hasRole:(role:string)=>account.value?.roles.some(value=>value===role||value==='Owner')};
 });
-const render = () => mount(AdminView,{global:{stubs:{OperationsPanel:true,ModelReleasesPanel:true,RouterLink:true}}});
+const render = () => mount(AdminView,{global:{stubs:{OperationsPanel:true,ModelReleasesPanel:true,LaunchManagementPanel:true,RouterLink:true}}});
 const failure = (code:string,status=400) => Object.assign(new Error('Server odmítl požadavek.'),{code,status});
 const invitationToken = 'private-once-token-1234567890123456';
 beforeEach(()=>{

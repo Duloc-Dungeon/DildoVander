@@ -1,0 +1,153 @@
+// Runs against the production bundle with a deterministic in-memory backend.
+// No account data, network service, or paid generation provider is used.
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { readFile, mkdir, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
+
+const dist = fileURLToPath(new URL('../dist/', import.meta.url));
+const screenshots = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'dildovander-launch-browser');
+await stat(path.join(dist, 'index.html'));
+await mkdir(screenshots, { recursive: true });
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.ttf': 'font/ttf', '.svg': 'image/svg+xml' };
+const server = createServer(async (request, response) => {
+  const url = new URL(request.url, 'http://localhost');
+  if (/^\/(?:app\/v1|v1|guest)\//.test(url.pathname)) { response.writeHead(404, { 'Content-Type': 'application/json' }).end('{}'); return; }
+  const relative = decodeURIComponent(url.pathname).replace(/^\//, '');
+  let file = path.resolve(dist, relative || 'index.html');
+  if (!file.startsWith(path.resolve(dist) + path.sep) && file !== path.join(dist, 'index.html')) file = path.join(dist, 'index.html');
+  try { await stat(file); } catch { file = path.join(dist, 'index.html'); }
+  response.writeHead(200, { 'Content-Type': mime[path.extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-store' });
+  response.end(await readFile(file));
+});
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const origin = `http://127.0.0.1:${server.address().port}`;
+const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/W6kAAAAASUVORK5CYII=', 'base64');
+let account = { id: 'launch-guest', displayName: 'Host', roles: ['Customer'] };
+let character = null;
+let artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
+let config = {
+  revision: 4, betaEnabled: true, betaLaunchAt: null, betaUnlocked: false,
+  productionEnabled: true, productionLaunchAt: null, productionUnlocked: false,
+  timeZone: 'Europe/Prague', teaser: 'Ještě chvíli. Hvězdy hledají správné místo.',
+  initialLoadingMessage: 'Někdo tu právě rovná hvězdy podle abecedy.',
+  personalizedLoadingEnabled: true, personalizedLoadingPrompt: 'Věta hravě a tajemně.',
+};
+let jobs = [{ profileId: 'portrait-fixture', revision: 3, status: 'failed', attempt: 2, errorCode: 'provider_unavailable', updatedAt: Date.now() }];
+let audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: 4, changeSummary: 'schedule' }];
+const writes = [];
+const errors = [];
+let browser;
+try {
+  browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}), ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+  await context.addInitScript(() => { window.confirm = () => true; });
+  await context.route('**/*', async route => {
+    const request = route.request(); const url = new URL(request.url());
+    if (url.origin !== origin) { await route.abort(); return; }
+    const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
+    if (url.pathname === '/app/v1/session' && request.method() === 'GET') return json({ enabled: true, account, csrfToken: 'fake-csrf', origin });
+    if (url.pathname === '/app/v1/session' && request.method() === 'DELETE') { account = null; return route.fulfill({ status: 204, body: '' }); }
+    if (url.pathname === '/app/v1/launch') return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled });
+    if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'GET') return json({ character, artwork: character ? artwork : null });
+    if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'PUT') {
+      const body = request.postDataJSON(); writes.push(body);
+      character = { profileId: 'launch-profile-1', revision: 1, name: body.name, universe: body.universe, status: 'queued' };
+      artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
+      return json({ character, artwork });
+    }
+    if (url.pathname === '/app/v1/prelaunch/character/portrait') return route.fulfill({ status: 200, contentType: 'image/png', body: image });
+    if (url.pathname === '/app/v1/prelaunch/character/retry' && request.method() === 'POST') { artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null }; return json({ character, artwork }); }
+    if (url.pathname === '/app/v1/admin/users') return json({ users: [], grants: [] });
+    if (url.pathname === '/app/v1/admin/operations/status') return json({ modes: null, readiness: { accounts: true, keepsakes: false, keepsakeGeneration: false, passkeyRelyingParty: 'localhost', nativeAssociationConfigured: false }, archive: [] });
+    if (url.pathname === '/app/v1/admin/operations/logs') return json({ storeId: 'fixture', nextCursor: 0, hasMore: false, truncated: false, droppedWrites: 0, entries: [] });
+    if (url.pathname === '/app/v1/admin/launch' && request.method() === 'GET') return json(config);
+    if (url.pathname === '/app/v1/admin/launch' && request.method() === 'PUT') {
+      const body = request.postDataJSON(); writes.push(body); config = { ...config, ...body, revision: config.revision + 1 };
+      audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: config.revision, changeSummary: 'guest_experience' }, ...audit];
+      return json(config);
+    }
+    if (url.pathname === '/app/v1/admin/launch/artwork') return json({ jobs });
+    if (url.pathname === '/app/v1/admin/launch/audit') return json({ entries: audit });
+    if (url.pathname === '/app/v1/admin/launch/personalization-preview' && request.method() === 'POST') { writes.push(request.postDataJSON()); return json({ message: 'Hvězdy se schovaly, aby tvá postava měla lepší nástup.' }); }
+    if (/^\/app\/v1\/admin\/launch\/artwork\/[^/]+\/retry$/.test(url.pathname) && request.method() === 'POST') { writes.push(request.postDataJSON()); jobs = jobs.map(job => ({ ...job, status: 'queued' })); return json({ jobs }); }
+    if (url.pathname.startsWith('/app/v1/')) return json({});
+    await route.continue();
+  });
+
+  const page = await context.newPage();
+  page.setDefaultTimeout(12000);
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: /Něco se chystá/ }).waitFor();
+  assert.equal(await page.getByLabel('Jméno postavy').count(), 1);
+  assert.equal(await page.locator('.application-sidebar').count(), 0);
+  assert.equal(await page.getByText('Rozhovor s kufrem', { exact: false }).count(), 0);
+  assert.equal(await page.getByText('Památky', { exact: false }).count(), 0);
+  await page.goto(`${origin}/privacy`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Soukromí před spuštěním' }).waitFor();
+  assert.equal(await page.locator('.application-sidebar').count(), 0);
+  assert.equal(await page.getByText(/konverzac|kufr|památk|příběh/i).count(), 0);
+  await page.goto(`${origin}/support`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Pomoc s pozvánkou a účtem' }).waitFor();
+  assert.equal(await page.locator('.application-sidebar').count(), 0);
+  assert.equal(await page.getByText(/konverzac|kufr|památk|příběh/i).count(), 0);
+  await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: /Něco se chystá/ }).waitFor();
+  await page.getByLabel('Jméno postavy').fill('Matylda');
+  await page.getByLabel('Její svět').fill('Město za zrcadlem');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Připravit můj portrét' }).click();
+  await page.getByRole('heading', { name: /Něco se chystá, Matylda/ }).waitFor();
+  assert.match(await page.locator('.launch-copy').innerText(), /Hvězdy hledají/);
+  assert.match(await page.locator('.countdown').innerText(), /dní/);
+  await page.getByText(/Někdo tu právě rovná/).waitFor();
+  assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
+  assert.equal(await page.getByText(/Summary|Appearance|Facts/).count(), 0);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-countdown.png'), fullPage: true });
+  artwork = { status: 'ready', loadingMessage: null, url: null, errorCode: null };
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByAltText('Portrét tvé postavy').waitFor({ state: 'visible' });
+  character = { profileId: 'legacy-profile', revision: 8, name: 'Eliška', universe: 'Starý svět', status: 'ready' };
+  artwork = null;
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByText(/uložená postava zatím nemá portrét/).waitFor();
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Připravit můj portrét' }).click();
+  assert(writes.some(write => write.expectedProfileId === 'legacy-profile' && write.expectedRevision === 8));
+
+  await page.goto(`${origin}/signin#invite=fixture-invitation-token-1234567890`, { waitUntil: 'networkidle' });
+  assert.equal(await page.getByText(/kufr|dílna|archiv|konverzac|památk/i).count(), 0, await page.locator('body').innerText());
+  await page.getByRole('button', { name: /Odhlásit a pokračovat/ }).click();
+  await page.getByLabel('Pozvánka nebo kód obnovy').waitFor();
+  assert.equal(await page.locator('.application-sidebar').count(), 0);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-invitation.png'), fullPage: true });
+
+  account = { id: 'launch-admin', displayName: 'Admin', roles: ['Owner'] };
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
+  await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();
+  await page.getByRole('heading', { name: 'Launch Management' }).waitFor();
+  await page.getByLabel('Použít beta odpočítávání').check();
+  await page.getByLabel('Časové pásmo').selectOption('Europe/Prague');
+  await page.getByLabel('Otevření beta účastníkům').fill('2026-03-30T10:00');
+  await page.getByRole('button', { name: 'Uložit plán' }).click();
+  assert(writes.some(write => write.expectedRevision === 4 && write.betaLaunchAt === Date.UTC(2026, 2, 30, 8)));
+  const beforePreview = writes.length;
+  assert.equal(beforePreview, 3);
+  await page.getByRole('button', { name: 'Vytvořit ukázku' }).click();
+  await page.getByText(/Hvězdy se schovaly/).waitFor();
+  await page.getByRole('button', { name: 'Opakovat přípravu' }).click();
+  assert.equal(writes.length, 5);
+  await page.screenshot({ path: path.join(screenshots, 'launch-desktop-admin.png'), fullPage: true });
+  assert.deepEqual(errors, []);
+  console.log(JSON.stringify({ mobile: '390x844', desktop: '1440x1000', states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'admin schedule save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
+  await context.close();
+} finally {
+  if (browser) await browser.close();
+  await new Promise(resolve => server.close(resolve));
+}

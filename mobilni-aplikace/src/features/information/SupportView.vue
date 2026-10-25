@@ -1,9 +1,31 @@
 <script setup lang="ts">
 import { customerCopy } from '../../application/customerCopy';
+import { launchAllowed } from '../../application/launchAccess';
 </script>
 
 <template>
   <article class="page-stack information-page" aria-labelledby="support-title">
+    <template v-if="launchAllowed !== true">
+      <p class="eyebrow">DildoVander</p>
+      <h1 id="support-title">Pomoc s pozvánkou a účtem</h1>
+      <section>
+        <h2>Pozvánka a přihlášení</h2>
+        <p>Otevřete osobní pozvánku na stejném zařízení a dokončete přihlášení přístupovým klíčem. Pokud je v zařízení přihlášen jiný účet, odhlaste jej a pokračujte s pozvánkou.</p>
+      </section>
+      <section>
+        <h2>Příprava portrétu</h2>
+        <p>Příprava může pokračovat na pozadí. Pokud se nezdaří, stránka postavy nabídne opakování.</p>
+      </section>
+      <section>
+        <h2>Účet a soukromí</h2>
+        <p>Odstranění účtu můžete zahájit a ověřit na stránce <RouterLink to="/account-deletion">odstranění účtu</RouterLink>. Podrobnosti o údajích a jejich zpracování jsou v <RouterLink to="/privacy">informacích o soukromí</RouterLink>.</p>
+      </section>
+      <section>
+        <h2>Kontaktujte nás</h2>
+        <p>Napište na <a href="mailto:support@dildovander.de?subject=DildoVander%20%E2%80%93%20support">support@dildovander.de</a>. Do zprávy neposílejte přístupové klíče.</p>
+      </section>
+    </template>
+    <template v-else>
     <p class="eyebrow">Wand Night Stand · DildoVander</p>
     <h1 id="support-title">{{ customerCopy.text('support.title') }}</h1>
     <p>{{ customerCopy.text('support.intro') }}</p>
@@ -32,5 +54,6 @@ import { customerCopy } from '../../application/customerCopy';
       <p>{{ customerCopy.text('support.data-request') }}</p>
       <p><RouterLink to="/privacy">{{ customerCopy.text('support.privacy-link') }}</RouterLink></p>
     </section>
+    </template>
   </article>
 </template>

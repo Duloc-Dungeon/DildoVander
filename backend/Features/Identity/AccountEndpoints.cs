@@ -266,9 +266,16 @@ internal static partial class AccountEndpoints
         if (user is null || user.Disabled) { return Error(context, "recovery_unavailable"); }
         if (invitation.UserId is null)
         {
-            if (!(await users.CreateAsync(user)).Succeeded || !(await users.AddToRoleAsync(user, invitation.Role)).Succeeded)
+            if (!(await users.CreateAsync(user)).Succeeded)
             {
                 return Error(context, "account_not_created");
+            }
+            foreach (var role in AccountRoles.AssignedRoles(invitation.Role))
+            {
+                if (!(await users.AddToRoleAsync(user, role)).Succeeded)
+                {
+                    return Error(context, "account_not_created");
+                }
             }
         }
         else

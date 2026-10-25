@@ -36,6 +36,7 @@ try {
           if (method !== 'request') throw new Error('Unexpected synthetic identity method');
           let value;
           if (options.path === '/app/v1/session') value = { enabled: true, account, csrfToken: 'synthetic-csrf', origin: 'https://application.example.invalid' };
+          else if (options.path === '/app/v1/launch') value = { allowed: true, audience: 'privileged', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false };
           else if (options.path === '/app/v1/account') value = { grants: [], associations: [], sessions: [], passkeys: [] };
           else if (options.path === '/app/v1/admin/operations/status') value = { modes, readiness: { accounts: true, keepsakes: false, keepsakeGeneration: false, nativeAssociationConfigured: true }, archive: null };
           else if (options.path === '/app/v1/admin/operations/modes') value = modes;

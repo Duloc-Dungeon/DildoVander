@@ -9,6 +9,7 @@ using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.CustomerData;
 using Kufr.Backend.Features.Customers;
+using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.DigitalTwin;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.ModelReleases;
@@ -598,6 +599,7 @@ internal static partial class AccountIdentityTests
             });
             builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
             builder.Services.AddAccountIdentity(builder.Configuration);
+            builder.Services.AddLaunchManagement(builder.Configuration);
             builder.Services.AddModelReleases(builder.Configuration);
             builder.Services.AddSingleton(TimeProvider.System);
             builder.Services.AddSingleton<DeviceAccessStore>();
@@ -650,7 +652,8 @@ internal static partial class AccountIdentityTests
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
-            app.UseWebSockets(); app.UseRateLimiter(); app.UseAccountIdentity(); app.MapAccountEndpoints(); app.MapDigitalTwin(); app.MapModelReleases();
+            app.UseWebSockets(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy();
+            app.MapLaunchEndpoints(); app.MapAccountEndpoints(); app.MapDigitalTwin(); app.MapModelReleases();
             if (customerFeatures || customerMemoryFeatures || accountDataExportFeatures)
             {
                 app.MapCustomerCharacters(); app.MapCustomerSessions();

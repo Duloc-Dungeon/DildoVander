@@ -74,6 +74,7 @@ async function installFixtures(context, state) {
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     const account = () => state.authenticated ? { id: state.admin ? 'synthetic-admin' : 'synthetic-viewer', displayName: 'Prohlížečový tester', roles: state.admin ? ['Administrator', 'Viewer'] : ['Viewer'] } : null;
     if (pathname === '/app/v1/session') return json({ enabled: true, account: account(), csrfToken: 'synthetic-browser-csrf' });
+    if (pathname === '/app/v1/launch') return json({ allowed: true, audience: account() ? 'privileged' : 'production', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false });
     if (pathname === '/app/v1/passkeys/request-options') return json({ challenge: 'AQID', rpId: '127.0.0.1', allowCredentials: [], userVerification: 'preferred' });
     if (pathname === '/app/v1/passkeys/sign-in') { state.authenticated = true; return json({}); }
     if (pathname === '/guest/v1/evening') return json({ schemaVersion: 1, evening: null, items: [], latest: null });
@@ -183,8 +184,8 @@ async function signInViaProtectedLink(page) {
   await page.waitForURL(url => url.pathname === '/signin' && url.searchParams.get('return') === '/persona-lab');
   await page.getByRole('button', { name: 'Přihlásit přístupovým klíčem', exact: true }).click();
   await page.waitForURL('**/persona-lab');
-  await page.getByRole('link', { name: 'Persona Lab', exact: true }).first().waitFor();
   await page.getByRole('heading', { name: 'Persona Lab', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Persona Lab', exact: true }).first().waitFor();
   await page.getByRole('button', { name: 'Připravit sezení', exact: true }).waitFor();
   assert.equal(await page.locator('#lab-provider-consent').isChecked(), false, 'OpenAI data consent starts unchecked');
   assert(await page.getByRole('button', { name: 'Připravit sezení', exact: true }).isDisabled(), 'new session requires OpenAI data consent');

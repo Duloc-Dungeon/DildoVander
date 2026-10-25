@@ -50,6 +50,7 @@ internal sealed partial class CharacterProfileStore
             """;
         command.ExecuteNonQuery();
         InitializeConversationPreferences(connection);
+        InitializePortraits(connection);
         using var column = connection.CreateCommand();
         column.CommandText = "SELECT COUNT(*) FROM pragma_table_info('character_jobs') WHERE name='openai_consent'";
         if ((long)column.ExecuteScalar()! == 0)
@@ -180,6 +181,11 @@ internal sealed partial class CharacterProfileStore
         if (!correction && !request.NewCharacter && current is not null && current.UserInput == request.UserInput
             && (request.OpenAiConsent ? current.Status != "saved" : current.Status is not ("queued" or "running")))
         {
+            if (request.PortraitConsent || !request.OpenAiConsent)
+            {
+                SavePortraitRequest(connection, transaction, accountId, current, request);
+                transaction.Commit();
+            }
             return Task.FromResult(current);
         }
         if (request.OpenAiConsent && Scalar(connection, transaction, "SELECT COUNT(*) FROM character_jobs WHERE status IN ('queued','running')", accountId) >= 1000)
@@ -224,6 +230,7 @@ internal sealed partial class CharacterProfileStore
             command.Parameters.AddWithValue("$now", profile.UpdatedAt);
             command.ExecuteNonQuery();
         }
+        SavePortraitRequest(connection, transaction, accountId, profile, request);
         transaction.Commit();
         BackendTelemetry.Completed(activity);
         return Task.FromResult(profile);

@@ -11,7 +11,7 @@ namespace Kufr.Backend.Features.Customers;
 
 internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentProvider, IDisposable
 {
-    internal const string PromptVersion = "customer-character-v2";
+    internal const string PromptVersion = "customer-character-v3";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly string? key;
     private readonly string model;
@@ -84,6 +84,8 @@ internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentPr
             + "Search only for the fictional character/world/version when useful. Original characters use the user's description. "
             + "If the identity is ambiguous or rejected, ask for clarification rather than choosing an unrelated namesake. "
             + "Never invent a source or claim model memory is researched fact. Facts must cite URLs actually returned by web search. "
+            + "Include supported visual appearance, clothing and setting in the summary when available so an illustrator can use it. "
+            + "Clearly qualify uncertain appearance or conflicting versions; do not invent canonical visual details. "
             + "Put playful proposals only in conversationIdeas, separately from sourced facts. "
             + "If search is unavailable or returns no usable evidence, leave facts empty, explain the limitation in ambiguities, "
             + "and use only the supplied description and explicitly speculative conversation ideas. "

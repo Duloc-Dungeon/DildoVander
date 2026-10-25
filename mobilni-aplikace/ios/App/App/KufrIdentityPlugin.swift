@@ -17,6 +17,7 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
         Task { @MainActor in
             guard self.accountDataShare == nil else { return }
             try? AccountDataTemporaryFile.removeOrphans()
+            try? AuthenticatedResourceDownloadTransfer.removeOrphans()
         }
     }
 
@@ -92,6 +93,7 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
         CAPPluginMethod(name: "guestRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareGuestFile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareAccountDataFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "shareAuthenticatedResource", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareGuestLink", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "accountTransport", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelAccountRequest", returnType: CAPPluginReturnPromise),
@@ -148,6 +150,19 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
         Task { @MainActor in
             do {
                 let origin = try configuredPublicOrigin()
+                let authenticated = call.getBool("authenticated") == true
+                let accountEpoch = requestScheduler.epoch
+                var accountBinding: String?
+                var requestHeaders: [String: String] = [:]
+                if authenticated {
+                    restoreCookies(origin: origin)
+                    let binding = try accountDeviceBinding()
+                    guard let cookie = session.configuration.httpCookieStorage?.cookies(for: origin)?.first(where: { $0.name == "__Host-dv-account" && $0.isSecure }),
+                          let cookieHeader = HTTPCookie.requestHeaderFields(with: [cookie])["Cookie"] else { throw AccountError.verificationFailed }
+                    accountBinding = binding
+                    requestHeaders = ["Cookie": cookieHeader, "Origin": origin.absoluteString,
+                        "Accept": "application/json, application/octet-stream", "Cache-Control": "no-store"]
+                }
                 guard let path = call.getString("path"), let policyLimit = AccountTransportPolicy.publicResourceLimit(path: path),
                       let requestedLimit = call.getInt("maxBytes"), requestedLimit > 0, requestedLimit <= 96 * 1024 * 1024,
                       let rawId = call.getString("requestId"), let id = UUID(uuidString: rawId),
@@ -156,10 +171,20 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                       url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else { throw PublicResourceError.invalidRequest }
                 // A single bounded buffer also bounds concurrent base64 bridge work.
                 guard publicTransfers.isEmpty else { throw PublicResourceError.busy }
-                let transfer = PublicResourceTransfer(url: url, limit: min(policyLimit, requestedLimit)) { [weak self] result in
+                let transfer = PublicResourceTransfer(url: url, limit: min(policyLimit, requestedLimit), headers: requestHeaders) { [weak self] result in
                     Task { @MainActor in
                         guard let self = self else { call.reject(PublicResourceError.cancelled.localizedDescription); return }
                         self.publicTransfers.removeValue(forKey: id)
+                        defer {
+                            for waiter in self.publicCancellationWaiters.removeValue(forKey: id) ?? [] { waiter.resolve() }
+                        }
+                        if let binding = accountBinding {
+                            do {
+                                guard self.requestScheduler.epoch == accountEpoch, try self.accountDeviceBinding() == binding else {
+                                    throw AccountRequestScheduler.Failure.contextChanged
+                                }
+                            } catch { call.reject(error.localizedDescription); return }
+                        }
                         switch result {
                         case .success(let (data, response)):
                             call.resolve(["status": response.statusCode,
@@ -167,7 +192,6 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                                 "bodyBase64": data.base64EncodedString()])
                         case .failure(let error): call.reject(error.localizedDescription)
                         }
-                        for waiter in self.publicCancellationWaiters.removeValue(forKey: id) ?? [] { waiter.resolve() }
                     }
                 }
                 publicTransfers[id] = transfer
@@ -451,6 +475,92 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                 lifecycle.fail(error)
                 throw error
             }
+        }
+    }
+
+    @objc public func shareAuthenticatedResource(_ call: CAPPluginCall) {
+        performAccountRequest(call) { [self] requestId in
+            guard accountDataShare == nil else { throw AccountDataFileFailure.busy }
+            let lifecycle = AccountDataShareLifecycle()
+            accountDataShare = lifecycle
+            defer {
+                if !lifecycle.isFinished { lifecycle.fail(CancellationError()) }
+                if accountDataShare === lifecycle { accountDataShare = nil }
+            }
+            try AuthenticatedResourceDownloadTransfer.removeOrphans()
+            let origin = try configuredPublicOrigin()
+            let path = call.getString("path") ?? ""
+            let filename = call.getString("filename") ?? ""
+            let requestedLimit = call.getInt("maxBytes") ?? 0
+            let expectedBytes = call.getInt("expectedBytes") ?? 0
+            guard let limit = AccountTransportPolicy.authenticatedDownloadLimit(path: path),
+                  requestedLimit > 0, requestedLimit <= limit,
+                  expectedBytes >= 0, expectedBytes == 0 || expectedBytes <= requestedLimit,
+                  filename == URL(fileURLWithPath: path).lastPathComponent,
+                  let url = URL(string: path, relativeTo: origin)?.absoluteURL,
+                  url.scheme == origin.scheme, url.host == origin.host, url.port == origin.port,
+                  url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
+                throw PublicResourceError.invalidRequest
+            }
+            restoreCookies(origin: origin)
+            let epoch = requestScheduler.epoch
+            let binding = try accountDeviceBinding()
+            guard let cookie = session.configuration.httpCookieStorage?.cookies(for: origin)?.first(where: { $0.name == "__Host-dv-account" && $0.isSecure }),
+                  let cookieHeader = HTTPCookie.requestHeaderFields(with: [cookie])["Cookie"] else { throw AccountError.verificationFailed }
+            let downloadLease = try await requestScheduler.acquire(requestId: requestId)
+            var downloadLeaseHeld = true
+            defer { if downloadLeaseHeld { requestScheduler.release(downloadLease) } }
+            try requestScheduler.requireCurrent(downloadLease)
+            guard downloadLease.epoch == epoch, try accountDeviceBinding() == binding else { throw AccountRequestScheduler.Failure.contextChanged }
+            let headers = ["Cookie": cookieHeader, "Origin": origin.absoluteString, "Accept": "application/octet-stream, application/zip, application/pdf, text/plain", "Cache-Control": "no-store"]
+            let transfer = AuthenticatedResourceDownloadTransfer(url: url, filename: filename, limit: requestedLimit,
+                expectedBytes: expectedBytes == 0 ? nil : expectedBytes, headers: headers)
+            requestScheduler.release(downloadLease)
+            downloadLeaseHeld = false
+            try Task.checkCancellation()
+            let file = try await withTaskCancellationHandler(operation: {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AuthenticatedResourceDownloadTransfer.File, Error>) in
+                    transfer.completion = { continuation.resume(with: $0) }
+                    transfer.start()
+                }
+            }, onCancel: { Task { @MainActor in transfer.cancel() } })
+            try lifecycle.ownCleanup { try FileManager.default.removeItem(at: file.directory) }
+            let presentationLease = try await requestScheduler.acquire(requestId: requestId)
+            var presentationLeaseHeld = true
+            defer { if presentationLeaseHeld { requestScheduler.release(presentationLease) } }
+            try requestScheduler.requireCurrent(presentationLease)
+            guard presentationLease.epoch == epoch, requestScheduler.epoch == epoch,
+                  try accountDeviceBinding() == binding else { throw AccountRequestScheduler.Failure.contextChanged }
+            requestScheduler.release(presentationLease)
+            presentationLeaseHeld = false
+            guard let view = bridge?.viewController, view.view.window != nil,
+                  view.presentedViewController == nil, !view.isBeingDismissed, !view.isBeingPresented else {
+                throw AccountDataFileFailure.presenterUnavailable
+            }
+            let sheet = UIActivityViewController(activityItems: [file.url], applicationActivities: nil)
+            let dismissal = AccountDataShareDismissalDelegate(lifecycle: lifecycle)
+            sheet.popoverPresentationController?.sourceView = view.view
+            sheet.popoverPresentationController?.sourceRect = CGRect(x: view.view.bounds.midX, y: view.view.bounds.midY, width: 0, height: 0)
+            sheet.completionWithItemsHandler = { [dismissal] _, completed, _, error in
+                Task { @MainActor in dismissal.lifecycle.complete(completed, error: error) }
+            }
+            let completed = try await withTaskCancellationHandler(operation: {
+              try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
+                do {
+                    try Task.checkCancellation()
+                    try requestScheduler.requireCurrent(presentationLease)
+                    guard requestScheduler.epoch == epoch, try accountDeviceBinding() == binding else { throw AccountRequestScheduler.Failure.contextChanged }
+                    try lifecycle.begin(completion: { continuation.resume(with: $0) }, dismiss: { [weak sheet, weak view] done in
+                        guard let sheet, let view, view.presentedViewController === sheet else { done(); return }
+                        sheet.dismiss(animated: false, completion: done)
+                    })
+                    view.present(sheet, animated: false)
+                    sheet.presentationController?.delegate = dismissal
+                    if view.presentedViewController !== sheet { lifecycle.fail(AccountDataFileFailure.presenterUnavailable) }
+                } catch { continuation.resume(throwing: error) }
+              }
+            }, onCancel: { Task { @MainActor in lifecycle.cancel() } })
+            call.resolve(["completed": completed])
         }
     }
 
@@ -879,9 +989,10 @@ private final class PublicResourceTransfer: NSObject, URLSessionDataDelegate, @u
     private var response: HTTPURLResponse?
     private var body = Data()
     private var failure: Error?
+    private let headers: [String: String]
 
-    init(url: URL, limit: Int, completion: @escaping (Result<(Data, HTTPURLResponse), Error>) -> Void) {
-        self.url = url; self.limit = limit; self.completion = completion
+    init(url: URL, limit: Int, headers: [String: String] = [:], completion: @escaping (Result<(Data, HTTPURLResponse), Error>) -> Void) {
+        self.url = url; self.limit = limit; self.headers = headers; self.completion = completion
     }
 
     func start() {
@@ -900,8 +1011,10 @@ private final class PublicResourceTransfer: NSObject, URLSessionDataDelegate, @u
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
         request.httpShouldHandleCookies = false
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        request.httpShouldHandleCookies = false
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        if headers["Accept"] == nil { request.setValue("application/json", forHTTPHeaderField: "Accept") }
+        if headers["Cache-Control"] == nil { request.setValue("no-store", forHTTPHeaderField: "Cache-Control") }
         task = session.dataTask(with: request)
         task?.resume()
     }
@@ -959,6 +1072,113 @@ private final class PublicResourceTransfer: NSObject, URLSessionDataDelegate, @u
         if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
             completionHandler(.performDefaultHandling, nil)
         } else { completionHandler(.cancelAuthenticationChallenge, nil) }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, willCacheResponse proposedResponse: CachedURLResponse,
+                    completionHandler: @escaping (CachedURLResponse?) -> Void) { completionHandler(nil) }
+}
+
+private final class AuthenticatedResourceDownloadTransfer: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    struct File: Sendable { let directory: URL; let url: URL }
+    private let url: URL
+    private let filename: String
+    private let limit: Int
+    private let expectedBytes: Int?
+    private let headers: [String: String]
+    private var ownedSession: URLSession?
+    private var task: URLSessionDataTask?
+    private var response: HTTPURLResponse?
+    private var fileHandle: FileHandle?
+    private var file: File?
+    private var received = 0
+    private var failure: Error?
+    var completion: ((Result<File, Error>) -> Void)?
+
+    static func removeOrphans(baseDirectory: URL = FileManager.default.temporaryDirectory) throws {
+        let root = baseDirectory.appendingPathComponent("DildoVanderAccountDownloads", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else { return }
+        for item in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+            try FileManager.default.removeItem(at: item)
+        }
+    }
+
+    init(url: URL, filename: String, limit: Int, expectedBytes: Int?, headers: [String: String]) {
+        self.url = url; self.filename = filename; self.limit = limit; self.expectedBytes = expectedBytes; self.headers = headers
+    }
+
+    func start() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil; configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil; configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.timeoutIntervalForRequest = 60; configuration.timeoutIntervalForResource = 3600
+        let queue = OperationQueue(); queue.maxConcurrentOperationCount = 1
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
+        ownedSession = session
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        request.httpMethod = "GET"; request.httpShouldHandleCookies = false
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        task = session.dataTask(with: request)
+        task?.resume()
+    }
+
+    func cancel() { task?.cancel() }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        failure = PublicResourceError.invalidResponse; completionHandler(nil)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let http = response as? HTTPURLResponse, http.url == url, http.statusCode == 200,
+              AccountTransportPolicy.authenticatedDownloadMIME(http.value(forHTTPHeaderField: "Content-Type"), path: url.path),
+              response.expectedContentLength < 0 || response.expectedContentLength <= Int64(limit) else {
+            failure = PublicResourceError.invalidResponse; completionHandler(.cancel); return
+        }
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("DildoVanderAccountDownloads", isDirectory: true)
+            let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.complete])
+            let destination = directory.appendingPathComponent(filename, isDirectory: false)
+            guard FileManager.default.createFile(atPath: destination.path, contents: nil,
+                attributes: [.protectionKey: FileProtectionType.complete]) else { throw PublicResourceError.invalidResponse }
+            self.file = File(directory: directory, url: destination)
+            self.fileHandle = try FileHandle(forWritingTo: destination)
+            self.response = http
+            completionHandler(.allow)
+        } catch {
+            failure = error; completionHandler(.cancel)
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard failure == nil else { return }
+        guard received <= limit, data.count <= limit - received else {
+            failure = PublicResourceError.tooLarge; dataTask.cancel(); return
+        }
+        do { try fileHandle?.write(contentsOf: data); received += data.count }
+        catch { failure = error; dataTask.cancel() }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        try? fileHandle?.close(); fileHandle = nil
+        let result: Result<File, Error>
+        if let failure { result = .failure(failure) }
+        else if let error { result = .failure((error as NSError).code == NSURLErrorCancelled ? PublicResourceError.cancelled : error) }
+        else if response != nil, let file, received > 0, expectedBytes == nil || expectedBytes == received { result = .success(file) }
+        else { result = .failure(PublicResourceError.invalidResponse) }
+        if case .failure = result, let file { try? FileManager.default.removeItem(at: file.directory) }
+        let completion = self.completion; self.completion = nil
+        ownedSession?.finishTasksAndInvalidate(); ownedSession = nil
+        completion?(result)
+    }
+
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust { completionHandler(.performDefaultHandling, nil) }
+        else { completionHandler(.cancelAuthenticationChallenge, nil) }
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, willCacheResponse proposedResponse: CachedURLResponse,
