@@ -41,6 +41,8 @@ let audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: 4, cha
 const writes = [];
 const errors = [];
 const loadedScripts = [];
+let releasePolicy;
+const pendingPolicy = new Promise(resolve => { releasePolicy = resolve; });
 let browser;
 try {
   browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}), ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
@@ -53,7 +55,7 @@ try {
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session' && request.method() === 'GET') return json({ enabled: true, account, csrfToken: 'fake-csrf', origin });
     if (url.pathname === '/app/v1/session' && request.method() === 'DELETE') { account = null; return route.fulfill({ status: 204, body: '' }); }
-    if (url.pathname === '/app/v1/launch') return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled });
+    if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'GET') return json({ character, artwork: character ? artwork : null });
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'PUT') {
       const body = request.postDataJSON(); writes.push(body);
@@ -87,7 +89,14 @@ try {
   page.setDefaultTimeout(12000);
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-  await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
+  const firstPolicyRequest = page.waitForRequest(request => new URL(request.url()).pathname === '/app/v1/launch');
+  await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+  await firstPolicyRequest;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('.application-sidebar, .application-header, .application-footer').count(), 0,
+    'unknown guest policy must not flash postlaunch navigation before its response');
+  releasePolicy();
+  await page.waitForLoadState('networkidle');
   await page.getByRole('heading', { name: /Něco se chystá/ }).waitFor();
   assert.equal(await page.getByRole('link', { name: 'Wand Night Stand, úvod' }).count(), 1);
   assert.equal(await page.getByText(/DildoVander|tester|operátor|administrace/i).count(), 0);
@@ -107,10 +116,14 @@ try {
   await page.getByRole('heading', { name: /Něco se chystá/ }).waitFor();
   await page.getByLabel('Jméno postavy').fill('Matylda');
   await page.getByLabel('Její svět').fill('Město za zrcadlem');
+  assert.doesNotMatch(await page.locator('.launch-consent').innerText(), /OpenAI/i);
+  await page.locator('.launch-data-details summary').click();
+  await page.getByText(/fiktivního jména a světa u OpenAI/).waitFor();
+  assert.equal(await page.getByRole('checkbox').isChecked(), false, 'reading privacy must not opt in');
+  assert.equal(await page.getByLabel('Jméno postavy').inputValue(), 'Matylda', 'privacy keeps the unsaved draft');
+  await page.locator('.launch-data-details summary').click();
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-entry.png'), fullPage: true });
   await page.getByRole('checkbox').check();
-  await page.getByText('Jak se použijí moje údaje').click();
-  await page.getByText(/aby doplnilo informace o postavě a vytvořilo její ilustraci/).waitFor();
-  await page.getByText('Jak se použijí moje údaje').click();
   await page.getByRole('button', { name: 'Zapsat se do osudu' }).click();
   await page.getByRole('heading', { name: /Něco se chystá, Matylda/ }).waitFor();
   assert.match(await page.locator('.launch-status').innerText(), /Olivander má kocovinu/);
@@ -119,6 +132,7 @@ try {
   assert.equal(await page.locator('[aria-current="step"]').count(), 0);
   assert.doesNotMatch(await page.locator('.launch-copy').innerText(), /Poznáváme postavu|Mícháme barvy|portrét|rešerš|malujeme/i);
   assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
+  assert.equal(writes.at(-1).openAiConsent, true);
   assert.equal(await page.getByText(/Summary|Appearance|Facts/).count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-countdown.png'), fullPage: true });
   for (const [label, viewport] of [['tablet', { width: 820, height: 1180 }], ['desktop', { width: 1440, height: 1000 }]]) {

@@ -15,7 +15,7 @@ import { launchAllowed } from '../../application/launchAccess';
       </section>
       <section>
         <h2>Zpracování u OpenAI</h2>
-        <p>Pokud s tím při vytvoření postavy výslovně souhlasíte, odešleme její fiktivní jméno a univerzum poskytovatelům OpenAI pro obohacení profilu a vytvoření portrétu. Přístupové klíče účtu se jim neposílají. Informace o zpracování najdete v <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener noreferrer">zásadách ochrany soukromí OpenAI</a>.</p>
+        <p>Volba „Chci si nechat připravit osobní překvapení“ ve formuláři povoluje zpracování údajů o postavě. Teprve po vašem potvrzení odešleme její fiktivní jméno a univerzum poskytovatelům OpenAI pro obohacení profilu, osobní text a vytvoření portrétu. Přístupové klíče účtu se jim neposílají. Nezadávejte osobní ani citlivé údaje. Informace o zpracování najdete v <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener noreferrer">zásadách ochrany soukromí OpenAI</a>.</p>
       </section>
       <section>
         <h2>Uložení a odstranění</h2>

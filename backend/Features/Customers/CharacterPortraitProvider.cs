@@ -141,11 +141,14 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
 {
     private readonly string? key;
     private readonly string imageModel;
-    private readonly HttpClient http = new(new HttpClientHandler { AllowAutoRedirect = false })
-        { Timeout = Timeout.InfiniteTimeSpan };
+    private readonly HttpClient http;
 
-    public OpenAiCharacterPortraitProvider(IConfiguration configuration)
+    public OpenAiCharacterPortraitProvider(IConfiguration configuration) : this(configuration,
+        new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan }) { }
+
+    internal OpenAiCharacterPortraitProvider(IConfiguration configuration, HttpClient http)
     {
+        this.http = http;
         key = configuration["OPENAI_API_KEY"];
         imageModel = configuration["CustomerCharacters:PortraitModel"] ?? configuration["Keepsake:ImageModel"]
             ?? "gpt-image-2.5-sunburst";
@@ -244,7 +247,8 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
                 + PortraitContentPolicy.LoadingMessageInstructions
                 + " Write exactly one short Czech sentence for each requested field, at most 250 characters. "
                 + "Return only a JSON object with nullable loadingMessage and string finalMessage; use no Markdown.",
-            input = JsonSerializer.Serialize(new
+            // JSON mode validates the input messages, not the separate instructions field.
+            input = "Return a JSON object for the requested fields. Character data follows:\n" + JsonSerializer.Serialize(new
             {
                 loadingDirection = includeLoading ? loadingPrompt : null,
                 finalDirection = PortraitContentPolicy.FinalMessagePrompt,

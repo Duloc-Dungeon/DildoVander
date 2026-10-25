@@ -1,5 +1,8 @@
 using Kufr.Backend.Features.Customers;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Configuration;
+using System.Net;
+using System.Text;
 using System.Text.Json;
 
 internal static class CharacterPortraitTests
@@ -9,6 +12,7 @@ internal static class CharacterPortraitTests
         var root = Path.Combine(Path.GetTempPath(), "dv-portrait-tests-" + Guid.NewGuid().ToString("N"));
         try
         {
+            await ExperienceWireContractAsync();
             await ConsentAndDurabilityAsync(Path.Combine(root, "durable"));
             await ProfileIdentityFenceAsync(Path.Combine(root, "identity"));
             await RevisionAndDeletionAsync(Path.Combine(root, "fences"));
@@ -58,6 +62,47 @@ internal static class CharacterPortraitTests
         {
             SqliteConnection.ClearAllPools();
             if (Directory.Exists(root)) { Directory.Delete(root, true); }
+        }
+    }
+
+    private static async Task ExperienceWireContractAsync()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["OPENAI_API_KEY"] = "offline-injected-transport-only" }).Build();
+        var handler = new PortraitExperienceHandler();
+        using var provider = new OpenAiCharacterPortraitProvider(configuration, new HttpClient(handler));
+        var input = new CharacterUserInput("Raven", "Original fiction");
+        var result = await provider.GenerateExperienceAsync(input,
+            Result(new("wire", "offline", "profile", 1, input, null, "lease", 1)),
+            "Keep the surprise secret.", true, CancellationToken.None);
+        Check(handler.Calls == 1 && result.LoadingMessage == PortraitExperienceHandler.Loading
+            && result.FinalMessage == PortraitExperienceHandler.Final,
+            "real SDK request satisfies JSON-mode input contract and parses both generated lines without retry or fallback");
+    }
+
+    private sealed class PortraitExperienceHandler : HttpMessageHandler
+    {
+        internal const string Loading = "Raven zaslechl za zavřenými dveřmi své jméno. Olivander si vyžádal vývar.";
+        internal const string Final = "Raven, tvůj portrét. Olivander má kocovinu; větší slávu dnes nečekej.";
+        internal int Calls { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Calls++;
+            Check(request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath == "/v1/responses",
+                "experience uses one Responses request through the injected offline transport");
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            var payload = body.RootElement;
+            Check(payload.GetProperty("text").GetProperty("format").GetProperty("type").GetString() == "json_object"
+                && payload.GetProperty("input").GetString()!.Contains("json", StringComparison.OrdinalIgnoreCase),
+                "JSON-mode instruction must occur inside input, not only the separate instructions field");
+            var text = JsonSerializer.Serialize(new { loadingMessage = Loading, finalMessage = Final });
+            var response = JsonSerializer.Serialize(new
+            {
+                status = "completed",
+                output = new[] { new { type = "message", content = new[] { new { type = "output_text", text } } } }
+            });
+            return new(HttpStatusCode.OK) { Content = new StringContent(response, Encoding.UTF8, "application/json") };
         }
     }
 

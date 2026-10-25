@@ -277,8 +277,8 @@ onBeforeUnmount(() => {
           <form class="launch-form" @submit.prevent="saveCharacter">
             <AwField id="character-name" :label="copy.name" :hint="copy.nameHint"><input id="character-name" v-model="name" class="aw-input" maxlength="100" autocomplete="off" required /></AwField>
             <AwField id="character-universe" :label="copy.universe" :hint="copy.universeHint"><input id="character-universe" v-model="universe" class="aw-input" maxlength="160" autocomplete="off" required /></AwField>
-            <label class="launch-consent"><input v-model="consent" type="checkbox" required /><span>{{ copy.consent }} <RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></span></label>
-            <details class="launch-data-details"><summary>{{ copy.consentDetails }}</summary><p>{{ copy.consentExplanation }}</p></details>
+            <label class="launch-consent"><input v-model="consent" type="checkbox" required /><span>{{ copy.consent }}</span></label>
+            <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p></details>
             <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
             <AwButton type="submit" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
           </form>
@@ -289,7 +289,7 @@ onBeforeUnmount(() => {
           <form v-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait">
             <p>{{ copy.missingPortrait }}</p>
             <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
-            <details class="launch-data-details"><summary>{{ copy.consentDetails }}</summary><p>{{ copy.consentExplanation }}</p></details>
+            <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p></details>
             <AwButton type="submit" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
           </form>
           <AwNotice v-if="error || phase === 'failed'" tone="warning" role="alert">{{ error || copy.failed }} <button class="launch-retry" type="button" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
@@ -335,7 +335,7 @@ onBeforeUnmount(() => {
 .launch-data-details { color: var(--aw-muted); font-size: .82rem; line-height: 1.65; }
 .launch-data-details summary { min-height: 44px; padding-block: .6rem; cursor: pointer; }
 .launch-form { display: grid; gap: 1.1rem; margin-top: 1.5rem; }
-.launch-consent { display: flex; gap: .5rem; align-items: start; color: var(--aw-muted); font-size: .82rem; line-height: 1.65; cursor: pointer; }
+.launch-consent { display: flex; gap: .5rem; align-items: start; min-height: 44px; color: var(--aw-muted); font-size: .82rem; line-height: 1.65; cursor: pointer; }
 .launch-consent input { flex-shrink: 0; width: 24px; height: 24px; margin: .1rem .3rem 0 0; accent-color: var(--aw-accent); }
 .launch-consent a { color: var(--aw-ivory); }
 .countdown { margin-top: 2rem; }

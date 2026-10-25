@@ -49,8 +49,9 @@ Preparation starts with the administrator's editable hungover-Olivander message.
 Research runs in the background, then a bounded character-specific loading line
 acknowledges the fictional persona through suspense. Guests see no research,
 painting or numbered process steps, and the primary action does not announce the
-portrait. The full OpenAI data-use explanation remains available beside explicit
-consent. Generated and historical public-facing loading copy is filtered before
+portrait. A short affirmative choice keeps the form calm; a collapsed Privacy
+disclosure opens the OpenAI data-use explanation in place without losing the
+draft or opting in automatically. Generated and historical public-facing loading copy is filtered before
 reveal; raw administrator settings remain editable. The final mild roast appears only after the
 owner's image has decoded. Text and image publish together under the existing job
 lease; stale profile revisions, deleted profiles and switched accounts cannot

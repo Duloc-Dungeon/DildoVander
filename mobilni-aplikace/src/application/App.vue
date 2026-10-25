@@ -19,7 +19,8 @@ import { launchAllowed, refreshLaunchAccess } from './launchAccess';
 const route = useRoute();
 const router = useRouter();
 const launchExperience = computed(() => route.path === '/launch' || route.path === '/signin'
-  || (launchAllowed.value !== true && ['/privacy', '/support', '/account-deletion'].includes(route.path)));
+  || (launchAllowed.value !== true && (['/privacy', '/support', '/account-deletion'].includes(route.path)
+    || !canEnterStaffArea(account.value) && !account.value?.roles.includes('Tester'))));
 const browserMode = !Capacitor.isNativePlatform();
 const main = ref<HTMLElement>();
 const navigationElement = ref<HTMLElement>();
