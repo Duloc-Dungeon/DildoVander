@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Net;
+using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.Access;
@@ -22,6 +23,7 @@ internal static class LaunchPolicyTests
         Directory.CreateDirectory(root);
         try
         {
+            await VerifyConsumerDefaultsAsync(Path.Combine(root, "consumer-defaults"));
             var store = new LaunchPolicyStore(root);
             var clock = new TestClock(DateTimeOffset.FromUnixTimeMilliseconds(1_000));
             var policy = new LaunchAccessService(store, clock);
@@ -91,6 +93,111 @@ internal static class LaunchPolicyTests
         Console.WriteLine("PASS launch policy: audience schedules, manual unlock, internal tester exception, optimistic concurrency, audit and persistence");
     }
 
+    private static async Task VerifyConsumerDefaultsAsync(string root)
+    {
+        Directory.CreateDirectory(root);
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(root, "launch.sqlite")
+        }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE launch_configuration (
+                    id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
+                    beta_enabled INTEGER NOT NULL, beta_launch_at INTEGER NULL, beta_unlocked INTEGER NOT NULL,
+                    production_enabled INTEGER NOT NULL, production_launch_at INTEGER NULL, production_unlocked INTEGER NOT NULL,
+                    time_zone TEXT NOT NULL, teaser TEXT NOT NULL, initial_loading_message TEXT NOT NULL,
+                    personalized_loading_enabled INTEGER NOT NULL, personalized_loading_prompt TEXT NOT NULL);
+                INSERT INTO launch_configuration VALUES
+                    (1,0,0,NULL,0,0,NULL,0,'Europe/Prague','A little something is getting ready for you.',
+                     'A peculiar little surprise is taking shape…',0,
+                     'Write one brief, playful, mysterious loading message inspired by the supplied fictional character context. Do not reveal product features or repeat research facts.');
+                """;
+            command.ExecuteNonQuery();
+        }
+        var store = new LaunchPolicyStore(root);
+        var defaults = store.Read();
+        Check(defaults.Teaser == LaunchConfiguration.DefaultTeaser
+            && defaults.InitialLoadingMessage == LaunchConfiguration.DefaultInitialLoadingMessage
+            && defaults.PersonalizedLoadingEnabled
+            && PortraitContentPolicy.ValidLoadingMessage(defaults.Teaser)
+            && defaults.Teaser.Contains("kocovinu", StringComparison.OrdinalIgnoreCase)
+            && PortraitContentPolicy.ValidLoadingMessage(defaults.InitialLoadingMessage)
+            && defaults.InitialLoadingMessage.Contains("proroctví", StringComparison.OrdinalIgnoreCase)
+            && defaults.PersonalizedLoadingPrompt.Contains("aniž prozradíš, co se chystá", StringComparison.OrdinalIgnoreCase)
+            && !new[] { "portrét", "portrait", "malb", "obraz", "avatar", "výzkum", "research", "krok" }
+                .Any(term => defaults.PersonalizedLoadingPrompt.Contains(term, StringComparison.OrdinalIgnoreCase)),
+            "untouched legacy defaults migrate to Czech consumer copy and optional personalization");
+        var previousRoot = Path.Combine(root, "previous-defaults");
+        Directory.CreateDirectory(previousRoot);
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(previousRoot, "launch.sqlite")
+        }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE launch_configuration (
+                    id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
+                    beta_enabled INTEGER NOT NULL, beta_launch_at INTEGER NULL, beta_unlocked INTEGER NOT NULL,
+                    production_enabled INTEGER NOT NULL, production_launch_at INTEGER NULL, production_unlocked INTEGER NOT NULL,
+                    time_zone TEXT NOT NULL, teaser TEXT NOT NULL, initial_loading_message TEXT NOT NULL,
+                    personalized_loading_enabled INTEGER NOT NULL, personalized_loading_prompt TEXT NOT NULL);
+                INSERT INTO launch_configuration VALUES
+                    (1,0,0,NULL,0,0,NULL,0,'Europe/Prague',
+                     'Noční stolek pro velká očekávání. Olivander má kocovinu; na noční zázrak si chvíli počkáš.',
+                     'Olivander má kocovinu; dnes stíháme připravit jen noční stolek. Na velké zázraky si ještě chvíli počkej.',1,
+                     'Napiš jednu krátkou českou větu, která postavu pozná přes jediný neškodný veřejný fikční rys z bezpečného shrnutí. Přidej suchý britský humor, slovní hříčku o nočním stolku a připomeň, že Olivander má kocovinu, takže se čeká. Neuváděj zdroje, citace, rešerše ani soukromé údaje.');
+                """;
+            command.ExecuteNonQuery();
+        }
+        var migratedPrevious = new LaunchPolicyStore(previousRoot).Read();
+        Check(migratedPrevious.Teaser == LaunchConfiguration.DefaultTeaser
+            && migratedPrevious.InitialLoadingMessage == LaunchConfiguration.DefaultInitialLoadingMessage
+            && migratedPrevious.PersonalizedLoadingPrompt == LaunchConfiguration.DefaultPersonalizedLoadingPrompt,
+            "only untouched revision-zero prior defaults migrate to the new suspense copy");
+        try
+        {
+            store.Update("admin", new(defaults.Revision, false, null, false, false, null, false,
+                defaults.TimeZone, "A portrait is coming.", defaults.InitialLoadingMessage, defaults.PersonalizedLoadingEnabled,
+                defaults.PersonalizedLoadingPrompt), 1);
+            throw new InvalidOperationException("Pre-reveal artifact reference should be rejected.");
+        }
+        catch (LaunchConfigurationException error) when (error.Status == 400) { }
+        var saved = store.Update("admin", new(defaults.Revision, false, null, false, false, null, false,
+            defaults.TimeZone, defaults.Teaser, defaults.InitialLoadingMessage, false, "explicitly saved prompt"), 1);
+        var reopened = new LaunchPolicyStore(root).Read();
+        Check(!reopened.PersonalizedLoadingEnabled && reopened.PersonalizedLoadingPrompt == "explicitly saved prompt"
+            && reopened.Revision == saved.Revision,
+            "explicit admin personalization settings survive restart without being replaced by new defaults");
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(root, "launch.sqlite")
+        }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE launch_configuration SET revision=revision+1,production_enabled=1,production_launch_at=9000000000000,production_unlocked=0,teaser='Malujeme tvůj portrét.',initial_loading_message='Teď připravujeme tvůj avatar.' WHERE id=1";
+            Check(command.ExecuteNonQuery() == 1, "seed a revisioned legacy reveal string for the access projection regression");
+        }
+        var rawAdminConfiguration = store.Read();
+        var launchAccess = new LaunchAccessService(store, TimeProvider.System);
+        var guestProjection = launchAccess.Evaluate(new ClaimsPrincipal());
+        Check(rawAdminConfiguration.Revision == saved.Revision + 1
+            && rawAdminConfiguration.Teaser == "Malujeme tvůj portrét."
+            && rawAdminConfiguration.InitialLoadingMessage == "Teď připravujeme tvůj avatar."
+            && guestProjection.Teaser == LaunchConfiguration.DefaultTeaser
+            && guestProjection.InitialLoadingMessage == LaunchConfiguration.DefaultInitialLoadingMessage
+            && PortraitContentPolicy.ValidLoadingMessage(guestProjection.Teaser)
+            && PortraitContentPolicy.ValidLoadingMessage(guestProjection.InitialLoadingMessage)
+            && !guestProjection.Allowed && guestProjection.LaunchAt == 9_000_000_000_000,
+            "public access projection uses secret defaults for stored reveal copy while raw admin read and gate remain unchanged");
+        await Task.CompletedTask;
+    }
+
     private static async Task RunAccessBoundaryAsync(string root)
     {
         var gateRoot = Path.Combine(root, "gate");
@@ -98,6 +205,8 @@ internal static class LaunchPolicyTests
         var store = new LaunchPolicyStore(gateRoot);
         store.Update("admin", new(0, false, null, false, true, 9_000_000_000_000, false,
             "Europe/Prague", "", "waiting", false, "prompt"), 1_000);
+        Check(new LaunchAccessService(store, TimeProvider.System).Evaluate(new ClaimsPrincipal(new ClaimsIdentity())).Teaser == "",
+            "an explicitly empty optional teaser stays empty in the public projection");
         var config = new AccountConfiguration(true, gateRoot, gateRoot, "localhost", ["https://localhost"]);
         var builder = WebApplication.CreateBuilder();
         const string deviceCredential = "offline-test-device-credential-123456";

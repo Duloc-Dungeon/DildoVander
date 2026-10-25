@@ -18,7 +18,7 @@ beforeEach(() => {
   api.request.mockImplementation(async (path: string) => path.endsWith('/artwork') ? { jobs: [] } : path.endsWith('/audit') ? { entries: [] } : launch());
 });
 
-describe('Launch Management', () => {
+describe('Spuštění aplikace', () => {
   it('loads independent audience controls and saves Prague local times as UTC instants', async () => {
     const view = wrapper(); await flushPromises();
     expect(view.text()).toContain('Europe/Prague');

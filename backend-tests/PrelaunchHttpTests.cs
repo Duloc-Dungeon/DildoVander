@@ -22,7 +22,7 @@ internal static partial class AccountIdentityTests
         await CsrfAsync(owner);
         var future = DateTimeOffset.UtcNow.AddDays(2).ToUnixTimeMilliseconds();
         var update = new LaunchConfigurationUpdate(0, true, future, false, true, future, false,
-            "Europe/Prague", "Hvězdy drží tajemství.", "Někdo právě leští souhvězdí.", false, "One mysterious sentence.");
+            "Europe/Prague", "Hvězdy drží tajemství.", "Někdo právě leští souhvězdí.", true, "One mysterious sentence.");
         Check((await owner.PutAsJsonAsync("/app/v1/admin/launch", update)).IsSuccessStatusCode, "administrator can configure launch over real authenticated HTTPS");
         var invitation = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Customer" })))
             .GetProperty("token").GetString()!;
@@ -60,6 +60,7 @@ internal static partial class AccountIdentityTests
         var saved = await JsonAsync(response);
         var character = saved.GetProperty("character");
         var revision = character.GetProperty("revision").GetInt64();
+        var profileId = character.GetProperty("profileId").GetString()!;
         Check(character.GetProperty("name").GetString() == "Raven" && saved.GetProperty("artwork").GetProperty("status").GetString() == "queued",
             "two attributes save immediately with artwork pending");
         Check((await customer.PutAsJsonAsync("/app/v1/prelaunch/character",
@@ -73,13 +74,22 @@ internal static partial class AccountIdentityTests
         }
         var text = saved.GetRawText();
         Check(saved.GetProperty("artwork").GetProperty("status").GetString() == "ready", "durable enrichment then fake image provider completes automatically");
+        Check(saved.GetProperty("artwork").GetProperty("loadingMessage").GetString() == "Hvězdy se domlouvají.",
+            "optional personalized progress message is retained alongside the final result");
+        var finalMessage = saved.GetProperty("artwork").GetProperty("finalMessage").GetString()!;
+        Check(finalMessage.Contains("Raven", StringComparison.Ordinal)
+            && finalMessage.Contains("kocovin", StringComparison.OrdinalIgnoreCase)
+            && finalMessage.Length <= 250,
+            "failed final-text generation uses bounded character-specific prelaunch fallback while preserving the portrait");
         Check(!text.Contains("enrichment", StringComparison.OrdinalIgnoreCase) && !text.Contains("conversation", StringComparison.OrdinalIgnoreCase)
             && !text.Contains("generatedWand", StringComparison.OrdinalIgnoreCase) && !text.Contains("source", StringComparison.OrdinalIgnoreCase),
             "minimal user API contains no enrichment or protected product data");
-        var image = await customer.GetAsync($"/app/v1/prelaunch/character/portrait?revision={revision}");
+        var image = await customer.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}");
         Check(image.IsSuccessStatusCode && image.Content.Headers.ContentType?.MediaType == "image/webp", "owner gets private artwork");
         Check(image.Headers.CacheControl?.NoStore == true, "private artwork cannot be reused from shared cache");
-        Check(!(await stranger.GetAsync($"/app/v1/prelaunch/character/portrait?revision={revision}")).IsSuccessStatusCode,
+        Check((await customer.GetAsync($"/app/v1/prelaunch/character/portrait?profileId=stale-profile&revision={revision}")).StatusCode == HttpStatusCode.NotFound,
+            "matching revision cannot serve artwork from a different profile identity");
+        Check(!(await stranger.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}")).IsSuccessStatusCode,
             "signed-out visitor cannot download private artwork");
         var betaInvitation = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Beta" })))
             .GetProperty("token").GetString()!;
@@ -88,7 +98,7 @@ internal static partial class AccountIdentityTests
         var betaAccess = await JsonAsync(await beta.GetAsync("/app/v1/launch"));
         Check(betaAccess.GetProperty("audience").GetString() == "beta" && !betaAccess.GetProperty("allowed").GetBoolean(),
             "verified invitation assigns beta audience consistently");
-        Check((await beta.GetAsync($"/app/v1/prelaunch/character/portrait?revision={revision}")).StatusCode == HttpStatusCode.NotFound,
+        Check((await beta.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}")).StatusCode == HttpStatusCode.NotFound,
             "another authenticated account cannot read portrait by guessing revision");
         Check((await beta.GetAsync("/app/v1/admin/launch/artwork")).StatusCode == HttpStatusCode.Forbidden,
             "beta install entitlement grants no artwork administration");
@@ -107,6 +117,8 @@ internal static partial class AccountIdentityTests
     {
         public Task<byte[]> GeneratePortraitAsync(CharacterPortraitJob job, CancellationToken token) => Task.FromResult(new byte[] { 1, 2, 3 });
         public Task<string?> GenerateMessageAsync(CharacterUserInput input, CharacterEnrichment? enrichment,
-            string creativePrompt, CancellationToken token) => Task.FromResult<string?>("Hvězdy se domlouvají.");
+            string creativePrompt, CancellationToken token) => creativePrompt == PortraitContentPolicy.FinalMessagePrompt
+                ? Task.FromException<string?>(new InvalidOperationException("synthetic optional text failure"))
+                : Task.FromResult<string?>("Hvězdy se domlouvají.");
     }
 }

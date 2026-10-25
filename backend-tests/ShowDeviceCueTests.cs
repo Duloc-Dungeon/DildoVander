@@ -312,7 +312,6 @@ internal static class ShowDeviceCueTests
     private static async Task ActualDuelBridgeCompositionAsync()
     {
         using var fixture = new Fixture();
-        fixture.Audio.TrySetResult(Wav());
         fixture.Poll();
         var identities = new DuelIdentities(fixture.EveningId);
         var store = new DuelStore(fixture.Configuration, fixture.Clock, identities,
@@ -320,46 +319,21 @@ internal static class ShowDeviceCueTests
             DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(fixture.DirectoryPath, "duel-keys"))));
         var duel = store.Create(Device, new(fixture.EveningId, "left", "right", "autoplay", true, "device-bridge-create"));
         duel = store.Start(Device, duel.Id, new(duel.Revision, "device-bridge-start"));
-        Check(duel.NarrationMode == "physical_device" && duel.Deadline is null,
-            "actual duel adapter binds current device with configured fake provider transport");
-        store.Tick();
-        var expected = new[] { ("wake", 0), ("consider", 1), ("consider", 2), ("consider", 3), ("farewell", 3) };
-        var seen = new HashSet<Guid>();
-        for (var index = 0; index < expected.Length; index++)
+        Check(duel.NarrationMode == "web_only" && duel.NarrationUnavailableReason == "text_only_duel"
+            && duel.Deadline is not null,
+            "new duels stay text-only even when a device and fake speech provider are connected");
+        for (var round = 0; round < 3; round++)
         {
-            fixture.Bridge.Tick();
-            var cue = fixture.Poll().Cue ?? throw new InvalidOperationException(
-                $"Expected narrated duel cue {index}/{expected[index]}; duel={store.Read(duel.Id).State}/{store.Read(duel.Id).NarrationStatus}, "
-                + $"mailbox={fixture.Bridge.DuelNarrationState(Device, duel.Id)}, calls={fixture.Calls}, "
-                + $"occupation={fixture.Show.IsOccupationCurrent(Device, duel.Id)}, speechClaims={fixture.Sql("SELECT count(*) FROM turn_operations WHERE kind='speech'")}.");
-            Check((cue.SceneId, cue.Round) == expected[index] && seen.Add(cue.CueId)
-                && cue.SpeechText.Length > 0 && cue.DuelId?.ToString("D") == duel.Id,
-                "actual authored intro/round/final mailbox cue " + index);
-            Check(fixture.Bridge.Acknowledge(Device, cue.CueId, fixture.Ack("accepted", "commanded")).Status == 200,
-                "actual duel device admission");
-            await fixture.Bridge.AudioWork(Device, cue.CueId).WaitAsync(TimeSpan.FromSeconds(5));
-            Check(fixture.Bridge.ReadAudio(Device, cue.CueId).Status == 200
-                && store.Read(duel.Id) is { State: "Running", Result: null }, "queued/rendered speech cannot publish winner");
+            fixture.Clock.Advance(TimeSpan.FromSeconds(3));
             store.Tick();
-            Check(store.Read(duel.Id).Result is null && fixture.Poll().Cue?.CueId == cue.CueId,
-                "actual pending playback applies backpressure");
-            Check(fixture.Bridge.Acknowledge(Device, cue.CueId, fixture.Ack("completed", "playback_finished")).Status == 200,
-                "exact actual player drain advances duel");
-            store.Tick();
-            if (index < 3)
-            {
-                fixture.Clock.Advance(TimeSpan.FromSeconds(3));
-                fixture.Poll();
-                store.Tick();
-            }
         }
-        Check(store.Read(duel.Id) is { State: "Completed", Result: not null, NarrationStatus: "playback_confirmed" }
-            && fixture.Show.Read(Device).OccupiedBy is null && fixture.Calls == 5
-            && fixture.Sql("SELECT count(*) FROM turn_operations WHERE kind='speech'") == 5,
-            "real composed five-cue ACK flow completes once and releases authoritative show slot");
+        Check(store.Read(duel.Id) is { State: "Completed", Result: not null, NarrationStatus: "text_only_duel" }
+            && fixture.Show.Read(Device).OccupiedBy is null && fixture.Calls == 0
+            && fixture.Sql("SELECT count(*) FROM turn_operations WHERE kind='speech'") == 0
+            && fixture.Poll().Cue is null,
+            "text-only duel completes without a device cue, speech generation or spoken-confirmation claim");
         await fixture.FinishAsync();
     }
-
     private sealed class DuelIdentities(string evening) : IDuelIdentitySource
     {
         public bool IsActiveEvening(string deviceId, string eveningId) => deviceId == Device && eveningId == evening;
@@ -408,7 +382,8 @@ internal static class ShowDeviceCueTests
                 ["Backend:DatabasePath"] = Path.Combine(directory, "journal.sqlite"),
                 ["Devices:0:DeviceId"] = Device, ["Devices:1:DeviceId"] = "other-device",
                 ["Devices:0:CredentialSha256"] = new string('a', 64), ["Devices:1:CredentialSha256"] = new string('b', 64),
-                ["Show:DeviceCueSpeechMode"] = mode
+                ["Show:DeviceCueSpeechMode"] = mode,
+                ["Show:DuelCommentaryEnabled"] = "false"
             }).Build();
             Configuration = configuration;
             Journal = new OperationJournal(configuration, Clock);

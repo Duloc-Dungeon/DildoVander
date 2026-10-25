@@ -312,6 +312,7 @@ internal sealed partial class EveningMemoryStore
                     ShowMemoryEventKind.EveningClosed, deviceId, eveningId, eveningId, 1, "authorized_end_evening"));
                 SaveChronicleEdition(connection, transaction, deviceId, eveningId);
             }
+            DeleteCaseVoiceAsideHistory(connection, transaction, deviceId, eveningId);
             var snapshot = ReadChronicleSnapshot(connection, transaction, deviceId, eveningId);
             transaction.Commit();
             return snapshot;
@@ -591,7 +592,7 @@ internal sealed partial class EveningMemoryStore
             _ => $"Na prvním místě je remíza: {string.Join(", ", wands.Where(w => leaders.Contains(w.Slot)).Select(w => w.OfficialName))}. Každá má {maximum} potvrzených prezentací; ministerstvo odmítá dodat další stupínek."
         };
         var narrative = visits == 0 && confirmed == 0 && duels == 0
-            ? "Kronika katastrof zatím eviduje nulu dokončených návštěv, nulu potvrzených prezentací a nulu dokončených duelů. DildoVander slavnostně přežil přípravy. " + popular
+            ? "Kronika katastrof zatím eviduje nulu dokončených návštěv, nulu potvrzených prezentací a nulu dokončených duelů. Wand Night Stand slavnostně přežil přípravy. " + popular
             : $"Večerní kniha eviduje dokončené návštěvy: {visits}, potvrzené prezentace: {confirmed}, dokončené duely: {duels}. " + popular;
         if (unresolved > 0)
         {

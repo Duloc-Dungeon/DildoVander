@@ -20,7 +20,7 @@ internal static class PersonalityCatalog
     private static readonly string LegacyOllivander = PartyDialoguePrompt.ReadResource("Kufr.Backend.OllivanderPersona", trim: false);
     private static readonly IReadOnlyList<PersonalityInfo> inventory = Array.AsReadOnly(new[]
     {
-        Info(DefaultId, "DV01", "The single DildoVander suitcase character. Adult and Chaos are behavior variations.", CharacterConfiguration.Persona)
+        Info(DefaultId, "DV01", "The single Wand Night Stand character. Adult and Chaos are behavior variations.", CharacterConfiguration.Persona)
     });
 
     internal static IReadOnlyList<PersonalityInfo> Inventory => inventory;

@@ -18,8 +18,48 @@ export async function createBattleSummary(view: Duel, artwork: { left: string; r
     }
     if (line) ctx.fillText(line, x, y + row * lineHeight, width);
   };
+  const wrap = (value: string, font: string): string[] => {
+    ctx.font = font;
+    const words: string[] = [];
+    for (const word of value.split(/\s+/)) {
+      let part = '';
+      for (const letter of word) {
+        if (part && ctx.measureText(part + letter).width > 870) { words.push(part); part = ''; }
+        part += letter;
+      }
+      if (part) words.push(part);
+    }
+    const rows: string[] = [];
+    let row = '';
+    for (const word of words) {
+      if (row && ctx.measureText(`${row} ${word}`).width > 870) { rows.push(row); row = ''; }
+      row = row ? `${row} ${word}` : word;
+    }
+    if (row) rows.push(row);
+    return rows;
+  };
+  const blocks: { rows: string[]; font: string; color: string; gap: number }[] = [];
+  const block = (value: string, font: string, color: string, gap = 12) => {
+    if (value) blocks.push({ rows: wrap(value, font), font, color, gap });
+  };
+  for (const round of view.rounds) {
+    block(`Kolo ${round.number} · ${round.leftScore} : ${round.rightScore}`, '600 21px Inter, sans-serif', colors.accent, 8);
+    block(`${duelSpell(view.left, round.leftAction)} × ${duelSpell(view.right, round.rightAction)}`, '600 22px Inter, sans-serif', colors.text, 8);
+    const narration = view.commentary?.rounds.find(item => item.round === round.number);
+    block(narration?.quip ?? round.quip, '400 20px Inter, sans-serif', colors.text, 8);
+    block(narration?.mishap ?? round.mishap, '400 20px Inter, sans-serif', colors.muted, 24);
+  }
+  block(view.result.ending, '500 22px Inter, sans-serif', colors.text, 24);
+  if (view.partyTask) {
+    block(`Dobrovolná party výzva · ${view.partyTask.title}`, '600 24px Inter, sans-serif', colors.accent);
+    block(view.partyTask.text, '400 20px Inter, sans-serif', colors.text);
+    block(`Lehčí varianta: ${view.partyTask.alternative}`, '400 20px Inter, sans-serif', colors.muted);
+    block(view.partyTask.alternativeRoast, '400 20px Inter, sans-serif', colors.text);
+    block('Výzvu lze vynechat. Nápoj, tempo a pohyb si volíš sám; volba nemění výsledek.', '400 18px Inter, sans-serif', colors.muted);
+  }
+  canvas.height = Math.max(1400, 890 + blocks.reduce((height, item) => height + item.rows.length * 28 + item.gap, 0) + 70);
   ctx.fillStyle = colors.background; ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.textAlign = 'center'; ctx.fillStyle = colors.muted; ctx.font = '600 22px Inter, sans-serif'; ctx.fillText('DildoVander · Souboj postav', 500, 65);
+  ctx.textAlign = 'center'; ctx.fillStyle = colors.muted; ctx.font = '600 22px Inter, sans-serif'; ctx.fillText('Wand Night Stand · Souboj postav', 500, 65);
   const winner = view.result.leftPoints === view.result.rightPoints ? 'Remíza' : `${view[view.result.leftPoints > view.result.rightPoints ? 'left' : 'right'].displayName} vítězí!`;
   ctx.fillStyle = colors.text; ctx.font = '700 42px Inter, sans-serif'; lines(winner, 500, 132, 880, 48, 2);
   ctx.fillStyle = colors.accent; ctx.font = '700 78px Inter, sans-serif'; ctx.fillText(`${view.result.leftPoints} : ${view.result.rightPoints}`, 500, 250);
@@ -38,12 +78,13 @@ export async function createBattleSummary(view: Duel, artwork: { left: string; r
     ctx.fillStyle = colors.muted; ctx.font = '500 22px Inter, sans-serif'; lines(duelWandName(view[side]), x + 200, 795, 360, 28, 1);
   }
   ctx.textAlign = 'left';
-  for (const [index, round] of view.rounds.entries()) {
-    const y = 890 + index * 135;
-    ctx.fillStyle = colors.accent; ctx.font = '600 21px Inter, sans-serif'; ctx.fillText(`Kolo ${round.number} · ${round.leftScore} : ${round.rightScore}`, 65, y);
-    ctx.fillStyle = colors.text; ctx.font = '600 22px Inter, sans-serif'; lines(`${duelSpell(view.left, round.leftAction)} × ${duelSpell(view.right, round.rightAction)}`, 65, y + 34, 870, 28, 1);
-    ctx.fillStyle = colors.muted; ctx.font = '400 20px Inter, sans-serif'; lines(view.commentary?.rounds.find(item => item.round === round.number)?.quip ?? round.quip, 65, y + 65, 870, 26, 2);
+  let y = 890;
+  for (const item of blocks) {
+    ctx.fillStyle = item.color;
+    ctx.font = item.font;
+    for (const row of item.rows) { ctx.fillText(row, 65, y); y += 28; }
+    y += item.gap;
   }
-  ctx.textAlign = 'center'; ctx.fillStyle = colors.muted; ctx.font = '400 18px Inter, sans-serif'; ctx.fillText(view.left.artworkSynthetic || view.right.artworkSynthetic ? 'Syntetická testovací ilustrace · kouzelnická fikce · bez placeného generování' : 'Kouzelnická fikce · původní ilustrace hůlek · žádné fyzické šermování', 500, 1360);
+  ctx.textAlign = 'center'; ctx.fillStyle = colors.muted; ctx.font = '400 18px Inter, sans-serif'; ctx.fillText(view.left.artworkSynthetic || view.right.artworkSynthetic ? 'Syntetická testovací ilustrace · kouzelnická fikce · bez placeného generování' : 'Kouzelnická fikce · původní ilustrace hůlek · žádné fyzické šermování', 500, canvas.height - 35);
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image export failed')), 'image/png'));
 }

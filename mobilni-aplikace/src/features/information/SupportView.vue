@@ -6,7 +6,7 @@ import { launchAllowed } from '../../application/launchAccess';
 <template>
   <article class="page-stack information-page" aria-labelledby="support-title">
     <template v-if="launchAllowed !== true">
-      <p class="eyebrow">DildoVander</p>
+      <p class="eyebrow">Wand Night Stand</p>
       <h1 id="support-title">Pomoc s pozvánkou a účtem</h1>
       <section>
         <h2>Pozvánka a přihlášení</h2>
@@ -22,11 +22,11 @@ import { launchAllowed } from '../../application/launchAccess';
       </section>
       <section>
         <h2>Kontaktujte nás</h2>
-        <p>Napište na <a href="mailto:support@dildovander.de?subject=DildoVander%20%E2%80%93%20support">support@dildovander.de</a>. Do zprávy neposílejte přístupové klíče.</p>
+        <p>Napište na <a href="mailto:support@dildovander.de?subject=Wand%20Night%20Stand%20%E2%80%93%20support">support@dildovander.de</a>. Do zprávy neposílejte přístupové klíče.</p>
       </section>
     </template>
     <template v-else>
-    <p class="eyebrow">Wand Night Stand · DildoVander</p>
+    <p class="eyebrow">Wand Night Stand</p>
     <h1 id="support-title">{{ customerCopy.text('support.title') }}</h1>
     <p>{{ customerCopy.text('support.intro') }}</p>
 

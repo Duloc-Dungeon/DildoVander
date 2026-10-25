@@ -37,6 +37,7 @@ try{
  await context.route('**/*',async route=>{
   const request=route.request(),url=new URL(request.url());if(url.origin!==origin){await route.abort();return;}const p=url.pathname,m=request.method();calls.push({path:p,method:m});const json=(value,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(value)});const body=()=>request.postDataJSON();
   if(p==='/app/v1/session')return json({enabled:true,account:owner,csrfToken:'fixture-csrf'});
+  if(p==='/app/v1/launch')return json({allowed:true,audience:'privileged',launchAt:null,serverNow:Date.now(),teaser:'',initialLoadingMessage:'',personalizedLoadingEnabled:false});
   if(p==='/app/v1/account')return json({sessions:[],grants:[],associations:[],passkeys:[],devices:[]});
   if(p==='/app/v1/archive/collection')return json({schemaVersion:1,items:[],nextCursor:null});
   if(p==='/app/v1/testing-sessions/catalog')return json({engines:['gpt-live-1','gpt-realtime-2.1'],capabilities:{text:true,voice:true,hybrid:true}});
@@ -145,8 +146,8 @@ try{
    microphoneSocket.send(JSON.stringify({type:'transcript',role:'assistant',delta:`Živá odpověď ${index}`}));
    microphoneSocket.send(Buffer.from(new Int16Array(12000).fill(200).buffer));
    microphoneSocket.send(Buffer.from(new Int16Array(12000).fill(200).buffer));
-   await page.getByText(`DildoVander · Živá odpověď ${index}`,{exact:true}).waitFor();
-   await page.getByText('DildoVander mluví — odpověď se přehrává průběžně',{exact:true}).waitFor();
+   await page.getByText(`Wand Night Stand · Živá odpověď ${index}`,{exact:true}).waitFor();
+   await page.getByText('Wand Night Stand mluví — odpověď se přehrává průběžně',{exact:true}).waitFor();
    if(index===0){
      await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:path.join(captures,'desktop-live-microphone.png'),fullPage:true});
      await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));

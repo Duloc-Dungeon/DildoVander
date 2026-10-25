@@ -103,6 +103,19 @@ internal static class GptLiveEndpoints
             if (call.LabHardware is { } hardwareAdmission) { await hardwareAdmission.EnsureAuthorizedAsync(call.Cancellation.Token); }
             var memoryAccess = conversations.LiveMemoryAccess(call);
             call = await ConversationStartupMemory.PrepareAsync(call, conversations, memory, call.Cancellation.Token, context.RequestServices);
+            if (CaseVoiceAsideEligibility.IsEligible(request.Opening, call.LabHardware is null, call.Context.LivePrompt)
+                && call.Context.LivePrompt is { } prompt)
+            {
+                var aside = context.RequestServices.GetRequiredService<EveningMemoryStore>()
+                    .AssignCaseVoiceAside(call.Correlation.DeviceId, call.Correlation.ConversationId);
+                if (aside is { Selected: true, PromptInstruction: { } instruction })
+                {
+                    call = call with
+                    {
+                        Context = call.Context with { LivePrompt = prompt.WithOpeningAside(instruction) }
+                    };
+                }
+            }
             // Session.start may incur cost even if the socket fails subsequently.
             dispatched = true;
             await using var connection = await provider.ConnectAsync(call.Cancellation.Token);

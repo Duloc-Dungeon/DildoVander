@@ -255,6 +255,16 @@ def theme_rule(selector, name, values, indent=""):
     return output.replace("{\n", f"{{\n{indent}  color-scheme: {name};\n", 1)
 
 
+def consumer_native_background(root, fallback):
+    source = root / "mobilni-aplikace/src/application/consumer-brand.css"
+    if not source.is_file():
+        return fallback
+    match = re.search(r"--aw-void:\s*(#[0-9a-fA-F]{6})\s*;", source.read_text(encoding="utf-8"))
+    if not match:
+        raise ValueError("Consumer brand must declare its native launch background as an explicit RGB hex color.")
+    return match[1]
+
+
 def outputs(data, root=ROOT):
     validate_tokens(data)
     root = Path(root)
@@ -331,14 +341,15 @@ export declare function subscribe(listener: (theme: ThemeId) => void): () => voi
         design / "tokens.d.mts": declaration,
         root / "backend/Shared/DesignTokens.g.cs": csharp,
     }
+    native_background = consumer_native_background(root, data["themes"]["lord-voldemort"]["void"])
     storyboard = root / LAUNCH_STORYBOARD
     if storyboard.is_file():
-        generated[storyboard] = native_launch_background(read_output(storyboard), data["themes"]["lord-voldemort"]["void"])
+        generated[storyboard] = native_launch_background(read_output(storyboard), native_background)
     installer = root / INSTALLER_SCRIPT
     if installer.is_file():
         css = installer_design_css(design, generated)
         controls = (design / "theme-controls.js").read_text(encoding="utf-8")
-        generated[installer] = native_installer_design(read_output(installer), css, data["themes"]["lord-voldemort"]["void"], HEADER + runtime, controls)
+        generated[installer] = native_installer_design(read_output(installer), css, native_background, HEADER + runtime, controls)
     return generated
 
 

@@ -1,102 +1,43 @@
-// Original project artwork, AGPL-3.0-only. No downloaded image or font is used.
-// Run after Capacitor sync and before compiling the native asset catalog.
+// Materialize the original Wand Night Stand logo through the existing iOS build path.
+// Artwork, exact prompt, license and checksums: src/assets/brand/manifest.json.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deflateSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const palette = await readFile(resolve(mobileRoot, '../design-system/tokens/palette.css'), 'utf8');
-const output = resolve(mobileRoot, 'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png');
-const size = 1024;
-
-function color(token, visited = []) {
-  if (visited.includes(token)) throw new Error(`Circular Vapour Chrome color: ${[...visited, token].join(' -> ')}`);
-  // The first declaration is the offline-safe dark theme. Native icons remain
-  // fixed artwork, independent of the appearance selected inside the app.
-  const declaration = palette.match(new RegExp(`--aw-${token}:\\s*([^;]+);`, 'i'));
-  if (!declaration) throw new Error(`Missing Vapour Chrome color: ${token}`);
-  const value = declaration[1].trim();
-  const reference = value.match(/^var\(--aw-([a-z0-9-]+)\)$/i);
-  if (reference) return color(reference[1], [...visited, token]);
-  const hex = value.match(/^#([0-9a-f]{6})$/i);
-  if (!hex) throw new Error(`Unsupported Vapour Chrome color: ${token}`);
-  return [0, 2, 4].map(index => parseInt(hex[1].slice(index, index + 2), 16));
-}
-
-const background = color('void');
-const surface = color('surface');
-const accent = color('accent');
-
-// Signed distance to an axis-aligned rounded rectangle; subpixel coverage
-// smooths edges without requiring a graphics package on the signing runner.
-function rectangle(x, y, left, top, width, height, radius) {
-  const dx = Math.abs(x - left - width / 2) - width / 2 + radius;
-  const dy = Math.abs(y - top - height / 2) - height / 2 + radius;
-  return Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) + Math.min(Math.max(dx, dy), 0) - radius;
-}
-
-const shapes = [
-  { bounds: [390, 242, 244, 160, 48], fill: accent },
-  { bounds: [420, 272, 184, 160, 20], fill: background },
-  { bounds: [180, 354, 664, 432, 64], fill: accent },
-  { bounds: [208, 382, 608, 376, 38], fill: surface },
-  { bounds: [208, 460, 608, 20, 0], fill: accent },
-  { bounds: [292, 436, 44, 68, 10], fill: accent },
-  { bounds: [688, 436, 44, 68, 10], fill: accent },
-  ...Array.from({ length: 6 }, (_, index) => ({
-    bounds: [286 + index * 84, 552, 32, 138, 16], fill: accent,
-  })),
-];
-
-const rows = Buffer.alloc(size * (1 + size * 3));
-for (let y = 0; y < size; y++) {
-  const row = y * (1 + size * 3);
-  rows[row] = 0; // PNG filter: none, RGB with no alpha channel.
-  for (let x = 0; x < size; x++) {
-    const pixel = [...background];
-    for (const shape of shapes) {
-      const coverage = Math.max(0, Math.min(1, 0.5 - rectangle(x + 0.5, y + 0.5, ...shape.bounds)));
-      for (let channel = 0; channel < 3; channel++) {
-        pixel[channel] += coverage * (shape.fill[channel] - pixel[channel]);
-      }
-    }
-    for (let channel = 0; channel < 3; channel++) {
-      rows[row + 1 + x * 3 + channel] = Math.round(pixel[channel]);
-    }
+const sourceRoot = resolve(mobileRoot, 'src/assets/brand');
+const manifest = JSON.parse(await readFile(resolve(sourceRoot, 'manifest.json'), 'utf8'));
+async function checkedAsset(name) {
+  const entry = manifest.assets.find(asset => asset.file === name);
+  const bytes = await readFile(resolve(sourceRoot, name));
+  if (!entry || bytes.length !== entry.bytes || createHash('sha256').update(bytes).digest('hex') !== entry.sha256) {
+    throw new Error(`Consumer artwork checksum mismatch: ${name}`);
   }
+  return bytes;
 }
-
-function crc32(bytes) {
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
+const png = await checkedAsset('emblem-1024.png');
+if (!png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    || png.readUInt32BE(16) !== 1024 || png.readUInt32BE(20) !== 1024 || png[24] !== 8 || png[25] !== 2) {
+  throw new Error('Native logo must be an opaque 1024x1024 eight-bit RGB PNG.');
 }
+const catalog = resolve(mobileRoot, 'ios/App/App/Assets.xcassets');
+const launchSet = resolve(catalog, 'BrandLaunch.imageset');
+await mkdir(launchSet, { recursive: true });
+await mkdir(resolve(catalog, 'AppIcon.appiconset'), { recursive: true });
+await writeFile(resolve(catalog, 'AppIcon.appiconset/AppIcon-512@2x.png'), png);
+await writeFile(resolve(launchSet, 'BrandLaunch.png'), png);
+await writeFile(resolve(launchSet, 'Contents.json'), JSON.stringify({
+  images: [{ filename: 'BrandLaunch.png', idiom: 'universal' }], info: { author: 'xcode', version: 1 },
+}, null, 2) + '\n');
 
-function chunk(type, data) {
-  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(data.length);
-  const checksum = Buffer.alloc(4);
-  checksum.writeUInt32BE(crc32(body));
-  return Buffer.concat([length, body, checksum]);
-}
-
-const header = Buffer.alloc(13);
-header.writeUInt32BE(size, 0);
-header.writeUInt32BE(size, 4);
-header[8] = 8; // Eight bits per RGB channel.
-header[9] = 2; // Truecolor; App Store icons must be opaque.
-const png = Buffer.concat([
-  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-  chunk('IHDR', header),
-  chunk('IDAT', deflateSync(rows, { level: 9 })),
-  chunk('IEND', Buffer.alloc(0)),
-]);
-
-await mkdir(dirname(output), { recursive: true });
-await writeFile(output, png);
-console.log('Generated original opaque 1024x1024 iOS AppIcon from Vapour Chrome tokens.');
+// The installer is intentionally distributed as a standalone script. Embed its
+// small original logo instead of depending on a particular hosted app revision.
+const installer = resolve(mobileRoot, 'scripts/publish-ios-install.py');
+const source = await readFile(installer, 'utf8');
+const marker = /# BEGIN GENERATED CONSUMER BRAND MARK\r?\n[\s\S]*?# END GENERATED CONSUMER BRAND MARK/;
+if (!marker.test(source)) throw new Error('Standalone installer brand marker missing.');
+const touch = await checkedAsset('emblem-touch.png');
+const embedded = `# BEGIN GENERATED CONSUMER BRAND MARK\nINSTALLER_BRAND_MARK = ${JSON.stringify(`data:image/png;base64,${touch.toString('base64')}`)}\n# END GENERATED CONSUMER BRAND MARK`;
+await writeFile(installer, source.replace(marker, embedded));
+console.log('Generated opaque iOS icon, native launch logo and standalone installer mark from the original WNS emblem.');

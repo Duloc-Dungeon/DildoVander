@@ -130,6 +130,7 @@ if (args is ["--show"])
     return;
 }
 if (args is ["--duel"]) { await DuelTests.RunAsync(); return; }
+if (args is ["--case-voice-asides"]) { await CaseVoiceAsideTests.RunAsync(); return; }
 if (args is ["--show-speech"]) { await ShowSpeechProviderTests.RunAsync(); return; }
 if (args is ["--show-ambient-preview"]) { await ShowAmbientPreviewTests.RunAsync(); return; }
 if (args is ["--keepsake-fixture"]) { KeepsakeHttpFixture.Run(); return; }
@@ -217,6 +218,7 @@ await AccountIdentityTests.RunTestingSessionHttpAsync();
 await TestingSessionsTests.RunAsync();
 await PersonalityTests.RunAsync();
 await AutonomousLiveTests.RunAsync();
+await CaseVoiceAsideTests.RunAsync();
 await HybridMemoryTests.RunAsync();
 await MemoryCapacityTests.RunAsync();
 await TonightMemoryStatusTests.RunAsync();

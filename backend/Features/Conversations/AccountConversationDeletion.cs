@@ -18,6 +18,7 @@ internal sealed partial class EveningMemoryStore
                     WHERE device_id=$device AND (source_id=$conversation OR conversation_id=$conversation);
                 DELETE FROM memory_guests WHERE device_id=$device AND conversation_id=$conversation AND app_namespace=$namespace;
                 DELETE FROM memory_context_scopes WHERE device_id=$device AND conversation_id=$conversation AND app_namespace=$namespace;
+                DELETE FROM case_voice_aside_assignments WHERE device_id=$device AND conversation_id=$conversation;
                 """, ("$device", device), ("$conversation", conversation), ("$namespace", memoryOptions.Namespace));
             command.ExecuteNonQuery();
             transaction.Commit();

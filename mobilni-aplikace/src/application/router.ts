@@ -66,8 +66,8 @@ const localizedRouteTitles: Partial<Record<string, CustomerCopyKey>> = {
 
 function updateDocumentTitle(to: Pick<RouteLocationNormalizedLoaded, 'name' | 'meta'> = router.currentRoute.value): void {
   const key = to.name ? localizedRouteTitles[String(to.name)] : undefined;
-  const title = key ? customerCopy.text(key) : to.meta.title ?? 'DildoVander';
-  document.title = `${title} · DildoVander`;
+  const title = key ? customerCopy.text(key) : to.meta.title ?? 'Wand Night Stand';
+  document.title = `${title} · Wand Night Stand`;
 }
 
 router.beforeEach(to => {

@@ -24,7 +24,7 @@ internal static class GeneratedWandFlowTests
                 ["Keepsake:DataRoot"] = Path.Combine(directory, "keepsakes"),
                 ["Keepsake:Enabled"] = "true", ["Keepsake:GenerationEnabled"] = "true",
                 ["Keepsake:Origin"] = "https://wand.test", ["Keepsake:PublicDeviceId"] = "device",
-                ["Devices:0:DeviceId"] = "device"
+                ["Devices:0:DeviceId"] = "device", ["Show:DuelCommentaryEnabled"] = "false"
             }).Build();
             var clock = new Clock();
             using var journal = new OperationJournal(config, clock);

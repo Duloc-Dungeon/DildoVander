@@ -394,7 +394,7 @@ internal static partial class AccountIdentityTests
         var options = await recovery.PostAsJsonAsync("/app/v1/enrollment/options", new { token = recoveryToken, displayName = "" });
         Check(options.IsSuccessStatusCode, "recovery creation options");
         var recoveryIdentity = (await JsonAsync(options)).GetProperty("user");
-        Check(recoveryIdentity.GetProperty("displayName").GetString() == "DildoVander Owner · Owner"
+        Check(recoveryIdentity.GetProperty("displayName").GetString() == "Wand Night Stand Owner · Owner"
             && Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(recoveryIdentity.GetProperty("id").GetString()!)) == ownerId,
             "recovery uses the existing server-bound account name and stable user handle without requesting a new identity");
         Check((await recovery.PostAsJsonAsync("/app/v1/enrollment/complete", new { credential = new { } })).StatusCode == HttpStatusCode.BadRequest, "unverified recovery cannot remove original keys");

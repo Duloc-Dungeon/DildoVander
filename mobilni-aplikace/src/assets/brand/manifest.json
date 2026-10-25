@@ -1,0 +1,93 @@
+{
+  "brand": "Wand Night Stand",
+  "date": "2026-10-25",
+  "assets": [
+    {
+      "file": "invitation-curtain.webp",
+      "origin": "Original built-in ImageGen output; resized and encoded as WebP using Pillow",
+      "prompt": "Create an original premium editorial illustration for a fictional invitation-only adult magical evening brand named Wand Night Stand. Portrait orientation 3:4. No text, no lettering, no people, no faces, no suitcase, no recognizable Harry Potter or other franchise motifs, no sexual imagery. A mysterious closed oxblood velvet curtain with a fine warm-brass crescent clasp, one slightly displaced fold suggesting anticipation, a single botanical night flower in the foreground on an ivory marble sill. Hand-painted gouache and fine lithographic shading, art-directed still life, refined theatrical intimacy, restrained surreal humor. Rich near-black plum background #211a22, oxblood #672e43, warm cream #f4ecd9 and antique gold #cfaa6c. Strong quiet negative space around the subject, beautiful tactile pigment, precise edges, high-end independent cultural magazine cover. Main subject contained in middle 75% with generous edges for responsive crop. This is a production onboarding/countdown placeholder, not a UI mockup. Deliver one image.",
+      "use": "Prelaunch placeholder; no portrait or future-feature disclosure",
+      "dimensions": [
+        960,
+        1280
+      ],
+      "sha256": "68cac1bddba55072ec5f90250180c2d0dfbda974295d583d2d60954c2e5d1234",
+      "bytes": 71712,
+      "license": "Distributed with this project under AGPL-3.0-only"
+    },
+    {
+      "file": "invitation-curtain-small.webp",
+      "origin": "Responsive derivative of invitation-curtain.webp from the same original output",
+      "prompt": "Create an original premium editorial illustration for a fictional invitation-only adult magical evening brand named Wand Night Stand. Portrait orientation 3:4. No text, no lettering, no people, no faces, no suitcase, no recognizable Harry Potter or other franchise motifs, no sexual imagery. A mysterious closed oxblood velvet curtain with a fine warm-brass crescent clasp, one slightly displaced fold suggesting anticipation, a single botanical night flower in the foreground on an ivory marble sill. Hand-painted gouache and fine lithographic shading, art-directed still life, refined theatrical intimacy, restrained surreal humor. Rich near-black plum background #211a22, oxblood #672e43, warm cream #f4ecd9 and antique gold #cfaa6c. Strong quiet negative space around the subject, beautiful tactile pigment, precise edges, high-end independent cultural magazine cover. Main subject contained in middle 75% with generous edges for responsive crop. This is a production onboarding/countdown placeholder, not a UI mockup. Deliver one image.",
+      "use": "Mobile prelaunch and invitation crop",
+      "dimensions": [
+        480,
+        640
+      ],
+      "sha256": "b2ddea15f597c5cacd218678c9834b574b164f31516bf909319903cfafbe8357",
+      "bytes": 19042,
+      "license": "Distributed with this project under AGPL-3.0-only"
+    },
+    {
+      "file": "keepsake-still-life.webp",
+      "origin": "Original built-in ImageGen output; resized and encoded as WebP using Pillow",
+      "prompt": "One original editorial still life illustration, landscape 3:2, for Wand Night Stand magical evening keepsake archive. No text, no people, no faces, no franchise iconography, no Harry Potter props. A slender hand-carved dark wood theatrical wand with a simple brass ring and a dried night-blooming flower rests diagonally on warm ivory folded paper with an unmarked oxblood wax seal, lying on deep near-black plum velvet. Painterly refined gouache and lithograph detail, cultured witty independent arts publication, beautiful tactile paper edge. Palette warm paper #f4ecd9, oxblood #672e43, muted antique brass #cfaa6c, near-black plum #211a22. Quiet composition, natural asymmetry, generous empty space. This is production keepsake empty-state art. Not a UI screenshot.",
+      "use": "Postlaunch home and account archive empty state only",
+      "dimensions": [
+        960,
+        640
+      ],
+      "sha256": "1db184cb08c258f9bb9e844c5fbca2d7a7e3a4c463b521de3fb344d47fd4a440",
+      "bytes": 58904,
+      "license": "Distributed with this project under AGPL-3.0-only"
+    },
+    {
+      "file": "cormorant-garamond-500.ttf",
+      "origin": "Google Fonts Cormorant Garamond, Christian Thalmann",
+      "source": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3umX5slCNuHLi8bLeY9MK7whWMhyjypVO7abI26QOD_s06GnM.ttf",
+      "license": "SIL OFL 1.1; cormorant-OFL.txt",
+      "use": "Self-hosted display type, font-display swap",
+      "sha256": "1724047c8988ca5155bff667bc48fa52e97d57aabc6b42eebbf986f21a4be20b",
+      "bytes": 290496
+    },
+    {
+      "file": "emblem-1024.png",
+      "origin": "Original built-in ImageGen selected full-name logo; resized and encoded using Pillow",
+      "prompt": "Make a final production app icon from ONLY option 5 at bottom right of the supplied logo board: the clearly readable three-line full-name logo WAND / NIGHT / STAND with a golden wand underline. Output a single square 1024x1024 app-icon master, full bleed opaque deep plum background #211a22, NO pre-rounded corners, NO outside frame, NO board, NO labels or numbering. Faithfully keep the selected strong elegant editorial high-contrast serif typography. Exact text and spelling, each word on its own centered line: WAND (brass gold), NIGHT (warm ivory), STAND (brass gold). All letters unmistakably readable and correctly spelled; no monogram, no tangled ligature. Generous balanced safe margin around content ~110 pixels. Letterforms robust enough for an app icon. Beneath STAND a horizontal simple brass magical wand underline with subtle bulb handle at left and modest four-point star at right. Preserve the quietly witty premium late-night magical salon personality of this selected concept. Restrained very subtle warm gold tonal variation, primarily crisp flat graphic silhouette. No extra sparkles around letters, no tiny decoration, no franchise imagery. Beautifully designed coherent finished logo. Fill the entire square edge to edge with plum, let iOS apply its own masking.",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "use": "Original full-name logo source for native app icon and launch mark",
+      "license": "Distributed with this project under AGPL-3.0-only",
+      "sha256": "a36238b17f6194f8bed63b65739a00002094e813cdd2cf245ccea338277da0c0",
+      "bytes": 798370
+    },
+    {
+      "file": "emblem-small.webp",
+      "origin": "Original built-in ImageGen selected full-name logo; resized and encoded using Pillow",
+      "prompt": "Make a final production app icon from ONLY option 5 at bottom right of the supplied logo board: the clearly readable three-line full-name logo WAND / NIGHT / STAND with a golden wand underline. Output a single square 1024x1024 app-icon master, full bleed opaque deep plum background #211a22, NO pre-rounded corners, NO outside frame, NO board, NO labels or numbering. Faithfully keep the selected strong elegant editorial high-contrast serif typography. Exact text and spelling, each word on its own centered line: WAND (brass gold), NIGHT (warm ivory), STAND (brass gold). All letters unmistakably readable and correctly spelled; no monogram, no tangled ligature. Generous balanced safe margin around content ~110 pixels. Letterforms robust enough for an app icon. Beneath STAND a horizontal simple brass magical wand underline with subtle bulb handle at left and modest four-point star at right. Preserve the quietly witty premium late-night magical salon personality of this selected concept. Restrained very subtle warm gold tonal variation, primarily crisp flat graphic silhouette. No extra sparkles around letters, no tiny decoration, no franchise imagery. Beautifully designed coherent finished logo. Fill the entire square edge to edge with plum, let iOS apply its own masking.",
+      "dimensions": [
+        256,
+        256
+      ],
+      "use": "Shared shell and invitation wordmark companion",
+      "license": "Distributed with this project under AGPL-3.0-only",
+      "sha256": "0b954d6a24a19ef56aff567189d6775921cfc50492576061abce0b744b4bdf58",
+      "bytes": 9096
+    },
+    {
+      "file": "emblem-touch.png",
+      "origin": "Original built-in ImageGen selected full-name logo; resized and encoded using Pillow",
+      "prompt": "Make a final production app icon from ONLY option 5 at bottom right of the supplied logo board: the clearly readable three-line full-name logo WAND / NIGHT / STAND with a golden wand underline. Output a single square 1024x1024 app-icon master, full bleed opaque deep plum background #211a22, NO pre-rounded corners, NO outside frame, NO board, NO labels or numbering. Faithfully keep the selected strong elegant editorial high-contrast serif typography. Exact text and spelling, each word on its own centered line: WAND (brass gold), NIGHT (warm ivory), STAND (brass gold). All letters unmistakably readable and correctly spelled; no monogram, no tangled ligature. Generous balanced safe margin around content ~110 pixels. Letterforms robust enough for an app icon. Beneath STAND a horizontal simple brass magical wand underline with subtle bulb handle at left and modest four-point star at right. Preserve the quietly witty premium late-night magical salon personality of this selected concept. Restrained very subtle warm gold tonal variation, primarily crisp flat graphic silhouette. No extra sparkles around letters, no tiny decoration, no franchise imagery. Beautifully designed coherent finished logo. Fill the entire square edge to edge with plum, let iOS apply its own masking.",
+      "dimensions": [
+        180,
+        180
+      ],
+      "use": "Web favicon, home-screen icon and embedded standalone installer logo",
+      "license": "Distributed with this project under AGPL-3.0-only",
+      "sha256": "9cf8b2ff25cad0ae917556dc914774b6228a09cd229cacd345036994b95210da",
+      "bytes": 36056
+    }
+  ]
+}

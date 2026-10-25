@@ -1,4 +1,5 @@
 import type { ShowState } from './DirectorClient';
+import type { DuelPartyTask } from '../archive/showContracts';
 export interface Identity { identityId: string; displayName: string; wandId: string; wandName?: string; spells?: { action: string; name: string; description: string }[] }
 export interface Prophecy { outcomeId: string; omen: string; unlockAt: string; state: string }
 export interface Duel {
@@ -9,6 +10,7 @@ export interface Duel {
   requiresParticipantConsent?: boolean; leftJoined?: boolean; rightJoined?: boolean;
   left: { displayName: string; wandName?: string }; right: { displayName: string; wandName?: string };
   result?: { winner: string; ending: string } | null;
+  partyTask?: DuelPartyTask | null;
 }
 
 export function duelNarrationLabel(duel: Pick<Duel, 'narrationMode' | 'narrationStatus'>): string {

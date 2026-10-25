@@ -7,7 +7,7 @@ internal static class PasskeyLabels
     internal static string Account(string displayName, IEnumerable<string> roles)
     {
         var role = AccountRoles.All.FirstOrDefault(roles.Contains) ?? AccountRoles.Viewer;
-        return $"DildoVander {role} · {Bound(displayName.Trim(), 40)}";
+        return $"Wand Night Stand {role} · {Bound(displayName.Trim(), 40)}";
     }
 
     internal static void NameNew(UserPasskeyInfo passkey, string accountLabel)

@@ -125,6 +125,7 @@ describe('application boundaries', () => {
     await router.push('/'); await router.isReady();
     const wrapper = mount(App, { global: { plugins: [router, createPinia()] } });
     wrappers.push(wrapper);
+    await flushPromises();
     expect(wrapper.find('.application-install-link').exists()).toBe(!native);
     expect(wrapper.get('main').text()).toBe('Current operation');
   });
@@ -142,7 +143,7 @@ describe('application boundaries', () => {
     await input.setValue('Poznámka zůstává');
     (input.element as HTMLInputElement).focus();
     const selector = wrapper.get('select[aria-label="Vzhled aplikace"]');
-    expect(selector.findAll('option').map(option => option.text())).toEqual(['Stínový čaroděj', 'Mistr hůlek']);
+    expect(selector.findAll('option').map(option => option.text())).toEqual(['Noční salon', 'Sametový večer']);
     for (const theme of ['olivander', 'lord-voldemort']) {
       await selector.setValue(theme);
       expect(document.documentElement.dataset.theme).toBe(theme);

@@ -1,5 +1,11 @@
 # Vapour Chrome
 
+Spotřebitelská webová/iOS aplikace používá značku **Wand Night Stand**.
+Její scoped adaptér `mobilni-aplikace/src/application/consumer-brand.css`
+přepisuje stejné sémantické tokeny pouze v aplikaci; podrobnosti jsou v
+[DESIGN.md](../DESIGN.md). Zdejší generované tokeny, samostatný simulátor
+a offline technické viewery zachovávají Vapour Chrome a své integrační názvy.
+
 Sdílený vizuální jazyk DildoVanderu. Přesný, klidný a současný prostor pro
 ovládání kufru, simulaci i technickou práci. Hierarchii vytváří typografie,
 volný prostor a zřetelné skupiny; Digital Periwinkle označuje akci a výběr.

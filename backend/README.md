@@ -33,7 +33,10 @@ otevření stejných SQLite; ruční archivní retence a nejisté provider pokus
 Z adresáře `` použij pinned SDK přes `global.json` a
 `dotnet run --project backend-tests/BackendTests.csproj -- --show`.
 Pro cross-origin webového operátora nastav přesný `Show:AllowedOrigins` seznam.
-`Show:DuelCommentaryEnabled` má default false; běžné testy nepoužívají poskytovatele.
+`Show:DuelCommentaryEnabled` má default true. Nastavením na `false` vypneš textové
+Responses vyprávění a ponecháš deterministické komentáře; duely nikdy neotevírají
+GPT Live ani hlasové přehrávání. Produkční textový poskytovatel potřebuje běžný
+`OPENAI_API_KEY`; offline fixture konfigurace musí volbu výslovně vypnout.
 
 Produkční rozhovor používá jedinou osobnost **DV01** a **GPT Live `gpt-live-1`**.
 GPT Realtime 2.1 `gpt-realtime-2.1` je neaktivní zdrojová záloha. Live tvoří

@@ -19,7 +19,7 @@ vi.mock('../identity/session', async () => {
 });
 const id = '11111111-1111-4111-8111-111111111111'; const other = '22222222-2222-4222-8222-222222222222';
 const identity = { editionId: id, visibility: 'public_fiction', wizardAlias: '<script>mág</script>', houseOrGuild: 'Cech', dubiousSpecialization: 'Lest', signatureAbility: 'Schopnost', weakness: 'Slabina', ministryAssessment: 'Fikce', wandBond: 'Pouto', motto: 'Motto', microStory: 'Příběh', omen: 'Indicie' };
-const duel = (revision = 1) => ({ id, revision, state: 'Running', mode: 'interactive', round: 1, deadline: new Date(Date.now() + 15000).toISOString(), narrationMode: 'web_only', narrationStatus: 'web_only_no_spoken_confirmation',
+const duel = (revision = 1) => ({ id, revision, state: 'Running', mode: 'interactive', round: 1, deadline: new Date(Date.now() + 15000).toISOString(), narrationMode: 'web_only', narrationStatus: 'text_only_duel',
   left: { displayName: 'Levý mág', wandId: 'wand1', strength: 2, cunning: 3, defense: 4 }, right: { displayName: 'Pravý mág', wandId: 'wand1', strength: 3, cunning: 2, defense: 1 }, leftChoiceLocked: false, rightChoiceLocked: false, rounds: [] });
 const chronicle = (revision = 1) => ({ schemaVersion: 1, eveningId: id, revision, provisional: true, createdAt: '2026-10-19T19:00:00Z', completedVisits: 0, confirmedPresentations: 0, completedDuels: 0, interruptedVisits: 1, unresolvedVisits: 2,
   wands: [{ slot: 1, officialName: 'Hůlka A', confirmedPresentations: 0 }, { slot: 2, officialName: 'Hůlka B', confirmedPresentations: 0 }], mostPopularSlots: [], narrative: 'Večer teprve začíná.' });
@@ -120,16 +120,16 @@ describe('generated wand privacy and presentation', () => {
     expect(createBattleSummary).toHaveBeenCalled(); withdrawn = true; revision++;
     await wrapper.findAll('button').find(button => button.text() === 'Obnovit souboj')!.trigger('click'); await flushPromises();
     finish(new Blob(['png'], { type: 'image/png' })); await flushPromises();
-    expect(wrapper.find('a[download="dildovander-souboj.png"]').exists()).toBe(false);
+    expect(wrapper.find('a[download="wand-night-stand-souboj.png"]').exists()).toBe(false);
     withdrawn = false; revision++;
     await wrapper.findAll('button').find(button => button.text() === 'Obnovit souboj')!.trigger('click'); await flushPromises();
     // A newer revision is required to restore an explicitly approved projection.
     vi.mocked(createBattleSummary).mockResolvedValueOnce(new Blob(['png'], { type: 'image/png' }));
     await wrapper.findAll('button').find(button => button.text() === 'Uložit kartu souboje PNG')!.trigger('click'); await flushPromises();
-    expect(wrapper.find('a[download="dildovander-souboj.png"]').exists()).toBe(true);
+    expect(wrapper.find('a[download="wand-night-stand-souboj.png"]').exists()).toBe(true);
     withdrawn = true; revision++;
     await wrapper.findAll('button').find(button => button.text() === 'Obnovit souboj')!.trigger('click'); await flushPromises();
-    expect(wrapper.find('a[download="dildovander-souboj.png"]').exists()).toBe(false);
+    expect(wrapper.find('a[download="wand-night-stand-souboj.png"]').exists()).toBe(false);
   });
   it('shows countdown and named reveals, with a spectator unable to choose or join', async () => {
     const revealed = { ...duel(), left: { ...duel().left, wandName: generatedWand.name, spells }, right: { ...duel().right, wandName: 'Jiskra severu', spells },
@@ -173,7 +173,7 @@ describe('shared guest Show Pack screens', () => {
     account.value = { id: other, displayName: 'Správce', roles: ['Administrator'] };
     const fetchMock = vi.fn(async () => Response.json(duel())); vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await render(DuelView, `/archive/duel?duel=${id}`);
-    expect(wrapper.text()).toContain('Levý mág'); expect(wrapper.text()).toContain('Pouze webový průběh');
+    expect(wrapper.text()).toContain('Levý mág'); expect(wrapper.text()).toContain('Příběh souboje čteš tady');
     expect(wrapper.findAll('button').some(button => button.attributes('aria-label') === 'Úder')).toBe(false);
     expect(fetchMock).toHaveBeenCalledWith(`/guest/v1/duels/${id}`, expect.objectContaining({ credentials: 'omit' }));
   });
@@ -312,4 +312,16 @@ describe('shared guest Show Pack screens', () => {
     expect(wrapper.text()).not.toContain('Private owner wording'); expect(wrapper.findAll('button').some(button => button.text().startsWith('Vytvořit kouzelnickou'))).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+});
+
+const partyTask = { id: 'royal-announcement', title: 'Královské oznámení', text: 'Porazený slavnostně ohlásí vítěze.', alternative: 'Pronese jediný vznešený titul.', alternativeRoast: 'Výbor pro sraby uznal papírovou statečnost.', involvesWinner: true };
+it('projects only bounded completed non-draw party tasks and drops unknown private fields', () => {
+  const complete = { ...duel(), state: 'Completed', result: { leftPoints: 3, rightPoints: 1, ending: 'Hotovo.' }, partyTask: { ...partyTask, accountId: 'private' } };
+  expect(projectDuel(complete, id).partyTask).toEqual(partyTask);
+  expect(projectDuel({ ...complete, state: 'Running' }, id).partyTask).toBeNull();
+  expect(projectDuel({ ...complete, result: { leftPoints: 1, rightPoints: 1 } }, id).partyTask).toBeNull();
+  expect(projectDuel({ ...complete, partyTask: undefined }, id).partyTask).toBeNull();
+  for (const bad of [{ ...partyTask, id: '../private' }, { ...partyTask, text: 'x'.repeat(1201) }, { ...partyTask, alternative: '' }, { ...partyTask, alternativeRoast: 'hidden\u0000text' }, { ...partyTask, involvesWinner: 'yes' }]) {
+    expect(projectDuel({ ...complete, partyTask: bad }, id).partyTask).toBeNull();
+  }
 });

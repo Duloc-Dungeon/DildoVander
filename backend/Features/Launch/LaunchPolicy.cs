@@ -10,10 +10,13 @@ internal sealed record LaunchConfiguration(long Revision, bool BetaEnabled, long
     string TimeZone, string Teaser, string InitialLoadingMessage, bool PersonalizedLoadingEnabled,
     string PersonalizedLoadingPrompt)
 {
+    internal const string DefaultTeaser = "Noční stolek si něco šeptá. Olivander má kocovinu; osud dnes vyvolává čísla až po snídani.";
+    internal const string DefaultInitialLoadingMessage = "Někdo už klepe na dveře osudu. Olivander má kocovinu, a tak se i proroctví postavilo do fronty.";
+    internal const string DefaultPersonalizedLoadingPrompt =
+        "Napiš jednu krátkou českou větu jako napínavou předzvěst pro právě uloženou fikční postavu. Využij její jméno a nejvýše jeden neškodný veřejný fikční rys z bezpečného shrnutí, aniž prozradíš, co se chystá. Přidej suchý britský humor a drobnou narážku na Olivanderovu kocovinu.";
+
     internal static LaunchConfiguration Default => new(0, false, null, false, false, null, false,
-        "Europe/Prague", "A little something is getting ready for you.",
-        "A peculiar little surprise is taking shape…", false,
-        "Write one brief, playful, mysterious loading message inspired by the supplied fictional character context. Do not reveal product features or repeat research facts.");
+        "Europe/Prague", DefaultTeaser, DefaultInitialLoadingMessage, true, DefaultPersonalizedLoadingPrompt);
 }
 
 internal sealed record LaunchConfigurationUpdate(long ExpectedRevision, bool BetaEnabled, long? BetaLaunchAt,
@@ -62,6 +65,34 @@ internal sealed class LaunchPolicyStore
                  'Write one brief, playful, mysterious loading message inspired by the supplied fictional character context. Do not reveal product features or repeat research facts.');
             """;
         command.ExecuteNonQuery();
+        using var defaults = connection.CreateCommand();
+        defaults.CommandText = """
+            UPDATE launch_configuration SET teaser=$teaser,initial_loading_message=$message,
+                personalized_loading_enabled=1,personalized_loading_prompt=$prompt
+            WHERE id=1 AND revision=0
+                AND teaser='A little something is getting ready for you.'
+                AND initial_loading_message='A peculiar little surprise is taking shape…'
+                AND personalized_loading_enabled=0
+                AND personalized_loading_prompt='Write one brief, playful, mysterious loading message inspired by the supplied fictional character context. Do not reveal product features or repeat research facts.';
+            """;
+        defaults.Parameters.AddWithValue("$teaser", LaunchConfiguration.DefaultTeaser);
+        defaults.Parameters.AddWithValue("$message", LaunchConfiguration.DefaultInitialLoadingMessage);
+        defaults.Parameters.AddWithValue("$prompt", LaunchConfiguration.DefaultPersonalizedLoadingPrompt);
+        defaults.ExecuteNonQuery();
+        using var previousDefaults = connection.CreateCommand();
+        previousDefaults.CommandText = """
+            UPDATE launch_configuration SET teaser=$teaser,initial_loading_message=$message,
+                personalized_loading_prompt=$prompt
+            WHERE id=1 AND revision=0
+                AND teaser='Noční stolek pro velká očekávání. Olivander má kocovinu; na noční zázrak si chvíli počkáš.'
+                AND initial_loading_message='Olivander má kocovinu; dnes stíháme připravit jen noční stolek. Na velké zázraky si ještě chvíli počkej.'
+                AND personalized_loading_enabled=1
+                AND personalized_loading_prompt='Napiš jednu krátkou českou větu, která postavu pozná přes jediný neškodný veřejný fikční rys z bezpečného shrnutí. Přidej suchý britský humor, slovní hříčku o nočním stolku a připomeň, že Olivander má kocovinu, takže se čeká. Neuváděj zdroje, citace, rešerše ani soukromé údaje.';
+            """;
+        previousDefaults.Parameters.AddWithValue("$teaser", LaunchConfiguration.DefaultTeaser);
+        previousDefaults.Parameters.AddWithValue("$message", LaunchConfiguration.DefaultInitialLoadingMessage);
+        previousDefaults.Parameters.AddWithValue("$prompt", LaunchConfiguration.DefaultPersonalizedLoadingPrompt);
+        previousDefaults.ExecuteNonQuery();
     }
 
     internal LaunchConfiguration Read()
@@ -171,9 +202,9 @@ internal sealed class LaunchPolicyStore
             || update.BetaLaunchAt is < 0 or > 253402300799999
             || update.ProductionLaunchAt is < 0 or > 253402300799999
             || update.Teaser is null || update.Teaser.Trim().Length > 250
-            || !string.IsNullOrWhiteSpace(update.Teaser) && !PortraitContentPolicy.ValidMessage(update.Teaser)
+            || !string.IsNullOrWhiteSpace(update.Teaser) && !PortraitContentPolicy.ValidLoadingMessage(update.Teaser)
             || update.InitialLoadingMessage is null || update.InitialLoadingMessage.Trim().Length is 0 or > 160
-            || !PortraitContentPolicy.ValidMessage(update.InitialLoadingMessage)
+            || !PortraitContentPolicy.ValidLoadingMessage(update.InitialLoadingMessage)
             || update.PersonalizedLoadingPrompt is null || update.PersonalizedLoadingPrompt.Trim().Length is 0 or > 4000)
         {
             throw new LaunchConfigurationException("invalid_launch_configuration", 400);
@@ -207,9 +238,13 @@ internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider 
     {
         var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
         var config = store.Read();
+        var teaser = string.IsNullOrWhiteSpace(config.Teaser) || PortraitContentPolicy.ValidLoadingMessage(config.Teaser)
+            ? config.Teaser : LaunchConfiguration.DefaultTeaser;
+        var initialLoadingMessage = PortraitContentPolicy.ValidLoadingMessage(config.InitialLoadingMessage)
+            ? config.InitialLoadingMessage : LaunchConfiguration.DefaultInitialLoadingMessage;
         if (AccountRoles.IsStaff(principal) || principal.IsInRole(AccountRoles.Tester))
         {
-            return new(true, "privileged", null, now, config.Teaser, config.InitialLoadingMessage, config.PersonalizedLoadingEnabled);
+            return new(true, "privileged", null, now, teaser, initialLoadingMessage, config.PersonalizedLoadingEnabled);
         }
 
         var beta = principal.IsInRole(AccountRoles.Beta);
@@ -218,6 +253,6 @@ internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider 
         var manuallyUnlocked = beta ? config.BetaUnlocked : config.ProductionUnlocked;
         var allowed = !enabled || manuallyUnlocked || launchAt is not null && now >= launchAt;
         return new(allowed, beta ? "beta" : "production", enabled ? launchAt : null, now,
-            config.Teaser, config.InitialLoadingMessage, config.PersonalizedLoadingEnabled);
+            teaser, initialLoadingMessage, config.PersonalizedLoadingEnabled);
     }
 }

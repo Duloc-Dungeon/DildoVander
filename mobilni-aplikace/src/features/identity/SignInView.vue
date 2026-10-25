@@ -59,7 +59,7 @@ async function submit() {
 <template>
   <section class="page-stack identity-page" aria-labelledby="sign-in-title">
     <InvitationSeal v-if="launchAllowed !== true" />
-    <header><p class="eyebrow">DildoVander</p><h1 id="sign-in-title">{{ enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : customerCopy.text('signin.invite-title') : customerCopy.text('signin.title') }}</h1><p>{{ launchAllowed === true ? customerCopy.text('signin.account-purpose') : 'Přihlášení a osobní pozvánky do aplikace.' }}</p></header>
+    <header><h1 id="sign-in-title">{{ enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : customerCopy.text('signin.invite-title') : customerCopy.text('signin.title') }}</h1><p class="signin-welcome">{{ customerCopy.text('signin.brand-welcome') }}</p><p>{{ launchAllowed === true ? customerCopy.text('signin.account-purpose') : customerCopy.text('signin.invite-intro') }}</p></header>
     <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
     <p v-if="loading" role="status">{{ customerCopy.text('signin.loading') }}</p>
     <p v-if="signingOut" role="status">{{ customerCopy.text('signin.signing-out') }}</p>
@@ -69,7 +69,7 @@ async function submit() {
       <div v-if="customerEnrollment && launchAllowed !== true" class="identity-hint">Vytváření účtu zatím není otevřené bez pozvánky. <AwButton @click="customerEnrollment = false; error = ''">Zpět k přihlášení</AwButton></div>
       <template v-else-if="customerEnrollment">
         <AwField id="customer-account-name" :label="customerCopy.text('signin.customer-name')"><input id="customer-account-name" v-model="customerDisplayName" class="aw-input" maxlength="80" autocomplete="nickname" required :disabled="busy" /></AwField>
-        <p class="identity-hint">{{ customerCopy.text('signin.customer-purpose') }}</p>
+        <p class="identity-hint">{{ customerCopy.text(launchAllowed === true ? 'signin.customer-purpose' : 'signin.customer-invite-purpose') }}</p>
       </template>
       <template v-else-if="enrollment">
         <AwField id="enrollment-kind" :label="customerCopy.text('signin.code-kind')"><select id="enrollment-kind" v-model="enrollmentKind" class="aw-select" :disabled="busy"><option value="invite">{{ customerCopy.text('signin.invite-option') }}</option><option value="recovery">{{ customerCopy.text('signin.recovery-option') }}</option></select></AwField>

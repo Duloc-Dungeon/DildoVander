@@ -25,7 +25,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
-const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/W6kAAAAASUVORK5CYII=', 'base64');
+const image = await readFile(new URL('./fixtures/characters/matylda.webp', import.meta.url));
 let account = { id: 'launch-guest', displayName: 'Host', roles: ['Customer'] };
 let character = null;
 let artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
@@ -33,13 +33,16 @@ let config = {
   revision: 4, betaEnabled: true, betaLaunchAt: null, betaUnlocked: false,
   productionEnabled: true, productionLaunchAt: null, productionUnlocked: false,
   timeZone: 'Europe/Prague', teaser: 'Ještě chvíli. Hvězdy hledají správné místo.',
-  initialLoadingMessage: 'Někdo tu právě rovná hvězdy podle abecedy.',
+  initialLoadingMessage: 'Někdo už klepe na dveře osudu. Olivander má kocovinu, a tak se i proroctví postavilo do fronty.',
   personalizedLoadingEnabled: true, personalizedLoadingPrompt: 'Věta hravě a tajemně.',
 };
 let jobs = [{ profileId: 'portrait-fixture', revision: 3, status: 'failed', attempt: 2, errorCode: 'provider_unavailable', updatedAt: Date.now() }];
 let audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: 4, changeSummary: 'schedule' }];
 const writes = [];
 const errors = [];
+const loadedScripts = [];
+let releasePolicy;
+const pendingPolicy = new Promise(resolve => { releasePolicy = resolve; });
 let browser;
 try {
   browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}), ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
@@ -47,11 +50,12 @@ try {
   await context.addInitScript(() => { window.confirm = () => true; });
   await context.route('**/*', async route => {
     const request = route.request(); const url = new URL(request.url());
+    if (request.resourceType() === 'script') loadedScripts.push(url.pathname);
     if (url.origin !== origin) { await route.abort(); return; }
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session' && request.method() === 'GET') return json({ enabled: true, account, csrfToken: 'fake-csrf', origin });
     if (url.pathname === '/app/v1/session' && request.method() === 'DELETE') { account = null; return route.fulfill({ status: 204, body: '' }); }
-    if (url.pathname === '/app/v1/launch') return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled });
+    if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'GET') return json({ character, artwork: character ? artwork : null });
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'PUT') {
       const body = request.postDataJSON(); writes.push(body);
@@ -59,7 +63,10 @@ try {
       artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
       return json({ character, artwork });
     }
-    if (url.pathname === '/app/v1/prelaunch/character/portrait') return route.fulfill({ status: 200, contentType: 'image/png', body: image });
+    if (url.pathname === '/app/v1/prelaunch/character/portrait') {
+      if (!account || url.searchParams.get('profileId') !== character?.profileId || Number(url.searchParams.get('revision')) !== character?.revision) return json({}, 404);
+      return route.fulfill({ status: 200, contentType: 'image/webp', body: image });
+    }
     if (url.pathname === '/app/v1/prelaunch/character/retry' && request.method() === 'POST') { artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null }; return json({ character, artwork }); }
     if (url.pathname === '/app/v1/admin/users') return json({ users: [], grants: [] });
     if (url.pathname === '/app/v1/admin/operations/status') return json({ modes: null, readiness: { accounts: true, keepsakes: false, keepsakeGeneration: false, passkeyRelyingParty: 'localhost', nativeAssociationConfigured: false }, archive: [] });
@@ -82,8 +89,19 @@ try {
   page.setDefaultTimeout(12000);
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-  await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
+  const firstPolicyRequest = page.waitForRequest(request => new URL(request.url()).pathname === '/app/v1/launch');
+  await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+  await firstPolicyRequest;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('.application-sidebar, .application-header, .application-footer').count(), 0,
+    'unknown guest policy must not flash postlaunch navigation before its response');
+  assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0,
+    'ordinary invitation without an active operation has no hardware control');
+  releasePolicy();
+  await page.waitForLoadState('networkidle');
   await page.getByRole('heading', { name: /Něco se chystá/ }).waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Wand Night Stand, úvod' }).count(), 1);
+  assert.equal(await page.getByText(/DildoVander|tester|operátor|administrace/i).count(), 0);
   assert.equal(await page.getByLabel('Jméno postavy').count(), 1);
   assert.equal(await page.locator('.application-sidebar').count(), 0);
   assert.equal(await page.getByText('Rozhovor s kufrem', { exact: false }).count(), 0);
@@ -100,24 +118,68 @@ try {
   await page.getByRole('heading', { name: /Něco se chystá/ }).waitFor();
   await page.getByLabel('Jméno postavy').fill('Matylda');
   await page.getByLabel('Její svět').fill('Město za zrcadlem');
+  assert.doesNotMatch(await page.locator('.launch-consent').innerText(), /OpenAI/i);
+  await page.locator('.launch-data-details summary').click();
+  await page.getByText(/fiktivního jména a světa u OpenAI/).waitFor();
+  assert.equal(await page.getByRole('checkbox').isChecked(), false, 'reading privacy must not opt in');
+  assert.equal(await page.getByLabel('Jméno postavy').inputValue(), 'Matylda', 'privacy keeps the unsaved draft');
+  await page.locator('.launch-data-details summary').click();
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-entry.png'), fullPage: true });
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Připravit můj portrét' }).click();
+  await page.getByRole('button', { name: 'Zapsat se do osudu' }).click();
   await page.getByRole('heading', { name: /Něco se chystá, Matylda/ }).waitFor();
-  assert.match(await page.locator('.launch-copy').innerText(), /Hvězdy hledají/);
+  assert.match(await page.locator('.launch-status').innerText(), /Olivander má kocovinu/);
   assert.match(await page.locator('.countdown').innerText(), /dní/);
-  await page.getByText(/Někdo tu právě rovná/).waitFor();
+  await page.getByText(/proroctví postavilo do fronty/).waitFor();
+  assert.equal(await page.locator('[aria-current="step"]').count(), 0);
+  assert.doesNotMatch(await page.locator('.launch-copy').innerText(), /Poznáváme postavu|Mícháme barvy|portrét|rešerš|malujeme/i);
   assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
+  assert.equal(writes.at(-1).openAiConsent, true);
   assert.equal(await page.getByText(/Summary|Appearance|Facts/).count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-countdown.png'), fullPage: true });
-  artwork = { status: 'ready', loadingMessage: null, url: null, errorCode: null };
+  for (const [label, viewport] of [['tablet', { width: 820, height: 1180 }], ['desktop', { width: 1440, height: 1000 }]]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: path.join(screenshots, `launch-${label}-countdown.png`), fullPage: true });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label} must not overflow`);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('combobox', { name: 'Jazyk rozhraní' }).selectOption('en');
+  await page.getByRole('heading', { name: /Something is stirring, Matylda/ }).waitFor();
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'English narrow mobile must not overflow');
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-english.png'), fullPage: true });
+  await page.getByRole('combobox', { name: 'Interface language' }).selectOption('cs');
+  await page.setViewportSize({ width: 390, height: 844 });
+  character.status = 'ready';
+  artwork = { status: 'running', loadingMessage: null, finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByText(/Za zamčenými dveřmi/).waitFor();
+  const fallbackLoading = await page.locator('.launch-status').innerText();
+  assert.ok(fallbackLoading.includes(character.name) && fallbackLoading.includes(character.universe));
+  assert.doesNotMatch(fallbackLoading, /portrét|rešerš|malujeme|avatar/i);
+  assert.equal(await page.getByText('NEVER SHOW BEFORE READY').count(), 0);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-loading-fallback.png'), fullPage: true });
+  artwork.loadingMessage = 'Matyldo, město za zrcadlem nám poslalo tvůj spis. Zrcadla požádala o přestávku.';
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByText(/Zrcadla požádala o přestávku/).waitFor();
+  assert.equal(await page.getByText('NEVER SHOW BEFORE READY').count(), 0);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-loading.png'), fullPage: true });
+  artwork = { status: 'ready', loadingMessage: null, finalMessage: 'Matyldo, tvůj portrét. Zrcadla z tvého města si oddychla. Čekala jsi snad víc? Olivander dnes nezvládá ani vlastní odraz.', url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByAltText('Portrét tvé postavy').waitFor({ state: 'visible' });
+  await page.getByRole('heading', { name: /Tak tady tě máme, Matylda/ }).waitFor();
+  assert.match(await page.locator('.launch-final').innerText(), /Zrcadla z tvého města/);
+  assert.equal(await page.getByAltText('Portrét tvé postavy').evaluate(image => image.naturalWidth), 512);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-personalized-ready.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({ path: path.join(screenshots, 'launch-desktop-personalized-ready.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
   character = { profileId: 'legacy-profile', revision: 8, name: 'Eliška', universe: 'Starý svět', status: 'ready' };
   artwork = null;
   await page.reload({ waitUntil: 'networkidle' });
-  await page.getByText(/uložená postava zatím nemá portrét/).waitFor();
+  await page.getByText(/Tvé jméno už je v seznamu/).waitFor();
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Připravit můj portrét' }).click();
+  await page.getByRole('button', { name: 'Zapsat se do osudu' }).click();
   assert(writes.some(write => write.expectedProfileId === 'legacy-profile' && write.expectedRevision === 8));
 
   await page.goto(`${origin}/signin#invite=fixture-invitation-token-1234567890`, { waitUntil: 'networkidle' });
@@ -127,11 +189,12 @@ try {
   assert.equal(await page.locator('.application-sidebar').count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-invitation.png'), fullPage: true });
 
+  assert.equal(loadedScripts.some(script => /(?:LaunchManagement(?:View|Panel)?|CustomerAdminView|PersonaLabView|TestingSessionsView|DirectorPanel)-/.test(script)), false, 'prelaunch guest must not load privileged view chunks');
   account = { id: 'launch-admin', displayName: 'Admin', roles: ['Owner'] };
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();
-  await page.getByRole('heading', { name: 'Launch Management' }).waitFor();
+  await page.getByRole('heading', { name: 'Spuštění aplikace' }).waitFor();
   await page.getByLabel('Použít beta odpočítávání').check();
   await page.getByLabel('Časové pásmo').selectOption('Europe/Prague');
   await page.getByLabel('Otevření beta účastníkům').fill('2026-03-30T10:00');
@@ -143,9 +206,10 @@ try {
   await page.getByText(/Hvězdy se schovaly/).waitFor();
   await page.getByRole('button', { name: 'Opakovat přípravu' }).click();
   assert.equal(writes.length, 5);
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(screenshots, 'launch-desktop-admin.png'), fullPage: true });
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ mobile: '390x844', desktop: '1440x1000', states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'admin schedule save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
+  console.log(JSON.stringify({ mobile: '390x844', tablet: '820x1180', desktop: '1440x1000', states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'admin schedule save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
   await context.close();
 } finally {
   if (browser) await browser.close();

@@ -159,7 +159,9 @@ internal sealed class AutonomousLiveDialogue(GptLiveConnection connection, WandD
                 call.LabHardware?.ProviderReady(connection.ProviderSessionId);
                 telemetry.SetPhase(GenAiPhase.Ready);
                 visualState = visualRevision?.Invoke();
-                turn = context;
+                // The one-time aside is frozen into the first startup only. Any later
+                // provider restart is recovery, not another opening opportunity.
+                turn = context with { LivePrompt = context.LivePrompt?.WithoutOpeningAside() };
                 return;
             }
         }

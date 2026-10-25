@@ -922,7 +922,7 @@ internal static class AutonomousLiveTests
         var party = LivePromptSnapshot.Create(PersonalityCatalog.DefaultId, options);
         Check(olli.Policy == new LiveConversationPolicy(2, 3, true) && party.Policy == olli.Policy,
             "historical selection arguments cannot override the sole DV01 policy");
-        Check(olli.Instructions.Contains("Jsi Mistr hůlek") && party.Instructions == olli.Instructions
+        Check(olli.Instructions.Contains("Jsi hlas kouzelného kufru z dílny Wand Night Stand") && party.Instructions == olli.Instructions
             && party.PersonalityId == PersonalityCatalog.DefaultId, "one canonical production identity");
         Check(olli.Sha256 != PersonalityCatalog.Inventory.Single().PromptSha256,
             "authored source and effective policy snapshot hashes are distinct");

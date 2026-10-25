@@ -16,6 +16,7 @@ import AccountArchiveList from '../identity/AccountArchiveList.vue';
 import SettingsView from '../identity/SettingsView.vue';
 import NewCharacterDialog, { type NewCharacterDraft } from './NewCharacterDialog.vue';
 import CustomerSessionResultCard from './CustomerSessionResultCard.vue';
+import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
 import CustomerWaiting from './CustomerWaiting.vue';
 import CustomerDuelHistory from './CustomerDuelHistory.vue';
 import CustomerCompletionUpdates from './CustomerCompletionUpdates.vue';
@@ -516,6 +517,7 @@ onBeforeUnmount(() => {
 
     <p v-if="pane === 'character' && profileLoading" role="status">{{ customerCopy.text('customer.profile-loading') }}</p>
     <section v-if="pane === 'character' && !profileLoading" class="page-stack">
+      <PrivateCharacterAvatar v-if="profile" :profile-id="profile.profileId" :revision="profile.revision" :name="profile.userInput.name" />
       <GeneratedWand v-if="profile && selectedWand" :wand="selectedWand" show-name
         :image-url="profileArtwork.artworkUrl.value"
         :image-pending="!!profileArtworkPath && !profileArtwork.artworkUrl.value && !profileArtwork.artworkError.value"

@@ -14,6 +14,7 @@
 **/dist/
 /mobilni-aplikace/public/third-party-notices/
 /mobilni-aplikace/ios/App/App/Assets.xcassets/AppIcon.appiconset/*.png
+/mobilni-aplikace/ios/App/App/Assets.xcassets/BrandLaunch.imageset/*.png
 
 # .NET backend
 /backend/**/bin/

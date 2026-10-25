@@ -15,10 +15,10 @@ afterEach(async () => {
 describe('localized document titles', () => {
   it('updates the current guest route title immediately when the interface language changes', async () => {
     await router.push('/support');
-    expect(document.title).toBe('S čím potřebujete pomoct? · DildoVander');
+    expect(document.title).toBe('S čím potřebujete pomoct? · Wand Night Stand');
 
     interfaceLanguagePreference.setLanguage('en');
-    expect(document.title).toBe('How can we help? · DildoVander');
+    expect(document.title).toBe('How can we help? · Wand Night Stand');
     expect(router.currentRoute.value.path).toBe('/support');
   });
 });

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import keepsakeArtwork from '../assets/brand/keepsake-still-life.webp';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { Capacitor } from '@capacitor/core';
 import { account, accountDeletionRequested, accountRequest } from '../features/identity/session';
@@ -185,7 +186,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="home-layout">
     <section class="home-introduction page-stack">
-      <p class="eyebrow">DildoVander</p><h1>{{ greeting }}</h1>
+      <h1>{{ greeting }}</h1>
       <p class="home-lead">{{ customerCopy.text('home.lead') }}</p>
       <AwNotice v-if="['operator', 'administrator'].includes(String(route.query.access))" tone="warning">{{ customerCopy.text('home.access-role') }}</AwNotice>
       <AwNotice v-if="route.query.access === 'online'" tone="warning">{{ customerCopy.text('home.access-online') }}</AwNotice>
@@ -198,6 +199,7 @@ onBeforeUnmount(() => {
       <RouterLink v-if="!canOperate" to="/demo">{{ customerCopy.text('home.demo-link') }}</RouterLink>
       <section class="home-evening" :aria-label="customerCopy.text('home.evening-aria')"><p class="eyebrow">{{ customerCopy.text(eveningState) }}</p><template v-if="evening"><h2>{{ evening.label }}</h2><p v-if="evening.latest">{{ customerCopy.text('home.latest-wand', { wand: evening.latest }) }}</p><RouterLink to="/archive">{{ customerCopy.text('home.open-evening') }}</RouterLink></template></section>
     </section>
+    <figure v-if="!canOperate" class="home-brand-art"><img :src="keepsakeArtwork" alt="" width="960" height="640" /></figure>
     <section v-if="canOperate" class="home-readiness" aria-labelledby="readiness-title"><span class="eyebrow">{{ customerCopy.text('home.now') }}</span><h2 id="readiness-title">{{ customerCopy.text('home.your-suitcase') }}</h2>
       <template v-if="source === 'unavailable'"><p class="readiness-value">{{ customerCopy.text('home.waiting-connection') }}</p><p>{{ customerCopy.text('home.pairing-guidance') }}</p><RouterLink to="/connections">{{ customerCopy.text('home.connect-and-pair') }}</RouterLink></template>
       <template v-else><p class="readiness-value">{{ customerCopy.text(source === 'demo' ? 'home.demo-mode' : source === 'simulator' ? 'home.simulator' : 'home.local-connection') }}</p><p>{{ deviceSession.message.value || customerCopy.text('home.device-guidance') }}</p><RouterLink to="/suitcase">{{ customerCopy.text('home.show-status') }}</RouterLink></template>

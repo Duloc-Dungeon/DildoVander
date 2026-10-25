@@ -26,7 +26,9 @@ const archiveUuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 const ownedPortraitUpload = new RegExp(`^/app/v1/archive/owned/${archiveUuid}/portrait-uploads$`, 'i');
 const archiveAsset = new RegExp(`^/app/v1/archive/(?:owned|associations)/${archiveUuid}/assets/${archiveUuid}$`, 'i');
 const testingAsset = new RegExp(`^/app/v1/testing-sessions/[0-9a-f]{32}/keepsakes/${archiveUuid}/assets/${archiveUuid}$`);
-const prelaunchPortrait = /^\/app\/v1\/prelaunch\/character\/portrait\?revision=[1-9][0-9]{0,18}$/;
+const portraitProfile = '(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})';
+const portraitRevision = '[1-9][0-9]{0,18}';
+const prelaunchPortrait = new RegExp(`^/app/v1/prelaunch/character/portrait\\?(?:profileId=${portraitProfile}&revision=${portraitRevision}|revision=${portraitRevision}&profileId=${portraitProfile})$`);
 const customerMemoryPath = /^\/app\/v1\/customer\/memory$/;
 const customerExportDownloadPath = /^\/app\/v1\/customer\/data\/exports\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\/download$/;
 

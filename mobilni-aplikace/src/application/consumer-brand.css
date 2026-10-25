@@ -1,0 +1,71 @@
+/* Consumer identity only. Engineering viewers and firmware contracts keep their
+   existing design-system tokens and technical names. */
+@font-face {
+  font-family: 'Wand Editorial';
+  src: url('../assets/brand/cormorant-garamond-500.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+:root[data-theme], :root {
+  --aw-void: #211a22;
+  --aw-surface: #2b222d;
+  --aw-elevated: #382d39;
+  --aw-ivory: #f4ecd9;
+  --aw-muted: #c4b8c1;
+  --aw-accent: #e0bc7e;
+  --aw-on-accent: #211a22;
+  --aw-accent-soft: #483a37;
+  --aw-link: #edcc96;
+  --aw-border: #89747e;
+  --aw-border-subtle: #55434f;
+  --aw-success: #a9d6b4;
+  --aw-warning: #f4c58e;
+  --aw-danger: #ffb7b4;
+  --aw-info: #cac5ef;
+  --aw-font-display: 'Wand Editorial', Georgia, serif;
+  --aw-radius-card: 14px;
+  --aw-radius-control: 8px;
+  --aw-touch: 44px;
+}
+
+/* Keep persisted theme IDs as compatibility keys, with consumer-facing names. */
+:root[data-theme='olivander'] {
+  --aw-void: #302327;
+  --aw-surface: #3a2b30;
+  --aw-elevated: #48363b;
+  --aw-accent-soft: #57403b;
+  --aw-border-subtle: #69505a;
+}
+
+::selection { background: #e0bc7e; color: #211a22; }
+html { scrollbar-color: var(--aw-border) var(--aw-void); }
+input, textarea { caret-color: var(--aw-accent); }
+.application-main h1 { font-family: var(--aw-font-display); font-weight: 500; font-size: clamp(2.5rem, 4.5vw, 4.5rem); }
+:root[data-theme] .application-main .identity-page h1 { font-family: var(--aw-font-display); font-weight: 500; font-size: clamp(2.5rem, 5vw, 4rem); }
+.application-shell.launch-mode .application-main { padding: 0; max-width: none; }
+.application-shell.launch-mode .application-main > .page-stack { padding: clamp(1.25rem, 4vw, 3rem); margin-inline: auto; }
+.aw-root .skip-link { color: var(--aw-on-accent); }
+.skip-link:not(:focus) { clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; padding: 0; }
+.signin-help { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; }
+.signin-help a { display: inline-flex; align-items: center; min-height: 44px; }
+.application-brand { align-items: start; font-family: var(--aw-font-display); font-size: 1.55rem; line-height: .98; font-weight: 500; letter-spacing: -.025em; }
+.application-brand small { font-family: var(--aw-font-ui); line-height: 1.5; margin-top: .6rem; }
+:root[data-theme] .application-brand .brand-mark { width: 2.75rem; height: 2.75rem; flex-shrink: 0; background: none; border: 0; }
+.application-sidebar { padding-top: 2.5rem; gap: 2.5rem; }
+.primary-navigation a { border-radius: 8px; }
+.launch-emergency-stop { position: fixed; z-index: 40; inset-block-end: max(1rem, env(safe-area-inset-bottom)); inset-inline-end: max(1rem, env(safe-area-inset-right)); min-width: 6rem; min-height: 48px; }
+.primary-navigation a.selected { box-shadow: inset 0 0 0 1px var(--aw-border-subtle); }
+.application-footer > span:first-child { color: var(--aw-ivory); }
+.application-main .eyebrow { color: var(--aw-muted); text-transform: none; letter-spacing: 0; }
+.identity-page { padding-block: clamp(1rem, 5vw, 4rem); }
+.identity-page > header { max-width: 34rem; }
+.identity-page .identity-form { padding: clamp(1.25rem, 4vw, 2.5rem); }
+.identity-page .identity-hint { line-height: 1.7; }
+.home-brand-art { margin: 0; align-self: start; }
+.home-brand-art img { display: block; width: 100%; height: auto; border-radius: 12px; }
+.aw-input, .aw-select, .aw-textarea { font-size: max(1rem, 16px); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; }
+}
