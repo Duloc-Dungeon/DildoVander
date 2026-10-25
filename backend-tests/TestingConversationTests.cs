@@ -33,6 +33,19 @@ internal static class TestingConversationTests
             Check(!context.InstructionOverride!.Contains("All tool outcomes are simulations") && context.InstructionOverride.Contains("explicitly virtual hardware"),
                 "application tools are real while physical observations remain explicitly virtual");
             Check(context.GeneratedWands is { Count: 0 }, "empty generated candidates cannot become six permanent wand identities");
+            Check(context.Request.ReadyMask == 63 && context.DeferWandSelection,
+                "all six tester keepsakes are available before personalized generation");
+            var liveStart = JsonSerializer.Serialize(GptLiveProtocol.Start(context));
+            using var liveDocument = JsonDocument.Parse(liveStart);
+            var liveInstructions = liveDocument.RootElement.GetProperty("session").GetProperty("instructions").GetString()!;
+            var realtimeInstructions = RealtimeProtocol.SessionOptions(context).Instructions;
+            foreach (var instructions in new[] { liveInstructions, realtimeInstructions })
+            {
+                Check(instructions.Contains("Všech šest digitálních hůlkových památek je vždy dostupných")
+                    && instructions.Contains("to neznamená nedostupnost památek")
+                    && instructions.Contains("samostatná akce testera"),
+                    "both engines distinguish six available digital keepsakes from pending personal candidates");
+            }
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                 { ["OPENAI_API_KEY"] = "test-transport-only-not-a-credential" }).Build();
             var sockets = new List<ProviderSocket>();

@@ -6,6 +6,14 @@ an ordinary single-use Tester invitation in account administration; enrollment,
 passkeys, persistent sessions and account deletion use the existing identity
 implementation. Owner/Administrator/Operator roles do not imply Tester.
 
+Tester and regular customer sessions always offer six reusable digital wand
+keepsakes, including in production. Previous selections do not consume these
+choices, and physical stock counts do not filter personalized candidates. Before
+the tester requests selection, personal names and stories are still pending;
+both voice engines distinguish that preparation state from unavailability.
+Hardware inspection, faults, operation correlation and recovery checks still
+govern the case's presentation effects.
+
 The view polls session/duel details every 10 seconds and session/character
 collections every 30 seconds. Active conversation recovery uses detail-only reads
 every two seconds; in-flight text requests use the same bounded cadence for

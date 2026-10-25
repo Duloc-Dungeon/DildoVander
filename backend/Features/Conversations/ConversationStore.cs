@@ -143,7 +143,8 @@ internal sealed partial class ConversationStore(
                     response.ExpiresAt,
                     labHardware?.ExpiresAt ?? now.AddMinutes(30), request.OperationEpoch)
                 { ImageConsented = request.Consent.Image, LivePrompt = frozenPrompt, GuestTone = guestTone, ConversationLanguage = request.Locale,
-                    LabHardware = labHardware, ExpiresAt = labHardware?.ExpiresAt ?? response.ExpiresAt });
+                    LabHardware = labHardware, CustomerKeepsakes = customerSessionId is not null,
+                    ExpiresAt = labHardware?.ExpiresAt ?? response.ExpiresAt });
             return new CreateResult(201, response);
         }
     }
@@ -1142,6 +1143,7 @@ internal sealed partial class ConversationStore(
         public int CostumeCorrectionCount { get; set; }
         public string PersonalityId { get; } = selectedPersonalityId;
         public LabHardwareContext? LabHardware { get; init; }
+        public bool CustomerKeepsakes { get; init; }
         internal ConversationGuestToneState? GuestTone { get; init; }
         internal string ConversationLanguage { get; init; } = "cs-CZ";
         public LivePromptSnapshot LivePrompt { get; init; } = LivePromptSnapshot.Create(selectedPersonalityId, new());

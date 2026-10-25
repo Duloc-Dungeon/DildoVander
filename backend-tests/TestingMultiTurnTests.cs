@@ -39,10 +39,12 @@ internal static class TestingMultiTurnTests
             using var hardware = new TestingHardwareAdapter(configuration);
             var sockets = new List<Socket>();
             var fault = "none";
+            TaskCompletionSource<Socket>? awaitedConnection = null;
             Task<WebSocket> Connect(CancellationToken token)
             {
                 var socket = new Socket(engine, "controlled-reply-" + sockets.Count, fault);
                 sockets.Add(socket);
+                awaitedConnection?.TrySetResult(socket);
                 return Task.FromResult<WebSocket>(socket);
             }
             // Live's injected transport still requires an availability setting;
@@ -101,11 +103,16 @@ internal static class TestingMultiTurnTests
             {
                 fault = failure;
                 var before = store.Session("tester", session.LabSessionId).Turns.Length;
+                var connectionCreated = new TaskCompletionSource<Socket>(TaskCreationOptions.RunContinuationsAsynchronously);
+                awaitedConnection = connectionCreated;
                 using var cancellation = new CancellationTokenSource();
                 var pending = runtime.TurnAsync("tester", session.LabSessionId, "Failure fixture", cancellation.Token);
                 if (failure == "hold")
                 {
-                    await sockets.Last().Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    // Admission awaits hardware before creating this connection.
+                    // A previous socket's handshake cannot authorize cancellation.
+                    var heldSocket = await connectionCreated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    await heldSocket.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
                     Check(runtime.Operation(session.LabSessionId)?.Phase == "connecting_provider"
                         || runtime.IsActive(session.LabSessionId), "in-flight provider operation remains observable");
                     try { await runtime.TurnAsync("tester", session.LabSessionId, "Overlap", default); throw new Exception("Overlap accepted"); }
@@ -114,6 +121,7 @@ internal static class TestingMultiTurnTests
                 }
                 try { await pending; throw new Exception("Provider fault accepted"); }
                 catch (LabException) { }
+                awaitedConnection = null;
                 Check(runtime.ActiveCount == 0 && runtime.Operation(session.LabSessionId) is null, "failure/cancellation releases operation");
                 var failed = store.Session("tester", session.LabSessionId);
                 Check(failed.Turns.Skip(before).All(turn => turn.Role != "assistant"), "provider failure fabricates no reply");
