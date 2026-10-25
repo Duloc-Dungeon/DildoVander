@@ -7,7 +7,7 @@ vi.mock('@capacitor/core', () => ({
   registerPlugin: () => ({ export: native.export }),
 }));
 
-import { exportDiagnosticReport } from './diagnosticExport';
+import { diagnosticExportHistory, exportDiagnosticReport } from './diagnosticExport';
 
 describe('diagnostic report export', () => {
   beforeEach(() => {
@@ -45,6 +45,19 @@ describe('diagnostic report export', () => {
     native.enabled = true;
     native.export.mockRejectedValue(new Error('file_write_failed'));
     await expect(exportDiagnosticReport({ requests: [] }, 'report.json')).rejects.toThrow('file_write_failed');
+  });
+
+  it('retains bounded technical export failure evidence without private error messages or report contents', async () => {
+    native.enabled = true;
+    native.export.mockRejectedValue(Object.assign(new Error('PRIVATE-PATH-AND-CONTENT'), { code: 'diagnostic_export_write_failed' }));
+    await expect(exportDiagnosticReport({ secret: 'PRIVATE-REPORT' }, 'report.json')).rejects.toThrow();
+    expect(diagnosticExportHistory().at(-1)).toMatchObject({ platform: 'native', outcome: 'failed', code: 'diagnostic_export_write_failed' });
+    expect(JSON.stringify(diagnosticExportHistory())).not.toContain('PRIVATE');
+    expect(JSON.stringify(diagnosticExportHistory())).not.toContain('report.json');
+    native.export.mockResolvedValue({ status: 'cancelled' });
+    for (let index = 0; index < 25; index++) await exportDiagnosticReport({}, 'report.json');
+    expect(diagnosticExportHistory()).toHaveLength(20);
+    expect(diagnosticExportHistory().at(-1)?.outcome).toBe('cancelled');
   });
 
   it('rejects unsafe filenames and oversized reports before opening a platform export', async () => {

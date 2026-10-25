@@ -13,7 +13,7 @@ vi.mock('../persona-lab/voice', () => ({ LabVoice: class {
   constructor(private observer: {phase:(value:string)=>void}){}
   connect = (...args:unknown[]) => { api.connect(...args); this.observer.phase('listening'); return Promise.resolve(); };  dispose = api.dispose; setOutputEnabled = api.output; sendText = api.sendText; interrupt = vi.fn();
 } }));
-vi.mock('../../application/diagnosticExport', () => ({ exportDiagnosticReport: api.exportReport }));
+vi.mock('../../application/diagnosticExport', () => ({ exportDiagnosticReport: api.exportReport, diagnosticExportHistory: () => [] }));
 import TestingSessionsView from './TestingSessionsView.vue';
 const person: TestCharacter = { id: 'character-1', profile: { profileId: 'profile-1', revision: 1, userInput: { name: 'Alena', world: 'Vlastní svět', description: 'Knihovnice.' }, status: 'ready', enrichment: { recognizedName: 'Alena', summary: 'Skutečně vrácené obohacení.', model: 'character-model', evidenceKind: 'provider', conversationIdeas: [], ambiguities: [] } } };
 function fixture() {

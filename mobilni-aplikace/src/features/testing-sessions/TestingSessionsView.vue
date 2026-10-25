@@ -15,7 +15,7 @@ import { technicalDiagnostics } from '../persona-lab/client';
 import { classifyLabFailure, describeLabFailure } from '../persona-lab/errors';
 import { prepareLabImage } from '../persona-lab/image';
 import { requestDiagnostics } from '../../application/requestDiagnostics';
-import { exportDiagnosticReport } from '../../application/diagnosticExport';
+import { diagnosticExportHistory, exportDiagnosticReport } from '../../application/diagnosticExport';
 import { applicationBuild } from '../../application/buildIdentity';
 import type { CharacterInput, InputMode } from './contracts';
 const test = useTestingSessions();
@@ -133,7 +133,7 @@ async function exportDiagnostics():Promise<void> {
     app:{platform:Capacitor.getPlatform(),build:applicationBuild},
     session:{id:detail.session.id,conversationId:detail.conversation.id,engine:detail.session.engine,inputMode:detail.session.inputMode,status:detail.session.status,conversationStatus:detail.conversation.status,conversationActive:detail.conversationActive===true,operation:detail.conversationOperation ? {operationId:detail.conversationOperation.operationId,phase:detail.conversationOperation.phase,elapsedMs:detail.conversationOperation.elapsedMs} : null},
     characterEnrichment:detail.latestCharacter ? {characterId:detail.latestCharacter.id,profileId:detail.latestCharacter.profile.profileId,revision:detail.latestCharacter.profile.revision,status:detail.latestCharacter.profile.status,errorCode:detail.latestCharacter.profile.errorCode ?? null,updatedAt:detail.latestCharacter.profile.updatedAt ?? null,operationId:detail.latestCharacter.enrichmentOperationId ?? null} : null,
-    requests:requestDiagnostics.value,provider:technicalDiagnostics(detail.conversation),
+    requests:requestDiagnostics.value,exportEvents:diagnosticExportHistory(),provider:technicalDiagnostics(detail.conversation),
     virtualHardware:detail.hardware.events?.map(({type,code,createdAt,compartment})=>({type,code,createdAt,compartment,source:'simulation'}))};
   try {
     const result=await exportDiagnosticReport(payload,'testing-diagnostics.json');

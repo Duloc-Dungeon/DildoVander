@@ -174,6 +174,8 @@ handoff; write/share failures remain visible. Temporary files are removed on
 completion. The report includes the embedded app build identity, platform,
 session/operation/request IDs, technical provider events and enrichment job status.
 Character input, enrichment content and frozen projections stay in the inspector.
+The next export also includes the last 20 local export outcomes and allowlisted
+failure codes; filenames, report contents and exception messages are not retained.
 
 Operation events distinguish admission, context preparation, transport connection,
 confirmed provider readiness, first output, provider completion, memory persistence
