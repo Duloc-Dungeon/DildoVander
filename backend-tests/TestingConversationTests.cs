@@ -20,6 +20,9 @@ internal static class TestingConversationTests
             var original = store.CreateSession("tester", new(store.ActiveRevisionId, GptLiveProtocol.Model,
                 "first-visit", "empty", "real application", RecordContent: true));
             Check(original.Testing is null, "ordinary lab preparation cannot grant integration authority");
+            Check(!PersonaLabRuntime.Context(original, "Hello", out _).InstructionOverride!
+                .Contains("background already known about the current visitor"),
+                "tester profile grounding does not change ordinary lab instructions");
             var bound = store.Change("tester", original.Id, session => session with
             {
                 Testing = new("test-scope", "CHARACTER-CONTEXT", "AUTHORIZED-MEMORY", [])
@@ -59,6 +62,9 @@ internal static class TestingConversationTests
             try { runtime.ReserveScript("tester", original.Id, out _); throw new Exception("Bound test session admitted scripted suite"); }
             catch (LabException error) when (error.Code == "testing_session_script_unsupported") { }
             var result = await runtime.TurnAsync("tester", original.Id, "I repair clocks.", CancellationToken.None);
+            Check(sockets[0].StartupContext!.Contains("Current visitor character profile (data): CHARACTER-CONTEXT")
+                && sockets[0].StartupInstructions!.Contains("background already known about the current visitor"),
+                "actual Live transport identifies supplied character data as known visitor background");
             Check(bridge.Delegations == 1 && bridge.Completed == 1 && bridge.SawUserEvidence,
                 "live provider delegation uses server bridge and actual persisted guest input");
             Check(result.Turns.Any(turn => turn.Role == "assistant" && turn.Text == "ACTUAL-TRANSPORT-REPLY"),
@@ -159,6 +165,7 @@ internal static class TestingConversationTests
         internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal string? Commentary;
         internal string? StartupContext;
+        internal string? StartupInstructions;
         public override WebSocketCloseStatus? CloseStatus => null;
         public override string? CloseStatusDescription => null;
         public override WebSocketState State => disposed ? WebSocketState.Closed : WebSocketState.Open;
@@ -176,6 +183,7 @@ internal static class TestingConversationTests
             {
                 case "session.start":
                     StartupContext = value.GetProperty("session").GetProperty("input").GetRawText();
+                    StartupInstructions = value.GetProperty("session").GetProperty("instructions").GetString();
                     Started.TrySetResult();
                     if (holdStartup) { break; }
                     Push(new { type = "session.started", client_event_id = value.GetProperty("event_id").GetString(), session = new { model = GptLiveProtocol.Model, id = "live-integration-fixture" } });

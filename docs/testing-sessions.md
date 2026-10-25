@@ -85,6 +85,10 @@ It exposes structured fields and copyable JSON inside the authenticated view.
 The latest profile is read directly from the durable profile store, independently
 of collection polling. New enrichment intentionally does not change a conversation
 that already started; before the first turn, continuing captures the current result.
+Both chat engines receive the complete selected input and generated enrichment as
+the current visitor's fictional background. The host uses its summary, facts and
+conversation ideas for relevant questions and humor, separately from returning
+personal memory, while retaining its own persona and respecting uncertainty.
 Session creation does not claim an OpenAI handshake. Saved sessions can be selected
 in Sezení after refresh or application restart; the URL retains the session identity.
 
