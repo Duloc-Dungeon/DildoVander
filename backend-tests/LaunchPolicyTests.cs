@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -241,6 +242,8 @@ internal static class LaunchPolicyTests
             command.ExecuteNonQuery();
         }
         var services = new ServiceCollection();
+        services.Configure<IdentityOptions>(options =>
+            options.Stores.SchemaVersion = IdentitySchemaVersions.Version3);
         services.AddDbContext<AccountDatabase>(options => options.UseSqlite(accountConnectionString));
         using var provider = services.BuildServiceProvider();
         var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
