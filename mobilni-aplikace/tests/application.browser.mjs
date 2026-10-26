@@ -212,7 +212,7 @@ try {
   // Anonymous deep links must not render pairing or operational controls.
   assert.equal(await page.locator('.home-readiness').count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
-  for (const protectedPath of ['/suitcase', '/connections', '/suitcase/diagnostics', '/suitcase/director', '/settings/admin']) {
+  for (const protectedPath of ['/suitcase', '/connections', '/suitcase/diagnostics', '/suitcase/director', '/settings/admin', '/play', '/play/match/' + 'a'.repeat(32)]) {
     await page.goto(origin + protectedPath);
     await page.waitForURL(url => url.pathname === '/signin');
     assert.equal(new URL(page.url()).searchParams.get('return'), protectedPath);

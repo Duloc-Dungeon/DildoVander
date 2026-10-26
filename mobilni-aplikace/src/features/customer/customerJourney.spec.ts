@@ -45,6 +45,14 @@ describe('customer journey actions', () => {
     expect(defaultSignedInDestination(mixed, keepsake)).toBe(keepsake);
   });
 
+  it('returns a signed-in player to the requested game', () => {
+    const match = '/play/match/' + 'a'.repeat(32);
+    expect(defaultSignedInDestination(customer, '/play')).toBe('/play');
+    expect(defaultSignedInDestination(customer, match)).toBe(match);
+    expect(defaultSignedInDestination(staff, match)).toBe(match);
+    expect(defaultSignedInDestination(customer, '/playground')).toBe('/me/character');
+  });
+
   it.each(['recovering', 'queued', 'expired', 'ended', 'cancelled', 'future_server_state'])(
     'prioritizes an active or unknown nonterminal session (%s) over a linked result',
     sessionState => {
