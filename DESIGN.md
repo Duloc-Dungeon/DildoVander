@@ -63,11 +63,11 @@ components:
 
 ## Overview
 
-Wand Night Stand is an intimate magical salon: editorial, tactile, quietly theatrical, and lightly witty. The consumer-facing interface pairs a readable three-line full-name logo and wand underline with curtain and night-flower artwork. Use the self-hosted display face for expressive headings and the established sans-serif UI face for readable controls and supporting copy.
+Wand Night Stand is an intimate magical salon: editorial, tactile, quietly theatrical, and lightly witty. The approved opening direction is **The Midnight Table**. Its screen targets, reusable components, tokens, production artwork and separate design/implementation/verification record are maintained in the canonical [consumer game UI guide](design-system/consumer-game-ui.md). Use the self-hosted display face for expressive headings and the established sans-serif UI face for readable controls and supporting copy.
 
 **The Consumer Boundary Rule.** This document governs the consumer identity in the application bundle. The separately maintained shared design system, simulator, offline CAD viewer, and engineering surfaces retain Vapour Chrome. Technical names, firmware, protocols, and device behavior are outside this visual identity.
 
-The consumer token overrides live in [consumer-brand.css](mobilni-applikace/src/application/consumer-brand.css), the launch composition and responsive rules in [LaunchView.vue](mobilni-applikace/src/features/launch/LaunchView.vue), and approved artwork and font provenance in the [brand asset manifest](mobilni-applikace/src/assets/brand/manifest.json).
+The consumer token overrides live in [consumer-brand.css](mobilni-aplikace/src/application/consumer-brand.css). Screen-specific composition and selected art are indexed by the [consumer game UI guide](design-system/consumer-game-ui.md); original brand assets and font provenance remain in the [brand asset manifest](mobilni-aplikace/src/assets/brand/manifest.json).
 
 ### Engineering surfaces: Vapour Chrome
 
@@ -77,7 +77,7 @@ Operating tools prioritize state, control, and recovery; the CAD viewer prioriti
 
 ## Colors
 
-Ink is the page ground, with raised plum surfaces grouping forms and controls. Ivory carries primary text; muted mauve carries supporting copy. Brass is reserved for the primary action and small moments of emphasis. Links use a lighter brass tint, while quiet plum borders separate content without turning each region into a card.
+Consumer colors are scoped to the consumer application. The Midnight Table uses petrol felt, warm ivory paper, walnut and restrained brass/crimson accents; its per-screen palette and layout are described in the [canonical consumer game UI guide](design-system/consumer-game-ui.md). Preserve semantic status, focus and contrast treatment across supported themes.
 
 **The Velvet Evening Rule.** The persisted `olivander` theme key applies the warmer velvet surface and border variant. Keep that key stable; translate theme names only in the interface. The mark uses its own slightly lighter ground from `mark-background`.
 
@@ -93,7 +93,7 @@ The launch heading uses a fluid display scale; identity headings use a slightly 
 
 ## Layout
 
-The launch view fills at least the dynamic viewport height, uses safe-area padding, and caps its content width. The launch-mode shell also supplies a centered responsive outer gutter to route content (from 1.25rem to 3rem). Wide screens place the portrait artwork and launch copy in two columns. At 760px and below the view stacks into one column, changes the artwork crop, and places footer content vertically. At 420px and below, masthead support navigation is hidden while the language control remains available. At 1600px and above, the top inset increases.
+Opening screens use a scene shell that respects dynamic viewport height, safe areas, keyboard visibility and the requested single next action. Screen-specific responsive composition is maintained with the current locked state in the [consumer game UI guide](design-system/consumer-game-ui.md).
 
 **The Curtain First Rule.** The curtain image is the prelaunch and invitation artwork; the keepsake still life belongs to postlaunch home and archive empty states. Keep the subject's crop responsive and do not expose future-feature imagery before launch.
 

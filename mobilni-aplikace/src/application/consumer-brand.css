@@ -69,3 +69,8 @@ input, textarea { caret-color: var(--aw-accent); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; }
 }
+
+/* One consumer scene across persisted theme identifiers; engineering imports do not load this adapter. */
+.scene-shell { --aw-void: var(--aw-game-felt); --aw-ivory: #f4ecd9; --aw-muted: var(--aw-game-muted); --aw-accent: var(--aw-game-brass); --aw-on-accent: var(--aw-game-ink); --aw-link: #efca8e; --aw-surface: #103c36; --aw-elevated: #18473f; --aw-border: #a78a5d; --aw-border-subtle: #526c5f; }
+.scene-shell .aw-button.aw-button--primary { color: var(--aw-game-ink); border: 1px solid #efc884; background: linear-gradient(180deg, #f0ca8b, var(--aw-game-brass)); box-shadow: 0 3px 8px #0004, inset 0 1px #fff5; font-family: var(--aw-font-display); font-size: 1.2rem; font-weight: 600; }
+.scene-shell a:focus-visible, .scene-shell button:focus-visible, .scene-shell input:focus-visible, .scene-shell summary:focus-visible { outline: 3px solid var(--aw-game-brass); outline-offset: 3px; }

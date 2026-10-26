@@ -7,6 +7,10 @@ import AwNotice from '../../components/AwNotice.vue';
 import AwField from '../../components/AwField.vue';
 import LostAccessHelp from './LostAccessHelp.vue';
 import brandMark from '../../assets/brand/emblem-small.webp';
+import SceneShell from '../../components/scene/SceneShell.vue';
+import PaperSurface from '../../components/scene/PaperSurface.vue';
+import invitationArt from '../../assets/brand/midnight/invitation.webp';
+import accessKeyArt from '../../assets/brand/midnight/access-key.webp';
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { customerCopy, type CustomerCopyKey } from '../../application/customerCopy';
 import { launchAllowed } from '../../application/launchAccess';
@@ -15,7 +19,11 @@ import { setInvitationDraft, saveInvitationCharacter } from './invitationRegistr
 import { account, accountRequest, accountsEnabled, initialized, loading, signingOut, refreshIdentity, authenticatePasskey, signOut } from './session';
 const router = useRouter();
 const route = useRoute();
-const enrollment = ref(!route.query.return && !signingOut.value);
+const protectedReturn = !!route.query.return && route.query.return !== '/';
+const enrollment = ref(!protectedReturn && !signingOut.value);
+const arrival = ref(!protectedReturn && !signingOut.value);
+const linkedInvitation = ref(false);
+const linkedEnrollment = ref<{ kind: 'invite' | 'recovery'; token: string } | null>(null);
 const betaEntry = ref(enrollment.value);
 const customerEnrollment = ref(false);
 const enrollmentKind = ref<'invite' | 'recovery'>('invite');
@@ -28,6 +36,7 @@ const invitationUniverse = ref('');
 interface DefaultEnrollment { available: boolean; groupId?: string; groupName?: string; fixedUniverse?: string | null; universe?: string | null }
 const defaultEnrollment = ref<DefaultEnrollment | null>(null);
 const enrollmentLoading = ref(false);
+const enrollmentUnavailable = ref(false);
 const betaClosedError = ref(false);
 const betaChangedError = ref(false);
 const recoveryHint = ref(false);
@@ -60,25 +69,49 @@ function errorKey(value: unknown): CustomerCopyKey {
 }
 onMounted(async () => {
   const suppliedCode = consumeEnrollment();
-  if (suppliedCode) { enrollment.value = true; betaEntry.value = false; enrollmentKind.value = suppliedCode.kind; token.value = suppliedCode.token; }
+  linkedEnrollment.value = suppliedCode;
+  if (suppliedCode) { arrival.value = false; linkedInvitation.value = true; enrollment.value = true; betaEntry.value = false; enrollmentKind.value = suppliedCode.kind; token.value = suppliedCode.token; }
   try {
     await refreshIdentity();
+    if (account.value && !suppliedCode && !protectedReturn) {
+      await router.replace(defaultSignedInDestination(account.value));
+      return;
+    }
     if (!suppliedCode && betaEntry.value) await refreshDefaultEnrollment();
   } catch (cause) { error.value = errorKey(cause); }
 });
 async function refreshDefaultEnrollment(): Promise<void> {
   if (account.value) return;
   enrollmentLoading.value = true;
+  enrollmentUnavailable.value = false;
   try {
     defaultEnrollment.value = await accountRequest<DefaultEnrollment>('/app/v1/enrollment/default');
     if (defaultEnrollment.value.fixedUniverse) invitationUniverse.value = defaultEnrollment.value.fixedUniverse;
   } catch {
     defaultEnrollment.value = null;
+    enrollmentUnavailable.value = true;
   } finally {
     enrollmentLoading.value = false;
   }
 }
+function beginFromArrival(): void {
+  arrival.value = false;
+  enrollment.value = true;
+  customerEnrollment.value = false;
+  aiConsent.value = false;
+  error.value = '';
+  betaClosedError.value = false;
+  betaChangedError.value = false;
+  const supplied = linkedEnrollment.value;
+  linkedInvitation.value = !!supplied;
+  enrollmentKind.value = supplied?.kind ?? 'invite';
+  betaEntry.value = !supplied;
+  token.value = supplied?.token ?? '';
+  if (!supplied) void refreshDefaultEnrollment();
+}
 function setEnrollmentMode(kind: 'invite' | 'recovery'): void {
+  arrival.value = false;
+  linkedInvitation.value = false;
   enrollment.value = true;
   betaEntry.value = false;
   enrollmentKind.value = kind;
@@ -90,6 +123,7 @@ function setEnrollmentMode(kind: 'invite' | 'recovery'): void {
   betaChangedError.value = false;
 }
 function showPasskeySignIn(): void {
+  arrival.value = false;
   enrollment.value = false;
   betaEntry.value = false;
   customerEnrollment.value = false;
@@ -178,13 +212,23 @@ async function submit(): Promise<void> {
 }
 </script>
 <template>
-  <section class="signin-page" aria-labelledby="sign-in-title">
+  <SceneShell class="signin-scene">
+  <section class="signin-page" :class="{ 'signin-page--arrival': arrival, 'signin-page--paper': !arrival && enrollment }" aria-labelledby="sign-in-title">
     <header class="signin-masthead">
       <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><img :src="brandMark" alt="" width="40" height="40" /><span>Wand<br />Night Stand</span></RouterLink>
       <label class="signin-language"><span class="sr-only">{{ language === 'en' ? 'Interface language' : 'Jazyk rozhraní' }}</span><select v-model="language"><option value="cs">Čeština</option><option value="en">English</option></select></label>
     </header>
-    <div class="signin-content">
-      <header class="signin-intro"><h1 id="sign-in-title">{{ account ? customerCopy.text('signin.title') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : customerCopy.text('signin.invite-slogan') : customerCopy.text('signin.title') }}</h1></header>
+    <div v-if="arrival && !account" class="arrival-content">
+      <img class="arrival-invitation" :src="invitationArt" alt="" width="740" height="450" fetchpriority="high" />
+      <h1 id="sign-in-title">{{ language === 'en' ? 'Enter on your own reputation.' : 'Vstup na vlastní pověst.' }}</h1>
+      <p>{{ language === 'en' ? 'Your reputation arrived before you. We have already discussed it.' : 'Tvá pověst dorazila před tebou. Už jsme se o ní omluvili.' }}</p>
+      <AwButton variant="primary" @click="beginFromArrival">{{ language === 'en' ? 'Begin' : 'Začít' }}</AwButton>
+      <AwButton @click="showPasskeySignIn">{{ language === 'en' ? 'I already have access' : 'Už mám přístup' }}</AwButton>
+      <nav class="signin-help" aria-label="Nápověda"><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></nav>
+    </div>
+    <component :is="enrollment ? PaperSurface : 'div'" v-else class="signin-content">
+      <img v-if="!enrollment && !account" class="signin-access-key" :src="accessKeyArt" alt="" width="696" height="430" />
+      <header class="signin-intro"><h1 id="sign-in-title">{{ account ? customerCopy.text('signin.title') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : (language === 'en' ? 'What shall we call you?' : 'Jak ti budou říkat?') : (language === 'en' ? 'Back on the scene.' : 'Zpátky na scénu.') }}</h1></header>
       <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
       <AwNotice v-if="recoveryHint" tone="warning" role="status">{{ language === 'en' ? 'We could not confirm whether account creation finished. Sign in with your existing passkey to continue; your name and universe are kept on this screen.' : 'Nepodařilo se ověřit, zda se vytvoření účtu dokončilo. Pokračuj přihlášením svým přístupovým klíčem; jméno a univerzum zůstávají na této obrazovce.' }}</AwNotice>
       <p v-if="loading" role="status">{{ customerCopy.text('signin.loading') }}</p>
@@ -201,20 +245,23 @@ async function submit(): Promise<void> {
           <AwNotice v-if="enrollmentKind === 'recovery'" tone="warning">{{ customerCopy.text('signin.recovery-enrollment-warning') }} {{ customerCopy.text('signin.recovery-code-target') }}</AwNotice>
           <template v-if="enrollmentKind === 'invite'">
             <p v-if="enrollmentLoading" role="status">{{ language === 'en' ? 'Checking beta access…' : 'Ověřuji možnost vstupu do bety…' }}</p>
-            <AwNotice v-else-if="betaEntry && ((!defaultEnrollment?.available && !token) || betaClosedError)" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
+            <AwNotice v-else-if="betaEntry && enrollmentUnavailable" tone="warning" role="alert">{{ language === 'en' ? 'We could not check invitation availability. Check your connection and try again.' : 'Možnost přijetí pozvánky se nepodařilo ověřit. Zkontroluj připojení a zkus to znovu.' }} <AwButton @click="refreshDefaultEnrollment">{{ language === 'en' ? 'Try again' : 'Zkusit znovu' }}</AwButton></AwNotice>
+            <AwNotice v-else-if="betaEntry && ((defaultEnrollment?.available === false && !token) || betaClosedError)" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
             <AwNotice v-else-if="betaChangedError" tone="warning">{{ language === 'en' ? 'The beta group or its rules changed. Review the current settings and continue again.' : 'Beta skupina nebo její pravidla se změnily. Zkontroluj aktuální podmínky a spusť vstup znovu.' }}</AwNotice>
             <AwField id="account-name" :label="customerCopy.text('signin.invite-name')" :hint="customerCopy.text('signin.invite-name-hint')"><input id="account-name" aria-describedby="account-name-hint" ref="invitationNameInput" v-model="invitationName" class="aw-input" maxlength="80" autocomplete="nickname" required :disabled="busy" /></AwField>
-            <AwField id="account-universe" :label="customerCopy.text('signin.invite-universe')" :hint="betaEntry && defaultEnrollment?.fixedUniverse ? (language === 'en' ? 'The invitation sets this universe.' : 'Univerzum je určené pozvánkou.') : undefined"><input id="account-universe" v-model="invitationUniverse" class="aw-input" maxlength="160" autocomplete="off" required :readonly="betaEntry && !!defaultEnrollment?.fixedUniverse" :disabled="busy" /></AwField>
+            <div v-if="betaEntry && defaultEnrollment?.fixedUniverse" class="fixed-universe"><span>{{ customerCopy.text('signin.invite-universe') }}</span><p id="account-universe">{{ defaultEnrollment.fixedUniverse }}</p><small>{{ language === 'en' ? 'The invitation sets this universe.' : 'Univerzum je určené pozvánkou.' }}</small></div>
+            <AwField v-else id="account-universe" :label="customerCopy.text('signin.invite-universe')"><input id="account-universe" v-model="invitationUniverse" class="aw-input" maxlength="160" autocomplete="off" required :disabled="busy" /></AwField>
           </template>
-          <AwField v-if="!betaEntry || enrollmentKind === 'recovery'" id="account-invite" :label="customerCopy.text(enrollmentKind === 'recovery' ? 'signin.recovery-code-label' : 'signin.invite-code-label')" :hint="customerCopy.text('signin.token-hint')"><input id="account-invite" aria-describedby="account-invite-hint" ref="invitationCodeInput" v-model="token" class="aw-input" type="password" autocomplete="off" maxlength="256" required :disabled="busy" /></AwField>
+          <AwField v-if="(!betaEntry || enrollmentKind === 'recovery') && !linkedInvitation" id="account-invite" :label="customerCopy.text(enrollmentKind === 'recovery' ? 'signin.recovery-code-label' : 'signin.invite-code-label')" :hint="customerCopy.text('signin.token-hint')"><input id="account-invite" aria-describedby="account-invite-hint" ref="invitationCodeInput" v-model="token" class="aw-input" type="password" autocomplete="off" maxlength="256" required :disabled="busy" /></AwField>
           <fieldset v-if="enrollmentKind === 'invite'" class="consent-fieldset">
-            <label><input v-model="aiConsent" type="checkbox" :disabled="busy" /> <span>{{ betaEntry ? (language === 'en' ? 'I agree to use OpenAI to create my character and personal experience.' : 'Souhlasím s použitím OpenAI pro vytvoření své postavy a osobního zážitku.') : customerCopy.text('signin.ai-consent') }}</span></label>
+            <label><input v-model="aiConsent" type="checkbox" :disabled="busy" /> <span>{{ language === 'en' ? 'I agree to use OpenAI to create my character and personal experience.' : 'Souhlasím s použitím OpenAI pro vytvoření své postavy a osobního zážitku.' }}</span></label>
             <p v-if="betaEntry" class="identity-hint">{{ language === 'en' ? 'Without this consent, we will not create your character.' : 'Bez tohoto souhlasu postavu nevytvoříme.' }}</p>
             <details><summary>{{ customerCopy.text('signin.ai-consent-details') }}</summary><p>{{ customerCopy.text('signin.ai-consent-copy') }} <RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></p></details>
           </fieldset>
           <p v-if="enrollmentKind === 'invite'" class="identity-hint">{{ customerCopy.text('signin.passkey-before-dialog') }}</p>
         </template>
-        <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || (betaEntry && (enrollmentLoading || !defaultEnrollment?.available)) || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment ? customerCopy.text('signin.customer-create') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : betaEntry ? (language === 'en' ? 'Continue' : 'Pokračovat') : customerCopy.text('signin.invite-create-key') : customerCopy.text('signin.submit-signin') }}</AwButton>
+        <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || (betaEntry && (enrollmentLoading || !defaultEnrollment?.available)) || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment ? customerCopy.text('signin.customer-create') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : betaEntry ? (language === 'en' ? 'Accept invitation' : 'Přijmout pozvánku') : customerCopy.text('signin.invite-create-key') : customerCopy.text('signin.submit-signin') }}</AwButton>
+        <p v-if="!enrollment && !customerEnrollment" class="identity-hint">{{ language === 'en' ? 'This opens system verification. Confirm with your device; no account password is needed.' : 'Otevře se systémové ověření. Potvrď ho na svém zařízení; heslo k účtu nepotřebuješ.' }}</p>
         <div v-if="!customerEnrollment" class="signin-options">
           <AwButton v-if="enrollment" @click="showPasskeySignIn">{{ customerCopy.text('signin.have-passkey') }}</AwButton>
           <AwButton v-if="betaEntry" @click="setEnrollmentMode('invite')">{{ customerCopy.text('signin.have-invite') }}</AwButton>
@@ -227,8 +274,10 @@ async function submit(): Promise<void> {
       </form>
       <LostAccessHelp v-if="!account && !customerEnrollment" />
       <nav class="signin-help" aria-label="Nápověda"><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></nav>
-    </div>
+      <AwButton v-if="!account" class="signin-back" @click="arrival = true; error = ''">{{ language === 'en' ? 'Back' : 'Zpět' }}</AwButton>
+    </component>
   </section>
+  </SceneShell>
 </template>
 <style scoped>
 .signin-page { width: 100%; max-width: 30rem; margin-inline: auto; padding-inline: max(clamp(16px, calc(5.71vw - 2.28px), 20px), env(safe-area-inset-left, 0px)) max(clamp(16px, calc(5.71vw - 2.28px), 20px), env(safe-area-inset-right, 0px)); padding-block: max(20px, env(safe-area-inset-top, 0px)) max(32px, env(safe-area-inset-bottom, 0px)); }
@@ -256,5 +305,25 @@ async function submit(): Promise<void> {
 .signin-content :deep(.lost-access-help summary) { min-height: 44px; padding-block: .65rem; }
 .signin-help { display: flex; gap: 1rem; flex-wrap: wrap; }
 .signin-content :deep(.lost-access-help) { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.signin-page { max-width: 29rem; min-height: 100dvh; }
+.signin-masthead { margin-bottom: 1.25rem; }
+.signin-wordmark img { display: none; }
+.signin-wordmark { font-size: 1.35rem; }
+.arrival-content { display: grid; gap: 1rem; padding-top: 1rem; }
+.arrival-invitation { display: block; width: 115%; height: auto; max-width: none; margin-left: -7.5%; filter: drop-shadow(0 1rem 1rem #0008); }
+.arrival-content h1 { font-family: var(--aw-font-display); font-size: clamp(2.7rem, 10vw, 3.5rem); font-weight: 500; line-height: .98; margin: .5rem 0 0; }
+.arrival-content p { font-family: var(--aw-font-display); font-size: 1.35rem; line-height: 1.25; margin: 0 0 .6rem; }
+.arrival-content > .aw-button { width: 100%; min-height: 48px; }
+.arrival-content > .aw-button--secondary { border-color: transparent; background: transparent; text-decoration: underline; }
+.signin-access-key { display: block; width: 100%; height: auto; margin-bottom: -1rem; }
+.signin-page:not(.signin-page--paper) .signin-intro { text-align: center; }
+.signin-content { gap: 1.25rem; }
+.signin-content.paper-surface { border-radius: 2px; }
+.signin-page--paper .signin-intro h1 { font-size: clamp(2rem, 8vw, 2.8rem); }
+.signin-options .aw-button { padding: .35rem .5rem; border: 0; background: transparent; text-decoration: underline; }
+.fixed-universe p { margin: .35rem 0; font-family: var(--aw-font-display); font-size: 1.4rem; }
+.fixed-universe small { color: var(--aw-muted); }
+.signin-back { justify-self: start; min-height: 44px; }
+@media (max-height: 550px) { .signin-page { padding-top: .5rem; } .signin-masthead { margin-bottom: .5rem; } .signin-access-key { max-height: 10rem; object-fit: contain; } }
 @media (min-width: 600px) { .signin-page { padding-block: 32px; } }
 </style>

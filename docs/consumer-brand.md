@@ -86,10 +86,13 @@ prompt-scheduling guarantee, not proof of audible delivery.
 
 ## Visual source and touchpoints
 
-[DESIGN.md](../DESIGN.md) records the ink, brass, velvet and warm-paper direction.
-The consumer CSS adapts existing `--aw-*` roles and components rather than changing
-the engineering design-system generator. Persisted theme IDs stay compatible;
-visible names are Night salon and Velvet evening (Czech equivalents in Czech UI).
+The approved smartphone opening direction is **The Midnight Table**. Its local
+reference, six screen records, shared composition recipe and current artwork
+locations are maintained in the [consumer game UI guide](../design-system/consumer-game-ui.md).
+[DESIGN.md](../DESIGN.md) summarizes the consumer boundary. The consumer CSS
+adapts existing `--aw-*` roles without changing the engineering design-system
+generator. Persisted theme IDs stay compatible; visible theme names remain
+Night salon and Velvet evening (Czech equivalents in Czech UI).
 
 The identity appears in the shared shell and route titles, prelaunch and
 invitation screens, character/account/keepsake surfaces, archive empty state,
@@ -124,6 +127,10 @@ iOS build workflows run it after Capacitor sync. Generated PNGs stay ignored.
 Native launch RGB is generated from the consumer background override, with the
 shared token fallback for engineering-only fixtures. The installer
 retains its standalone embedded fallback and an inline consumer palette subset.
+
+The original salon assets above remain in use on their existing surfaces. The
+Midnight Table's new opening assets and their source/runtime variants are listed
+in the canonical consumer UI guide and the opening asset manifest.
 
 ## Acceptance and verification limits
 

@@ -1,0 +1,3 @@
+interface:
+  display_name: "WNS Locked Screen"
+  short_description: "Implement one approved Wand Night Stand screen"
