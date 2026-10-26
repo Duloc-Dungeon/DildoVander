@@ -105,6 +105,37 @@ describe('single-group beta enrollment', () => {
     wrapper.unmount();
   });
 
+  it('keeps protected-link sign-in independent of beta recruitment availability', async () => {
+    api.request.mockImplementation(() => new Promise(() => {}));
+    api.authenticate.mockImplementation(async () => {
+      account.value = { id: 'existing-admin', displayName: 'Administrator', roles: ['Administrator'] };
+    });
+    const { router, wrapper } = await mountSignIn('/settings');
+    try {
+      expect(api.request).not.toHaveBeenCalledWith('/app/v1/enrollment/default');
+      expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined();
+      await wrapper.get('form').trigger('submit');
+      await flushPromises();
+      expect(api.authenticate).toHaveBeenCalledWith('signin', '', '');
+      expect(router.currentRoute.value.path).toBe('/settings');
+    } finally { wrapper.unmount(); }
+  });
+
+  it('allows switching to existing passkey sign-in while recruitment is still loading', async () => {
+    let finishEnrollment!: (value: { available: boolean }) => void;
+    api.request.mockImplementation(() => new Promise(resolve => { finishEnrollment = resolve; }));
+    const { wrapper } = await mountSignIn(undefined, true);
+    try {
+      expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined();
+      await wrapper.findAll('button').find(button => button.text() === 'Už mám přístupový klíč')!.trigger('click');
+      expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined();
+      finishEnrollment({ available: false });
+      await flushPromises();
+      expect(wrapper.get('button[type="submit"]').text()).toBe('Přihlásit přístupovým klíčem');
+      expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined();
+    } finally { wrapper.unmount(); }
+  });
+
   it('uses the server fixed universe as read only', async () => {
     api.request.mockResolvedValue({ available: true, fixedUniverse: 'Za zrcadlem' });
     const { wrapper } = await mountSignIn(undefined, true);

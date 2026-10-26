@@ -16,7 +16,7 @@ import { account, accountRequest, accountsEnabled, initialized, loading, signing
 const router = useRouter();
 const route = useRoute();
 const enrollment = ref(!route.query.return && !signingOut.value);
-const betaEntry = ref(true);
+const betaEntry = ref(enrollment.value);
 const customerEnrollment = ref(false);
 const enrollmentKind = ref<'invite' | 'recovery'>('invite');
 const token = ref('');
@@ -63,7 +63,7 @@ onMounted(async () => {
   if (suppliedCode) { enrollment.value = true; betaEntry.value = false; enrollmentKind.value = suppliedCode.kind; token.value = suppliedCode.token; }
   try {
     await refreshIdentity();
-    if (!suppliedCode) await refreshDefaultEnrollment();
+    if (!suppliedCode && betaEntry.value) await refreshDefaultEnrollment();
   } catch (cause) { error.value = errorKey(cause); }
 });
 async function refreshDefaultEnrollment(): Promise<void> {
@@ -214,7 +214,7 @@ async function submit(): Promise<void> {
           </fieldset>
           <p v-if="enrollmentKind === 'invite'" class="identity-hint">{{ customerCopy.text('signin.passkey-before-dialog') }}</p>
         </template>
-        <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || enrollmentLoading || (betaEntry && !defaultEnrollment?.available) || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment ? customerCopy.text('signin.customer-create') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : betaEntry ? (language === 'en' ? 'Continue' : 'Pokračovat') : customerCopy.text('signin.invite-create-key') : customerCopy.text('signin.submit-signin') }}</AwButton>
+        <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || (betaEntry && (enrollmentLoading || !defaultEnrollment?.available)) || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment ? customerCopy.text('signin.customer-create') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : betaEntry ? (language === 'en' ? 'Continue' : 'Pokračovat') : customerCopy.text('signin.invite-create-key') : customerCopy.text('signin.submit-signin') }}</AwButton>
         <div v-if="!customerEnrollment" class="signin-options">
           <AwButton v-if="enrollment" @click="showPasskeySignIn">{{ customerCopy.text('signin.have-passkey') }}</AwButton>
           <AwButton v-if="betaEntry" @click="setEnrollmentMode('invite')">{{ customerCopy.text('signin.have-invite') }}</AwButton>
