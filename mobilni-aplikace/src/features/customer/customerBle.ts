@@ -31,7 +31,7 @@ async function current<T>(request: () => Promise<T>): Promise<T> {
   return result
 }
 export const customerBle = {
-  supported: () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios',
+  supported: () => Capacitor.isNativePlatform() && ['ios', 'android'].includes(Capacitor.getPlatform()),
   discover: () => current(() => native.discover()),
   connect: (id: string) => current(() => native.connect({ id })),
   start: (ticket: string, id: string) => {

@@ -45,7 +45,7 @@ async function change(method: 'POST' | 'DELETE', alias?: string): Promise<void> 
     await refresh();
     if (account.value?.id === userId && target === deviceId.value && details.value) message.value = method === 'POST'
       ? 'Kufr přiřazen k této instalaci. Vazba nevytváří další oprávnění ani nové párování.'
-      : 'Cloudová vazba odebrána. Místní párování v Keychain a oprávnění přidělená správcem zůstávají samostatná.';
+      : 'Cloudová vazba odebrána. Místní párování v zabezpečeném úložišti a oprávnění přidělená správcem zůstávají samostatná.';
   } catch (error) {
     if (requested === generation) message.value = (error instanceof Error ? error.message : 'Server změnu nepotvrdil.') + ' Dokud server změnu nepotvrdí, cloudovou vazbu považujte za nezměněnou.';
   } finally { if (requested === generation) pending.value = false; }

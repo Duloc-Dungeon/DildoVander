@@ -123,7 +123,7 @@ async function revokeUserGrants(): Promise<void> {
   ++generation; pending.value = true; cancellationPending.value = false;
   status.value = { configured: false, running: false, phase: 'idle', mode: 'unknown' };
   clearLogs();
-  try { await debugBridge.forgetProfile(); message.value = 'Testovací přístup odebraný. Párování kufru zůstává v Keychain.'; }
+  try { await debugBridge.forgetProfile(); message.value = 'Testovací přístup odebraný. Místní párování zůstává v zabezpečeném úložišti telefonu.'; }
   finally { pending.value = false; }
 }
 

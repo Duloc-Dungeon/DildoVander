@@ -28,6 +28,8 @@
     "vue-tsc": "3.3.13"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
     "@capacitor/core": "8.5.3",
     "@capacitor/ios": "8.5.3",
     "pinia": "4.1.0",

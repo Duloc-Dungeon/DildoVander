@@ -14,7 +14,7 @@ onMounted(() => { void cloud.refresh(); });
     <h2 id="device-account-title">Kufr a váš účet</h2>
     <p>Serverová oprávnění přiděluje vlastník nebo správce pro přesné ID kufru. Místní přístup vyžaduje samostatné nativní párování s PoP a ověřeným certifikátem. Hledání v síti, alias ani tato vazba žádné oprávnění nevytváří.</p>
     <dl>
-      <div><dt>Místní párování</dt><dd>{{ device.savedDevice.value.paired ? `Uloženo v Keychain · ${device.savedDevice.value.deviceId}` : 'Nepotvrzené · nejprve ověřte kufr přes Bluetooth' }}</dd></div>
+      <div><dt>Místní párování</dt><dd>{{ device.savedDevice.value.paired ? `Uloženo v zabezpečeném úložišti telefonu · ${device.savedDevice.value.deviceId}` : 'Nepotvrzené · nejprve ověřte kufr přes Bluetooth' }}</dd></div>
       <div><dt>Cloudové oprávnění</dt><dd>{{ !cloud.account.value ? 'Nepřihlášený účet' : !cloud.details.value ? 'Neověřené · cloud není dostupný nebo stav nebyl načten' : cloud.canOperate.value ? 'Grant/role dovoluje ovládání; připojení se ověřuje samostatně' : cloud.canRead.value ? 'Pouze čtení' : 'Pro tento kufr není přidělené oprávnění' }}</dd></div>
       <div><dt>Vazba této instalace</dt><dd>{{ cloud.association.value ? cloud.association.value.alias || cloud.association.value.deviceId : 'Nenastavená' }}</dd></div>
     </dl>
@@ -29,7 +29,7 @@ onMounted(() => { void cloud.refresh(); });
       </form>
     </template>
     <AwButton v-if="cloud.association.value" :disabled="cloud.pending.value" @click="confirmRemove = true">Odebrat cloudovou vazbu…</AwButton>
-    <div v-if="confirmRemove" class="aw-notice"><p>Odebrat vazbu této instalace na serveru? Tento krok nemaže data, samostatné granty správce ani místní Keychain párování.</p><div class="association-actions"><AwButton @click="confirmRemove = false">Zrušit</AwButton><AwButton :disabled="cloud.pending.value" @click="cloud.remove(); confirmRemove = false">Potvrdit odebrání vazby</AwButton></div></div>
+    <div v-if="confirmRemove" class="aw-notice"><p>Odebrat vazbu této instalace na serveru? Tento krok nemaže data, samostatné granty správce ani místní párování v zabezpečeném úložišti telefonu.</p><div class="association-actions"><AwButton @click="confirmRemove = false">Zrušit</AwButton><AwButton :disabled="cloud.pending.value" @click="cloud.remove(); confirmRemove = false">Potvrdit odebrání vazby</AwButton></div></div>
     <p class="aw-help">Cloudová změna a revokace vyžaduje potvrzení serveru. Offline instalace tím okamžitě neztrácí samostatný místní přístup. Pro jeho odebrání použijte zvlášť Odebrat párování z iPhonu; pro serverová oprávnění správu účtu.</p>
   </section>
 </template>

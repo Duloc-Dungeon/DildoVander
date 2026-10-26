@@ -61,6 +61,7 @@ internal static class AccountIdentity
     public static IServiceCollection AddAccountIdentity(this IServiceCollection services, IConfiguration configuration)
     {
         var config = AccountConfiguration.Read(configuration);
+        var androidOrigins = AndroidAppAssociation.Read(configuration)?.PasskeyOrigins ?? [];
         services.AddSingleton(config);
         services.AddAntiforgery(options =>
         {
@@ -130,7 +131,9 @@ internal static class AccountIdentity
             options.UserVerificationRequirement = "required";
             options.ResidentKeyRequirement = "required";
             options.AuthenticatorTimeout = TimeSpan.FromMinutes(3);
-            options.ValidateOrigin = context => ValueTask.FromResult(config.AllowedOrigins.Contains(context.Origin, StringComparer.Ordinal));
+            options.ValidateOrigin = context => ValueTask.FromResult(
+                config.AllowedOrigins.Contains(context.Origin, StringComparer.Ordinal)
+                || androidOrigins.Contains(context.Origin, StringComparer.Ordinal));
         });
         return services;
     }

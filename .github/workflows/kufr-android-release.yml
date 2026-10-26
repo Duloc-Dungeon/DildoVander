@@ -1,0 +1,105 @@
+name: Build signed Android beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful direct CI run for current main
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: kufr-android-signing
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.repository == 'Duloc-Dungeon/DildoVander' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/reuse-build.yml
+    with:
+      build_run_id: ${{ inputs.build_run_id }}
+      workflow: ci.yml
+      artifact: web-dist
+
+  signed-apk:
+    if: github.repository == 'Duloc-Dungeon/DildoVander' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: android-signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.main_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: mobilni-aplikace/.nvmrc
+          cache: npm
+          cache-dependency-path: |
+            mobilni-aplikace/package-lock.json
+            contracts/package-lock.json
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - run: npm ci --prefix contracts
+      - run: npm ci --prefix mobilni-aplikace
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          merge-multiple: true
+          run-id: ${{ needs.verify.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/web-package
+      - run: python3 scripts/ci/package.py unpack "$RUNNER_TEMP/web-package" mobilni-aplikace/dist
+      - name: Reject a signing build queued before main changed
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          EXPECTED_SHA: ${{ needs.verify.outputs.main_sha }}
+        with:
+          script: await require('./scripts/ci/verify-build.cjs').checkMain({ github, context }, process.env.EXPECTED_SHA)
+      - name: Build and verify signed APK
+        working-directory: mobilni-aplikace
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ vars.ANDROID_KEY_ALIAS }}
+          ANDROID_SIGNING_CERTIFICATE_SHA256: ${{ vars.ANDROID_SIGNING_CERTIFICATE_SHA256 }}
+          KUFR_ACCOUNT_ORIGIN: ${{ vars.KUFR_ACCOUNT_ORIGIN }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_SIGNING_CERTIFICATE_SHA256"
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/android-release.p12"
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          unset ANDROID_KEYSTORE_BASE64
+          chmod +x android/gradlew
+          python3 scripts/android.py release --skip-web --version-code "$((1000000 + GITHUB_RUN_NUMBER))"
+      - name: Package signed APK with provenance
+        run: |
+          python3 scripts/ci/package.py pack mobilni-aplikace/dist/android "$RUNNER_TEMP/apk-package"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'apk-package/build-manifest.json'
+          manifest = json.loads(path.read_text())
+          manifest.update(json.loads(Path('mobilni-aplikace/dist/android/release-metadata.json').read_text()))
+          manifest['signing_kind'] = 'android_release'
+          path.write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-release-apk
+          path: ${{ runner.temp }}/apk-package/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true

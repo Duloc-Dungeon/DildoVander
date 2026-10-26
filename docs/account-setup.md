@@ -21,6 +21,8 @@ doménu jako skutečnou službu.
 | `ApplicationIdentity:AllowedOrigins:0` | Přesný HTTPS origin, například `https://kufr.example.invalid`; další originy mají samostatné indexy. Žádná cesta ani koncové `/`. Doména musí patřit do RP. |
 | `ApplicationIdentity:AppleAppId` | Volitelně skutečné `TEAMID.bundle.id` pro AASA. Desetiznakové Team ID nesmí být smyšlené. |
 | `ApplicationIdentity:AppleAppIds:0` | Volitelný seznam dalších skutečných `TEAMID.bundle.id`; AASA spojí seznam s původním `AppleAppId` a odstraní duplicity. Neplatná položka zablokuje odpověď. |
+| `ApplicationIdentity:AndroidPackageName` | Optional exact Android package, such as `de.dildovander.companion`. No wildcard. |
+| `ApplicationIdentity:AndroidCertificateSha256:0` | Explicit release signing certificate SHA-256 (64 hex characters or colon-separated bytes). Additional reviewed certificates use separate indices. These configure Android WebAuthn certificate origins and `/.well-known/assetlinks.json`; they do not expand HTTP/CSRF origins. |
 | `ApplicationIdentity:RequestsPerMinute` | Technický limit na IP; výchozí 40, povolený rozsah 10–120. |
 
 Proměnné prostředí používají `__`, například `ApplicationIdentity__DataRoot` a

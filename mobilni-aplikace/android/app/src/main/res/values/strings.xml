@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Wand Night Stand</string>
+    <string name="title_activity_main">Wand Night Stand</string>
+    <string name="package_name">de.dildovander.companion</string>
+    <string name="custom_url_scheme">de.dildovander.companion</string>
+</resources>

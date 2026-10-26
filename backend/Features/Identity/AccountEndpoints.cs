@@ -61,6 +61,9 @@ internal static partial class AccountEndpoints
                 ? Results.Json(new { webcredentials = new { apps = ids } })
                 : Results.NotFound();
         });
+        app.MapMethods("/.well-known/assetlinks.json", ["GET", "HEAD"], (IConfiguration configuration) =>
+            AndroidAppAssociation.Read(configuration) is { } association
+                ? Results.Json(association.AssetLinks()) : Results.NotFound());
         group.MapDelete("/session", SignOutAsync).RequireAuthorization();
         group.MapPost("/passkeys/request-options", RequestOptionsAsync);
         group.MapPost("/passkeys/sign-in", SignInAsync);

@@ -58,6 +58,7 @@ internal static partial class AccountIdentityTests
         ServiceCredentialBoundaries();
         await DisabledIdentitySessionAsync();
         await AppleAppSiteAssociationAsync();
+        await RunAndroidAssociationAsync();
         await PersistentAccountAuthorizationAsync();
         await AdditionalPasskeyRecentAuthenticationAsync();
         await RunPasskeyLabelsAsync();
@@ -560,7 +561,7 @@ internal static partial class AccountIdentityTests
         public static async Task<Fixture> StartAsync(bool browserMode = false, bool customerFeatures = false,
             bool deletionFeatures = false, bool customerMemoryFeatures = false,
             bool accountDataExportFeatures = false, Action<WebApplication>? configureEndpoints = null,
-            Action<IServiceCollection>? configureServices = null)
+            Action<IServiceCollection>? configureServices = null, Action<IConfiguration>? configureConfiguration = null)
         {
             var root = Path.Combine(Path.GetTempPath(), "dv-account-tests-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -598,6 +599,7 @@ internal static partial class AccountIdentityTests
                 ["DigitalTwin:Instances:sim-auth:BuildId"] = "auth-fixture"
             });
             builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
+            configureConfiguration?.Invoke(builder.Configuration);
             builder.Services.AddAccountIdentity(builder.Configuration);
             builder.Services.AddLaunchManagement(builder.Configuration);
             builder.Services.AddModelReleases(builder.Configuration);
@@ -717,7 +719,7 @@ internal static partial class AccountIdentityTests
 
     // Real P-256 WebAuthn evidence generated offline. No mocked Identity handler,
     // test login endpoint, paid provider, or production credential is involved.
-    private sealed class VirtualPasskey : IDisposable
+    private sealed class VirtualPasskey(string origin = "https://localhost") : IDisposable
     {
         private readonly ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         private readonly byte[] credentialId = RandomNumberGenerator.GetBytes(32);
@@ -740,9 +742,9 @@ internal static partial class AccountIdentityTests
             return new { id = B64(credentialId), rawId = B64(credentialId), type = "public-key", authenticatorAttachment = "platform", clientExtensionResults = new { },
                 response = new { clientDataJSON = B64(clientData), attestationObject = B64(attestation.ToArray()), transports = new[] { "internal" } } };
         }
-        public object Assert(JsonElement options)
+        public object Assert(JsonElement options, string? assertionOrigin = null)
         {
-            var clientData = ClientData("webauthn.get", options);
+            var clientData = ClientData("webauthn.get", options, assertionOrigin);
             using var auth = new MemoryStream(); auth.Write(SHA256.HashData(Encoding.UTF8.GetBytes("localhost")));
             counter++; auth.Write([0x05, (byte)(counter >> 24), (byte)(counter >> 16), (byte)(counter >> 8), (byte)counter]);
             var authData = auth.ToArray();
@@ -750,7 +752,7 @@ internal static partial class AccountIdentityTests
             return new { id = B64(credentialId), rawId = B64(credentialId), type = "public-key", authenticatorAttachment = "platform", clientExtensionResults = new { },
                 response = new { clientDataJSON = B64(clientData), authenticatorData = B64(authData), signature = B64(signature), userHandle = userId } };
         }
-        private static byte[] ClientData(string type, JsonElement options) => JsonSerializer.SerializeToUtf8Bytes(new { type, challenge = options.GetProperty("challenge").GetString(), origin = "https://localhost", crossOrigin = false });
+        private byte[] ClientData(string type, JsonElement options, string? overrideOrigin = null) => JsonSerializer.SerializeToUtf8Bytes(new { type, challenge = options.GetProperty("challenge").GetString(), origin = overrideOrigin ?? origin, crossOrigin = false });
         private static string B64(byte[] value) => WebEncoders.Base64UrlEncode(value);
         private static void CborText(Stream stream, string value) { var bytes = Encoding.UTF8.GetBytes(value); CborLength(stream, 0x60, bytes.Length); stream.Write(bytes); }
         private static void CborBytes(Stream stream, byte[] value) { CborLength(stream, 0x40, value.Length); stream.Write(value); }
