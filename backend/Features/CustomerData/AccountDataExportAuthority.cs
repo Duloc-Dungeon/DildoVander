@@ -131,8 +131,8 @@ internal sealed class CustomerDataGuardPrelude : IDisposable, IAsyncDisposable
         CustomerAdmissionDatabasePaths.Validate(connectionString, profiles.CustomerDataDatabasePath,
             journal.CustomerDataDatabasePath, memoryPath, exportJobPath);
         var admission = claimedStamp is not null
-            ? CustomerAdmissionGuard.AcquireCookie(connectionString, profiles, clock, access.AccountId, access.SessionId, claimedStamp, token)
-            : CustomerAdmissionGuard.AcquireCookieRevision(connectionString, profiles, clock, access.AccountId, access.SessionId, access.AuthorityRevision, token);
+            ? CustomerAdmissionGuard.AcquireCookie(connectionString, profiles, clock, access.AccountId, access.SessionId, claimedStamp, token, requireActiveMembership: false)
+            : CustomerAdmissionGuard.AcquireCookieRevision(connectionString, profiles, clock, access.AccountId, access.SessionId, access.AuthorityRevision, token, requireActiveMembership: false);
         try
         {
             var prelude = new CustomerDataGuardPrelude(admission, journal, keepsakes, clock);

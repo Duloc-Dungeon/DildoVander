@@ -108,11 +108,17 @@ final class NativeAccountRequestPolicy {
             return false;
         }
         if ("/app/v1/launch".equals(path)) return "GET".equals(method);
+        if ("/app/v1/enrollment/default".equals(path)) return "GET".equals(method);
+        if ("/app/v1/enrollment/default/admit".equals(path)) return "POST".equals(method);
         if ("/app/v1/prelaunch/character".equals(path)) return "GET".equals(method) || "PUT".equals(method);
         if ("/app/v1/prelaunch/character/retry".equals(path)) return "POST".equals(method);
         if ("/app/v1/admin/launch".equals(path)) return "GET".equals(method) || "PUT".equals(method);
+        if ("/app/v1/admin/launch/beta-admission".equals(path)) return "GET".equals(method) || "PUT".equals(method);
+        if ("/app/v1/admin/launch/beta-admission/group".equals(path)) return "POST".equals(method);
         if ("/app/v1/admin/launch/groups".equals(path)) return "GET".equals(method) || "POST".equals(method);
         if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}$")) return "PUT".equals(method);
+        if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}/members$")) return "GET".equals(method);
+        if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}/members/[0-9a-f]{32}$")) return "PUT".equals(method);
         if ("/app/v1/admin/launch/audit".equals(path) || "/app/v1/admin/launch/artwork".equals(path)) return "GET".equals(method);
         if ("/app/v1/admin/launch/personalization-preview".equals(path)) return "POST".equals(method);
         if ("/app/v1/admin/launch/artwork".equals(path)) return "GET".equals(method);
@@ -126,6 +132,7 @@ final class NativeAccountRequestPolicy {
             "/app/v1/enrollment/options".equals(path) || "/app/v1/enrollment/complete".equals(path) ||
             "/app/v1/customer/enrollment/options".equals(path) || "/app/v1/customer/enrollment/complete".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/character".equals(path)) return Arrays.asList("GET", "PUT", "DELETE").contains(method);
+        if ("/app/v1/customer/access".equals(path)) return "GET".equals(method);
         if ("/app/v1/customer/conversation-preferences".equals(path)) return "GET".equals(method) || "PUT".equals(method);
         if ("/app/v1/customer/character/correction".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/sessions".equals(path) || "/app/v1/customer/duels".equals(path) ||

@@ -10,7 +10,9 @@ import { clearInvitationRegistration, getInvitationRegistration } from './invita
 
 const api = vi.hoisted(() => ({
   authenticate: vi.fn(),
+  refreshIdentity: vi.fn(),
   signOut: vi.fn(),
+  request: vi.fn(),
   enrollment: null as { kind: 'invite' | 'recovery'; token: string } | null,
 }));
 
@@ -19,12 +21,12 @@ vi.mock('./session', async () => {
   return {
     account: ref(null),
     accountsEnabled: ref(true),
-    accountRequest: vi.fn(),
+    accountRequest: api.request,
     accountDeletionRequested: ref(false),
     initialized: ref(true),
     loading: ref(false),
     signingOut: ref(false),
-    refreshIdentity: vi.fn(),
+    refreshIdentity: api.refreshIdentity,
     authenticatePasskey: api.authenticate,
     signOut: api.signOut,
   };
@@ -68,9 +70,145 @@ beforeEach(() => {
   account.value = null;
   launchAllowed.value = true;
   api.authenticate.mockReset();
+  api.refreshIdentity.mockReset();
   api.signOut.mockReset();
+  api.request.mockReset().mockResolvedValue({ available: true, fixedUniverse: null });
   api.enrollment = null;
   clearInvitationRegistration('new-invitee');
+});
+
+describe('single-group beta enrollment', () => {
+  it('offers in-app enrollment without an invitation code and keeps the name for the account', async () => {
+    api.authenticate.mockImplementation(async () => {
+      account.value = { id: 'new-beta', displayName: 'Hermione Granger', roles: ['Customer'] };
+    });
+    const { router, wrapper } = await mountSignIn(undefined, true);
+
+    expect(api.request).toHaveBeenCalledWith('/app/v1/enrollment/default');
+    expect(wrapper.find('#account-invite').exists()).toBe(false);
+    await wrapper.get('#account-name').setValue('Hermione Granger');
+    await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+
+    expect(api.authenticate).toHaveBeenCalledWith('customer-enroll', '', 'Hermione Granger');
+    expect(router.currentRoute.value.path).toBe('/launch');
+    wrapper.unmount();
+  });
+
+  it('fails closed when the server says beta enrollment is closed', async () => {
+    api.request.mockResolvedValue({ available: false });
+    const { wrapper } = await mountSignIn(undefined, true);
+    expect(wrapper.text()).toContain('Přijímání nových účastníků je nyní uzavřené.');
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('#account-invite').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('uses the server fixed universe as read only', async () => {
+    api.request.mockResolvedValue({ available: true, fixedUniverse: 'Za zrcadlem' });
+    const { wrapper } = await mountSignIn(undefined, true);
+    expect((wrapper.get('#account-universe').element as HTMLInputElement).value).toBe('Za zrcadlem');
+    expect(wrapper.get('#account-universe').attributes('readonly')).toBeDefined();
+    wrapper.unmount();
+  });
+});
+
+it('reconciles a dropped enrollment response and saves the draft to the committed account', async () => {
+  api.authenticate.mockRejectedValueOnce(Object.assign(new Error('response lost after commit'), { code: 'customer_enrollment_completion_uncertain' }));
+  api.refreshIdentity.mockResolvedValue(undefined);
+  const { router, wrapper } = await mountSignIn(undefined, true);
+  try {
+    api.refreshIdentity.mockImplementation(async () => {
+      account.value = { id: 'beta-committed', displayName: 'Hermione Granger', roles: ['Customer'] };
+    });
+    await wrapper.get('#account-name').setValue('Hermione Granger');
+    await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(api.refreshIdentity).toHaveBeenCalledTimes(2);
+    expect(getInvitationRegistration('beta-committed')).toMatchObject({ name: 'Hermione Granger', universe: 'Kouzelnický svět' });
+    expect(router.currentRoute.value.path).toBe('/launch');
+    expect(api.authenticate).toHaveBeenCalledTimes(1);
+  } finally {
+    wrapper.unmount();
+    account.value = null;
+    clearInvitationRegistration('beta-committed');
+  }
+});
+
+it('requires passkey sign-in after an unconfirmed enrollment without repeating account creation', async () => {
+  api.authenticate.mockRejectedValueOnce(Object.assign(new Error('response lost'), { code: 'customer_enrollment_completion_uncertain' }));
+  api.refreshIdentity.mockResolvedValue(undefined);
+  const { router, wrapper } = await mountSignIn(undefined, true);
+  try {
+    await wrapper.get('#account-name').setValue('Hermione Granger');
+    await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Pokračuj přihlášením svým přístupovým klíčem');
+    expect(wrapper.find('#account-name').exists()).toBe(false);
+    api.authenticate.mockImplementationOnce(async () => {
+      account.value = { id: 'beta-signed-in', displayName: 'Hermione Granger', roles: ['Customer'] };
+    });
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(api.authenticate).toHaveBeenLastCalledWith('signin', '', '');
+    expect(api.authenticate).toHaveBeenCalledTimes(2);
+    expect(getInvitationRegistration('beta-signed-in')).toMatchObject({ name: 'Hermione Granger', universe: 'Kouzelnický svět' });
+    expect(router.currentRoute.value.path).toBe('/launch');
+  } finally {
+    wrapper.unmount();
+    account.value = null;
+    clearInvitationRegistration('beta-signed-in');
+  }
+});
+
+it('keeps the beta form in place when passkey creation is cancelled', async () => {
+  api.authenticate.mockRejectedValueOnce(new DOMException('cancelled', 'NotAllowedError'));
+  const { wrapper } = await mountSignIn(undefined, true);
+  try {
+    await wrapper.get('#account-name').setValue('Hermione Granger');
+    await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.find('#account-name').exists()).toBe(true);
+    expect(wrapper.find('#account-universe').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('Pokračuj přihlášením svým přístupovým klíčem');
+    expect(api.authenticate).toHaveBeenCalledTimes(1);
+  } finally { wrapper.unmount(); }
+});
+
+it('keeps the beta form in place when the passkey options request fails', async () => {
+  api.authenticate.mockRejectedValueOnce(new TypeError('network unavailable before credential creation'));
+  const { wrapper } = await mountSignIn(undefined, true);
+  try {
+    await wrapper.get('#account-name').setValue('Hermione Granger');
+    await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.find('#account-name').exists()).toBe(true);
+    expect(wrapper.find('#account-universe').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('Pokračuj přihlášením svým přístupovým klíčem');
+    expect(api.refreshIdentity).toHaveBeenCalledTimes(1);
+  } finally { wrapper.unmount(); }
+});
+
+it('keeps the beta form and refreshes its state after a known closed response', async () => {
+  api.authenticate.mockRejectedValueOnce(Object.assign(new Error('closed'), { code: 'beta_enrollment_closed' }));
+  api.request.mockResolvedValue({ available: true, fixedUniverse: null });
+  const { wrapper } = await mountSignIn(undefined, true);
+  try {
+    await wrapper.get('#account-name').setValue('Hermione Granger');
+    await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.find('#account-name').exists()).toBe(true);
+    expect(wrapper.find('#account-universe').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Přijímání nových účastníků je nyní uzavřené.');
+    expect(wrapper.text()).not.toContain('Pokračuj přihlášením svým přístupovým klíčem');
+    expect(api.refreshIdentity).toHaveBeenCalledTimes(1);
+  } finally { wrapper.unmount(); }
 });
 
 describe('sign-in destinations', () => {
@@ -134,6 +272,8 @@ describe('sign-in destinations', () => {
 
   it('opens the invitation form by default and switches to recovery without carrying its code', async () => {
     const { wrapper } = await mountSignIn(undefined, true);
+    expect(wrapper.find('#account-invite').exists()).toBe(false);
+    await wrapper.findAll('button').find(button => button.text() === 'Mám pozvánku nebo kód obnovy')!.trigger('click');
     expect(wrapper.find('#account-name').exists()).toBe(true);
     expect(wrapper.find('#account-universe').exists()).toBe(true);
     expect(wrapper.find('#account-invite').exists()).toBe(true);

@@ -185,7 +185,7 @@ internal static class GeneratedWandFlowTests
             keepsakes.SetWandPublication(issued[0].Keepsake, aliceActor, true, approvedEdition, aliceView.Revision);
             var oldName = issued[0].Wand.Name;
             await characters.SaveAsync("alice", new(issued[0].Profile.Revision,
-                issued[0].Profile.UserInput with { Name = "Revised Raven" }, issued[0].Profile.ProfileId));
+                issued[0].Profile.UserInput with { Name = "Revised Raven" }, issued[0].Profile.ProfileId, OpenAiConsent: true));
             var restartedKeepsakes = new KeepsakeStore(config, clock, protection);
             var restartedSource = new DuelIdentitySource(restartedKeepsakes, memory);
             var restartedDuels = new DuelStore(config, clock, restartedSource, slot, protection);

@@ -24,6 +24,7 @@ internal static class LaunchPolicyTests
         try
         {
             await VerifyConsumerDefaultsAsync(Path.Combine(root, "consumer-defaults"));
+            VerifyBetaAdmission(Path.Combine(root, "beta-admission"));
             var store = new LaunchPolicyStore(root);
             var clock = new TestClock(DateTimeOffset.FromUnixTimeMilliseconds(1_000));
             var policy = new LaunchAccessService(store, clock);
@@ -113,6 +114,32 @@ internal static class LaunchPolicyTests
         }
 
         Console.WriteLine("PASS launch policy: audience schedules, manual unlock, internal tester exception, optimistic concurrency, audit and persistence");
+    }
+
+    private static void VerifyBetaAdmission(string root)
+    {
+        var store = new LaunchPolicyStore(root);
+        var initial = store.ReadBetaAdmission();
+        Check(initial.GroupId is null && !initial.RecruitmentOpen && initial.Revision > 0,
+            "new beta admission configuration starts closed without a selected group");
+        var selected = store.CreateOrSelectBetaGroup("owner", new(initial.Revision), 1000);
+        Check(selected.Group.Name == "Interní beta" && selected.Admission.GroupId == selected.Group.Id
+            && !selected.Admission.RecruitmentOpen,
+            "admin can create and select the one internal beta group while keeping enrollment closed");
+        var open = store.UpdateBetaAdmission("owner",
+            new(selected.Admission.Revision, selected.Group.Id, true, "Middle-earth"), 2000);
+        Check(open.RecruitmentOpen && open.FixedUniverse == "Middle-earth",
+            "admin explicitly opens recruitment and configures a fixed universe");
+        using (var reservation = store.ReserveBetaEnrollment(selected.Group.Id, open.Revision))
+        {
+            Check(reservation is not null && reservation.Admission.FixedUniverse == "Middle-earth",
+                "enrollment reservation pins the selected group and universe");
+        }
+        var closed = store.UpdateBetaAdmission("owner", new(open.Revision, selected.Group.Id, false, "Middle-earth"), 3000);
+        Check(store.ReserveBetaEnrollment(selected.Group.Id, open.Revision) is null
+            && !new LaunchPolicyStore(root).ReadBetaAdmission().RecruitmentOpen
+            && closed.Revision > open.Revision,
+            "closing recruitment invalidates outstanding ceremonies and survives store restart");
     }
 
     private static async Task VerifyConsumerDefaultsAsync(string root)
@@ -302,7 +329,8 @@ internal static class LaunchPolicyTests
             using var signup = new HttpRequestMessage(HttpMethod.Post, "/app/v1/customer/enrollment/options");
             signup.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "arbitrary");
             using var signupResponse = await client.SendAsync(signup);
-            Check((int)signupResponse.StatusCode == 423, "open customer enrollment is disabled while production is locked");
+            Check(signupResponse.IsSuccessStatusCode,
+                "only the explicit customer enrollment surface passes the launch gate to its own closed-recruitment check");
             using var guest = await client.GetAsync("/guest/v1/evening");
             Check((int)guest.StatusCode == 423, "anonymous users cannot inspect public guest surfaces during production lock");
             using var spoofedGuest = new HttpRequestMessage(HttpMethod.Get, "/guest/v1/evening");

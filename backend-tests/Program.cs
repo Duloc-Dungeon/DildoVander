@@ -52,6 +52,7 @@ if (args is ["--customer-waiting-admission"]) { await CustomerWaitingAdmissionTe
 if (args is ["--customer-admission"]) { await CustomerAdmissionTests.RunAsync(); return; }
 if (args is ["--customer-availability"]) { CustomerAvailabilityTests.Run(); return; }
 if (args is ["--launch-policy"]) { await LaunchPolicyTests.RunAsync(); return; }
+if (args is ["--beta-admission-http"]) { await AccountIdentityTests.RunBetaAdmissionHttpAsync(); return; }
 if (args is ["--device-media"]) { await DeviceMediaTransportTests.RunAsync(); return; }
 if (args is ["--customer-data"]) { await CustomerDataAcceptanceTests.RunAsync(); return; }
 if (args is ["--customer-data-startup"]) { await AccountIdentityTests.RunCustomerDataStartupAsync(); return; }

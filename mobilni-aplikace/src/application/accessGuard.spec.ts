@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 
-const state = vi.hoisted(() => ({ account: null as { id: string; displayName: string; roles: string[] } | null, launchAllowed: false }));
+const state = vi.hoisted(() => ({ account: null as { id: string; displayName: string; roles: string[] } | null, launchAllowed: false, membership: 'active' as 'active' | 'revoked' | 'unassigned' }));
 vi.mock('../features/identity/session', async () => {
   const { ref } = await import('vue');
   const account = ref(state.account);
   return {
     account,
-    accountRequest: vi.fn(async () => ({ allowed: state.launchAllowed })),
+    accountRequest: vi.fn(async (path: string) => path === '/app/v1/customer/access' ? { state: state.membership } : { allowed: state.launchAllowed }),
     offlineSession: ref(false),
     offlineSessionExpiresAt: ref(0),
     refreshIdentity: vi.fn(async () => { account.value = state.account; }),
@@ -24,6 +24,7 @@ function createGuardedRouter() {
       { path: '/privacy', component: { template: '<div />' } },
       { path: '/support', component: { template: '<div />' } },
       { path: '/account-deletion', component: { template: '<div />' } },
+      { path: '/access-revoked', component: { template: '<div />' }, meta: { requiresAccount: true } },
       { path: '/launch', component: { template: '<div />' }, meta: { requiresAccount: true } },
       { path: '/me', component: { template: '<div />' }, meta: { requiresAccount: true } },
       { path: '/suitcase', component: { template: '<div />' }, meta: { requiresAccount: true, staff: true, offlineLocal: true } },
@@ -33,7 +34,7 @@ function createGuardedRouter() {
   return router;
 }
 
-beforeEach(() => { state.account = null; state.launchAllowed = false; });
+beforeEach(() => { state.account = null; state.launchAllowed = false; state.membership = 'active'; });
 
 describe('launch access navigation', () => {
   it('sends signed-out visitors away from feature routes to invitation authentication', async () => {
@@ -78,5 +79,14 @@ describe('launch access navigation', () => {
       await router.push(path);
       expect(router.currentRoute.value.path).toBe(path);
     }
+  });
+
+  it('routes a revoked customer to the access status page even after global launch unlock', async () => {
+    state.account = { id: 'guest', displayName: 'Guest', roles: ['Customer'] };
+    state.membership = 'revoked';
+    state.launchAllowed = true;
+    const router = createGuardedRouter();
+    await router.push('/me');
+    expect(router.currentRoute.value.path).toBe('/access-revoked');
   });
 });

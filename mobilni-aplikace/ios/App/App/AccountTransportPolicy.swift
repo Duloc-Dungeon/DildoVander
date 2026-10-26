@@ -504,6 +504,7 @@ enum AccountTransportPolicy {
         let exact: [String: Set<String>] = [
             "/app/v1/customer/enrollment/options": ["POST"],
             "/app/v1/customer/enrollment/complete": ["POST"],
+            "/app/v1/customer/access": ["GET"],
             "/app/v1/customer/character": ["GET", "PUT", "DELETE"],
             "/app/v1/customer/conversation-preferences": ["GET", "PUT"],
             "/app/v1/customer/character/correction": ["POST"],
@@ -590,6 +591,8 @@ enum AccountTransportPolicy {
             "/app/v1/passkeys/reauthentication-options": ["POST"], "/app/v1/passkeys/reauthenticate": ["POST"],
             "/app/v1/enrollment/options": ["POST"], "/app/v1/enrollment/complete": ["POST"],
             "/app/v1/passkeys/options": ["POST"], "/app/v1/passkeys/complete": ["POST"],
+            "/app/v1/enrollment/default": ["GET"],
+            "/app/v1/enrollment/default/admit": ["POST"],
             "/app/v1/admin/operations/status": ["GET"], "/app/v1/admin/operations/modes": ["PUT"],
             "/app/v1/admin/model-releases": ["GET"], "/app/v1/admin/model-releases/active": ["POST"],
             "/app/v1/admin/users": ["GET"], "/app/v1/admin/invitations": ["POST"], "/app/v1/admin/grants": ["POST"]]
@@ -663,8 +666,23 @@ enum AccountTransportPolicy {
         if path == "/app/v1/prelaunch/character/retry" { return method == "POST" && query.isEmpty }
         if prelaunchPortrait(path: path + (query.isEmpty ? "" : "?" + query.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")), method: method) { return true }
         if path == "/app/v1/admin/launch" { return query.isEmpty && ["GET", "PUT"].contains(method) }
+        if path == "/app/v1/admin/launch/beta-admission" { return query.isEmpty && ["GET", "PUT"].contains(method) }
+        if path == "/app/v1/admin/launch/beta-admission/group" { return query.isEmpty && method == "POST" }
         if path == "/app/v1/admin/launch/groups" { return query.isEmpty && ["GET", "POST"].contains(method) }
         let groupParts = path.split(separator: "/").map(String.init)
+        if groupParts.count == 7 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "groups"]
+            && groupParts[6] == "members" && query.isEmpty {
+            let groupId = groupParts[5]
+            return groupId.count == 32 && groupId.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) } && method == "GET"
+        }
+        if groupParts.count == 8 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "groups"]
+            && groupParts[6] == "members" && query.isEmpty {
+            let groupId = groupParts[5], userId = groupParts[7]
+            return groupId.count == 32 && userId.count == 32
+                && groupId.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) }
+                && userId.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) }
+                && method == "PUT"
+        }
         if groupParts.count == 6 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "groups"] {
             return path == "/app/v1/admin/launch/groups/\(groupParts[5])"
                 && groupParts[5].count == 32 && groupParts[5].allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) }

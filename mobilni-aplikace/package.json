@@ -15,7 +15,8 @@
     "test:persona-lab:browser": "node tests/persona-lab.browser.mjs",
     "test:accounts": "node tests/accounts.browser.mjs",
     "test:accounts:fixture": "node tests/accounts.fixture.browser.mjs",
-    "test:invitation:browser": "node tests/invitation.browser.mjs"
+    "test:invitation:browser": "node tests/invitation.browser.mjs",
+    "test:beta-admission:browser": "node tests/beta-admission.browser.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.3",

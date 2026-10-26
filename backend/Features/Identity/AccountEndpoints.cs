@@ -265,7 +265,9 @@ internal static partial class AccountEndpoints
         var user = invitation.UserId is null ? new AccountUser
         {
             Id = ceremony.UserId, UserName = ceremony.UserId, DisplayName = ceremony.DisplayName, CreatedAt = Now(),
-            LaunchGroupId = invitation.LaunchGroupId
+            LaunchGroupId = invitation.LaunchGroupId,
+            LaunchGroupJoinedAt = invitation.LaunchGroupId is null ? null : Now(),
+            LaunchGroupAccessRevision = invitation.LaunchGroupId is null ? 0 : 1
         } : await users.FindByIdAsync(invitation.UserId);
         if (user is null || user.Disabled) { return Error(context, "recovery_unavailable"); }
         if (invitation.UserId is null)
@@ -467,7 +469,8 @@ internal static partial class AccountEndpoints
         }, [new Claim(AccountIdentity.SessionClaim, session.Id)]);
     }
 
-    private static async Task SaveCeremonyAsync(HttpContext context, AccountDatabase db, string kind, string userId, string name, string? invitationHash)
+    private static async Task SaveCeremonyAsync(HttpContext context, AccountDatabase db, string kind, string userId,
+        string name, string? invitationHash, string? enrollmentGroupId = null, long? enrollmentRevision = null)
     {
         await db.Ceremonies.Where(x => x.ExpiresAt <= Now() || x.Consumed).ExecuteDeleteAsync();
         // A browser has at most one active ceremony. Replacing it invalidates its prior challenge.
@@ -478,7 +481,8 @@ internal static partial class AccountEndpoints
         var ceremony = new AccountCeremony
         {
             Id = Secret(), Kind = kind, UserId = userId, DisplayName = name,
-            InvitationHash = invitationHash, ExpiresAt = Now() + 300
+            InvitationHash = invitationHash, EnrollmentGroupId = enrollmentGroupId,
+            EnrollmentRevision = enrollmentRevision, ExpiresAt = Now() + 300
         };
         db.Ceremonies.Add(ceremony);
         await db.SaveChangesAsync();

@@ -214,6 +214,50 @@ admin secret. Čtení neprovádí provider volání ani změny serveru.
 
 ## Skupiny pozvánek a předstartovní přivítání
 
+### Samoobslužná beta a členství
+
+Instalační pozvánka TestFlight/Firebase stačí pro vstup do aplikace. Neprokazuje
+identitu účastníka: po dobu otevřeného náboru je beta samoobslužná. Nový účet
+získá pouze roli `Customer`. Pro malou známou skupinu po přijetí všech nábor zavřete.
+
+Majitel v existující správě vybere nebo vytvoří skupinu, nastaví její čas otevření,
+označí ji jako výchozí pro betu a výslovně povolí přijímání. Poté pošle pouze
+instalaci. Uzavření náboru neblokuje aktivní členy. V přehledu účastníků lze
+jednomu účtu odebrat nebo obnovit přístup; obnova vrátí stejná data i při zavřeném
+náboru a sama nespustí zrušenou práci. Shodná jména rozlišuje ID účtu.
+
+Konfigurace náboru začíná zavřená a migrace ani restart ji neotevřou.
+Změna výchozí skupiny nepřesouvá přijaté účty. Passkey registrace váže skupinu
+a revizi pravidel při zahájení a znovu je ověřuje před založením účtu a členství.
+Pevné univerzum se ukládá s přijetím a server je vynucuje i při pozdějších zápisech.
+
+Veřejný stav vrací `GET /app/v1/enrollment/default` (`available`, `fixedUniverse`);
+passkey používá stávající `POST /app/v1/customer/enrollment/options` a `/complete`.
+Přihlášený účet čte `GET /app/v1/customer/access` se stavem
+`unassigned|active|revoked` a revizí přístupu. Nepřiřazený účet se může výslovně
+přihlásit přes `POST /app/v1/enrollment/default/admit`; čtení členství nevytváří.
+Správa používá `GET/PUT /app/v1/admin/launch/beta-admission`, pomocné
+`POST /app/v1/admin/launch/beta-admission/group` a
+`GET /app/v1/admin/launch/groups/{id}/members`. Přístup účastníka mění
+`PUT /app/v1/admin/launch/groups/{id}/members/{userId}` s
+`{expectedRevision,active}`. Zápisy zachovávají CSRF/origin, recent passkey,
+správcovská oprávnění a potvrzovací hlavičku `X-DV-Confirm: yes`.
+
+Revokace ponechává členství, účet i data. Onboarding zobrazí odebraný přístup
+a server odmítne další přípravu postavy. Rozpracované obohacení a portrét se
+zruší a pozdní výsledky nesmějí publikovat. Přihlášení, obnova a vlastní
+export/smazání zůstávají dostupné. Tato změna se soustředí na beta onboarding;
+nerozšiřuje runtime generování hůlek, památek ani rozhovorů.
+
+Nová postava vyžaduje výslovný AI souhlas i na obecném character API; bez něj
+nevzniká ani profil ve stavu `saved`. Lokální rozepsaný formulář není postava.
+Existující historická data se nemažou. Souhlas s AI není souhlas s publikací,
+mikrofonem ani osobní pamětí.
+
+Před nasazením je potřeba standardně zazálohovat data a aplikovat aditivní
+Identity migraci obvyklým release postupem. Nastavení skupiny a povolení náboru
+jsou samostatné správcovské kroky; lokální testy je v produkci neprovedou.
+
 `GET/POST /app/v1/admin/launch/groups` a
 `PUT /app/v1/admin/launch/groups/{id}` spravují samostatné skupiny
 `{id,name,launchAt,revision}`. Zápis termínu používá očekávanou revizi;

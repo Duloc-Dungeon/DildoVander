@@ -21,6 +21,7 @@ internal static class CustomerAdmissionTests
         await using var fixture = await Fixture.CreateAsync();
         await CookieAndProfileAuthorityAsync(fixture);
         await DelegatedAuthorityAsync(fixture);
+        await MembershipAuthorityAsync(fixture);
         await DevicePolicyAsync(fixture);
         await SerializationAndUnwindAsync(fixture);
         await CommitExpiryAsync(fixture);
@@ -28,19 +29,49 @@ internal static class CustomerAdmissionTests
         Console.WriteLine("PASS customer admission: live SQLite account/session/stamp/deletion authority, held owned profiles, delegated ticket identity, device policy, serializable deletion/profile writes, cancellation/deadline/unwind, transactional expiry rollback, real HTTPS cookie authority");
     }
 
+    private static async Task MembershipAuthorityAsync(Fixture fixture)
+    {
+        var member = await fixture.AddAsync(AccountRoles.Customer);
+        await fixture.ExecuteAsync("UPDATE AspNetUsers SET LaunchGroupId='beta',LaunchGroupAccessRevision=1 WHERE Id=$id", member.Account);
+        var profile = await fixture.Profiles.SaveAsync(member.Account,
+            new(0, new("Member", "Story"), OpenAiConsent: true));
+        string before;
+        using (var admission = fixture.Authority.AcquireCookie(fixture.Context(member)))
+        {
+            before = admission.Proof.AuthorityRevision;
+        }
+        await fixture.ExecuteAsync("UPDATE AspNetUsers SET LaunchGroupRevokedAt=1,LaunchGroupAccessRevision=2 WHERE Id=$id", member.Account);
+        Expect(403, () => fixture.Authority.AcquireCookie(fixture.Context(member)));
+        Expect(403, () => fixture.Authority.AcquireDelegated(new(member.Account, profile.ProfileId, profile.Revision, null)));
+        using (var export = fixture.Authority.AcquireCookie(fixture.Context(member), requireActiveMembership: false))
+        {
+            Check(export.Proof.AuthorityRevision != before, "revocation changes authority but preserves own-data export admission");
+        }
+        await fixture.ExecuteAsync("UPDATE AspNetUsers SET LaunchGroupRevokedAt=NULL,LaunchGroupAccessRevision=3 WHERE Id=$id", member.Account);
+        using (var restored = fixture.Authority.AcquireCookie(fixture.Context(member), profile.ProfileId, profile.Revision))
+        {
+            Check(restored.Proof.LaunchGroupId == "beta" && restored.Proof.AuthorityRevision != before,
+                "restoration retains the same profile and group with a fresh authority generation");
+        }
+        Expect(401, () => CustomerAdmissionGuard.AcquireCookieRevision(fixture.ConnectionString,
+            fixture.Profiles, fixture.Clock, member.Account, member.Session, before));
+    }
+
     private static async Task CookieAndProfileAuthorityAsync(Fixture fixture)
     {
         var owner = await fixture.AddAsync(AccountRoles.Customer);
-        var profile = await fixture.Profiles.SaveAsync(owner.Account, new(0, new("Guest", "Story")));
+        var profile = await fixture.Profiles.SaveAsync(owner.Account, new(0, new("Guest", "Story"), OpenAiConsent: true));
         using (var held = fixture.Authority.AcquireCookie(fixture.Context(owner), profile.ProfileId, profile.Revision))
         {
             Check(held.Proof.AccountId == owner.Account && held.Proof.SessionId == owner.Session, "proof binds account and live session");
             var expected = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
             {
                 accountId = owner.Account, sessionId = owner.Session, stamp = owner.Stamp,
-                expires = owner.Expires, authenticated = owner.Authenticated, roles = new[] { AccountRoles.Customer }
+                expires = owner.Expires, authenticated = owner.Authenticated, roles = new[] { AccountRoles.Customer },
+                launchGroupId = (string?)null, launchGroupAccessRevision = 0L,
+                launchGroupRevokedAt = (long?)null, fixedUniverse = (string?)null
             })));
-            Check(held.Proof.AuthorityRevision == expected, "export authority digest retains the original field names, order and numeric bytes");
+            Check(held.Proof.AuthorityRevision == expected, "authority digest binds session and membership revision with stable numeric bytes");
             Check(held.CaptureOwnedProfile(profile.ProfileId, profile.Revision).UserInput == profile.UserInput, "capture uses held exact profile");
             Expect(409, () => held.ReadOwnedProfile(profile.ProfileId, profile.Revision + 1));
             Expect(409, () => held.ReadOwnedProfile(Guid.NewGuid().ToString("N")));
@@ -71,7 +102,7 @@ internal static class CustomerAdmissionTests
     private static async Task DelegatedAuthorityAsync(Fixture fixture)
     {
         var owner = await fixture.AddAsync(AccountRoles.Customer);
-        var profile = await fixture.Profiles.SaveAsync(owner.Account, new(0, new("Guest", "Story")));
+        var profile = await fixture.Profiles.SaveAsync(owner.Account, new(0, new("Guest", "Story"), OpenAiConsent: true));
         var ticket = new CustomerTicketOwner(owner.Account, profile.ProfileId, profile.Revision, null);
         await fixture.ExecuteAsync("DELETE FROM Sessions WHERE UserId=$id", owner.Account);
         await fixture.ExecuteAsync("UPDATE AspNetUsers SET SecurityStamp='rotated' WHERE Id=$id", owner.Account);
@@ -81,7 +112,7 @@ internal static class CustomerAdmissionTests
             _ = held.CaptureOwnedProfile(ticket.ProfileId, ticket.Revision);
             Expect(401, () => held.RequireDevicePermission("device"));
         }
-        var edited = await fixture.Profiles.SaveAsync(owner.Account, new(profile.Revision, new("Edited", "Story"), profile.ProfileId));
+        var edited = await fixture.Profiles.SaveAsync(owner.Account, new(profile.Revision, new("Edited", "Story"), profile.ProfileId, OpenAiConsent: true));
         using (var held = fixture.Authority.AcquireDelegated(ticket with { SessionId = "accepted-session" }))
         {
             Expect(409, () => held.ReadOwnedProfile(ticket.ProfileId, ticket.Revision));
@@ -124,7 +155,7 @@ internal static class CustomerAdmissionTests
     private static async Task SerializationAndUnwindAsync(Fixture fixture)
     {
         var owner = await fixture.AddAsync(AccountRoles.Customer);
-        var profile = await fixture.Profiles.SaveAsync(owner.Account, new(0, new("Guest", "Story")));
+        var profile = await fixture.Profiles.SaveAsync(owner.Account, new(0, new("Guest", "Story"), OpenAiConsent: true));
         var held = fixture.Authority.AcquireCookie(fixture.Context(owner), profile.ProfileId, profile.Revision);
         var attempted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var deletion = Task.Run(async () =>
@@ -141,7 +172,7 @@ internal static class CustomerAdmissionTests
         Expect(401, () => fixture.Authority.AcquireCookie(fixture.Context(owner)));
 
         var other = await fixture.AddAsync(AccountRoles.Customer);
-        var otherProfile = await fixture.Profiles.SaveAsync(other.Account, new(0, new("Other", "Story")));
+        var otherProfile = await fixture.Profiles.SaveAsync(other.Account, new(0, new("Other", "Story"), OpenAiConsent: true));
         using (var profileHeld = fixture.Authority.AcquireCookie(fixture.Context(other), otherProfile.ProfileId))
         {
             var profileAttempted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -180,7 +211,7 @@ internal static class CustomerAdmissionTests
     private static async Task CommitExpiryAsync(Fixture fixture)
     {
         var owner = await fixture.AddAsync(AccountRoles.Customer, seconds: 2);
-        var profile = await fixture.Profiles.SaveAsync(owner.Account, new(0, new("Guest", "Story")));
+        var profile = await fixture.Profiles.SaveAsync(owner.Account, new(0, new("Guest", "Story"), OpenAiConsent: true));
         var waiting = fixture.Journal.OpenCustomerWaiting("device", Guid.NewGuid().ToString("D"), Guid.NewGuid().ToString("D"), activationRevision: 1);
         var request = new CustomerWaitingJoin(Guid.NewGuid().ToString("D"), waiting.Id, profile.ProfileId);
         using (var held = fixture.Authority.AcquireCookie(fixture.Context(owner), profile.ProfileId, profile.Revision))

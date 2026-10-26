@@ -11,7 +11,9 @@ using Microsoft.Extensions.Options;
 namespace Kufr.Backend.Features.Identity;
 
 internal sealed record CustomerAdmissionProof(string AccountId, string? SessionId, string AuthorityRevision,
-    IReadOnlyList<string> Roles, string? DelegatedProfileId = null, long? DelegatedProfileRevision = null);
+    IReadOnlyList<string> Roles, string? DelegatedProfileId = null, long? DelegatedProfileRevision = null,
+    string? LaunchGroupId = null, long LaunchGroupAccessRevision = 0, string? FixedUniverse = null,
+    string? DisplayName = null, long? LaunchGroupRevokedAt = null);
 
 // Identity/profile admission has no memory, archive, export-job or journal DI dependency.
 internal sealed class CustomerAdmissionAuthority(IServiceScopeFactory scopes, CharacterProfileStore profiles,
@@ -21,7 +23,7 @@ internal sealed class CustomerAdmissionAuthority(IServiceScopeFactory scopes, Ch
         => CustomerAdmissionDatabasePaths.Validate(ConnectionString(), profiles.CustomerDataDatabasePath, additionalPaths);
 
     internal CustomerAdmissionGuard AcquireCookie(HttpContext context, string? profileId = null,
-        long? expectedRevision = null, CancellationToken token = default)
+        long? expectedRevision = null, CancellationToken token = default, bool requireActiveMembership = true)
     {
         var account = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var session = context.User.FindFirstValue(AccountIdentity.SessionClaim);
@@ -31,7 +33,8 @@ internal sealed class CustomerAdmissionAuthority(IServiceScopeFactory scopes, Ch
         {
             throw new CustomerDataAccessException(401, "account_access_unavailable");
         }
-        var guard = CustomerAdmissionGuard.AcquireCookie(ConnectionString(), profiles, clock, account, session, stamp, token);
+        var guard = CustomerAdmissionGuard.AcquireCookie(ConnectionString(), profiles, clock, account, session, stamp,
+            token, requireActiveMembership);
         try
         {
             if (profileId is not null) { guard.ReadOwnedProfile(profileId, expectedRevision); }
@@ -44,6 +47,22 @@ internal sealed class CustomerAdmissionAuthority(IServiceScopeFactory scopes, Ch
     // Acceptance must be re-read under this guard before requiring the old profile revision.
     internal CustomerAdmissionGuard AcquireDelegated(CustomerTicketOwner durableOwner, CancellationToken token = default)
         => CustomerAdmissionGuard.AcquireDelegated(ConnectionString(), profiles, clock, durableOwner, token);
+
+    internal CustomerAccountAdmission AcquireAccountCookie(HttpContext context, CancellationToken token = default)
+    {
+        var account = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var session = context.User.FindFirstValue(AccountIdentity.SessionClaim);
+        var stamp = context.User.FindFirstValue(options.Value.ClaimsIdentity.SecurityStampClaimType);
+        if (context.User.Identity?.IsAuthenticated != true || string.IsNullOrEmpty(account)
+            || string.IsNullOrEmpty(session) || string.IsNullOrEmpty(stamp))
+        {
+            throw new CustomerDataAccessException(401, "account_access_unavailable");
+        }
+        return CustomerAccountAdmission.Acquire(ConnectionString(), clock, account, session, stamp, token);
+    }
+
+    internal CustomerAccountAdmission AcquireAccount(string accountId, CancellationToken token = default)
+        => CustomerAccountAdmission.Acquire(ConnectionString(), clock, accountId, null, null, token);
 
     private string ConnectionString()
     {
@@ -76,12 +95,14 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
     }
 
     internal static CustomerAdmissionGuard AcquireCookie(string connectionString, CharacterProfileStore profiles,
-        TimeProvider clock, string accountId, string sessionId, string stamp, CancellationToken token = default)
-        => Acquire(connectionString, profiles, clock, accountId, sessionId, stamp, null, null, token);
+        TimeProvider clock, string accountId, string sessionId, string stamp, CancellationToken token = default,
+        bool requireActiveMembership = true)
+        => Acquire(connectionString, profiles, clock, accountId, sessionId, stamp, null, null, token, requireActiveMembership);
 
     internal static CustomerAdmissionGuard AcquireCookieRevision(string connectionString, CharacterProfileStore profiles,
-        TimeProvider clock, string accountId, string sessionId, string revision, CancellationToken token = default)
-        => Acquire(connectionString, profiles, clock, accountId, sessionId, null, revision, null, token);
+        TimeProvider clock, string accountId, string sessionId, string revision, CancellationToken token = default,
+        bool requireActiveMembership = true)
+        => Acquire(connectionString, profiles, clock, accountId, sessionId, null, revision, null, token, requireActiveMembership);
 
     internal static CustomerAdmissionGuard AcquireDelegated(string connectionString, CharacterProfileStore profiles,
         TimeProvider clock, CustomerTicketOwner owner, CancellationToken token = default)
@@ -89,7 +110,7 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
 
     private static CustomerAdmissionGuard Acquire(string connectionString, CharacterProfileStore profiles, TimeProvider clock,
         string accountId, string? sessionId, string? stamp, string? revision, CustomerTicketOwner? delegated,
-        CancellationToken token)
+        CancellationToken token, bool requireActiveMembership = true)
     {
         CustomerAdmissionDatabasePaths.Validate(connectionString, profiles.CustomerDataDatabasePath);
         var deadline = new CustomerDataGuardDeadline(token);
@@ -97,7 +118,7 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
         try
         {
             account = CustomerDataSqliteGuard.Acquire(connectionString, deadline);
-            var current = ReadAccount(account, accountId, sessionId, clock);
+            var current = ReadAccount(account, accountId, sessionId, clock, requireActiveMembership);
             if (delegated is null && (sessionId is null || (stamp is not null ? current.Stamp != stamp : current.Proof.AuthorityRevision != revision)))
             {
                 throw new CustomerDataAccessException(401, "account_access_unavailable");
@@ -119,24 +140,36 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
 
     // This is the single live-account/session/stamp/deletion SQL implementation.
     // Delegated physical admission intentionally has no cookie/session/stamp requirement.
-    private static (CustomerAdmissionProof Proof, string? Stamp, long? ExpiresAt) ReadAccount(
+    internal static (CustomerAdmissionProof Proof, string? Stamp, long? ExpiresAt) ReadAccountForReservation(
         CustomerDataSqliteGuard guard, string accountId, string? sessionId, TimeProvider clock)
+        => ReadAccount(guard, accountId, sessionId, clock);
+
+    private static (CustomerAdmissionProof Proof, string? Stamp, long? ExpiresAt) ReadAccount(
+        CustomerDataSqliteGuard guard, string accountId, string? sessionId, TimeProvider clock,
+        bool requireActiveMembership = true)
     {
         using var command = guard.Command("""
-            SELECT u.SecurityStamp,s.ExpiresAt,s.AuthenticatedAt FROM AspNetUsers u
+            SELECT u.SecurityStamp,s.ExpiresAt,s.AuthenticatedAt,u.LaunchGroupId,
+                u.LaunchGroupAccessRevision,u.LaunchGroupRevokedAt,u.AdmissionUniverse,u.DisplayName FROM AspNetUsers u
             LEFT JOIN Sessions s ON s.UserId=u.Id AND s.Id=$session
             WHERE u.Id=$account AND u.Disabled=0
                 AND NOT EXISTS(SELECT 1 FROM DeletionRequests d WHERE d.UserId=u.Id)
             """);
         command.Parameters.AddWithValue("$account", accountId);
         command.Parameters.AddWithValue("$session", sessionId is null ? DBNull.Value : sessionId);
-        string? stamp; long? expires; long? authenticated;
+        string? stamp; long? expires; long? authenticated; string? launchGroupId;
+        long launchGroupAccessRevision; long? launchGroupRevokedAt; string? fixedUniverse; string displayName;
         using (var reader = command.ExecuteReader())
         {
             if (!reader.Read()) { throw new CustomerDataAccessException(401, "account_access_unavailable"); }
             stamp = reader.IsDBNull(0) ? null : reader.GetString(0);
             expires = reader.IsDBNull(1) ? null : reader.GetInt64(1);
             authenticated = reader.IsDBNull(2) ? null : reader.GetInt64(2);
+            launchGroupId = reader.IsDBNull(3) ? null : reader.GetString(3);
+            launchGroupAccessRevision = reader.GetInt64(4);
+            launchGroupRevokedAt = reader.IsDBNull(5) ? null : reader.GetInt64(5);
+            fixedUniverse = reader.IsDBNull(6) ? null : reader.GetString(6);
+            displayName = reader.GetString(7);
         }
         if (sessionId is not null && (string.IsNullOrEmpty(stamp) || expires is null || authenticated is null
             || expires <= clock.GetUtcNow().ToUnixTimeSeconds()))
@@ -151,8 +184,22 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
         using var roleReader = roles.ExecuteReader();
         var names = new List<string>();
         while (roleReader.Read()) { names.Add(roleReader.GetString(0)); }
-        var revision = Digest(new { accountId, sessionId, stamp, expires, authenticated, roles = names });
-        return (new(accountId, sessionId, revision, Array.AsReadOnly(names.ToArray())), stamp, expires);
+        var privileged = names.Any(role => role is AccountRoles.Owner or AccountRoles.Administrator
+            or AccountRoles.Operator or AccountRoles.Viewer or AccountRoles.Tester);
+        if (requireActiveMembership && !privileged && names.Contains(AccountRoles.Customer, StringComparer.Ordinal)
+            && launchGroupRevokedAt is not null)
+        {
+            throw new CustomerDataAccessException(403, "customer_access_revoked");
+        }
+        var revision = Digest(new
+        {
+            accountId, sessionId, stamp, expires, authenticated, roles = names,
+            launchGroupId, launchGroupAccessRevision, launchGroupRevokedAt, fixedUniverse
+        });
+        return (new(accountId, sessionId, revision, Array.AsReadOnly(names.ToArray()),
+            LaunchGroupId: launchGroupId, LaunchGroupAccessRevision: launchGroupAccessRevision,
+            FixedUniverse: fixedUniverse, DisplayName: displayName,
+            LaunchGroupRevokedAt: launchGroupRevokedAt), stamp, expires);
     }
 
     internal CharacterProfile ReadOwnedProfile(string profileId, long? expectedRevision = null)
@@ -218,4 +265,65 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
         finally { account.Dispose(); }
     }
     public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+}
+
+// Reserves only identity/session/membership rows so the caller can write its own
+// account-scoped store without opening a second SQLite transaction.
+internal sealed class CustomerAccountAdmission : IDisposable
+{
+    private readonly CustomerDataSqliteGuard account;
+
+    internal CustomerAdmissionProof Proof { get; }
+
+    private CustomerAccountAdmission(CustomerDataSqliteGuard account, CustomerAdmissionProof proof)
+    {
+        this.account = account;
+        Proof = proof;
+    }
+
+    internal bool AdmitToGroup(string groupId, long now, string? fixedUniverse)
+    {
+        if (Proof.LaunchGroupId is not null || Proof.LaunchGroupRevokedAt is not null
+            || !Proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)
+            || Proof.Roles.Any(role => role is AccountRoles.Owner or AccountRoles.Administrator
+                or AccountRoles.Operator or AccountRoles.Viewer or AccountRoles.Tester))
+        {
+            return false;
+        }
+        using var command = account.Command("""
+            UPDATE AspNetUsers SET LaunchGroupId=$group,LaunchGroupJoinedAt=$now,
+                LaunchGroupAccessRevision=1,LaunchGroupRevokedAt=NULL,AdmissionUniverse=$universe
+            WHERE Id=$account AND LaunchGroupId IS NULL AND LaunchGroupRevokedAt IS NULL
+                AND EXISTS(SELECT 1 FROM AspNetUserRoles membership JOIN AspNetRoles role ON role.Id=membership.RoleId
+                    WHERE membership.UserId=AspNetUsers.Id AND role.Name=$customer)
+                AND NOT EXISTS(SELECT 1 FROM DeletionRequests deletion WHERE deletion.UserId=AspNetUsers.Id)
+            """);
+        command.Parameters.AddWithValue("$group", groupId);
+        command.Parameters.AddWithValue("$now", now);
+        command.Parameters.AddWithValue("$universe", fixedUniverse is null ? DBNull.Value : fixedUniverse);
+        command.Parameters.AddWithValue("$account", Proof.AccountId);
+        command.Parameters.AddWithValue("$customer", AccountRoles.Customer);
+        return command.ExecuteNonQuery() == 1;
+    }
+
+    internal void Commit()
+    {
+        account.Transaction.Commit();
+    }
+
+    internal static CustomerAccountAdmission Acquire(string connectionString, TimeProvider clock,
+        string accountId, string? sessionId, string? stamp, CancellationToken token)
+    {
+        var guard = CustomerDataSqliteGuard.Acquire(connectionString, new CustomerDataGuardDeadline(token));
+        try
+        {
+            var account = CustomerAdmissionGuard.ReadAccountForReservation(guard, accountId, sessionId, clock);
+            if (sessionId is not null && account.Stamp != stamp)
+            { throw new CustomerDataAccessException(401, "account_access_unavailable"); }
+            return new CustomerAccountAdmission(guard, account.Proof);
+        }
+        catch { guard.Dispose(); throw; }
+    }
+
+    public void Dispose() => account.Dispose();
 }

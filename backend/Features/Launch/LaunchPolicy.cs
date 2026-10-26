@@ -31,6 +31,14 @@ internal sealed record LaunchAuditEntry(string ActorId, long ChangedAt, long Rev
 internal sealed record LaunchGroup(string Id, string Name, long? LaunchAt, long Revision);
 internal sealed record LaunchGroupCreate(string Name, long? LaunchAt);
 internal sealed record LaunchGroupUpdate(long ExpectedRevision, string Name, long? LaunchAt);
+internal sealed record BetaAdmissionConfiguration(long Revision, string? GroupId, bool RecruitmentOpen,
+    string? FixedUniverse);
+internal sealed record BetaAdmissionUpdate(long ExpectedRevision, string? GroupId, bool RecruitmentOpen,
+    string? FixedUniverse);
+internal sealed record BetaAdmissionGroupRequest(long ExpectedRevision, string? GroupId = null);
+internal sealed record BetaMember(string UserId, string DisplayName, long JoinedAt, bool AccessActive,
+    long AccessRevision);
+internal sealed record BetaMemberAccessUpdate(long ExpectedRevision, bool Active);
 
 internal sealed class LaunchConfigurationException(string code, int status) : Exception(code)
 {
@@ -65,6 +73,12 @@ internal sealed class LaunchPolicyStore
             CREATE TABLE IF NOT EXISTS launch_groups (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
                 launch_at INTEGER NULL, revision INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS beta_admission (
+                id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
+                group_id TEXT NULL, recruitment_open INTEGER NOT NULL DEFAULT 0,
+                fixed_universe TEXT NULL);
+            INSERT OR IGNORE INTO beta_admission(id,revision,group_id,recruitment_open,fixed_universe)
+                VALUES(1,1,NULL,0,NULL);
             INSERT OR IGNORE INTO launch_configuration VALUES
                 (1,0,0,NULL,0,0,NULL,0,'Europe/Prague',
                  'A little something is getting ready for you.',
@@ -123,6 +137,200 @@ internal sealed class LaunchPolicyStore
         var groups = new List<LaunchGroup>();
         while (reader.Read()) { groups.Add(ReadGroup(reader)); }
         return groups.ToArray();
+    }
+
+    internal BetaAdmissionConfiguration ReadBetaAdmission()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT revision,group_id,recruitment_open,fixed_universe FROM beta_admission WHERE id=1";
+        using var reader = command.ExecuteReader();
+        if (!reader.Read()) { throw new InvalidOperationException("Beta admission configuration is unavailable."); }
+        return new(reader.GetInt64(0), reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.GetBoolean(2), reader.IsDBNull(3) ? null : reader.GetString(3));
+    }
+
+    internal bool TryReadOpenBetaAdmission(out BetaAdmissionConfiguration admission, out LaunchGroup group)
+    {
+        admission = ReadBetaAdmission();
+        if (admission.RecruitmentOpen && admission.GroupId is not null
+            && ReadGroup(admission.GroupId) is { } selected)
+        {
+            group = selected;
+            return true;
+        }
+        group = null!;
+        return false;
+    }
+
+    internal BetaEnrollmentReservation? ReserveBetaEnrollment(string groupId, long revision)
+    {
+        var connection = Open();
+        SqliteTransaction? transaction = null;
+        try
+        {
+            // Keep configuration stable through the account creation transaction.
+            transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "SELECT revision,group_id,recruitment_open,fixed_universe FROM beta_admission WHERE id=1";
+            using var reader = command.ExecuteReader();
+            if (!reader.Read() || reader.GetInt64(0) != revision || reader.IsDBNull(1)
+                || reader.GetString(1) != groupId || !reader.GetBoolean(2))
+            {
+                transaction.Dispose();
+                connection.Dispose();
+                return null;
+            }
+            var admission = new BetaAdmissionConfiguration(reader.GetInt64(0), reader.GetString(1),
+                reader.GetBoolean(2), reader.IsDBNull(3) ? null : reader.GetString(3));
+            reader.Close();
+            var group = ReadGroup(groupId);
+            if (group is null)
+            {
+                transaction.Dispose();
+                connection.Dispose();
+                return null;
+            }
+            return new BetaEnrollmentReservation(connection, transaction, admission, group);
+        }
+        catch
+        {
+            transaction?.Dispose();
+            connection.Dispose();
+            throw;
+        }
+    }
+
+    internal BetaAdmissionConfiguration UpdateBetaAdmission(string actorId, BetaAdmissionUpdate update, long now)
+    {
+        if (update.ExpectedRevision < 1 || update.FixedUniverse is { Length: > 100 }
+            || update.FixedUniverse?.Any(char.IsControl) == true || update.FixedUniverse is { } universe && string.IsNullOrWhiteSpace(universe))
+        { throw new LaunchConfigurationException("invalid_beta_admission", 400); }
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        if (update.GroupId is not null && !GroupExists(connection, transaction, update.GroupId))
+        { throw new LaunchConfigurationException("launch_group_unavailable", 404); }
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE beta_admission SET revision=revision+1,group_id=$group,recruitment_open=$open,fixed_universe=$universe WHERE id=1 AND revision=$expected";
+        command.Parameters.AddWithValue("$group", update.GroupId is null ? DBNull.Value : update.GroupId);
+        command.Parameters.AddWithValue("$open", update.RecruitmentOpen && update.GroupId is not null);
+        command.Parameters.AddWithValue("$universe", update.FixedUniverse is null ? DBNull.Value : update.FixedUniverse.Trim());
+        command.Parameters.AddWithValue("$expected", update.ExpectedRevision);
+        if (command.ExecuteNonQuery() != 1)
+        { throw new LaunchConfigurationException("beta_admission_revision_conflict", 409); }
+        InsertGroupAudit(connection, transaction, actorId, now, update.ExpectedRevision + 1, "beta_admission_updated");
+        transaction.Commit();
+        return ReadBetaAdmission();
+    }
+
+    internal (BetaAdmissionConfiguration Admission, LaunchGroup Group) CreateOrSelectBetaGroup(
+        string actorId, BetaAdmissionGroupRequest request, long now)
+    {
+        if (request.ExpectedRevision < 1)
+        { throw new LaunchConfigurationException("invalid_beta_admission", 400); }
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        var current = ReadBetaAdmission(connection, transaction);
+        if (current.Revision != request.ExpectedRevision)
+        { throw new LaunchConfigurationException("beta_admission_revision_conflict", 409); }
+
+        LaunchGroup group;
+        if (request.GroupId is { Length: > 0 } groupId)
+        {
+            group = ReadGroup(connection, transaction, groupId)
+                ?? throw new LaunchConfigurationException("launch_group_unavailable", 404);
+        }
+        else
+        {
+            var existing = ReadGroupByName(connection, transaction, "Interní beta");
+            if (existing is null)
+            {
+                group = new LaunchGroup(Guid.NewGuid().ToString("N"), "Interní beta", null, 1);
+                using var create = connection.CreateCommand();
+                create.Transaction = transaction;
+                create.CommandText = "INSERT INTO launch_groups(id,name,launch_at,revision,updated_at) VALUES($id,$name,NULL,1,$now)";
+                create.Parameters.AddWithValue("$id", group.Id);
+                create.Parameters.AddWithValue("$name", group.Name);
+                create.Parameters.AddWithValue("$now", now);
+                create.ExecuteNonQuery();
+            }
+            else
+            {
+                group = existing;
+            }
+        }
+
+        using var update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = "UPDATE beta_admission SET revision=revision+1,group_id=$group,recruitment_open=0,fixed_universe=NULL WHERE id=1 AND revision=$expected";
+        update.Parameters.AddWithValue("$group", group.Id);
+        update.Parameters.AddWithValue("$expected", request.ExpectedRevision);
+        if (update.ExecuteNonQuery() != 1)
+        { throw new LaunchConfigurationException("beta_admission_revision_conflict", 409); }
+        InsertGroupAudit(connection, transaction, actorId, now, request.ExpectedRevision + 1, "beta_admission_group_selected");
+        transaction.Commit();
+        return (ReadBetaAdmission(), group);
+    }
+
+    internal void AuditBetaMemberAccess(string actorId, string groupId, string accountId, bool active,
+        long accessRevision, long now)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        InsertGroupAudit(connection, transaction, actorId, now, accessRevision,
+            $"beta_member_access_{(active ? "restored" : "revoked")}:{groupId}:{accountId}");
+        transaction.Commit();
+    }
+
+    internal void AuditBetaMemberAdmitted(string actorId, string groupId, long accessRevision, long now)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        InsertGroupAudit(connection, transaction, actorId, now, accessRevision,
+            $"beta_member_admitted:{groupId}");
+        transaction.Commit();
+    }
+
+    private static BetaAdmissionConfiguration ReadBetaAdmission(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT revision,group_id,recruitment_open,fixed_universe FROM beta_admission WHERE id=1";
+        using var reader = command.ExecuteReader();
+        if (!reader.Read()) { throw new InvalidOperationException("Beta admission configuration is unavailable."); }
+        return new(reader.GetInt64(0), reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.GetBoolean(2), reader.IsDBNull(3) ? null : reader.GetString(3));
+    }
+
+    private static LaunchGroup? ReadGroup(SqliteConnection connection, SqliteTransaction transaction, string id)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT id,name,launch_at,revision FROM launch_groups WHERE id=$id";
+        command.Parameters.AddWithValue("$id", id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadGroup(reader) : null;
+    }
+
+    private static LaunchGroup? ReadGroupByName(SqliteConnection connection, SqliteTransaction transaction, string name)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT id,name,launch_at,revision FROM launch_groups WHERE name=$name COLLATE NOCASE";
+        command.Parameters.AddWithValue("$name", name);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadGroup(reader) : null;
+    }
+
+    internal static bool GroupExists(SqliteConnection connection, SqliteTransaction transaction, string id)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM launch_groups WHERE id=$id";
+        command.Parameters.AddWithValue("$id", id);
+        return command.ExecuteScalar() is not null;
     }
 
     internal LaunchGroup? ReadGroup(string id)
@@ -329,6 +537,19 @@ internal sealed class LaunchPolicyStore
     private static void AddNullable(SqliteCommand command, string name, long? value) => command.Parameters.AddWithValue(name, (object?)value ?? DBNull.Value);
 }
 
+internal sealed class BetaEnrollmentReservation(SqliteConnection connection, SqliteTransaction transaction,
+    BetaAdmissionConfiguration admission, LaunchGroup group) : IDisposable
+{
+    internal BetaAdmissionConfiguration Admission { get; } = admission;
+    internal LaunchGroup Group { get; } = group;
+
+    public void Dispose()
+    {
+        transaction.Dispose();
+        connection.Dispose();
+    }
+}
+
 internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider timeProvider,
     IServiceScopeFactory? scopeFactory = null)
 {
@@ -347,8 +568,16 @@ internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider 
         if (string.IsNullOrWhiteSpace(userId) || scopeFactory is null) { return Evaluate(principal); }
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
-        var groupId = await db.Users.AsNoTracking().Where(user => user.Id == userId)
-            .Select(user => user.LaunchGroupId).SingleOrDefaultAsync();
+        var accountAccess = await db.Users.AsNoTracking().Where(user => user.Id == userId)
+            .Select(user => new { user.LaunchGroupId, user.LaunchGroupRevokedAt }).SingleOrDefaultAsync();
+        if (accountAccess?.LaunchGroupRevokedAt is not null)
+        {
+            var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+            var config = store.Read();
+            return new(false, "revoked", null, now, config.Teaser, config.InitialLoadingMessage,
+                config.PersonalizedLoadingEnabled);
+        }
+        var groupId = accountAccess?.LaunchGroupId;
         if (groupId is null) { return Evaluate(principal); }
         return EvaluateGroupAware(principal, groupId, store.ReadGroup(groupId));
     }

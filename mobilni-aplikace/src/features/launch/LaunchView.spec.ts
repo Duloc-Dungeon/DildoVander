@@ -4,6 +4,7 @@ import { ref } from 'vue';
 import LaunchView from './LaunchView.vue';
 import { getInvitationRegistration, invitationRegistration, setInvitationDraft } from '../identity/invitationRegistration';
 import { beginInvitationPresentation, presentationForeground, selectInvitationPresentation } from './launchPresentation';
+import { customerFixedUniverse, customerMembershipState } from '../../application/launchAccess';
 
 const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: vi.fn(), portrait: vi.fn() }));
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
@@ -20,7 +21,10 @@ let image: ReturnType<typeof ref<string>>;
 let failed: ReturnType<typeof ref<boolean>>;
 let persisted = false;
 let allowed = false;
+let revokedAudience = false;
 let artworkStatus = 'queued';
+let memberState: 'active' | 'unassigned' | 'revoked' = 'active';
+let memberUniverse: string | null = null;
 const character = { profileId: 'profile', revision: 1, name: 'Raven', universe: 'Fiction', status: 'queued' };
 function entry() { return mount(LaunchView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); }
 function savedCreation(status: 'saving' | 'uncertain' | 'confirmed' = 'confirmed') {
@@ -34,9 +38,13 @@ beforeEach(() => {
   api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'] });
   image = ref(''); failed = ref(false);
   api.portrait.mockReturnValue({ url: image, failed, pending: ref(false), clear: vi.fn(() => { image.value = ''; }), retry: vi.fn(), fail: vi.fn() });
-  persisted = false; allowed = false; artworkStatus = 'queued';
+  persisted = false; allowed = false; revokedAudience = false; artworkStatus = 'queued';
+  memberState = 'active'; memberUniverse = null; customerMembershipState.value = null; customerFixedUniverse.value = null;
   api.request.mockImplementation(async (path: string, method?: string) => {
-    if (path === '/app/v1/launch') return { allowed, launchAt: Date.now() + 86400000, serverNow: Date.now() };
+    if (path === '/app/v1/launch') return { allowed, audience: revokedAudience ? 'revoked' : 'beta', launchAt: Date.now() + 86400000, serverNow: Date.now() };
+    if (path === '/app/v1/customer/access') return { state: memberState, accessRevision: 1, fixedUniverse: memberUniverse };
+    if (path === '/app/v1/enrollment/default') return { available: true };
+    if (path === '/app/v1/enrollment/default/admit' && method === 'POST') { memberState = 'active'; memberUniverse = 'Astronomy'; return {}; }
     if (method === 'PUT') { persisted = true; throw new Error('Response lost'); }
     return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL' } : null };
   });
@@ -99,6 +107,45 @@ it('K: a current server grant bypasses the entire introduction', async () => {
   persisted = true; savedCreation(); allowed = true; const view = entry();
   try { await flushPromises(); expect(api.replace).toHaveBeenCalledWith('/me/character'); }
   finally { view.unmount(); }
+});
+it('lets an existing unassigned customer explicitly request beta admission before loading character data', async () => {
+  memberState = 'unassigned';
+  customerMembershipState.value = 'unassigned';
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.text()).toContain('Požádat o přístup do bety');
+    expect(api.request).not.toHaveBeenCalledWith('/app/v1/enrollment/default/admit', 'POST', {});
+    expect(api.request).not.toHaveBeenCalledWith('/app/v1/prelaunch/character', 'GET', undefined, expect.anything());
+    await view.get('button').trigger('click');
+    await flushPromises();
+    expect(api.request).toHaveBeenCalledWith('/app/v1/enrollment/default/admit', 'POST', {});
+    expect(api.request).toHaveBeenCalledWith('/app/v1/customer/access');
+    expect(memberState).toBe('active');
+  } finally { view.unmount(); customerMembershipState.value = null; }
+});
+it('immediately signals revoked membership returned by an idle launch-policy refresh', async () => {
+  revokedAudience = true;
+  customerMembershipState.value = 'active';
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(customerMembershipState.value).toBe('revoked');
+  } finally { view.unmount(); customerMembershipState.value = null; }
+});
+it('replaces a recovered draft universe with the persisted group universe after explicit admission', async () => {
+  memberState = 'unassigned';
+  customerMembershipState.value = 'unassigned';
+  setInvitationDraft('guest', 'Raven', 'Old universe');
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('button').trigger('click');
+    await flushPromises();
+    expect(customerFixedUniverse.value).toBe('Astronomy');
+    expect(getInvitationRegistration('guest')?.universe).toBe('Astronomy');
+    expect(view.text()).toContain('Přístup je připravený.');
+  } finally { view.unmount(); customerMembershipState.value = null; customerFixedUniverse.value = null; }
 });
 it('old characters get no introduction and public loading ignores host and research text', async () => {
   persisted = true; const view = entry();

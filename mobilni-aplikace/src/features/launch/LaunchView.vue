@@ -15,6 +15,8 @@ import { invitationVisibleMs, invitationIntroDuration, presentationForeground, s
 import type { PrelaunchCharacterResponse as PrelaunchState } from './generatedPrelaunchCharacter';
 import brandMark from '../../assets/brand/emblem-small.webp';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
+import { customerFixedUniverse, customerMembershipState, refreshCustomerMembership } from '../../application/launchAccess';
+import { isCustomerAccount } from '../../application/access';
 
 interface LaunchPolicy { allowed: boolean; audience: string; launchAt: number | null; serverNow: number }
 const router = useRouter();
@@ -25,6 +27,8 @@ const characterVerified = ref(false);
 const name = ref('');
 const universe = ref('');
 const consent = ref(false);
+const betaEnrollmentAvailable = ref<boolean | null>(null);
+const membershipRequestMessage = ref('');
 const draftProvided = ref(false);
 const busy = ref(false);
 const error = ref('');
@@ -40,6 +44,7 @@ let serverTimeAnchor = 0;
 let monotonicAnchor = 0;
 let lastLaunchCheck = Number.NEGATIVE_INFINITY;
 const registration = computed(() => invitationRegistration.value?.owner === account.value?.id ? invitationRegistration.value : null);
+const requiresBetaAdmission = computed(() => isCustomerAccount(account.value) && customerMembershipState.value === 'unassigned');
 const writing = computed(() => registration.value?.status === 'saving');
 const uncertain = computed(() => registration.value?.status === 'uncertain');
 const hasPortrait = computed(() => !!portrait.url.value);
@@ -92,6 +97,12 @@ watch(() => account.value?.id, id => {
   selectInvitationPresentation(id, draft?.writeStarted ? draft.creationId : undefined);
   if (controller && id) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
 }, { immediate: true, flush: 'sync' });
+watch(customerFixedUniverse, fixed => {
+  if (!fixed || state.value?.character) return;
+  universe.value = fixed;
+  const owner = account.value?.id;
+  if (owner && name.value.trim()) setInvitationDraft(owner, name.value, fixed);
+});
 watch(() => registration.value?.status, status => {
   if (registration.value?.writeStarted && (status === 'saving' || status === 'confirmed' || status === 'uncertain')) selectInvitationPresentation(account.value?.id, registration.value?.creationId);
   if (status === 'confirmed' && controller) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
@@ -109,9 +120,22 @@ async function refreshPolicy(): Promise<void> {
   serverTimeAnchor = value.serverNow;
   monotonicAnchor = performance.now();
   policy.value = value;
+  if (value.audience === 'revoked') {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = undefined; }
+    window.dispatchEvent(new Event('customer-access-revoked'));
+    return;
+  }
   updateCountdown();
   // Server permission always wins over local presentation, including staff/testers.
-  if (value.allowed && account.value) await router.replace(defaultSignedInDestination(account.value));
+  if (value.allowed && account.value && (!isCustomerAccount(account.value) || customerMembershipState.value === 'active')) {
+    await router.replace(defaultSignedInDestination(account.value));
+  }
+}
+async function refreshBetaEnrollment(): Promise<void> {
+  try {
+    const result = await accountRequest<{ available: boolean }>('/app/v1/enrollment/default');
+    betaEnrollmentAvailable.value = result.available === true;
+  } catch { betaEnrollmentAvailable.value = null; }
 }
 async function refreshCharacter(signal?: AbortSignal): Promise<void> {
   const owner = account.value?.id;
@@ -189,6 +213,46 @@ async function retryRead(): Promise<void> {
   catch { if (epoch === accountEpoch) error.value = copy.value.readFailed; }
   finally { if (epoch === accountEpoch) busy.value = false; }
 }
+async function requestBetaAdmission(): Promise<void> {
+  if (busy.value || !requiresBetaAdmission.value || betaEnrollmentAvailable.value !== true) return;
+  const owner = account.value?.id;
+  if (!owner) return;
+  busy.value = true;
+  error.value = '';
+  membershipRequestMessage.value = '';
+  try {
+    await accountRequest('/app/v1/enrollment/default/admit', 'POST', {});
+    const membership = await refreshCustomerMembership();
+    if (owner !== account.value?.id) return;
+    if (membership === 'active') {
+      membershipRequestMessage.value = language.value === 'en' ? 'Your beta access is ready.' : 'Přístup do bety je připravený.';
+      await refreshPolicy();
+      await refreshCharacter(controller?.signal);
+      beginPolling();
+    } else {
+      membershipRequestMessage.value = language.value === 'en' ? 'Your access request is being checked. Refresh the status before trying again.' : 'Žádost o přístup se ověřuje. Před dalším pokusem zkontroluj stav.';
+    }
+  } catch (cause) {
+    if (owner !== account.value?.id) return;
+    const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : '';
+    const membership = await refreshCustomerMembership();
+    if (membership === 'active') {
+      membershipRequestMessage.value = language.value === 'en' ? 'Your beta access is ready.' : 'Přístup do bety je připravený.';
+      await refreshPolicy();
+      await refreshCharacter(controller?.signal);
+      beginPolling();
+    } else if (code === 'beta_enrollment_closed' || code === 'beta_enrollment_unavailable') {
+      await refreshBetaEnrollment();
+      membershipRequestMessage.value = language.value === 'en'
+        ? 'Enrollment for new participants is currently closed.'
+        : 'Přijímání nových účastníků je nyní uzavřené.';
+    } else {
+      error.value = language.value === 'en'
+        ? 'We could not confirm your beta access. Check the account status before retrying.'
+        : 'Přístup do bety se nepodařilo potvrdit. Před opakováním ověř stav účtu.';
+    }
+  } finally { busy.value = false; }
+}
 function beginPolling(): void {
   if (!account.value || !presentationForeground.value || navigator.onLine === false || pollTimer || controller?.signal.aborted) return;
   if (!actualPreparation.value && !uncertain.value) return;
@@ -208,7 +272,14 @@ function onOnline(): void { void retryRead(); }
 function onVisibility(): void {
   if (presentationForeground.value) {
     void refreshPolicy().catch(() => {});
-    void refreshCharacter(controller?.signal).then(beginPolling).catch(() => {});
+    if (isCustomerAccount(account.value)) {
+      void refreshCustomerMembership().then(async membership => {
+        if (membership === 'active') await refreshCharacter(controller?.signal).then(beginPolling);
+        else if (membership === 'unassigned') await refreshBetaEnrollment();
+      }).catch(() => {});
+    } else {
+      void refreshCharacter(controller?.signal).then(beginPolling).catch(() => {});
+    }
     startPolicyPolling();
   } else {
     if (pollTimer) clearTimeout(pollTimer); pollTimer = undefined;
@@ -223,7 +294,19 @@ onMounted(async () => {
   controller = new AbortController();
   window.addEventListener('offline', onOffline);
   window.addEventListener('online', onOnline);
-  try { await refreshPolicy(); await refreshCharacter(controller.signal); beginPolling(); }
+  try {
+    if (isCustomerAccount(account.value) && customerMembershipState.value === null) {
+      await refreshCustomerMembership();
+    }
+    await refreshPolicy();
+    if (isCustomerAccount(account.value) && customerMembershipState.value !== 'active') {
+      if (customerMembershipState.value === 'unassigned') await refreshBetaEnrollment();
+      else if (customerMembershipState.value === null) error.value = copy.value.readFailed;
+    } else {
+      await refreshCharacter(controller.signal);
+      beginPolling();
+    }
+  }
   catch { error.value = copy.value.readFailed; }
   timer = setInterval(updateCountdown, 1000);
   startPolicyPolling();
@@ -246,7 +329,18 @@ onBeforeUnmount(() => {
       <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><img :src="brandMark" alt="" width="48" height="48" /><span>Wand<br />Night Stand</span></RouterLink>
       <label class="launch-language"><span class="sr-only">{{ language === 'en' ? 'Interface language' : 'Jazyk rozhraní' }}</span><select v-model="language"><option value="cs">Čeština</option><option value="en">English</option></select></label>
     </header>
-    <section class="launch-card">
+    <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">
+      <div class="launch-copy">
+        <h1 id="launch-title">{{ language === 'en' ? 'Request beta access' : 'Požádat o přístup do bety' }}</h1>
+        <p>{{ language === 'en' ? 'Your account is ready. You can join the current beta group while it is accepting participants.' : 'Tvůj účet je připravený. Do současné beta skupiny můžeš vstoupit, dokud přijímá účastníky.' }}</p>
+        <AwNotice v-if="betaEnrollmentAvailable === false" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
+        <p v-else-if="betaEnrollmentAvailable === null" role="status">{{ language === 'en' ? 'We could not check the current beta access rules.' : 'Aktuální pravidla vstupu do bety se nepodařilo ověřit.' }}</p>
+        <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
+        <p v-if="membershipRequestMessage" role="status">{{ membershipRequestMessage }}</p>
+        <AwButton v-if="betaEnrollmentAvailable === true" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>
+      </div>
+    </section>
+    <section v-else class="launch-card">
       <div class="launch-copy">
         <h1 id="launch-title">{{ state?.character?.name || (draftProvided ? name : copy.title) }}</h1>
         <p v-if="state?.character || draftProvided" class="launch-universe">{{ state?.character?.universe || universe }}</p>
@@ -258,7 +352,7 @@ onBeforeUnmount(() => {
           <p v-if="draftProvided && !uncertain">{{ copy.accountReady }}</p>
           <template v-if="!draftProvided">
             <AwField id="character-name" :label="copy.name" :hint="copy.nameHint"><input id="character-name" aria-describedby="character-name-hint" v-model="name" class="aw-input" maxlength="80" autocomplete="nickname" required @input="rememberDraft" /></AwField>
-            <AwField id="character-universe" :label="copy.universe" :hint="copy.universeHint"><input id="character-universe" aria-describedby="character-universe-hint" v-model="universe" class="aw-input" maxlength="160" autocomplete="off" required @input="rememberDraft" /></AwField>
+            <AwField id="character-universe" :label="copy.universe" :hint="customerFixedUniverse ? (language === 'en' ? 'This universe is fixed for your beta group.' : 'Univerzum je pevně určené pro tvoji beta skupinu.') : copy.universeHint"><input id="character-universe" aria-describedby="character-universe-hint" v-model="universe" class="aw-input" maxlength="160" autocomplete="off" required :readonly="!!customerFixedUniverse" @input="rememberDraft" /></AwField>
           </template>
           <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
           <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></details>

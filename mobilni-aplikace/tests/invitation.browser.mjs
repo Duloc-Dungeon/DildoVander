@@ -31,6 +31,7 @@ async function fixtures(context){
     if(url.origin!==origin)return route.abort();
     const json=value=>route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
     if(url.pathname==='/app/v1/session')return json({enabled:true,account:signedIn?account:null,csrfToken:'fixture-only',origin});
+    if(url.pathname==='/app/v1/customer/access')return json({state:'active',groupId:'fixture-beta',groupName:'Interní beta',joinedAt:Date.now(),accessRevision:1,recruitmentOpen:false,launchAt:Date.now()+86400000*4});
     if(url.pathname==='/app/v1/launch')return json({allowed:false,audience:'production',launchAt:Date.now()+86400000*4,serverNow:Date.now(),teaser:'DO NOT SHOW HOST NOTE',initialLoadingMessage:'DO NOT SHOW INTERNAL TEXT'});
     if(url.pathname==='/app/v1/prelaunch/character')return json({character:character(),artwork:{status:ready?'ready':'running',welcome:welcome()}});
     if(url.pathname==='/app/v1/prelaunch/character/portrait'){requests++;assert.equal(url.searchParams.get('profileId'),'visual-profile');assert.equal(Number(url.searchParams.get('revision')),revision);return route.fulfill({contentType:'image/webp',body:portrait});}

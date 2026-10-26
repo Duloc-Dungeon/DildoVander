@@ -10,7 +10,7 @@ internal static partial class AccountIdentityTests
 {
     internal static async Task RunPrelaunchHttpAsync()
     {
-        await using var fixture = await Fixture.StartAsync(customerFeatures: true,
+        await using var fixture = await Fixture.StartAsync(customerFeatures: true, betaRecruitmentOpen: false,
             configureServices: services => services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider()));
         using var owner = fixture.Client();
         using var customer = fixture.Client();

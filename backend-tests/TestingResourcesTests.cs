@@ -42,7 +42,12 @@ internal static class TestingResourcesTests
                 var enriched = await a.ReadAsync("alice");
                 Check(doubleProvider.Calls == 1 && enriched?.Status == "ready" && enriched.Enrichment?.InputRevision == saved.Revision,
                     "queued worker persists actual adapter result with revision binding");
-                await b.SaveAsync("alice", new(0, new("Without consent", "Library")));
+                try
+                {
+                    await b.SaveAsync("alice", new(0, new("Without consent", "Library")));
+                    throw new InvalidOperationException("Missing AI consent was accepted.");
+                }
+                catch (CharacterException error) when (error.Code == "openai_consent_required") { }
                 Check(!await resources.ProcessNextCharacterEnrichmentAsync(CancellationToken.None) && doubleProvider.Calls == 1,
                     "saving without consent never dispatches provider work");
                 try
