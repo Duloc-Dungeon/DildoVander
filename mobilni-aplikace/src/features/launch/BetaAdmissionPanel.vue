@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import GameBossControl from '../game/GameBossControl.vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
@@ -272,6 +273,7 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
           <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
         </select>
         <p v-if="managedGroup" role="status">{{ countdownStatus }}</p>
+        <GameBossControl v-if="managedGroup?.openedAt" :key="managedGroup.id" :group-id="managedGroup.id" />
         <template v-if="managedGroup && !managedGroup.openedAt">
           <label for="countdown-minutes">Délka odpočtu v minutách</label>
           <input id="countdown-minutes" v-model.number="durationMinutes" class="aw-input" type="number" min="1" max="10080" step="1" :disabled="busy || mutationBlocked || managedGroup.launchAt !== null" />

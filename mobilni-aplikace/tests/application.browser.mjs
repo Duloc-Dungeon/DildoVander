@@ -258,7 +258,9 @@ try {
     await hasHeading('Moje postava');
   }
   await page.goto(origin + '/me/character'); await hasHeading('Moje postava');
-  assert.equal(await page.getByRole('navigation', { name: 'Sekce aplikace' }).getByRole('link').count(), 4);
+  const customerNavigation = page.getByRole('navigation', { name: 'Sekce aplikace' });
+  assert.equal(await customerNavigation.getByRole('link').count(), 5);
+  assert.equal(await customerNavigation.getByRole('link', { name: /Hra/ }).getAttribute('href'), '/play');
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
   await page.getByRole('heading', { name: 'Luna', exact: true }).waitFor();
   assert.equal(await page.getByText('A prepared character summary.', { exact: true }).isVisible(), false, 'preparation detail starts collapsed');

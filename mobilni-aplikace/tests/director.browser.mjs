@@ -68,6 +68,11 @@ try{
  await first.getByRole('button',{name:'Stop přes backend',exact:true}).click();await first.getByText(`Revize ${revision}`,{exact:false}).waitFor();const stopRevision=revision;releaseOrdinary();await first.getByText('Zneplatněno povelem Stop.',{exact:false}).waitFor();assert((await first.locator('body').innerText()).includes(`Revize ${stopRevision}`));
  dropStop=true;await first.getByRole('button',{name:'Stop přes backend',exact:true}).click();await first.getByText('Výsledek Stop přes backend je neznámý.',{exact:false}).waitFor();assert.equal(calls.filter(call=>call.body?.kind==='stop').length,2);
  await first.getByRole('link',{name:'Provoz kufru',exact:true}).click();const stops=calls.filter(call=>call.body?.kind==='stop').length;await first.getByRole('button',{name:'Stop',exact:true}).click();await until(()=>calls.filter(call=>call.body?.kind==='stop').length>stops,'global Stop request');
- assert.equal(calls.filter(call=>call.body?.kind==='stop').length,3,'global Stop retains account-bound participant after route leave');assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
+ assert.equal(calls.filter(call=>call.body?.kind==='stop').length,3,'global Stop retains account-bound participant after route leave');
+ await first.evaluate(()=>{window.history.pushState(window.history.state,'','/play/practice');window.dispatchEvent(new PopStateEvent('popstate',{state:window.history.state}));});
+ await first.getByRole('heading',{name:'Zkus kouzlo.',exact:true}).waitFor();
+ assert.equal(await first.locator('.launch-emergency-stop').isVisible(),true,'game scene retains the active operation Stop');
+ await first.getByRole('button',{name:'Stop',exact:true}).click();await until(()=>calls.filter(call=>call.body?.kind==='stop').length===4,'game scene Stop request');
+ assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
  console.log(JSON.stringify({result:'PASS',source:'compiled Vue + synthetic account/show API',screenshots:output,checks:['two-operator conflict','revisions+TTL','duel consent+grant confirmation','private prophecy','priority Stop+lost response','global Stop after navigation','desktop/mobile overflow'],errors:errors.length,externalRequests:external.length}));
 }finally{releaseOrdinary?.();await browser?.close();await new Promise(resolve=>server.httpServer.close(resolve));}

@@ -6,6 +6,18 @@ import keepsake_proxy as proxy
 
 
 class ApplicationRoutingTests(unittest.TestCase):
+    def test_mobile_game_paths_are_private_and_bounded(self):
+        config = proxy.render_compatibility('keepsake.example.invalid')
+        for route in ('/play', '/play/challenge', '/play/practice', '/play/chronicle', '/play/boss', '/play/keeper', '/play/ranking', '/play/messages', '/play/teams'):
+            block = config.split('location = ' + route + ' {', 1)[1].split('\n}', 1)[0]
+            for directive in ('GET|HEAD', 'no-store', 'no-referrer', 'noindex, nofollow', 'access_log off;'):
+                self.assertIn(directive, block)
+        pattern = r'^/play/(?:match|boss|team)/[0-9a-f]{32}$'
+        self.assertIn('location ~ "' + pattern + '"', config)
+        for prefix in ('match', 'boss', 'team'):
+            self.assertRegex('/play/' + prefix + '/' + 'a' * 32, pattern)
+        for invalid in ('/play/match/../admin', '/play/match/' + 'a' * 32 + '/extra', '/play/unknown', '/play/match/not-an-id'):
+            self.assertIsNone(re.fullmatch(pattern, invalid))
     def test_account_api_supports_duplex_persona_lab_streams(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
         block = config.split('location ^~ /app/v1/ {', 1)[1].split('\n}', 1)[0]

@@ -543,6 +543,20 @@ enum AccountTransportPolicy {
     }
 
     static func account(path: String, method: String) -> Bool {
+        if path == "/app/v1/game" { return method == "GET" }
+        if path == "/app/v1/game/matches" { return method == "POST" }
+        if path == "/app/v1/game/progress" { return method == "GET" }
+        if path == "/app/v1/game/progress/ack" { return method == "POST" }
+        if path.range(of: "^/app/v1/admin/game/groups/[0-9a-f]{32}/boss\\z", options: .regularExpression) != nil { return method == "GET" || method == "POST" }
+        if path == "/app/v1/game/teams" { return method == "GET" || method == "POST" }
+        if path.range(of: "^/app/v1/game/teams/[0-9a-f]{32}\\z", options: .regularExpression) != nil { return method == "GET" }
+        if path.range(of: "^/app/v1/game/teams/[0-9a-f]{32}/(accept|decline|cancel|choose|transfer)\\z", options: .regularExpression) != nil { return method == "POST" }
+        if path == "/app/v1/game/boss" { return method == "GET" }
+        if path == "/app/v1/game/boss/attempts" { return method == "POST" }
+        if path.range(of: "^/app/v1/game/boss/attempts/[0-9a-f]{32}\\z", options: .regularExpression) != nil { return method == "GET" }
+        if path.range(of: "^/app/v1/game/boss/attempts/[0-9a-f]{32}/(choose|cancel)\\z", options: .regularExpression) != nil { return method == "POST" }
+        if path.range(of: "^/app/v1/game/matches/[0-9a-f]{32}\\z", options: .regularExpression) != nil { return method == "GET" }
+        if path.range(of: "^/app/v1/game/matches/[0-9a-f]{32}/(accept|decline|cancel|choose|loadout|task|retry)\\z", options: .regularExpression) != nil { return method == "POST" }
         if customerCompletionPage(path: path, method: method) || accountCollectionPage(path: path, method: method) { return true }
         if let parts = URLComponents(string: path), parts.scheme == nil, parts.host == nil, parts.fragment == nil,
            !parts.percentEncodedPath.contains("%"), !path.contains("\\"), path.count <= 4096 {

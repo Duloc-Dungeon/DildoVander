@@ -1,0 +1,2969 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Wand Night Stand mobile game API",
+    "version": "0.3.0",
+    "description": "Cookie-authenticated, mobile-only group game. Legacy three-round duels remain in show-openapi-v1.json. No device, BLE, camera or actuator authority. Paid YOLO work starts only after both participants accept; combat scoring never calls AI."
+  },
+  "paths": {
+    "/app/v1/game": {
+      "get": {
+        "summary": "Read the group-scoped game lobby",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read the group-scoped game lobby",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameLobby"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        }
+      }
+    },
+    "/app/v1/game/matches": {
+      "post": {
+        "summary": "Propose a quick, tactical or YOLO match",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Propose a quick, tactical or YOLO match",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameMatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameChallenge"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/matches/{id}": {
+      "get": {
+        "summary": "Read an owned match",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read an owned match",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameMatch"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/matches/{id}/accept": {
+      "post": {
+        "summary": "Apply accept exactly once for a revision",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply accept exactly once for a revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameMatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/matches/{id}/decline": {
+      "post": {
+        "summary": "Apply decline exactly once for a revision",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply decline exactly once for a revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameMatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/matches/{id}/cancel": {
+      "post": {
+        "summary": "Apply cancel exactly once for a revision",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply cancel exactly once for a revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameMatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/matches/{id}/choose": {
+      "post": {
+        "summary": "Apply choose exactly once for a revision",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply choose exactly once for a revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameMatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/matches/{id}/loadout": {
+      "post": {
+        "summary": "Apply loadout exactly once for a revision",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply loadout exactly once for a revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameMatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/matches/{id}/task": {
+      "post": {
+        "summary": "Apply task exactly once for a revision",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply task exactly once for a revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameMatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/matches/{id}/retry": {
+      "post": {
+        "summary": "Apply retry exactly once for a revision",
+        "x-source": "Features/Game/GameFeature.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply retry exactly once for a revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameMatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/boss": {
+      "get": {
+        "summary": "Read the revealed group boss and recover an active attempt",
+        "x-source": "Features/Game/GameBoss.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read the revealed group boss and recover an active attempt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        }
+      }
+    },
+    "/app/v1/game/boss/attempts": {
+      "post": {
+        "summary": "Start one attempt using frozen XP and boss rules",
+        "x-source": "Features/Game/GameBoss.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Start one attempt using frozen XP and boss rules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameBossCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/boss/attempts/{id}": {
+      "get": {
+        "summary": "Read an owned boss attempt",
+        "x-source": "Features/Game/GameBoss.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read an owned boss attempt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossAttempt"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/boss/attempts/{id}/choose": {
+      "post": {
+        "summary": "Apply boss choose",
+        "x-source": "Features/Game/GameBoss.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply boss choose",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameBossCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/boss/attempts/{id}/cancel": {
+      "post": {
+        "summary": "Apply boss cancel",
+        "x-source": "Features/Game/GameBoss.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply boss cancel",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameBossCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/admin/game/groups/{id}/boss": {
+      "get": {
+        "summary": "Preview the active median and frozen boss profile",
+        "x-source": "Features/Game/GameBoss.cs",
+        "description": "Owner/Administrator session; POST additionally requires a recent passkey. Same-origin CSRF applies to mutations.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Preview the active median and frozen boss profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "Reveal once and freeze the reviewed median",
+        "x-source": "Features/Game/GameBoss.cs",
+        "description": "Owner/Administrator session; POST additionally requires a recent passkey. Same-origin CSRF applies to mutations.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reveal once and freeze the reviewed median",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameBossCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/teams": {
+      "get": {
+        "summary": "Recover owned four-player matches",
+        "x-source": "Features/Game/GameTeams.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recover owned four-player matches",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "teams": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GameTeamView"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        }
+      },
+      "post": {
+        "summary": "Propose a four-player challenge",
+        "x-source": "Features/Game/GameTeams.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Propose a four-player challenge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameTeamView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameTeamCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/teams/{id}": {
+      "get": {
+        "summary": "Read an eligible owned team match",
+        "x-source": "Features/Game/GameTeams.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read an eligible owned team match",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameTeamView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/teams/{id}/accept": {
+      "post": {
+        "summary": "Apply team accept",
+        "x-source": "Features/Game/GameTeams.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply team accept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameTeamView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameTeamCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/teams/{id}/decline": {
+      "post": {
+        "summary": "Apply team decline",
+        "x-source": "Features/Game/GameTeams.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply team decline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameTeamView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameTeamCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/teams/{id}/cancel": {
+      "post": {
+        "summary": "Apply team cancel",
+        "x-source": "Features/Game/GameTeams.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply team cancel",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameTeamView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameTeamCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/teams/{id}/choose": {
+      "post": {
+        "summary": "Apply team choose",
+        "x-source": "Features/Game/GameTeams.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply team choose",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameTeamView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameTeamCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/teams/{id}/transfer": {
+      "post": {
+        "summary": "Apply team transfer",
+        "x-source": "Features/Game/GameTeams.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply team transfer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameTeamView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameTeamCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/game/progress": {
+      "get": {
+        "summary": "Read earned milestones, cosmetic titles and separate rankings",
+        "x-source": "Features/Game/GameProgress.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read earned milestones, cosmetic titles and separate rankings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameProgress"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        }
+      }
+    },
+    "/app/v1/game/progress/ack": {
+      "post": {
+        "summary": "Acknowledge an earned milestone without awarding XP",
+        "x-source": "Features/Game/GameProgress.cs",
+        "description": "Active same-group Customer session. Participant-scoped snapshots never reveal pending opponent choices, sparks or loadouts.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Acknowledge an earned milestone without awarding XP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "acknowledged": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "acknowledged"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "404": {
+            "description": "Private resource unavailable"
+          },
+          "409": {
+            "description": "Revision, eligibility, operation or active-match conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameProgressCommand"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "AccountSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-dv-account"
+      }
+    },
+    "schemas": {
+      "GameChallenge": {
+        "type": "object",
+        "properties": {
+          "opponentId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "quick",
+              "tactical",
+              "yolo"
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "tasksEnabled": {
+            "type": "boolean"
+          },
+          "adultConsent": {
+            "type": "boolean"
+          },
+          "flirtConsent": {
+            "type": "boolean"
+          },
+          "useLoadouts": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "opponentId",
+          "mode",
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "GameCommand": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "choice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "strike",
+                  "trick",
+                  "shield"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sparkBid": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "tasksEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "adultConsent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flirtConsent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "taskCategory": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "classic",
+                  "adult",
+                  "flirt"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "taskAction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "done",
+                  "swap",
+                  "skip",
+                  "revoke"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loadout": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "balanced",
+                  "pressure",
+                  "trickery",
+                  "fortress"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "useLoadouts": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      "GameBossCommand": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "choice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "strike",
+                  "trick",
+                  "shield"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sparkBid": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "expectedReferenceXp": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      "GameTeamCreate": {
+        "type": "object",
+        "properties": {
+          "partnerId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "opponentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "uniqueItems": true
+          },
+          "operationId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "expectedRevision": {
+            "const": 0
+          }
+        },
+        "required": [
+          "partnerId",
+          "opponentIds",
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "GameTeamCommand": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "choice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "strike",
+                  "trick",
+                  "shield"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sparkBid": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "giveSpark": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      "GameProgressCommand": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "eventId": {
+            "type": "string",
+            "enum": [
+              "upgrade",
+              "sparks",
+              "loadouts",
+              "teams",
+              "yolo",
+              "clue-one",
+              "clue-three",
+              "clue-five",
+              "rescue"
+            ]
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedRevision",
+          "eventId"
+        ],
+        "additionalProperties": false
+      },
+      "GameOpponent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "xp": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matchesPlayed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "xp",
+          "matchesPlayed"
+        ],
+        "additionalProperties": false
+      },
+      "GameRound": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "playerChoice": {
+            "type": "string",
+            "enum": [
+              "strike",
+              "trick",
+              "shield"
+            ]
+          },
+          "opponentChoice": {
+            "type": "string",
+            "enum": [
+              "strike",
+              "trick",
+              "shield"
+            ]
+          },
+          "winner": {
+            "type": "string",
+            "enum": [
+              "player",
+              "opponent",
+              "draw"
+            ]
+          },
+          "playerSparkBid": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "opponentSparkBid": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "playerPoints": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "opponentPoints": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "index",
+          "playerChoice",
+          "opponentChoice",
+          "winner",
+          "playerSparkBid",
+          "opponentSparkBid",
+          "playerPoints",
+          "opponentPoints",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "GamePartyTask": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "classic",
+              "adult",
+              "flirt"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "done",
+              "skipped"
+            ]
+          },
+          "exchangeCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "title",
+          "text",
+          "category",
+          "status",
+          "exchangeCount"
+        ],
+        "additionalProperties": false
+      },
+      "GameYoloView": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_acceptance",
+              "generating",
+              "complete",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "beats": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 460
+                },
+                "detailRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "minItems": 1,
+                  "maxItems": 4
+                }
+              },
+              "required": [
+                "text",
+                "detailRefs"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 3
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 180
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "winnerId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "beats",
+          "verdict",
+          "winnerId",
+          "errorCode"
+        ],
+        "additionalProperties": false
+      },
+      "GameMatch": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "quick",
+              "tactical",
+              "yolo"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "incoming",
+              "active",
+              "generating",
+              "complete",
+              "failed",
+              "declined",
+              "cancelled"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "canAccept": {
+            "type": "boolean"
+          },
+          "canCancel": {
+            "type": "boolean"
+          },
+          "opponent": {
+            "$ref": "#/components/schemas/GameOpponent"
+          },
+          "rounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameRound"
+            },
+            "maxItems": 8
+          },
+          "completedRounds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8
+          },
+          "playerScore": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "opponentScore": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sparksEnabled": {
+            "type": "boolean"
+          },
+          "playerSparks": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "opponentSparks": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "block": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          },
+          "playerInventory": {
+            "type": "object",
+            "properties": {
+              "strike": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "trick": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "shield": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              }
+            },
+            "required": [
+              "strike",
+              "trick",
+              "shield"
+            ],
+            "additionalProperties": false
+          },
+          "opponentInventory": {
+            "type": "object",
+            "properties": {
+              "strike": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "trick": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "shield": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              }
+            },
+            "required": [
+              "strike",
+              "trick",
+              "shield"
+            ],
+            "additionalProperties": false
+          },
+          "ownChoiceLocked": {
+            "type": "boolean"
+          },
+          "opponentChoiceLocked": {
+            "type": "boolean"
+          },
+          "totalRounds": {
+            "type": "integer",
+            "enum": [
+              0,
+              7,
+              8
+            ]
+          },
+          "loadout": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tasksEnabled": {
+            "type": "boolean"
+          },
+          "adultConsent": {
+            "type": "boolean"
+          },
+          "flirtConsent": {
+            "type": "boolean"
+          },
+          "partyTask": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GamePartyTask"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "win",
+                  "loss",
+                  "draw"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "xpAwarded": {
+            "type": "integer",
+            "enum": [
+              0,
+              6,
+              10,
+              12,
+              20
+            ]
+          },
+          "yolo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameYoloView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rulesVersion": {
+            "const": "mobile-game-v0.3"
+          },
+          "loadoutsEnabled": {
+            "type": "boolean"
+          },
+          "needsLoadout": {
+            "type": "boolean"
+          },
+          "ownLoadoutLocked": {
+            "type": "boolean"
+          },
+          "opponentLoadoutLocked": {
+            "type": "boolean"
+          },
+          "loadoutsAvailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "mode",
+          "status",
+          "revision",
+          "canAccept",
+          "canCancel",
+          "opponent",
+          "rounds",
+          "completedRounds",
+          "playerScore",
+          "opponentScore",
+          "sparksEnabled",
+          "playerSparks",
+          "opponentSparks",
+          "block",
+          "playerInventory",
+          "opponentInventory",
+          "ownChoiceLocked",
+          "opponentChoiceLocked",
+          "totalRounds",
+          "loadout",
+          "tasksEnabled",
+          "adultConsent",
+          "flirtConsent",
+          "partyTask",
+          "createdAt",
+          "completedAt",
+          "result",
+          "xpAwarded",
+          "yolo",
+          "rulesVersion",
+          "loadoutsEnabled",
+          "needsLoadout",
+          "ownLoadoutLocked",
+          "opponentLoadoutLocked",
+          "loadoutsAvailable"
+        ],
+        "additionalProperties": false
+      },
+      "GameBossProfile": {
+        "type": "object",
+        "properties": {
+          "revealed": {
+            "type": "boolean"
+          },
+          "rescued": {
+            "type": "boolean"
+          },
+          "referenceXp": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "activeAttemptId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "revealed",
+          "rescued",
+          "referenceXp",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "GameBossAttempt": {
+        "type": "object",
+        "required": [
+          "id",
+          "mode",
+          "status",
+          "revision",
+          "playerEnergy",
+          "opponentEnergy",
+          "strength",
+          "phase",
+          "hint",
+          "seedCommitment"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "mode": {
+            "const": "boss"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "complete",
+              "cancelled"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "playerEnergy": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 6
+          },
+          "opponentEnergy": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "strength": {
+            "type": "number",
+            "minimum": 0
+          },
+          "phase": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "hint": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "seedCommitment": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "seedReveal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "xpAwarded": {
+            "const": 0
+          }
+        }
+      },
+      "GameLobby": {
+        "type": "object",
+        "required": [
+          "player",
+          "opponents",
+          "incoming",
+          "active",
+          "history",
+          "boss"
+        ],
+        "properties": {
+          "player": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string"},
+              "displayName": {"type": "string"},
+              "xp": {"type": "integer", "minimum": 0},
+              "matchesPlayed": {"type": "integer", "minimum": 0},
+              "tacticalUnlocked": {"type": "boolean"},
+              "yoloUnlocked": {"type": "boolean"}
+            },
+            "required": [
+              "id",
+              "xp",
+              "matchesPlayed",
+              "tacticalUnlocked",
+              "yoloUnlocked"
+            ]
+          },
+          "opponents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameOpponent"
+            }
+          },
+          "incoming": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameMatch"
+            }
+          },
+          "active": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameMatch"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameMatch"
+            }
+          },
+          "boss": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameBossProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "GameTeamView": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "revision",
+          "teamMembers",
+          "opponents",
+          "acceptedBy",
+          "rounds",
+          "teamScore",
+          "opponentScore",
+          "ownSparks",
+          "ownInventory",
+          "ownChoiceLocked",
+          "sparkBalances",
+          "ownTransferLocked",
+          "onTeamA"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "incoming",
+              "active",
+              "halftime",
+              "complete",
+              "cancelled"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "teamMembers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "opponents": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "acceptedBy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "maxItems": 4
+          },
+          "rounds": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 8
+          },
+          "teamScore": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "opponentScore": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completedRounds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8
+          },
+          "ownSparks": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "ownInventory": {
+            "type": "object",
+            "properties": {
+              "strike": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "trick": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "shield": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              }
+            },
+            "required": [
+              "strike",
+              "trick",
+              "shield"
+            ],
+            "additionalProperties": false
+          },
+          "ownChoiceLocked": {
+            "type": "boolean"
+          },
+          "allFourLocked": {
+            "type": "array",
+            "items": {
+              "type": "boolean"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "halftimeEndsAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "xpAwarded": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20
+          },
+          "sparkBalances": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4
+            }
+          },
+          "ownTransferLocked": {
+            "type": "boolean"
+          },
+          "onTeamA": {
+            "type": "boolean"
+          },
+          "rulesVersion": {
+            "const": "mobile-game-v0.3"
+          }
+        }
+      },
+      "GameProgress": {
+        "type": "object",
+        "required": [
+          "revision",
+          "tacticalMatches",
+          "keeperState",
+          "pending",
+          "titles",
+          "combatRanking",
+          "yoloRanking",
+          "messages"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tacticalMatches": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "keeperState": {
+            "type": "string",
+            "enum": [
+              "available",
+              "captured",
+              "rescued"
+            ]
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "titles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "combatRanking": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "yoloRanking": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  }
+}

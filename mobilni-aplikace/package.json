@@ -18,7 +18,9 @@
     "test:invitation:browser": "node tests/invitation.browser.mjs",
     "test:beta-admission:browser": "node tests/beta-admission.browser.mjs",
     "preview:opening": "node tests/opening.preview.mjs",
-    "test:opening:browser": "node tests/opening.browser.mjs"
+    "test:opening:browser": "node tests/opening.browser.mjs",
+    "preview:game": "node tests/game.preview.mjs",
+    "test:game:browser": "node tests/game.browser.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.3",

@@ -6,7 +6,7 @@
   "scripts": {
     "generate": "node generate-control-validator.mjs && node generate-prelaunch-welcome.mjs",
     "check:generated": "node generate-control-validator.mjs --check && node generate-prelaunch-welcome.mjs --check",
-    "test": "npm run check:generated && node --disallow-code-generation-from-strings verify-fixtures.mjs && node verify-prelaunch-welcome.mjs && node verify-control-validator.mjs && node verify-backend-openapi.mjs && node verify-show-api.mjs && node verify-media-frame.mjs && node verify-media-control.mjs && node verify-customer-sessions.mjs"
+    "test": "npm run check:generated && node --disallow-code-generation-from-strings verify-fixtures.mjs && node verify-prelaunch-welcome.mjs && node verify-control-validator.mjs && node verify-backend-openapi.mjs && node verify-show-api.mjs && node verify-game-api.mjs && node verify-media-frame.mjs && node verify-media-control.mjs && node verify-customer-sessions.mjs"
   },
   "devDependencies": {
     "ajv": "8.20.0",

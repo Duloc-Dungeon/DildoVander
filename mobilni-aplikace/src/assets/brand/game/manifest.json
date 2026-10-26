@@ -1,0 +1,16 @@
+[
+  {
+    "name": "commentator",
+    "synthetic": true,
+    "sourceSha256": "ed2dabe79e1f912cf15b2068e51f9c84dc9b7fc55f04975536b8dfb4c02ca75d",
+    "runtimeSha256": "9b09048c2ba5760ceae1a86e4b4552d2798211a7cad0397f8a5b4d93482868da",
+    "runtimeBytes": 191708
+  },
+  {
+    "name": "boss",
+    "synthetic": true,
+    "sourceSha256": "0a12d5a51de2f0b89f8ad2d427ba6777d016cefb511f2c6dd7cfcd1f4da772b4",
+    "runtimeSha256": "0633ea2848c41766f797c880acbe2d4a0994575992332f79ed3c45372cd7e9ff",
+    "runtimeBytes": 226964
+  }
+]

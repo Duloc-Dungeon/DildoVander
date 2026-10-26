@@ -3,6 +3,10 @@
 Android setup, signing, platform coverage and the verified release artifact
 handoff are documented in [ANDROID.md](ANDROID.md).
 
+The group game at `/play` includes quick/tactical duels, sparks, loadouts, teams,
+YOLO stories, voluntary tasks and a shared boss. See [mobile game](../docs/mobile-game.md)
+for rules, API boundaries, local preview and verification.
+
 Vue 3 SFC s Composition API, TypeScriptem a Vue Routerem sdílejí stejné
 obrazovky na webu a v Capacitor WKWebView. Spotřebitelská značka **Wand Night Stand**
 používá `src/application/consumer-brand.css` nad společnými sémantickými tokeny;
