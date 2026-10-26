@@ -32,3 +32,9 @@ internal interface ICharacterEnrichmentProvider
 {
     Task<CharacterEnrichment> EnrichAsync(CharacterJob job, CancellationToken cancellationToken);
 }
+
+internal sealed record CharacterReviewWrite(long ExpectedRevision, string ExpectedProfileId,
+    CharacterUserInput UserInput, bool Regenerate = false, bool OpenAiConsent = false,
+    CharacterManualFindings? Findings = null);
+internal sealed record CharacterManualFindings(string RecognizedName, string World, string Summary,
+    string[] Facts, string[] ConversationIdeas, string[] Ambiguities);

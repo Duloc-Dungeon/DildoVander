@@ -20,6 +20,13 @@ internal static class PrelaunchCharacterEndpoints
         group.AddEndpointFilter(RequireAccountAsync);
         group.MapGet("", async (HttpContext http, CharacterProfileStore store) =>
             Results.Ok(await ViewAsync(http, store)));
+        group.MapGet("/review", async (HttpContext http, CharacterProfileStore store) =>
+        {
+            http.Response.Headers.CacheControl = "private, no-store";
+            return Results.Ok(new { profile = await store.ReadAsync(Owner(http), http.RequestAborted) });
+        });
+        group.MapPut("/review", async (CharacterReviewWrite request, HttpContext http, CharacterProfileStore store) =>
+            Results.Ok(new { profile = await store.ReviewAsync(Owner(http), request, http.RequestAborted) }));
         group.MapPut("", async (PrelaunchCharacterWrite request, HttpContext http, CharacterProfileStore store) =>
         {
             if (!request.OpenAiConsent) { return ApiProblem.Create(http, 409, "openai_consent_required"); }
@@ -114,6 +121,10 @@ internal static class PrelaunchCharacterEndpoints
             using var admission = http.RequestServices.GetRequiredService<CustomerAdmissionAuthority>()
                 .AcquireAccountCookie(http, http.RequestAborted);
             var write = invocation.Arguments.OfType<PrelaunchCharacterWrite>().FirstOrDefault();
+            var review = invocation.Arguments.OfType<CharacterReviewWrite>().FirstOrDefault();
+            if (admission.Proof.FixedUniverse is { } reviewUniverse && review is not null
+                && !string.Equals(review.UserInput?.World?.Trim(), reviewUniverse, StringComparison.Ordinal))
+                return ApiProblem.Create(http, 409, "invitation_universe_required");
             if (admission.Proof.FixedUniverse is { } universe && write is not null
                 && !string.Equals(write.Universe?.Trim(), universe, StringComparison.Ordinal))
             {

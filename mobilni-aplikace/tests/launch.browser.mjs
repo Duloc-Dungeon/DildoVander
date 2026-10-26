@@ -58,6 +58,7 @@ try {
     if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'launch-fixture-beta', groupName: 'Interní beta', joinedAt: Math.floor(Date.now() / 1000), accessRevision: 1, fixedUniverse: null, recruitmentOpen: false, launchAt: null });
     if (url.pathname === '/app/v1/enrollment/default') return json({ available: true, groupId: 'launch-fixture-beta', groupName: 'Interní beta', fixedUniverse: null, universe: null });
     if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
+    if (url.pathname === '/app/v1/prelaunch/character/review') return json({ profile: character ? { ...character, userInput: { name: character.name, world: character.universe }, enrichment: { recognizedName: character.name, world: character.universe, summary: 'A fictional traveller with a gift for finding hidden paths.', facts: [{ text: 'Comes from the northern coast.' }], conversationIdeas: ['Ask about the last journey.'], ambiguities: ['Which period?'], sources: [] } } : null });
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'GET') return json({ character, artwork: character ? artwork : null });
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'PUT') {
       const body = request.postDataJSON(); writes.push(body);
@@ -138,6 +139,17 @@ try {
   assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
   assert.equal(writes.at(-1).openAiConsent, true);
   assert.equal(await page.getByText(/Summary|Appearance|Facts/).count(), 0);
+  await page.locator('.character-review summary').click();
+  await page.getByText('Comes from the northern coast.').waitFor();
+  await page.getByRole('button', { name: 'Upravit údaje nebo zadání' }).click();
+  await page.locator('#review-description').fill('A revised period and context.');
+  assert.equal(await page.getByRole('button', { name: 'Znovu připravit z upraveného zadání' }).isDisabled(), true);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-review.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.screenshot({ path: path.join(screenshots, 'launch-desktop-review.png'), fullPage: true });
+  await page.locator('.character-review summary').click();
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-countdown.png'), fullPage: true });
   for (const [label, viewport] of [['tablet', { width: 820, height: 1180 }], ['desktop', { width: 1440, height: 1000 }]]) {
     await page.setViewportSize(viewport);

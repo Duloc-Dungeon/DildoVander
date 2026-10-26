@@ -110,6 +110,9 @@ internal static partial class AccountIdentityTests
         var prepared = await JsonAsync(await guest.PutAsJsonAsync("/app/v1/prelaunch/character",
             new { expectedRevision = 0, name = "Guest", universe = "The Shire", openAiConsent = true }));
         var preparedId = prepared.GetProperty("character").GetProperty("profileId").GetString();
+        Check((await guest.PutAsJsonAsync("/app/v1/prelaunch/character/review",
+            new { expectedRevision = 1, expectedProfileId = preparedId, userInput = new { name = "Guest", world = "Forged" }, regenerate = true, openAiConsent = true }))
+            .StatusCode == HttpStatusCode.Conflict, "review regeneration cannot bypass fixed universe admission");
         launch.UpdateBetaAdmission("fixture-owner",
             new(finalConfig.Revision, group.Id, false, "Another universe"), now + 6);
         Check((await guest.GetAsync("/app/v1/prelaunch/character")).IsSuccessStatusCode,

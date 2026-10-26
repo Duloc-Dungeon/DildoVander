@@ -11,6 +11,7 @@ import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
 import { launchCopy as copy } from './launchCopy';
 import PortraitCurtain from './PortraitCurtain.vue';
+import CharacterReview from './CharacterReview.vue';
 import { invitationVisibleMs, invitationIntroDuration, presentationForeground, selectInvitationPresentation, finishInvitationPresentation } from './launchPresentation';
 import type { PrelaunchCharacterResponse as PrelaunchState } from './generatedPrelaunchCharacter';
 import brandMark from '../../assets/brand/emblem-small.webp';
@@ -62,7 +63,7 @@ const phase = computed(() => {
   if (hasPortrait.value) return 'ready';
   return state.value?.character ? 'preparing' : 'entry';
 });
-const actualPreparation = computed(() => writing.value || ['queued', 'pending', 'running'].includes(state.value?.artwork?.status ?? ''));
+const actualPreparation = computed(() => writing.value || ['queued', 'running'].includes(state.value?.character?.status ?? '') || ['queued', 'pending', 'running'].includes(state.value?.artwork?.status ?? ''));
 const statusMessage = computed(() => {
   if (error.value || phase.value === 'failed') return '';
   if (registration.value?.status === 'error') return registration.value.error === 'existing_character' ? copy.value.conflict : copy.value.saveFailed;
@@ -364,6 +365,8 @@ onBeforeUnmount(() => {
           <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></details>
           <AwButton type="submit" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
+        <CharacterReview v-if="state?.character" :profile-id="state.character.profileId" :revision="state.character.revision" :status="state.character.status" @saved="retryRead" />
+        <p v-if="state?.artwork?.errorCode" role="alert">{{ language === 'en' ? 'Error code' : 'Kód chyby' }}: {{ state.artwork.errorCode }}</p>
         <section class="countdown" :aria-label="copy.countdownLabel">
           <p>{{ copy.countdown }}</p>
           <div v-if="policy?.launchAt != null" class="countdown-grid" aria-live="off"><div v-for="(part, index) in timeParts" :key="index"><strong>{{ index ? String(part).padStart(2, '0') : part }}</strong><span>{{ [copy.days, copy.hours, copy.minutes, copy.seconds][index] }}</span></div></div>

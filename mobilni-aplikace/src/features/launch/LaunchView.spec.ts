@@ -41,6 +41,7 @@ beforeEach(() => {
   persisted = false; allowed = false; revokedAudience = false; artworkStatus = 'queued';
   memberState = 'active'; memberUniverse = null; customerMembershipState.value = null; customerFixedUniverse.value = null;
   api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/prelaunch/character/review') return { profile: { ...character, userInput: { name: character.name, world: character.universe } } };
     if (path === '/app/v1/launch') return { allowed, audience: revokedAudience ? 'revoked' : 'beta', launchAt: Date.now() + 86400000, serverNow: Date.now() };
     if (path === '/app/v1/customer/access') return { state: memberState, accessRevision: 1, fixedUniverse: memberUniverse };
     if (path === '/app/v1/enrollment/default') return { available: true };

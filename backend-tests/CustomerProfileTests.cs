@@ -10,6 +10,7 @@ internal static class CustomerProfileTests
         try
         {
             await PersistenceAndFencesAsync(root);
+            await ManualReviewAsync(Path.Combine(root, "manual"));
             await OpenAiConsentAsync(Path.Combine(root, "consent"));
             await MembershipWorkFenceAsync(Path.Combine(root, "membership"));
             ProviderEvidence();
@@ -21,6 +22,21 @@ internal static class CustomerProfileTests
             SqliteConnection.ClearAllPools();
             if (Directory.Exists(root)) { Directory.Delete(root, true); }
         }
+    }
+
+    private static async Task ManualReviewAsync(string root)
+    {
+        var store = new CharacterProfileStore(root);
+        var initial = await store.SaveAsync("owner", new(0, new("Raven", "Fiction"), OpenAiConsent: true, PortraitConsent: true));
+        var oldJob = await store.ClaimAsync() ?? throw new Exception("Missing initial job");
+        var manual = await store.ReviewAsync("owner", new(initial.Revision, initial.ProfileId, initial.UserInput,
+            Findings: new("Raven", "Fiction", "Corrected", ["Own fact"], [], [])), default);
+        Check(manual.Status == "ready" && manual.Enrichment?.EvidenceKind == "user_edited", "manual findings are ready with user provenance");
+        Check(await store.ClaimAsync() is null, "manual correction cancels pending enrichment without queuing provider work");
+        Check(!await store.CompleteAsync(oldJob, null, "stale"), "superseded worker cannot overwrite manual findings");
+        Check((await store.ReadAsync("owner"))?.Enrichment?.Summary == "Corrected", "manual findings survive stale completion");
+        Check(await store.ReadAsync("other") is null, "manual findings remain account owned");
+        Check(store.ReadPortrait("owner", initial.ProfileId, manual.Revision) is null, "manual edits never queue portrait generation");
     }
 
     private static async Task PersistenceAndFencesAsync(string root)

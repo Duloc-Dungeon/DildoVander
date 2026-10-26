@@ -69,3 +69,11 @@ revision checks, export behavior, native route bounds and focused validation.
 
 Personalized candidate generation, immutable bonds, private edition approval and
 account battle history are documented in [personalized wands](../../../docs/personalized-wands.md).
+
+Before launch, authenticated owners can GET `/app/v1/prelaunch/character/review`
+to inspect their private input, findings, sources and preparation error. PUT uses
+expected profile identity and revision. `regenerate: true` requires explicit
+OpenAI consent and queues revised input and portrait preparation. Manual findings
+create a new revision with `user_edited` provenance, no source citations and no
+provider jobs; previous portrait bytes are invalidated. Superseded enrichment
+leases cannot write into that revision. Fixed-universe admission still applies.

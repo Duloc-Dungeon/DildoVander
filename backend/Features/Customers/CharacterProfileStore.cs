@@ -159,12 +159,34 @@ internal sealed partial class CharacterProfileStore
             new(request.ExpectedRevision, current.UserInput, request.ExpectedProfileId, OpenAiConsent: true), true, token);
     }
 
+    internal Task<CharacterProfile> ReviewAsync(string accountId, CharacterReviewWrite request, CancellationToken token)
+    {
+        if (request.ExpectedRevision < 1 || string.IsNullOrWhiteSpace(request.ExpectedProfileId))
+            throw new CharacterException("character_revision_conflict", 409);
+        CharacterEnrichment? manual = null;
+        if (!request.Regenerate)
+        {
+            var f = request.Findings ?? throw new CharacterException("invalid_character_input");
+            static bool Text(string? value, int max) => value is not null && value.Length <= max
+                && !value.Any(c => char.IsControl(c) && c is not ('\r' or '\n' or '\t'));
+            static bool Lines(string[]? lines, int max) => lines is not null && lines.Length <= max && lines.All(x => Text(x, 400));
+            if (!Text(f.RecognizedName, 200) || !Text(f.World, 300) || !Text(f.Summary, 1000)
+                || !Lines(f.Facts, 6) || !Lines(f.ConversationIdeas, 5) || !Lines(f.Ambiguities, 5))
+                throw new CharacterException("invalid_character_input");
+            manual = new(f.RecognizedName, f.World, f.Summary,
+                f.Facts.Select(x => new CharacterFact(x, [])).ToArray(), f.ConversationIdeas, f.Ambiguities,
+                f.Ambiguities.Length > 0, [], "user", "manual-review-v1", Now(), request.ExpectedRevision + 1, "user_edited");
+        }
+        return SaveRevisionAsync(accountId, new(request.ExpectedRevision, request.UserInput, request.ExpectedProfileId,
+            OpenAiConsent: request.Regenerate && request.OpenAiConsent, PortraitConsent: request.Regenerate), true, token, manual);
+    }
+
     private Task<CharacterProfile> SaveRevisionAsync(string accountId, CharacterWriteRequest request,
-        bool correction, CancellationToken token)
+        bool correction, CancellationToken token, CharacterEnrichment? manual = null)
     {
         using var activity = BackendTelemetry.StartOperation("character.save");
         token.ThrowIfCancellationRequested();
-        if (!request.OpenAiConsent) { throw new CharacterException("openai_consent_required", 409); }
+        if (!request.OpenAiConsent && manual is null) { throw new CharacterException("openai_consent_required", 409); }
         Validate(request.UserInput);
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
@@ -196,7 +218,7 @@ internal sealed partial class CharacterProfileStore
         var profile = new CharacterProfile(request.NewCharacter ? Guid.NewGuid().ToString("N")
                 : current?.ProfileId ?? Guid.NewGuid().ToString("N"),
             request.NewCharacter ? 1 : (current?.Revision ?? 0) + 1,
-            request.UserInput, request.OpenAiConsent ? "queued" : "saved", null, null, Now());
+            request.UserInput, manual is not null ? (manual.NeedsClarification ? "needs_clarification" : "ready") : request.OpenAiConsent ? "queued" : "saved", manual, null, Now());
         using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
@@ -230,6 +252,15 @@ internal sealed partial class CharacterProfileStore
                 : DBNull.Value);
             command.Parameters.AddWithValue("$now", profile.UpdatedAt);
             command.ExecuteNonQuery();
+        }
+        if (manual is not null)
+        {
+            using var update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText = "UPDATE character_profiles SET enrichment_json=$data WHERE account_id=$account";
+            update.Parameters.AddWithValue("$account", accountId);
+            update.Parameters.AddWithValue("$data", JsonSerializer.Serialize(manual, Json));
+            update.ExecuteNonQuery();
         }
         SavePortraitRequest(connection, transaction, accountId, profile, request);
         transaction.Commit();
