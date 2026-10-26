@@ -1,0 +1,162 @@
+{
+  "direction": "The Midnight Table",
+  "revision": "2026-10-26",
+  "provenance": "Original built-in ImageGen artwork; retained PNG source masters. Deterministic crop, resize and WebP encoding with prepare_midnight_assets.py.",
+  "license": "AGPL-3.0-only",
+  "geometry": "Portrait stage 4:5. Aperture inset: top21%, right15.5%, bottom10%, left15.5%; width and height69%, exact4:5. Curtain halves animate only inside that aperture.",
+  "foreground": "No independent particle effects. Hidden scenes pause existing presentation lifecycle.",
+  "assets": [
+    {
+      "file": "tabletop.webp",
+      "master": "design-system/assets/midnight/tabletop.png",
+      "purpose": "Quiet scene background; no live text baked in",
+      "dimensions": [
+        768,
+        1152
+      ],
+      "alpha": false,
+      "crop": null,
+      "bytes": 112596,
+      "sha256": "c67a4696ac0f39b72f3c0ff7fcbd769455459da244ec6edf63bbabbae6baa26a"
+    },
+    {
+      "file": "invitation.webp",
+      "master": "design-system/assets/midnight/objects.png",
+      "purpose": "Sealed arrival invitation, decorative",
+      "dimensions": [
+        740,
+        450
+      ],
+      "alpha": true,
+      "crop": [
+        40,
+        0,
+        780,
+        450
+      ],
+      "bytes": 57866,
+      "sha256": "f90996e41c899de30adb9c3fc9c29e1a6f0f16c75ebdd3ad66143a76e303deac"
+    },
+    {
+      "file": "access-key.webp",
+      "master": "design-system/assets/midnight/objects.png",
+      "purpose": "Returning passkey illustration, decorative",
+      "dimensions": [
+        696,
+        430
+      ],
+      "alpha": true,
+      "crop": [
+        840,
+        0,
+        1536,
+        430
+      ],
+      "bytes": 60910,
+      "sha256": "82d22cc1209208574104ef2ee7350f19b6eb0104a8a77a27e8082838ab75ec9b"
+    },
+    {
+      "file": "paper.webp",
+      "master": "design-system/assets/midnight/objects.png",
+      "purpose": "Quiet parchment texture for semantic form surfaces",
+      "dimensions": [
+        300,
+        300
+      ],
+      "alpha": false,
+      "crop": [
+        260,
+        560,
+        560,
+        860
+      ],
+      "bytes": 7028,
+      "sha256": "2602536f46caa9ded8b54c4788b40291e47cc8e190068fa1663e542627bb3919"
+    },
+    {
+      "file": "opening.webp",
+      "master": "design-system/assets/midnight/objects.png",
+      "purpose": "Authorized opening; also the static reduced-motion equivalent",
+      "dimensions": [
+        570,
+        585
+      ],
+      "alpha": true,
+      "crop": [
+        850,
+        430,
+        1420,
+        1015
+      ],
+      "bytes": 79530,
+      "sha256": "8b09347afda3a266a7dc5ce2fd662c347ec73c9d63a5fff27522ebb095dc2d09"
+    },
+    {
+      "file": "frame.webp",
+      "master": "design-system/assets/midnight/frame.png",
+      "purpose": "Fixed walnut frame and top valance; transparent portrait aperture",
+      "dimensions": [
+        800,
+        1000
+      ],
+      "alpha": true,
+      "crop": null,
+      "bytes": 122232,
+      "sha256": "dcd500796eb057308d7c0ffb94fa5a12694702cf92e8f69f38c00fbe812b0cdc"
+    },
+    {
+      "file": "placeholder.webp",
+      "master": "design-system/assets/midnight/tabletop.png",
+      "purpose": "Neutral felt placeholder; no private portrait",
+      "dimensions": [
+        400,
+        500
+      ],
+      "alpha": false,
+      "crop": [
+        300,
+        350,
+        700,
+        850
+      ],
+      "bytes": 30468,
+      "sha256": "588c02aaa52788273009e4708e6ca74fa6dab680688ebb49cdab0691f913168f"
+    },
+    {
+      "file": "curtain-left.webp",
+      "master": "design-system/assets/midnight/curtains.png",
+      "purpose": "Independent left velvet wing",
+      "dimensions": [
+        400,
+        1000
+      ],
+      "alpha": true,
+      "crop": [
+        0,
+        0,
+        561,
+        1402
+      ],
+      "bytes": 55888,
+      "sha256": "7aeb283604eb360a566f38c8ab4932af48dc70766c6e7c86f7b57cfb662a372b"
+    },
+    {
+      "file": "curtain-right.webp",
+      "master": "design-system/assets/midnight/curtains.png",
+      "purpose": "Independent right velvet wing",
+      "dimensions": [
+        400,
+        1000
+      ],
+      "alpha": true,
+      "crop": [
+        561,
+        0,
+        1122,
+        1402
+      ],
+      "bytes": 56460,
+      "sha256": "f5014e26c6c74894858fc0b8c9bfca2447a66f9cdc98e8b303cba5247d1fbe3f"
+    }
+  ]
+}

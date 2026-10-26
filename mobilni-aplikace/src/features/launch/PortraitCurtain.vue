@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import closed from '../../assets/brand/curtain-closed-concept.png';
-import frame from '../../assets/brand/curtain-open-concept.png';
+import curtainLeft from '../../assets/brand/midnight/curtain-left.webp';
+import curtainRight from '../../assets/brand/midnight/curtain-right.webp';
+import frame from '../../assets/brand/midnight/frame.webp';
+import placeholder from '../../assets/brand/midnight/placeholder.webp';
 import { presentationForeground } from './launchPresentation';
 
 const props = defineProps<{ image: string; identity: string; alt: string; preparing: boolean }>();
@@ -64,29 +66,29 @@ onBeforeUnmount(() => { cancel(); observer?.disconnect(); media?.removeEventList
 
 <template>
   <div ref="stage" class="portrait-stage" :class="{ 'is-open': open, 'is-preparing': preparing, 'reduced-motion': reduced }" :data-curtain="phase">
-    <img v-if="image" class="portrait-stage-image" :src="image" :alt="alt" :aria-hidden="phase !== 'open'" @error="emit('failed')" />
+    <img v-if="image" class="portrait-stage-image" :src="image" :alt="alt" :aria-hidden="phase !== 'open'" fetchpriority="high" @error="emit('failed')" />
+    <img v-else class="portrait-stage-placeholder" :src="placeholder" alt="" aria-hidden="true" />
     <div class="curtain-wings" aria-hidden="true">
-      <img class="curtain-wing curtain-wing-left" :src="closed" alt="" width="1122" height="1402" />
-      <img class="curtain-wing curtain-wing-right" :src="closed" alt="" width="1122" height="1402" />
+      <img class="curtain-wing curtain-wing-left" :src="curtainLeft" alt="" width="561" height="980" />
+      <img class="curtain-wing curtain-wing-right" :src="curtainRight" alt="" width="561" height="980" />
     </div>
-    <img class="curtain-floor" :src="closed" alt="" aria-hidden="true" width="1122" height="1402" />
     <img class="curtain-frame" :src="frame" alt="" aria-hidden="true" width="1122" height="1402" />
   </div>
 </template>
 
 <style scoped>
-.portrait-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: hidden; isolation: isolate; background: var(--aw-void); border-radius: 8px; }
-.portrait-stage-image { position: absolute; inset: 2% 3%; width: 94%; height: 96%; object-fit: cover; object-position: 50% 30%; }
-.curtain-wings { position: absolute; inset: 0; overflow: hidden; }
-.curtain-wing, .curtain-frame, .curtain-floor { position: absolute; inset: 0; width: 100%; height: 100%; }
-.curtain-floor { clip-path: inset(96% 0 0); pointer-events: none; }
-.curtain-wing { transition: none; will-change: transform; }
-.curtain-wing-left { clip-path: inset(8% 49.8% 3% 2%); }
-.curtain-wing-right { clip-path: inset(8% 2% 3% 49.8%); }
+.portrait-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: hidden; isolation: isolate; background: transparent; }
+.portrait-stage-image, .portrait-stage-placeholder { position: absolute; left: 15.5%; top: 21%; width: 69%; height: 69%; object-fit: cover; object-position: 50% 30%; }
+.portrait-stage-placeholder { object-position: center; }
+.curtain-wings { position: absolute; inset: 21% 15.5% 10%; overflow: hidden; }
+.curtain-wing, .curtain-frame { position: absolute; display: block; }
+.curtain-frame { inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.curtain-wing { top: 0; width: 50%; height: 100%; transition: none; will-change: transform; }
+.curtain-wing-left { left: 0; }
+.curtain-wing-right { right: 0; }
 .is-open .curtain-wing { transition: transform 1.1s cubic-bezier(.32, 0, .2, 1); }
-.is-open .curtain-wing-left { transform: translateX(-43%); }
-.is-open .curtain-wing-right { transform: translateX(43%); }
-.curtain-frame { pointer-events: none; }
+.is-open .curtain-wing-left { transform: translateX(-100%); }
+.is-open .curtain-wing-right { transform: translateX(100%); }
 .is-preparing:not(.is-open) .curtain-wings { filter: brightness(1.08); }
 .reduced-motion .curtain-wing { transition: none; }
 @media (prefers-reduced-motion: reduce) { .curtain-wing { transition: none; } }

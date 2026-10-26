@@ -93,6 +93,9 @@ If Engram is unavailable, report the gap and continue authorized work from sourc
 - Pro každou změnu uživatelského rozhraní v tomto repozitáři načti tracked skill
   [.agents/skills/dildovander-ui/SKILL.md](.agents/skills/dildovander-ui/SKILL.md).
   Platí pro mobilní aplikaci, simulátor, Workshop/CAD viewer i veřejný přehled.
+- Pro konkrétní schválenou smartphone obrazovku Wand Night Stand navíc použij
+  [locked-screen workflow](.agents/skills/wns-implement-locked-screen/SKILL.md)
+  a ověř rozsah v [consumer game UI guide](design-system/consumer-game-ui.md).
 - Zdrojem sdíleného vzhledu je [Vapour Chrome](design-system/README.md):
   používej jeho tokeny, komponenty a pravidla přístupnosti. Lokální styl řeší
   rozložení konkrétního UI; nevytvářej další nezávislou paletu ani fontové CDN.
@@ -110,7 +113,10 @@ If Engram is unavailable, report the gap and continue authorized work from sourc
 - Kanonické barvy jsou `#EEF1F5`, `#1B2430`, `#8A94A6`, `#B8C0FF`.
   Používej sémantické tokeny, přístupné kontrasty a společné komponenty.
   Jméno vstupu `arcane-workshop.css` a prefixy `aw-*` zůstávají kompatibilním API,
-  nikoli starou vizuální identitou. Nové i upravované UI patří do Vapour Chrome.
+  nikoli starou vizuální identitou. Vapour Chrome zůstává standardem engineering
+  povrchů. Schválený vzhled spotřebitelského Wand Night Stand se řídí
+  [consumer game UI guide](design-system/consumer-game-ui.md) a jeho tokeny musí
+  zůstat omezené na aplikaci; pravidla jsou v obou UI skillech.
 - Při požadavcích typu „vylepši UI“, „uprav navigaci“, „mobilní layout“ nebo
   „nový web/dashboard“ vyber podle rozsahu instalované Impeccable, Product Design,
   frontend-quality-workflow a browser-validation. Discovery je modelové rozhodnutí;

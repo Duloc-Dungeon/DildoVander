@@ -1,6 +1,6 @@
 ---
 name: dildovander-ui
-description: Implement DildoVander's shared Vue web/Capacitor application and integrated viewer with Vapour Chrome tokens; preserve native, guest, device and model-release boundaries.
+description: Implement DildoVander's shared Vue web/Capacitor application and integrated viewer; follow the approved consumer guide for Wand Night Stand smartphone screens and Vapour Chrome for engineering surfaces.
 ---
 
 # DildoVander UI
@@ -26,12 +26,21 @@ For navigation, asynchronous work and recovery use the implemented journey
 contract in `design-system/journeys.md`; preserve its feature ownership
 and truth boundaries rather than creating a parallel workflow in each surface.
 
-Vapour Chrome is authoritative for new and modified UI. The existing filename
-`design-system/arcane-workshop.css` remains the shared entry point. Reuse
-canonical `--aw-*` tokens and `aw-*` components; add local layout styles only
-where the owning view needs them. Fonts are self-hosted with OFL licenses.
-Keep offline generated viewers self-contained using their real generation
-path; never patch a generated viewer or ZIP as the only source change.
+Vapour Chrome is authoritative for engineering UI, including the simulator,
+CAD/viewer and shared design-system surfaces. Its existing
+`design-system/arcane-workshop.css` entry point, `--aw-*` tokens and `aw-*`
+components remain in force there.
+
+Wand Night Stand smartphone consumer screens follow the latest approved
+direction in [the consumer game UI guide](../../../design-system/consumer-game-ui.md).
+For an explicitly requested locked screen, use the
+[focused workflow](../wns-implement-locked-screen/SKILL.md). Scope consumer
+appearance to the application; do not restyle engineering surfaces or reopen
+approved ideation.
+
+Fonts are self-hosted with OFL licenses. Keep offline generated viewers
+self-contained using their real generation path; never patch a generated
+viewer or ZIP as the only source change.
 
 ## Shared framework
 
@@ -79,13 +88,19 @@ UI-only CI must retain viewer tests without selecting manufacturing work.
 
 ## Character and workflow
 
-Build one cohesive Vapour Chrome across mobile, simulator, CAD viewer, public
-pickup and service tools. Canonical primitives are Vapour Mist #EEF1F5,
-Chrome Midnight #1B2430, Steel Grey #8A94A6 and Digital Periwinkle #B8C0FF.
-Use semantic roles, Inter UI/headings and IBM Plex Mono for technical values.
-Steel and periwinkle need accessible derived text shades on light surfaces.
-Keep theatrical personality in content and artwork; interface chrome stays
-precise, calm and useful. Keep action names, errors, Stop and safety literal.
+For a specifically requested, approved Wand Night Stand smartphone screen,
+follow the focused [locked-screen skill](../wns-implement-locked-screen/SKILL.md)
+and [canonical consumer guide](../../../design-system/consumer-game-ui.md).
+This broad skill continues to cover engineering and other application surfaces.
+
+Build a cohesive Vapour Chrome on engineering surfaces. Canonical primitives
+are Vapour Mist #EEF1F5, Chrome Midnight #1B2430, Steel Grey #8A94A6 and
+Digital Periwinkle #B8C0FF. Use semantic roles, Inter UI/headings and IBM Plex
+Mono for technical values. Steel and periwinkle need accessible derived text
+shades on light surfaces. Keep engineering controls precise and useful. For the
+consumer smartphone journey use its approved guide and focused skill above; do
+not apply its appearance to engineering surfaces. Keep action names, errors,
+Stop and safety literal.
 
 For a substantive UI change, complete this loop; scale each step to the task:
 
@@ -96,8 +111,10 @@ For a substantive UI change, complete this loop; scale each step to the task:
 3. **Design:** choose hierarchy, responsive behavior, copy and states before
    editing. Cover loading, empty, error, offline/unknown and disabled states
    only where the real consumer supports them.
-4. **Implement:** reuse shared `--aw-*` tokens, `aw-*` components and existing
-   state/rendering ownership. Preserve routes, hooks, contracts and safety gates.
+4. **Implement:** reuse shared `--aw-*` tokens and `aw-*` components on
+   engineering surfaces; use the approved consumer guide and scoped consumer
+   tokens for Wand Night Stand smartphone screens. Preserve routes, hooks,
+   contracts and state ownership.
 5. **Render:** run the actual consumer or generate the real viewer using its
    owning script. A static mockup is evidence only for that mockup.
 6. **Inspect:** inspect screenshots and exercise the affected flow, keyboard,

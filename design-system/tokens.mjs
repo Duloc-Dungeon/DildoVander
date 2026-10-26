@@ -32,7 +32,15 @@ export const themes = freeze({
     "overlay": "#0C121C99",
     "link": "var(--aw-accent)",
     "skill": "var(--aw-accent)",
-    "dialog-backdrop": "#00000099"
+    "dialog-backdrop": "#00000099",
+    "game-felt": "#082F2C",
+    "game-paper": "#EFE0C3",
+    "game-ink": "#2A2019",
+    "game-muted-ink": "#62513F",
+    "game-brass": "#D6A45F",
+    "game-crimson": "#6C1427",
+    "game-walnut": "#342016",
+    "game-muted": "#D7C9AD"
   },
   "light": {
     "void": "var(--aw-mist)",
@@ -59,7 +67,15 @@ export const themes = freeze({
     "overlay": "#1B243066",
     "link": "var(--aw-accent)",
     "skill": "var(--aw-accent)",
-    "dialog-backdrop": "#00000099"
+    "dialog-backdrop": "#00000099",
+    "game-felt": "#082F2C",
+    "game-paper": "#EFE0C3",
+    "game-ink": "#2A2019",
+    "game-muted-ink": "#62513F",
+    "game-brass": "#D6A45F",
+    "game-crimson": "#6C1427",
+    "game-walnut": "#342016",
+    "game-muted": "#D7C9AD"
   },
   "lord-voldemort": {
     "void": "#0f0f11",
@@ -86,7 +102,15 @@ export const themes = freeze({
     "overlay": "#00000099",
     "link": "#a6acff",
     "skill": "#c2a1ff",
-    "dialog-backdrop": "#00000099"
+    "dialog-backdrop": "#00000099",
+    "game-felt": "#082F2C",
+    "game-paper": "#EFE0C3",
+    "game-ink": "#2A2019",
+    "game-muted-ink": "#62513F",
+    "game-brass": "#D6A45F",
+    "game-crimson": "#6C1427",
+    "game-walnut": "#342016",
+    "game-muted": "#D7C9AD"
   }
 });
 export const typography = freeze({
