@@ -678,7 +678,7 @@ try {
   const mobileNavigation = page.locator('.primary-navigation');
   assert(await mobileNavigation.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight - 32), 'Android SystemBars bottom inset lifts the floating navigation');
   await mobileNavigation.getByRole('link', { name: 'Domů', exact: true }).click();
-  await hasHeading(homeHeading());
+  await hasHeading('SYNTETICKÝ VLASTNÍK · UI FIXTURE');
   const finalHomeLink = page.locator('.home-destinations a').last();
   await finalHomeLink.scrollIntoViewIfNeeded();
   assert(await finalHomeLink.evaluate(link => link.getBoundingClientRect().bottom <= document.querySelector('.primary-navigation').getBoundingClientRect().top), 'the final home action can scroll above the floating navigation');
