@@ -669,7 +669,33 @@ enum AccountTransportPolicy {
         if path == "/app/v1/admin/launch/beta-admission" { return query.isEmpty && ["GET", "PUT"].contains(method) }
         if path == "/app/v1/admin/launch/beta-admission/group" { return query.isEmpty && method == "POST" }
         if path == "/app/v1/admin/launch/groups" { return query.isEmpty && ["GET", "POST"].contains(method) }
+        if path == "/app/v1/admin/launch/waiting-room" {
+            guard method == "GET" else { return false }
+            if query.isEmpty { return true }
+            guard query.count == 1, query[0].name == "after", let cursor = query[0].value else { return false }
+            return cursor.count == 32 && cursor.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) }
+        }
         let groupParts = path.split(separator: "/").map(String.init)
+        if groupParts.count == 7 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "waiting-room"]
+            && groupParts[6] == "group" && query.isEmpty {
+            let userId = groupParts[5]
+            return userId.count == 32 && userId.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) } && method == "PUT"
+        }
+        if groupParts.count == 7 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "groups"]
+            && groupParts[6] == "countdown" && query.isEmpty {
+            let groupId = groupParts[5]
+            return groupId.count == 32 && groupId.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) } && method == "PUT"
+        }
+        if groupParts.count == 8 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "groups"]
+            && groupParts[6] == "countdown" && groupParts[7] == "confirm" && query.isEmpty {
+            let groupId = groupParts[5]
+            return groupId.count == 32 && groupId.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) } && method == "POST"
+        }
+        if groupParts.count == 7 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "groups"]
+            && groupParts[6] == "start" && query.isEmpty {
+            let groupId = groupParts[5]
+            return groupId.count == 32 && groupId.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) } && method == "POST"
+        }
         if groupParts.count == 7 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "groups"]
             && groupParts[6] == "members" && query.isEmpty {
             let groupId = groupParts[5]

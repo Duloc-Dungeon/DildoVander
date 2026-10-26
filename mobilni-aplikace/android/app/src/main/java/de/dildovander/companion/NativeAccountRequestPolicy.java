@@ -100,6 +100,7 @@ final class NativeAccountRequestPolicy {
 
     private static boolean allowsAppPath(String path, String method, String query) {
         if (query != null && !query.isEmpty()) {
+            if ("/app/v1/admin/launch/waiting-room".equals(path) && "GET".equals(method)) return query.matches("^after=[0-9a-f]{32}$");
             if ("/app/v1/admin/operations/logs".equals(path) && "GET".equals(method)) return validOptionalQuery(query, "after", "level");
             if ("/app/v1/customer/completion-updates".equals(path) && "GET".equals(method)) return validOptionalQuery(query, "cursor", "limit");
             if ("/app/v1/archive/collection".equals(path) && "GET".equals(method)) return validCollectionQuery(query);
@@ -116,6 +117,11 @@ final class NativeAccountRequestPolicy {
         if ("/app/v1/admin/launch/beta-admission".equals(path)) return "GET".equals(method) || "PUT".equals(method);
         if ("/app/v1/admin/launch/beta-admission/group".equals(path)) return "POST".equals(method);
         if ("/app/v1/admin/launch/groups".equals(path)) return "GET".equals(method) || "POST".equals(method);
+        if ("/app/v1/admin/launch/waiting-room".equals(path)) return "GET".equals(method);
+        if (path.matches("^/app/v1/admin/launch/waiting-room/[0-9a-f]{32}/group$")) return "PUT".equals(method);
+        if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}/countdown$")) return "PUT".equals(method);
+        if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}/countdown/confirm$")) return "POST".equals(method);
+        if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}/start$")) return "POST".equals(method);
         if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}$")) return "PUT".equals(method);
         if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}/members$")) return "GET".equals(method);
         if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}/members/[0-9a-f]{32}$")) return "PUT".equals(method);

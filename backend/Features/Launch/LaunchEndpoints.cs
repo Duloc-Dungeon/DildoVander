@@ -13,6 +13,145 @@ namespace Kufr.Backend.Features.Launch;
 
 internal static class LaunchEndpoints
 {
+    private const int WaitingRoomPageSize = 100;
+    private sealed record WaitingRoomMember(string UserId, string DisplayName, long JoinedAt,
+        string? GroupId, string? GroupName, string State, long AccessRevision, string? FixedUniverse);
+    private sealed record WaitingRoomMove(long ExpectedMembershipRevision, string? ExpectedSourceGroupId,
+        string? TargetGroupId);
+
+    private static async Task<IResult> MoveWaitingRoomMemberAsync(string userId, WaitingRoomMove request,
+        HttpContext context, AccountDatabase db, LaunchPolicyStore store, TimeProvider timeProvider)
+    {
+        var recent = await AccountAuthorization.RequireRecentAsync(context);
+        if (recent is not null) { return recent; }
+        if (context.Request.Headers["X-DV-Confirm"] != "yes")
+        { return ApiProblem.Create(context, 409, "confirmation_required"); }
+        if (request.ExpectedMembershipRevision < 0 || string.IsNullOrWhiteSpace(request.TargetGroupId)
+            || request.TargetGroupId.Length > 64 || request.ExpectedSourceGroupId is { Length: > 64 })
+        { return ApiProblem.Create(context, 400, "invalid_waiting_room_move"); }
+        var actorId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        long accessRevision;
+        long? joinedAt;
+        string? fixedUniverse;
+        string? movedFrom = null;
+        var moved = false;
+        using (var reservation = store.ReserveWaitingRoomMove(request.ExpectedSourceGroupId,
+            request.TargetGroupId))
+        {
+            if (reservation is null) { return ApiProblem.Create(context, 404, "launch_group_unavailable"); }
+            await using (var transaction = await db.Database.BeginTransactionAsync())
+            {
+                await db.Database.ExecuteSqlRawAsync("UPDATE AspNetUsers SET Id=Id WHERE Id = {0}", userId);
+                var user = await db.Users.SingleOrDefaultAsync(candidate => candidate.Id == userId);
+                if (user is null || !await IsCustomerAsync(db, userId))
+                { return ApiProblem.Create(context, 404, "waiting_room_member_unavailable"); }
+                if (user.Disabled || await db.DeletionRequests.AnyAsync(candidate => candidate.UserId == userId))
+                { return ApiProblem.Create(context, 409, "waiting_room_member_unavailable"); }
+                if (await HasProtectedRoleAsync(db, userId))
+                { return ApiProblem.Create(context, 403, "beta_member_access_protected"); }
+                if (user.LaunchGroupAccessRevision != request.ExpectedMembershipRevision
+                    || user.LaunchGroupId != request.ExpectedSourceGroupId)
+                { return ApiProblem.Create(context, 409, "beta_member_revision_conflict"); }
+                if (user.LaunchGroupRevokedAt is null
+                    && reservation.SourceStarted(timeProvider.GetUtcNow().ToUnixTimeMilliseconds()))
+                { return ApiProblem.Create(context, 409, "waiting_room_member_already_started"); }
+                if (user.LaunchGroupId != request.TargetGroupId)
+                {
+                    user.LaunchGroupId = request.TargetGroupId;
+                    user.LaunchGroupJoinedAt ??= timeProvider.GetUtcNow().ToUnixTimeSeconds();
+                    user.LaunchGroupAccessRevision++;
+                    await db.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    movedFrom = request.ExpectedSourceGroupId;
+                    moved = true;
+                }
+                accessRevision = user.LaunchGroupAccessRevision;
+                joinedAt = user.LaunchGroupJoinedAt;
+                fixedUniverse = user.AdmissionUniverse;
+            }
+        }
+        if (moved)
+        { store.AuditBetaMemberMoved(actorId, userId, movedFrom, request.TargetGroupId, accessRevision, now); }
+        return Results.Ok(new
+        {
+            userId,
+            groupId = request.TargetGroupId,
+            accessRevision,
+            joinedAt,
+            fixedUniverse
+        });
+    }
+
+    private static Task<bool> IsCustomerAsync(AccountDatabase db, string userId)
+        => (from membership in db.UserRoles
+            join role in db.Roles on membership.RoleId equals role.Id
+            where membership.UserId == userId && role.Name == AccountRoles.Customer
+            select membership.UserId).AnyAsync();
+
+    private static Task<bool> HasProtectedRoleAsync(AccountDatabase db, string userId)
+        => (from membership in db.UserRoles
+            join role in db.Roles on membership.RoleId equals role.Id
+            where membership.UserId == userId
+                && new[] { AccountRoles.Owner, AccountRoles.Administrator, AccountRoles.Operator,
+                    AccountRoles.Viewer, AccountRoles.Tester }.Contains(role.Name!)
+            select membership.UserId).AnyAsync();
+
+    private static async Task<IResult> ReadWaitingRoomAsync(string? after, HttpContext context,
+        AccountDatabase db, LaunchPolicyStore store, TimeProvider timeProvider)
+    {
+        if (after is { Length: > 450 } || after?.Any(char.IsControl) == true)
+        { return ApiProblem.Create(context, 400, "invalid_waiting_room_cursor"); }
+        var groups = store.ReadGroups().ToDictionary(group => group.Id, StringComparer.Ordinal);
+        var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        foreach (var group in groups.Values.ToArray())
+        {
+            if (group.ForceStartAtEnd && group.LaunchAt is not null && group.LaunchAt <= now)
+            { groups[group.Id] = store.CompleteForcedCountdown(group.Id, now) ?? group; }
+        }
+        var openedGroupIds = groups.Values.Where(group => group.OpenedAt is not null)
+            .Select(group => group.Id).ToArray();
+        var query = from user in db.Users.AsNoTracking()
+            join membership in db.UserRoles on user.Id equals membership.UserId
+            join role in db.Roles on membership.RoleId equals role.Id
+            where role.Name == AccountRoles.Customer && !user.Disabled
+                && !db.DeletionRequests.Any(candidate => candidate.UserId == user.Id)
+                && (user.LaunchGroupRevokedAt != null || user.LaunchGroupId == null
+                    || !openedGroupIds.Contains(user.LaunchGroupId))
+                && !(from protectedMembership in db.UserRoles
+                    join protectedRole in db.Roles on protectedMembership.RoleId equals protectedRole.Id
+                    where protectedMembership.UserId == user.Id
+                        && new[] { AccountRoles.Owner, AccountRoles.Administrator, AccountRoles.Operator,
+                            AccountRoles.Viewer, AccountRoles.Tester }.Contains(protectedRole.Name!)
+                    select protectedMembership.UserId).Any()
+                && (after == null || string.Compare(user.Id, after) > 0)
+            orderby user.Id
+            select new
+            {
+                user.Id,
+                user.DisplayName,
+                user.CreatedAt,
+                user.LaunchGroupJoinedAt,
+                user.LaunchGroupId,
+                user.LaunchGroupRevokedAt,
+                user.LaunchGroupAccessRevision,
+                user.AdmissionUniverse
+            };
+        var page = await query.Take(WaitingRoomPageSize + 1).ToArrayAsync();
+        var hasMore = page.Length > WaitingRoomPageSize;
+        var members = page.Take(WaitingRoomPageSize).ToArray();
+        var nextCursor = hasMore ? members[^1].Id : null;
+        return Results.Ok(new
+        {
+            members = members.Select(user => new WaitingRoomMember(user.Id, user.DisplayName,
+                user.LaunchGroupJoinedAt ?? user.CreatedAt, user.LaunchGroupId,
+                user.LaunchGroupId is not null && groups.TryGetValue(user.LaunchGroupId, out var group) ? group.Name : null,
+                user.LaunchGroupRevokedAt is null ? "waiting" : "revoked",
+                user.LaunchGroupAccessRevision, user.AdmissionUniverse)).ToArray(),
+            nextCursor
+        });
+    }
+
     private static async Task<IResult> SetMemberAccessAsync(string id, string userId,
         BetaMemberAccessUpdate request, HttpContext context, AccountDatabase db,
         LaunchPolicyStore store, TimeProvider timeProvider)
@@ -141,7 +280,15 @@ internal static class LaunchEndpoints
             : ValueTask.FromResult<object?>(ApiProblem.Create(invocation.HttpContext, 403, "account_admin_required")));
         admin.MapGet("", (LaunchPolicyStore store) => Results.Ok(store.Read()));
         admin.MapGet("/audit", (LaunchPolicyStore store) => Results.Ok(new { entries = store.ReadAudit() }));
-        admin.MapGet("/groups", (LaunchPolicyStore store) => Results.Ok(new { groups = store.ReadGroups() }));
+        admin.MapGet("/groups", (LaunchPolicyStore store, TimeProvider timeProvider) => Results.Ok(new
+        {
+            groups = store.ReadGroups().Select(group => group.LaunchAt is not null
+                && group.ForceStartAtEnd && group.LaunchAt <= timeProvider.GetUtcNow().ToUnixTimeMilliseconds()
+                    ? store.CompleteForcedCountdown(group.Id, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) ?? group
+                    : group).ToArray()
+        }));
+        admin.MapGet("/waiting-room", ReadWaitingRoomAsync);
+        admin.MapPut("/waiting-room/{userId}/group", MoveWaitingRoomMemberAsync);
         admin.MapGet("/beta-admission", (LaunchPolicyStore store) =>
         {
             var admission = store.ReadBetaAdmission();
@@ -232,6 +379,51 @@ internal static class LaunchEndpoints
             {
                 var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
                 return Results.Ok(new { group = store.UpdateGroup(actor, id, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
+            }
+            catch (LaunchConfigurationException error)
+            { return ApiProblem.Create(context, error.Status, error.Code); }
+        });
+        admin.MapPut("/groups/{id}/countdown", async (string id, LaunchGroupCountdownUpdate request,
+            HttpContext context, LaunchPolicyStore store, TimeProvider timeProvider) =>
+        {
+            var recent = await AccountAuthorization.RequireRecentAsync(context);
+            if (recent is not null) { return recent; }
+            if (context.Request.Headers["X-DV-Confirm"] != "yes")
+            { return ApiProblem.Create(context, 409, "confirmation_required"); }
+            try
+            {
+                return Results.Ok(new { group = store.SaveCountdown(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+                    id, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
+            }
+            catch (LaunchConfigurationException error)
+            { return ApiProblem.Create(context, error.Status, error.Code); }
+        });
+        admin.MapPost("/groups/{id}/countdown/confirm", async (string id, LaunchGroupRevision request,
+            HttpContext context, LaunchPolicyStore store, TimeProvider timeProvider) =>
+        {
+            var recent = await AccountAuthorization.RequireRecentAsync(context);
+            if (recent is not null) { return recent; }
+            if (context.Request.Headers["X-DV-Confirm"] != "yes")
+            { return ApiProblem.Create(context, 409, "confirmation_required"); }
+            try
+            {
+                return Results.Ok(new { group = store.ConfirmCountdown(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+                    id, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
+            }
+            catch (LaunchConfigurationException error)
+            { return ApiProblem.Create(context, error.Status, error.Code); }
+        });
+        admin.MapPost("/groups/{id}/start", async (string id, LaunchGroupRevision request,
+            HttpContext context, LaunchPolicyStore store, TimeProvider timeProvider) =>
+        {
+            var recent = await AccountAuthorization.RequireRecentAsync(context);
+            if (recent is not null) { return recent; }
+            if (context.Request.Headers["X-DV-Confirm"] != "yes")
+            { return ApiProblem.Create(context, 409, "confirmation_required"); }
+            try
+            {
+                return Results.Ok(new { group = store.StartGroup(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+                    id, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
             }
             catch (LaunchConfigurationException error)
             { return ApiProblem.Create(context, error.Status, error.Code); }

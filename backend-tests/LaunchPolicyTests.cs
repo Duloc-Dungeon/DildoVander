@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
@@ -25,6 +26,9 @@ internal static class LaunchPolicyTests
         {
             await VerifyConsumerDefaultsAsync(Path.Combine(root, "consumer-defaults"));
             VerifyBetaAdmission(Path.Combine(root, "beta-admission"));
+            VerifyLegacyGroupMigration(Path.Combine(root, "legacy-group-migration"));
+            await VerifyWaitingRoomMoveReservationAsync(Path.Combine(root, "waiting-room-reservation"));
+            await VerifyAccessSnapshotRevalidationAsync(Path.Combine(root, "access-snapshot-race"));
             var store = new LaunchPolicyStore(root);
             var clock = new TestClock(DateTimeOffset.FromUnixTimeMilliseconds(1_000));
             var policy = new LaunchAccessService(store, clock);
@@ -83,27 +87,50 @@ internal static class LaunchPolicyTests
             Check(reloaded.Revision == 2 && reloaded.ProductionUnlocked && reloaded.PersonalizedLoadingPrompt == "safe prompt",
                 "configuration survives store restart");
 
-            var nightOne = store.CreateGroup("admin-1", new("Night one", 4_000), 3_000);
-            var nightTwo = store.CreateGroup("admin-1", new("Night two", 5_000), 3_000);
+            var nightOne = store.CreateGroup("admin-1", new("Night one", null), 3_000);
+            var nightTwo = store.CreateGroup("admin-1", new("Night two", null), 3_000);
             var noLaunchTime = store.CreateGroup("admin-1", new("Unscheduled", null), 3_000);
             Check(store.ReadGroups().Length == 3 && new LaunchPolicyStore(root).ReadGroup(nightOne.Id) == nightOne,
-                "group names and schedules persist independently");
-            Check(!policy.Evaluate(customer, nightOne.Id, nightOne).Allowed
-                && policy.Evaluate(customer, nightOne.Id, nightOne).LaunchAt == 4_000
+                "group names and closed countdown states persist independently");
+            nightOne = store.SaveCountdown("admin-1", nightOne.Id, new(nightOne.Revision, 2, true), 3_000);
+            nightTwo = store.SaveCountdown("admin-1", nightTwo.Id, new(nightTwo.Revision, 3, false), 3_000);
+            Check(!policy.Evaluate(customer, nightOne.Id, nightOne).Allowed && nightOne.LaunchAt is null
                 && !policy.Evaluate(customer, nightTwo.Id, nightTwo).Allowed
                 && !policy.Evaluate(customer, noLaunchTime.Id, noLaunchTime).Allowed,
-                "future and unscheduled groups override an already unlocked global audience");
+                "saving a countdown draft leaves the group closed until explicit confirmation");
+            nightOne = store.ConfirmCountdown("admin-1", nightOne.Id, new(nightOne.Revision), 3_000);
+            nightTwo = store.ConfirmCountdown("admin-1", nightTwo.Id, new(nightTwo.Revision), 3_000);
+            Check(nightOne.LaunchAt == 5_000 && nightTwo.LaunchAt == 6_000
+                && !policy.Evaluate(customer, nightOne.Id, nightOne).Allowed,
+                "confirmation starts the full countdown duration from server time");
             Check(!policy.Evaluate(customer, "missing-group", null).Allowed
                 && policy.Evaluate(tester, nightOne.Id, nightOne).Allowed,
                 "unresolved memberships fail closed while tester retains its bypass");
-            clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(4_000));
+            clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(5_000));
             Check(policy.Evaluate(customer, nightOne.Id, nightOne).Allowed
                 && !policy.Evaluate(customer, nightTwo.Id, nightTwo).Allowed,
-                "group schedules open independently according to server time");
-            var closed = store.UpdateGroup("admin-1", nightOne.Id,
-                new(nightOne.Revision, nightOne.Name, null), 4_000);
-            Check(closed.Revision == 2 && !policy.Evaluate(customer, closed.Id, closed).Allowed,
-                "clearing a group's launch time keeps its members closed");
+                "Force opens only its own group at the confirmed countdown deadline");
+            clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(6_000));
+            Check(!policy.Evaluate(customer, nightTwo.Id, nightTwo).Allowed,
+                "a countdown without Force stays closed after expiry");
+            nightTwo = store.ReadGroup(nightTwo.Id)!;
+            var opened = store.StartGroup("admin-1", nightTwo.Id, new(nightTwo.Revision), 6_000);
+            Check(opened.OpenedAt == 6_000 && policy.Evaluate(customer, nightTwo.Id, opened).Allowed,
+                "owner can explicitly start a non-Force group after expiry");
+            var renamed = store.UpdateGroup("admin-1", nightTwo.Id,
+                new(opened.Revision, "Night two renamed", null), 6_000);
+            Check(renamed.OpenedAt == opened.OpenedAt && policy.Evaluate(customer, renamed.Id, renamed).Allowed,
+                "editing group name preserves its confirmed/open state");
+            var legacyRename = store.UpdateGroup("admin-1", nightTwo.Id,
+                new(renamed.Revision, "Night two renamed again", renamed.LaunchAt), 6_001);
+            Check(legacyRename.LaunchAt == opened.LaunchAt && legacyRename.OpenedAt == opened.OpenedAt,
+                "legacy name edits carrying the unchanged launchAt preserve an open night");
+            try
+            {
+                store.SaveCountdown("admin-1", nightTwo.Id, new(legacyRename.Revision, 5, false), 6_002);
+                throw new InvalidOperationException("Launch policy: countdown edit reset an already-open group.");
+            }
+            catch (LaunchConfigurationException error) when (error.Status == 409) { }
 
             await RunAccessBoundaryAsync(root);
         }
@@ -126,6 +153,11 @@ internal static class LaunchPolicyTests
         Check(selected.Group.Name == "Interní beta" && selected.Admission.GroupId == selected.Group.Id
             && !selected.Admission.RecruitmentOpen,
             "admin can create and select the one internal beta group while keeping enrollment closed");
+        var draft = store.UpdateGroup("owner", selected.Group.Id,
+            new(selected.Group.Revision, selected.Group.Name, 3_601_000), 1000);
+        Check(draft.LaunchAt is null && draft.CountdownDurationSeconds == 3600
+            && draft.CountdownConfirmedAt is null,
+            "legacy absolute group schedule becomes an unconfirmed countdown draft");
         var open = store.UpdateBetaAdmission("owner",
             new(selected.Admission.Revision, selected.Group.Id, true, "Middle-earth"), 2000);
         Check(open.RecruitmentOpen && open.FixedUniverse == "Middle-earth",
@@ -140,6 +172,123 @@ internal static class LaunchPolicyTests
             && !new LaunchPolicyStore(root).ReadBetaAdmission().RecruitmentOpen
             && closed.Revision > open.Revision,
             "closing recruitment invalidates outstanding ceremonies and survives store restart");
+    }
+
+    private static void VerifyLegacyGroupMigration(string root)
+    {
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "launch.sqlite");
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE launch_groups (
+                    id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                    launch_at INTEGER NULL, revision INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+                INSERT INTO launch_groups(id,name,launch_at,revision,updated_at)
+                    VALUES('legacy','Legacy Night',11000,3,1000);
+                """;
+            command.ExecuteNonQuery();
+        }
+        var migrated = new LaunchPolicyStore(root).ReadGroup("legacy")!;
+        Check(migrated.LaunchAt is null && migrated.CountdownDurationSeconds == 10
+            && migrated.CountdownConfirmedAt is null && migrated.OpenedAt is null
+            && !migrated.ForceStartAtEnd,
+            "legacy schedule is preserved as a closed, unconfirmed duration draft");
+        var restarted = new LaunchPolicyStore(root).ReadGroup("legacy")!;
+        Check(restarted == migrated,
+            "countdown schema migration is idempotent and leaves legacy groups closed after restart");
+    }
+
+    private static async Task VerifyWaitingRoomMoveReservationAsync(string root)
+    {
+        var store = new LaunchPolicyStore(root);
+        var source = store.CreateGroup("owner", new("Source", null), 1000);
+        var target = store.CreateGroup("owner", new("Target", null), 1000);
+        var draft = store.SaveCountdown("owner", source.Id, new(source.Revision, 1, false), 1000);
+        var countdown = store.ConfirmCountdown("owner", source.Id, new(draft.Revision), 1000);
+        var reservation = store.ReserveWaitingRoomMove(source.Id, target.Id);
+        Check(reservation is not null && !reservation.SourceStarted(1999),
+            "waiting-room move reserves launch state before checking account state");
+        var start = Task.Run(() => store.StartGroup("owner", source.Id,
+            new(countdown.Revision), 2000));
+        await Task.Delay(100);
+        Check(!start.IsCompleted,
+            "group start cannot pass a membership reservation while the account assignment commits");
+        reservation!.Dispose();
+        var opened = await start;
+        Check(opened.OpenedAt == 2000,
+            "group start proceeds after the waiting-room move releases its launch reservation");
+    }
+
+    private static async Task VerifyAccessSnapshotRevalidationAsync(string root)
+    {
+        Directory.CreateDirectory(root);
+        var accountPath = Path.Combine(root, "accounts.sqlite");
+        var accountConnectionString = new SqliteConnectionStringBuilder { DataSource = accountPath }.ToString();
+        using (var connection = new SqliteConnection(accountConnectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE AspNetUsers (
+                    Id TEXT NOT NULL PRIMARY KEY, LaunchGroupId TEXT NULL,
+                    LaunchGroupAccessRevision INTEGER NOT NULL, LaunchGroupRevokedAt INTEGER NULL);
+                INSERT INTO AspNetUsers(Id,LaunchGroupId,LaunchGroupAccessRevision)
+                    VALUES('source-user','source-group',1),('global-user',NULL,0);
+                """;
+            command.ExecuteNonQuery();
+        }
+        var services = new ServiceCollection();
+        services.AddDbContext<AccountDatabase>(options => options.UseSqlite(accountConnectionString));
+        using var provider = services.BuildServiceProvider();
+        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+        var launch = new LaunchPolicyStore(Path.Combine(root, "launch"));
+        var source = launch.CreateGroup("owner", new("Source", null), 1000);
+        var target = launch.CreateGroup("owner", new("Target", null), 1000);
+        using (var connection = new SqliteConnection(accountConnectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE AspNetUsers SET LaunchGroupId=$source WHERE Id='source-user'";
+            command.Parameters.AddWithValue("$source", source.Id);
+            command.ExecuteNonQuery();
+        }
+        var draft = launch.SaveCountdown("owner", source.Id, new(source.Revision, 1, false), 1000);
+        var countdown = launch.ConfirmCountdown("owner", source.Id, new(draft.Revision), 1000);
+        using var clock = new BlockingClock(DateTimeOffset.FromUnixTimeMilliseconds(3000));
+        var access = new LaunchAccessService(launch, clock, scopeFactory);
+
+        var sourceEvaluation = Task.Run(() => access.EvaluateAsync(Principal(AccountRoles.Customer, "source-user")));
+        await clock.WaitUntilBlockedAsync();
+        MoveIdentity("source-user", target.Id);
+        launch.StartGroup("owner", source.Id, new(countdown.Revision), 3000);
+        clock.Release();
+        var movedSource = await sourceEvaluation.WaitAsync(TimeSpan.FromSeconds(5));
+        Check(!movedSource.Allowed && movedSource.LaunchAt is null,
+            "revalidation denies a former member when its old source group opens during access evaluation");
+
+        var globalClock = new BlockingClock(DateTimeOffset.FromUnixTimeMilliseconds(3000));
+        var globalAccess = new LaunchAccessService(launch, globalClock, scopeFactory);
+        var globalEvaluation = Task.Run(() => globalAccess.EvaluateAsync(Principal(AccountRoles.Customer, "global-user")));
+        await globalClock.WaitUntilBlockedAsync();
+        MoveIdentity("global-user", target.Id);
+        globalClock.Release();
+        var movedGlobal = await globalEvaluation.WaitAsync(TimeSpan.FromSeconds(5));
+        Check(!movedGlobal.Allowed && movedGlobal.LaunchAt is null,
+            "revalidation denies a globally unlocked account assigned to a closed group during evaluation");
+
+        void MoveIdentity(string userId, string targetGroupId)
+        {
+            using var connection = new SqliteConnection(accountConnectionString);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE AspNetUsers SET LaunchGroupId=$group,LaunchGroupAccessRevision=LaunchGroupAccessRevision+1 WHERE Id=$id";
+            command.Parameters.AddWithValue("$group", targetGroupId);
+            command.Parameters.AddWithValue("$id", userId);
+            Check(command.ExecuteNonQuery() == 1, "race fixture updates an existing membership");
+        }
     }
 
     private static async Task VerifyConsumerDefaultsAsync(string root)
@@ -374,8 +523,10 @@ internal static class LaunchPolicyTests
         }
     }
 
-    private static ClaimsPrincipal Principal(string role) => new(new ClaimsIdentity(
-        [new Claim(ClaimTypes.NameIdentifier, "user-1"), new Claim(ClaimTypes.Role, role)], "test", ClaimTypes.Name, ClaimTypes.Role));
+    private static ClaimsPrincipal Principal(string role) => Principal(role, "user-1");
+
+    private static ClaimsPrincipal Principal(string role, string userId) => new(new ClaimsIdentity(
+        [new Claim(ClaimTypes.NameIdentifier, userId), new Claim(ClaimTypes.Role, role)], "test", ClaimTypes.Name, ClaimTypes.Role));
 
     private static void Check(bool condition, string message)
     {
@@ -387,5 +538,26 @@ internal static class LaunchPolicyTests
         private DateTimeOffset _now = now;
         public override DateTimeOffset GetUtcNow() => _now;
         internal void Set(DateTimeOffset value) => _now = value;
+    }
+
+    private sealed class BlockingClock(DateTimeOffset now) : TimeProvider, IDisposable
+    {
+        private readonly ManualResetEventSlim _release = new(false);
+        private readonly TaskCompletionSource _blocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _blockNext = 1;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (Interlocked.Exchange(ref _blockNext, 0) == 1)
+            {
+                _blocked.TrySetResult();
+                _release.Wait();
+            }
+            return now;
+        }
+
+        internal Task WaitUntilBlockedAsync() => _blocked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        internal void Release() => _release.Set();
+        public void Dispose() => _release.Dispose();
     }
 }

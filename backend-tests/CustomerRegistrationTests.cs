@@ -10,7 +10,7 @@ internal static partial class AccountIdentityTests
 {
     internal static async Task RunCustomerRegistrationAsync()
     {
-        await using var fixture = await Fixture.StartAsync(customerFeatures: true);
+        await using var fixture = await Fixture.StartAsync(customerFeatures: true, betaRecruitmentOpen: false);
         using var customer = fixture.Client();
         using var owner = fixture.Client();
         using var ownerKey = new VirtualPasskey();
@@ -53,8 +53,10 @@ internal static partial class AccountIdentityTests
             "customer joins only the configured default group and starts active even while group launch is future");
         Check((await customer.GetAsync("/app/v1/prelaunch/character")).IsSuccessStatusCode,
             "new member can prepare a character before the group's launch");
-        var group = launch.ReadGroup(selected.Group.Id)!;
-        launch.UpdateGroup("fixture-owner", group.Id, new(group.Revision, group.Name, now - 1000), now);
+        var launchDraft = launch.ReadGroup(selected.Group.Id)!;
+        var countdown = launch.SaveCountdown("fixture-owner", launchDraft.Id,
+            new(launchDraft.Revision, 1, true), now - 2000);
+        launch.ConfirmCountdown("fixture-owner", launchDraft.Id, new(countdown.Revision), now - 2000);
         Check((await customer.GetAsync("/app/v1/admin/users")).StatusCode == HttpStatusCode.Forbidden,
             "customer has no account administration permission");
         await SeedAsync(fixture.App, async db =>

@@ -366,7 +366,7 @@ onBeforeUnmount(() => {
         </form>
         <section class="countdown" :aria-label="copy.countdownLabel">
           <p>{{ copy.countdown }}</p>
-          <div v-if="policy?.launchAt != null" class="countdown-grid" aria-live="off"><div v-for="(part, index) in timeParts" :key="index"><strong>{{ index ? String(part).padStart(2, '0') : part }}</strong><span>{{ [copy.days, copy.hours, copy.minutes, copy.seconds][index] }}</span></div></div>
+          <div v-if="policy?.launchAt != null && remaining > 0" class="countdown-grid" aria-live="off"><div v-for="(part, index) in timeParts" :key="index"><strong>{{ index ? String(part).padStart(2, '0') : part }}</strong><span>{{ [copy.days, copy.hours, copy.minutes, copy.seconds][index] }}</span></div></div>
           <p v-else class="countdown-wait">{{ copy.unscheduled }}</p>
         </section>
       </div>
