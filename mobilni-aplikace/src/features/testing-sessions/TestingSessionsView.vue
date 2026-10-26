@@ -169,7 +169,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
 <template>
   <div class="testing-sessions">
     <header class="testing-header">
-      <div><h1>Testing Sessions</h1><p>Celý příběh se skutečným backendem a OpenAI. Fyzický svět nahrazuje virtuální kufr.</p></div>
+      <div><h1>Testovací relace</h1><p>Celý příběh se skutečným backendem a OpenAI. Fyzický svět nahrazuje virtuální kufr.</p></div>
       <AwStatus tone="warning">Testovací prostředí</AwStatus>
     </header>
     <AwNotice v-if="!permitted" tone="warning">Tato oblast vyžaduje účet Tester. Testovací pohled neuděluje práva k produkčním zařízením ani soukromým datům.</AwNotice>
@@ -212,7 +212,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
             </button>
           </li></ul>
           </details>
-          <RouterLink v-if="selected" :to="{ path: '/persona-lab', query: { testingSession: selected.session.id } }">Otevřít Persona Lab</RouterLink>
+          <RouterLink v-if="selected" :to="{ path: '/persona-lab', query: { testingSession: selected.session.id } }">Otevřít AI laboratoř</RouterLink>
           <p v-if="selected" class="aw-muted">Sezení zůstane uložené. Návrat přes tento seznam obnoví jeho kontext.</p>
         </aside>
         <div v-if="selected" v-show="step !== 1" class="testing-main">

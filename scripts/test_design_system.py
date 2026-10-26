@@ -42,6 +42,12 @@ class IntegrityTests(unittest.TestCase):
     def test_valid_fixture(self):
         self.assertEqual(inspect(self.root), [])
 
+    def test_consumer_brass_does_not_restore_retired_engineering_guidance(self):
+        (self.root / "DESIGN.md").write_text("Responsive Table: mosazné akce", encoding="utf-8")
+        self.assertEqual(inspect(self.root), [])
+        (self.root / "design-system/style-guide.md").write_text("mosazné akce", encoding="utf-8")
+        self.assertTrue(any("Obsolete active" in issue for issue in inspect(self.root)))
+
     def test_palette_drift_is_detected(self):
         self.palette.write_text(self.palette.read_text().replace("#EEF1F5", "#FFFFFF"))
         self.assertTrue(any("--aw-mist" in issue for issue in inspect(self.root)))

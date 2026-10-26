@@ -2,10 +2,10 @@ import { computed, ref, type ComputedRef } from 'vue';
 
 export const interfaceLanguages = [
   { value: 'cs', label: 'Čeština' },
-  { value: 'en', label: 'English' },
 ] as const;
 
-export type InterfaceLanguage = typeof interfaceLanguages[number]['value'];
+/** Keep `en` in the contract so legacy stored values and callers can be normalized. */
+export type InterfaceLanguage = 'cs' | 'en';
 
 export type InterfaceLanguageScope =
   | { readonly kind: 'device' }
@@ -58,7 +58,7 @@ function readScope(storage: InterfaceLanguageStorage | undefined, scope: Interfa
   try {
     const stored = storage.getItem(keyForScope(scope));
     return isInterfaceLanguage(stored)
-      ? { language: stored, persistenceStatus: 'saved' }
+      ? { language: defaultLanguage, persistenceStatus: 'saved' }
       : { language: defaultLanguage, persistenceStatus: 'unverified' };
   } catch {
     return { language: defaultLanguage, persistenceStatus: 'unavailable' };
@@ -100,11 +100,11 @@ export function createInterfaceLanguagePreference(
 
   function setLanguage(value: unknown): boolean {
     if (!isInterfaceLanguage(value)) return false;
-    activeLanguage.value = value;
-    languageByScope.set(activeKey.value, value);
+    activeLanguage.value = defaultLanguage;
+    languageByScope.set(activeKey.value, defaultLanguage);
     try {
       if (!storage) throw new Error('Storage unavailable');
-      storage.setItem(activeKey.value, value);
+      storage.setItem(activeKey.value, defaultLanguage);
       activePersistenceStatus.value = 'saved';
     } catch {
       // Keep the choice for this runtime even when persistence is unavailable.

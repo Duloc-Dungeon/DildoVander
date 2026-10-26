@@ -3,7 +3,8 @@ import GameBossControl from '../game/GameBossControl.vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
-import { accountRequest } from '../identity/session';
+import AdminReauthentication from '../identity/AdminReauthentication.vue';
+import { account, accountRequest } from '../identity/session';
 
 interface LaunchGroup {
   id: string;
@@ -42,11 +43,13 @@ const busy = ref(false);
 const loading = ref(true);
 const mutationBlocked = ref(false);
 const error = ref('');
+const reauthenticationRequired = ref(false);
 const message = ref('');
 const currentGroup = computed(() => groups.value.find(group => group.id === admission.value?.groupId) ?? null);
 const managedGroup = computed(() => groups.value.find(group => group.id === managementGroupId.value) ?? null);
 const countdownDraftChanged = computed(() => managedGroup.value != null
-  && (durationMinutes.value * 60 !== (managedGroup.value.countdownDurationSeconds ?? 600)
+  && (managedGroup.value.countdownDurationSeconds == null
+    || durationMinutes.value * 60 !== managedGroup.value.countdownDurationSeconds
     || forceStartAtEnd.value !== (managedGroup.value.forceStartAtEnd === true)));
 const groupName = computed(() => admission.value?.groupName || currentGroup.value?.name || '');
 const groupLaunchLabel = computed(() => currentGroup.value?.launchAt
@@ -119,7 +122,12 @@ async function load(): Promise<boolean> {
   } finally { loading.value = false; }
 }
 
-async function reconcile(failureMessage: string): Promise<void> {
+async function reconcile(failureMessage: string, cause: unknown): Promise<void> {
+  reauthenticationRequired.value = (cause as { code?: string } | null)?.code === 'recent_passkey_required';
+  if (reauthenticationRequired.value) {
+    error.value = cause instanceof Error ? cause.message : 'Nejprve znovu ověřte svou totožnost přístupovým klíčem.';
+    return;
+  }
   error.value = `${failureMessage} Ověřuji aktuální stav…`;
   if (await load()) error.value = `${failureMessage} Aktuální stav byl znovu načten.`;
   else error.value = 'Aktuální stav se nepodařilo ověřit. Obnovte ho před další změnou.';
@@ -135,7 +143,7 @@ async function saveConfiguration(): Promise<void> {
       fixedUniverse: fixedUniverse.value.trim() || null,
     });
     message.value = recruitmentOpen.value ? 'Nábor do výchozí skupiny je otevřený.' : 'Nábor do výchozí skupiny je uzavřený.';
-  } catch { await reconcile('Změnu náboru se nepodařilo potvrdit.'); }
+  } catch (cause) { await reconcile('Změnu náboru se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
 async function chooseDefault(groupId?: string): Promise<void> {
@@ -149,7 +157,7 @@ async function chooseDefault(groupId?: string): Promise<void> {
     if (!result || typeof result.revision !== 'number') throw new Error('unconfirmed');
     message.value = groupId ? 'Výchozí beta skupina byla změněna.' : 'Byla vytvořena skupina Interní beta. Nábor zůstává uzavřený.';
     await load();
-  } catch { await reconcile('Skupinu se nepodařilo potvrdit.'); }
+  } catch (cause) { await reconcile('Skupinu se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
 async function setMemberAccess(member: WaitingMember): Promise<void> {
@@ -162,7 +170,7 @@ async function setMemberAccess(member: WaitingMember): Promise<void> {
     }, undefined, active ? `Obnovit přístup účastníkovi ${member.displayName}?` : `Odebrat přístup účastníkovi ${member.displayName}?\nNebude moct pokračovat v zážitku. Účet ani jeho data se nesmažou.`);
     message.value = active ? `Přístup pro ${member.displayName} byl obnoven.` : `Přístup pro ${member.displayName} byl odebrán.`;
     await load();
-  } catch { await reconcile('Změnu přístupu se nepodařilo potvrdit.'); }
+  } catch (cause) { await reconcile('Změnu přístupu se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
 async function assignGroup(member: WaitingMember): Promise<void> {
@@ -182,7 +190,7 @@ async function assignGroup(member: WaitingMember): Promise<void> {
     }, undefined, `Přesunout ${member.displayName} do skupiny ${targetName}?${mayEnterImmediately ? '\nTato skupina už je otevřená; účastník může vstoupit okamžitě.' : ''}${member.state === 'revoked' ? '\nPřístup zůstane odebraný.' : ''}\nÚčet a jeho data zůstanou zachované.`);
     message.value = `${member.displayName} byl přesunut do skupiny ${targetName}.${member.state === 'revoked' ? ' Přístup zůstává odebraný.' : ''}`;
     await load();
-  } catch { await reconcile('Přesun účastníka se nepodařilo potvrdit.'); }
+  } catch (cause) { await reconcile('Přesun účastníka se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
 async function saveCountdownDraft(): Promise<void> {
@@ -197,12 +205,12 @@ async function saveCountdownDraft(): Promise<void> {
     });
     message.value = 'Návrh odpočtu je uložený. Odpočet začne až po potvrzení.';
     await load();
-  } catch { await reconcile('Návrh odpočtu se nepodařilo uložit.'); }
+  } catch (cause) { await reconcile('Návrh odpočtu se nepodařilo uložit.', cause); }
   finally { busy.value = false; }
 }
 async function confirmCountdown(): Promise<void> {
   const group = managedGroup.value;
-  if (!group || busy.value || durationMinutes.value < 1 || durationMinutes.value > 10080) return;
+  if (!group || busy.value || countdownDraftChanged.value || !Number.isInteger(durationMinutes.value) || durationMinutes.value < 1 || durationMinutes.value > 10080) return;
   busy.value = true; error.value = ''; message.value = '';
   try {
     await accountRequest(`/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}/countdown/confirm`, 'POST', {
@@ -210,7 +218,7 @@ async function confirmCountdown(): Promise<void> {
     }, undefined, `Spustit odpočet pro ${group.name} na ${durationMinutes.value} minut?${forceStartAtEnd.value ? '\nPo skončení se noc automaticky otevře.' : '\nPo skončení zůstane čekárna zavřená.'}`);
     message.value = 'Odpočet byl potvrzen a spuštěn.';
     await load();
-  } catch { await reconcile('Spuštění odpočtu se nepodařilo potvrdit.'); }
+  } catch (cause) { await reconcile('Spuštění odpočtu se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
 async function startNight(): Promise<void> {
@@ -223,7 +231,7 @@ async function startNight(): Promise<void> {
     }, undefined, `Otevřít noc pro skupinu ${group.name}?`);
     message.value = `Noc pro skupinu ${group.name} je otevřená.`;
     await load();
-  } catch { await reconcile('Otevření noci se nepodařilo potvrdit.'); }
+  } catch (cause) { await reconcile('Otevření noci se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
 function joinedDate(value: number): string {
@@ -237,10 +245,16 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
 </script>
 
 <template>
-  <section class="aw-card beta-admission" aria-labelledby="beta-admission-title">
-    <h3 id="beta-admission-title">Čekárna a beta skupiny</h3>
+  <section id="waiting-room" class="aw-card beta-admission" aria-labelledby="beta-admission-title">
+    <h3 id="beta-admission-title">Pozvaní a otevření večera</h3>
     <p>Účastníci čekající na otevření noci jsou zobrazeni napříč všemi skupinami. Změna výchozí skupiny ovlivňuje jen nové přijetí.</p>
+    <ol>
+      <li>Vyberte nebo vytvořte skupinu v náboru. <RouterLink v-if="account?.roles.includes('Owner')" to="/settings/admin#invitations">Vytvořit osobní pozvánku</RouterLink></li>
+      <li>Uložte délku odpočtu a potom potvrďte jeho spuštění.</li>
+      <li>Po skončení odpočtu spusťte noc. Pro automatické otevření předem zapněte volbu níže.</li>
+    </ol>
     <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
+    <AdminReauthentication v-if="reauthenticationRequired" @verified="reauthenticationRequired = false; error = ''; message = 'Totožnost byla ověřena. Původní změnu nyní odešlete znovu.'" />
     <AwButton v-if="mutationBlocked" variant="secondary" :disabled="busy" @click="load">Obnovit stav</AwButton>
     <AwButton v-else variant="secondary" :disabled="busy || loading" @click="load">Obnovit čekárnu</AwButton>
     <p v-if="message" role="status">{{ message }}</p>

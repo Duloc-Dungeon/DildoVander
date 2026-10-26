@@ -1,8 +1,8 @@
 import { mount, flushPromises } from '@vue/test-utils';
 import { beforeEach, expect, it, vi } from 'vitest';
 import InvitationGroupFields from './InvitationGroupFields.vue';
-const api = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('./session', async () => { const {ref} = await import('vue'); return {account:ref({id:'owner'}),accountRequest:api.request}; });
+const api = vi.hoisted(() => ({ request: vi.fn(), reauthenticate: vi.fn() }));
+vi.mock('./session', async () => { const {ref} = await import('vue'); return {account:ref({id:'owner'}),accountRequest:api.request,authenticatePasskey:api.reauthenticate}; });
 beforeEach(() => { api.request.mockReset(); api.request.mockImplementation(async (_path,method) => method ? {group:{id:'group-b',name:'Sobota',launchAt:null,revision:1}} : {groups:[{id:'group-a',name:'Pátek',launchAt:Date.UTC(2026,10,6,19),revision:3}]}); });
 it('creates a group schedule separately from global settings and selects it for subsequent invitation links', async () => {
   const view = mount(InvitationGroupFields,{props:{modelValue:''}});
@@ -41,5 +41,32 @@ it('preserves the exact confirmed deadline when renaming without changing its di
     expect(api.request).toHaveBeenCalledWith('/app/v1/admin/launch/groups/group-a', 'PUT', {
       expectedRevision: 3, name: 'Pátek nově', launchAt: exactLaunchAt,
     });
+  } finally { view.unmount(); }
+});
+
+it('lets an owner reauthenticate and explicitly retry group creation without losing the draft', async () => {
+  api.reauthenticate.mockReset().mockResolvedValue(undefined);
+  const defaultRequest = api.request.getMockImplementation()!;
+  let expired = true;
+  api.request.mockImplementation(async (path, method, ...args) => {
+    if (method && expired) throw Object.assign(new Error('Nejprve ověřte svou totožnost.'), { code: 'recent_passkey_required' });
+    return defaultRequest(path, method, ...args);
+  });
+  const view = mount(InvitationGroupFields, { props: { modelValue: '' } });
+  try {
+    await flushPromises();
+    await view.get('#invitation-group-name').setValue('Sobota');
+    await view.findAll('button').find(button => button.text() === 'Vytvořit skupinu')!.trigger('click');
+    await flushPromises();
+    expect(view.text()).toContain('Nejprve ověřte svou totožnost.');
+    await view.findAll('button').find(button => button.text() === 'Ověřit totožnost přístupovým klíčem')!.trigger('click');
+    await flushPromises();
+    expect(api.reauthenticate).toHaveBeenCalledWith('reauth');
+    expect(api.request.mock.calls.filter(([, method]) => method === 'POST')).toHaveLength(1);
+    expect((view.get('#invitation-group-name').element as HTMLInputElement).value).toBe('Sobota');
+    expired = false;
+    await view.findAll('button').find(button => button.text() === 'Vytvořit skupinu')!.trigger('click');
+    await flushPromises();
+    expect(view.emitted('update:modelValue')?.at(-1)).toEqual(['group-b']);
   } finally { view.unmount(); }
 });

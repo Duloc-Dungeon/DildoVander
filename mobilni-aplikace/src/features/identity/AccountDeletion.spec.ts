@@ -51,16 +51,16 @@ describe('account deletion confirmation', () => {
     view.unmount();
   });
 
-  it('updates deletion confirmation copy immediately when the interface language changes', async () => {
+  it('keeps deletion confirmation copy in Czech after a legacy English choice', async () => {
     const view = mount(AccountDeletion);
     expect(view.text()).toContain('Trvale smažete účet');
     interfaceLanguagePreference.setLanguage('en');
     await flushPromises();
-    expect(view.text()).toContain('You will permanently delete the account');
-    expect(view.text()).toContain('Verify account for deletion');
+    expect(view.text()).toContain('Trvale smažete účet');
+    expect(view.text()).toContain('Ověřit účet pro smazání');
     api.authenticate.mockRejectedValueOnce(new Error('raw native provider details'));
     await view.get('button').trigger('click'); await flushPromises();
-    expect(view.get('[role="alert"]').text()).toBe('Could not verify the account. Try again.');
+    expect(view.get('[role="alert"]').text()).toBe('Účet se nepodařilo ověřit. Zkuste to znovu.');
     view.unmount();
   });
 

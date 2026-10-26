@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import LaunchManagementPanel from './LaunchManagementPanel.vue';
 
-const api = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('../identity/session', () => ({ accountRequest: api.request }));
+const api = vi.hoisted(() => ({ request: vi.fn(), reauthenticate: vi.fn() }));
+vi.mock('../identity/session', () => ({ account: null, accountRequest: api.request, authenticatePasskey: api.reauthenticate }));
 
 const launch = () => ({
   revision: 7, betaEnabled: true, betaLaunchAt: null, betaUnlocked: false,
@@ -19,6 +19,43 @@ beforeEach(() => {
 });
 
 describe('Spuštění aplikace', () => {
+  it('keeps launch controls available when optional portrait or audit data is unavailable', async () => {
+    api.request.mockImplementation(async (path: string) => {
+      if (path.endsWith('/artwork') || path.endsWith('/audit')) throw new Error('Service unavailable');
+      return launch();
+    });
+    const view = wrapper();
+    try {
+      await flushPromises();
+      expect(view.find('#beta-launch').exists()).toBe(true);
+      expect(view.text()).toContain('Nastavení přístupu můžete dál upravovat.');
+      await view.get('.launch-admin__schedule button').trigger('click');
+      await flushPromises();
+      expect(api.request.mock.calls.some(([path, method]) => path === '/app/v1/admin/launch' && method === 'PUT')).toBe(true);
+    } finally { view.unmount(); }
+  });
+
+  it('offers owner reauthentication after a rejected save without automatically replaying the change', async () => {
+    api.reauthenticate.mockReset().mockResolvedValue(undefined);
+    const defaultRequest = api.request.getMockImplementation()!;
+    api.request.mockImplementation(async (path, method, ...args) => {
+      if (method === 'PUT') throw Object.assign(new Error('Nejprve ověřte svou totožnost.'), { code: 'recent_passkey_required' });
+      return defaultRequest(path, method, ...args);
+    });
+    const view = wrapper();
+    try {
+      await flushPromises();
+      await view.get('#launch-teaser').setValue('Připraveno na večer.');
+      await view.get('.launch-admin__schedule button').trigger('click');
+      await flushPromises();
+      await view.findAll('button').find(button => button.text() === 'Ověřit totožnost přístupovým klíčem')!.trigger('click');
+      await flushPromises();
+      expect(api.reauthenticate).toHaveBeenCalledWith('reauth');
+      expect((view.get('#launch-teaser').element as HTMLTextAreaElement).value).toBe('Připraveno na večer.');
+      expect(api.request.mock.calls.filter(([, method]) => method === 'PUT')).toHaveLength(1);
+    } finally { view.unmount(); }
+  });
+
   it('loads independent audience controls and saves Prague local times as UTC instants', async () => {
     const view = wrapper(); await flushPromises();
     expect(view.text()).toContain('Europe/Prague');

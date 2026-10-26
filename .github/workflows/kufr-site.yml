@@ -80,6 +80,7 @@ jobs:
           npx playwright install --with-deps chromium
           npm run test:browser
           npm run test:launch:browser
+          npm run test:owner:browser
           npm run test:persona-lab:browser
           node tests/debug.browser.mjs
           node tests/director.browser.mjs

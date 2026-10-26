@@ -3,7 +3,6 @@
 import assert from 'node:assert/strict';
 import { readFile, stat, mkdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,7 +63,7 @@ try {
     accessKind: null, canReadPrivate: false, canManage: false, canUnlink: false,
   };
   const ownerAccount = { id: 'browser-owner', displayName: 'Testovací vlastník', roles: ['Owner'] };
-  const homeHeading = () => sessionAccount ? `Vítejte, ${sessionAccount.displayName}` : 'Kufr plný příběhů.';
+  const homeHeading = () => sessionAccount ? sessionAccount.displayName : 'Tvoje dobrodružství začíná tady.';
   await context.route('**/*', async route => {
     const request = route.request(); const url = new URL(request.url());
     if (url.origin !== origin) { await route.abort(); return; }
@@ -138,7 +137,10 @@ try {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     });
-    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'layout has no horizontal page overflow');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1 ? [] : [...document.querySelectorAll('main *')]
+      .filter(element => element.getBoundingClientRect().right > innerWidth + 1)
+      .slice(0, 8).map(element => ({ tag: element.tagName, class: element.className, width: element.getBoundingClientRect().width })));
+    assert.equal(overflow.length, 0, `layout has no horizontal page overflow: ${JSON.stringify(overflow)}`);
   };
 
   // The public walkthrough is synthetic even for authenticated customer/staff
@@ -183,6 +185,10 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'customer-demo-390.png'), fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(origin); await hasHeading(homeHeading());
+  assert.equal(await page.locator('.home-layout').evaluate(element => getComputedStyle(element).animationName), 'none', 'reduced motion disables page entrances');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  assert.equal(await page.locator('.home-layout').evaluate(element => getComputedStyle(element).animationName), 'application-arrive');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await fits(); await page.screenshot({ path: path.join(screenshots, 'home-desktop.png'), fullPage: true });
   await selectShellPreference('Vzhled aplikace', 'olivander'); assert.equal(await page.locator('html').getAttribute('data-theme'), 'olivander');
   await page.reload(); await hasHeading(homeHeading()); assert.equal(await page.locator('html').getAttribute('data-theme'), 'olivander');
@@ -190,7 +196,7 @@ try {
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
     await fits();
-    assert(await page.getByRole('link', { name: 'Stáhnout aplikaci pro iPhone', exact: true }).isVisible());
+    assert(await page.locator('.home-destinations a[href="/demo"]').isVisible(), 'public home offers the demo as its primary path');
     assert.equal(await page.locator('.home-readiness').count(), 0, 'public landing has no device status panel');
     await page.screenshot({ path: path.join(screenshots, `public-landing-${width}.png`), fullPage: true });
   }
@@ -212,6 +218,11 @@ try {
   // Anonymous deep links must not render pairing or operational controls.
   assert.equal(await page.locator('.home-readiness').count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
+  const publicNavigation = page.getByRole('navigation', { name: 'Sekce aplikace' });
+  assert.deepEqual(await publicNavigation.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/', '/demo', '/archive', '/signin']);
+  for (const removedEntry of ['Dílna', 'Připojení', 'Testovací relace', 'AI laboratoř', 'Zařízení']) {
+    assert.equal(await publicNavigation.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not part of public navigation`);
+  }
   for (const protectedPath of ['/suitcase', '/connections', '/suitcase/diagnostics', '/suitcase/director', '/settings/admin', '/play', '/play/match/' + 'a'.repeat(32)]) {
     await page.goto(origin + protectedPath);
     await page.waitForURL(url => url.pathname === '/signin');
@@ -259,7 +270,7 @@ try {
   }
   await page.goto(origin + '/me/character'); await hasHeading('Moje postava');
   const customerNavigation = page.getByRole('navigation', { name: 'Sekce aplikace' });
-  assert.equal(await customerNavigation.getByRole('link').count(), 5);
+  assert.equal(await customerNavigation.getByRole('link').count(), 4);
   assert.equal(await customerNavigation.getByRole('link', { name: /Hra/ }).getAttribute('href'), '/play');
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
   await page.getByRole('heading', { name: 'Luna', exact: true }).waitFor();
@@ -267,6 +278,10 @@ try {
   await page.getByText('Upravit nebo upřesnit postavu', { exact: true }).click();
   assert.equal(await page.locator('#character-name').inputValue(), 'Luna');
   assert.equal(await page.locator('#character-openai-consent').isChecked(), false, 'character enrichment requires an unchecked OpenAI opt-in');
+  await page.getByRole('button', { name: '+ Skryté tajemství', exact: true }).click();
+  assert.match(await page.locator('#character-description').inputValue(), /skrývá tajemství/);
+  assert.equal(await page.locator('#character-openai-consent').isChecked(), false, 'brief ideas never grant AI consent');
+  assert.equal(characterWrites.length, 0, 'brief ideas stay local until explicit save');
   assert(await page.getByText(/společnosti OpenAI/).first().isVisible());
   assert.equal(await page.getByText('Public character guide').count(), 1);
   await page.getByText('Upravit nebo upřesnit postavu', { exact: true }).click();
@@ -315,10 +330,10 @@ try {
   assert.equal(characterWrites[0].expectedProfileId, 'browser-profile');
   assert.equal(characterWrites[0].expectedRevision, 2);
   assert.equal(characterWrites[0].openAiConsent, false);
-  assert(await page.getByText('Postava je uložená bez AI přípravy. Můžete pokračovat k rozhovoru.', { exact: true }).isVisible());
+  assert(await page.getByText('Postava je uložená bez AI přípravy. Můžeš pokračovat do hry.', { exact: true }).isVisible());
   await page.goto(origin);
-  await page.getByRole('link', { name: 'Pokračovat k rozhovoru', exact: true }).waitFor();
-  assert(await page.getByRole('link', { name: 'Moje památky', exact: true }).last().isVisible());
+  await page.locator('.customer-journey-card a[href="/play"]').waitFor();
+  assert(await page.getByRole('navigation', { name: 'Sekce aplikace' }).getByRole('link', { name: /Památky/ }).isVisible());
   // Exercise the capability fallback used by supported pre-15.4 iOS browsers.
   // This is a desktop regression fixture, not an actual iPhone acceptance gate.
   const fallbackPage = await context.newPage();
@@ -329,6 +344,8 @@ try {
   });
   await fallbackPage.setViewportSize({ width: 390, height: 844 });
   await fallbackPage.goto(origin + '/me/character');
+  await fallbackPage.waitForURL(url => url.pathname === '/me/character');
+  await fallbackPage.getByRole('heading', { name: 'Moje postava', exact: true }).waitFor();
   const fallbackOpener = fallbackPage.getByRole('button', { name: 'Nová postava', exact: true });
   await fallbackOpener.click();
   const inlineCharacter = fallbackPage.getByRole('region', { name: 'Vytvořit novou postavu', exact: true });
@@ -350,7 +367,11 @@ try {
   assert.equal(characterWrites[1].openAiConsent, false);
   await fallbackPage.close();
   const customerNav = page.getByRole('navigation', { name: 'Sekce aplikace' });
-  await customerNav.getByRole('link', { name: 'Rozhovor', exact: true }).click(); await hasHeading('Rozhovor s kufrem');
+  assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/me/character', '/play', '/me/keepsakes', '/me/account']);
+  for (const removedEntry of ['Rozhovor', 'Kufr', 'Dílna', 'Připojení', 'Zařízení']) {
+    assert.equal(await customerNav.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not part of customer navigation`);
+  }
+  await page.goto(origin + '/me/conversation'); await hasHeading('Rozhovor s kufrem');
   assert.equal(await page.locator('#conversation-openai-consent').isChecked(), false, 'voice consent is separate and unchecked');
   assert(await page.getByRole('button', { name: 'Promluvit s kufrem', exact: true }).isDisabled());
   assert(await page.getByText(/Bluetooth připojení je dostupné v instalované aplikaci/).isVisible());
@@ -411,24 +432,26 @@ try {
   assert.equal(customerEndRequests.length, 1, 'result polling never repeats the conversation end');
   assert.equal(requests.filter(request => request.path.includes('customerBle') || request.path.includes('start-tickets')).length, 0, 'recovery never issues a replacement start or controls BLE');
   customerSessions = [];
-  await page.goto(origin + '/me/account'); await hasHeading('Můj účet');
+  await page.goto(origin + '/me/conversation'); await hasHeading('Rozhovor s kufrem');
   await page.getByLabel('Jazyk rozhovoru', { exact: true }).waitFor();
-  await selectShellPreference('Jazyk rozhraní', 'en');
-  await page.getByRole('heading', { name: 'Your conversation preferences', exact: true }).waitFor();
-  assert.equal(await page.getByLabel('Conversation language', { exact: true }).inputValue(), 'cs-CZ');
+  await page.evaluate(() => localStorage.setItem('dildovander.interface-language.v1.account.browser-customer', 'en'));
+  await page.reload();
+  await page.getByRole('heading', { name: 'Rozhovor podle vás', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Jazyk rozhovoru', { exact: true }).inputValue(), 'cs-CZ');
+  assert(await page.getByRole('heading', { name: 'Rozhovor s kufrem', exact: true }).isVisible(), 'a saved English interface value cannot switch the customer UI away from Czech');
   assert.equal(preferenceWrites.length, 0, 'interface localization never mutates conversation preferences');
-  await page.getByLabel('Conversation language', { exact: true }).selectOption('en-US');
-  await page.getByLabel('Conversation style', { exact: true }).selectOption('gentle');
+  await page.getByLabel('Jazyk rozhovoru', { exact: true }).selectOption('en-US');
+  await page.getByLabel('Styl rozhovoru', { exact: true }).selectOption('gentle');
   assert.equal(preferenceWrites.length, 0, 'editing a draft never mutates the server');
-  await page.getByRole('button', { name: 'Save for the next conversation', exact: true }).click();
-  await page.getByText('Saved for the next new conversation.', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Uložit pro příští rozhovor', exact: true }).click();
+  await page.getByText('Uloženo pro příští nový rozhovor.', { exact: true }).waitFor();
   assert.equal(preferenceWrites.length, 1, 'one explicit save sends one profile-bound mutation');
   await page.reload();
-  await page.getByRole('heading', { name: 'Your conversation preferences', exact: true }).waitFor();
-  assert.equal(await page.getByLabel('Conversation language', { exact: true }).inputValue(), 'en-US');
-  assert.equal(await page.getByLabel('Conversation style', { exact: true }).inputValue(), 'gentle');
+  await page.getByRole('heading', { name: 'Rozhovor podle vás', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Jazyk rozhovoru', { exact: true }).inputValue(), 'en-US');
+  assert.equal(await page.getByLabel('Styl rozhovoru', { exact: true }).inputValue(), 'gentle');
   for (const theme of ['lord-voldemort', 'olivander']) {
-    await selectShellPreference('App appearance', theme);
+    await selectShellPreference('Vzhled aplikace', theme);
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
       await fits();
@@ -440,13 +463,13 @@ try {
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize), '32px', 'enlarged preference text is actually 200%');
   await page.screenshot({ path: path.join(screenshots, 'customer-preferences-en-320-large-text.png'), fullPage: true });
   await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
-  await selectShellPreference('Interface language', 'cs');
   await selectShellPreference('Vzhled aplikace', 'lord-voldemort');
+  await customerNav.getByRole('link', { name: 'Účet', exact: true }).click();
   await page.getByRole('heading', { name: 'Přístupové klíče' }).waitFor();
-  await page.getByRole('heading', { name: 'Přihlášená zařízení' }).waitFor();
   assert.equal(await page.getByLabel('Název přístupového klíče 1').count(), 1);
   assert.equal(await page.getByRole('heading', { name: 'Verze aplikace' }).count(), 0);
   assert.equal(await page.getByRole('heading', { name: 'Přidělené prostředky' }).count(), 0);
+  await page.getByRole('heading', { name: 'Přihlášená zařízení' }).waitFor();
   assert.equal(await page.locator('h1').count(), 1, 'embedded account security view does not add a second page heading');
   for (const protectedPath of ['/persona-lab', '/suitcase', '/connections', '/suitcase/diagnostics', '/suitcase/director', '/settings', '/settings/admin', '/admin/customer-sessions']) {
     await page.goto(origin + protectedPath);
@@ -468,17 +491,24 @@ try {
   await preferenceTab.close();
   await selectShellPreference('Vzhled aplikace', 'lord-voldemort');
   const nav = page.getByRole('navigation', { name: 'Sekce aplikace' });
-  for (const [label, heading] of [['Kufr', 'Kufr'], ['Dílna', 'Workshop'], ['Archiv', 'Najdi svoji hůlku.'], ['Správa', 'Uživatelé a oprávnění']]) {
+  assert.deepEqual(await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/', '/play', '/settings/admin/launch', '/settings']);
+  for (const removedEntry of ['Kufr', 'Dílna', 'Archiv', 'Správa', 'Připojení', 'Zařízení']) {
+    assert.equal(await nav.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not in staff primary navigation`);
+  }
+  for (const [label, heading] of [['Domů', homeHeading()], ['Večer', 'Večer a pozvánky']]) {
     await nav.getByRole('link', { name: label, exact: true }).click(); await hasHeading(heading);
     assert.equal(await page.locator('.application-shell').count(), 1);
   }
+  await nav.getByRole('link', { name: 'Hra', exact: true }).click();
+  await page.waitForURL(url => url.pathname === '/play');
+  assert.equal(await page.locator('.application-shell').count(), 1, 'the staff game link stays inside the application shell');
   for (const route of ['/connections', '/suitcase/diagnostics', '/settings/admin', '/signin']) {
     await page.goto(origin + route); await page.getByRole('main').waitFor(); await fits();
     await page.reload(); await page.getByRole('main').waitFor();
   }
-  await page.goto(origin + '/settings'); await hasHeading('Verze aplikace');
-  const runningRevision = await page.locator('.application-revision').textContent();
-  assert.equal(runningRevision, execFileSync('git', ['rev-parse', 'HEAD'], { cwd: fileURLToPath(new URL('..', import.meta.url)), encoding: 'utf8', windowsHide: true }).trim(), 'display identifies the compiled application source');
+  await page.goto(origin + '/settings'); await hasHeading('Nastavení');
+  assert.equal(await page.getByRole('heading', { name: 'Verze aplikace' }).count(), 0, 'settings does not expose build metadata');
+  assert.equal(await page.getByRole('heading', { name: 'Přidělené prostředky' }).count(), 0, 'settings does not expose assignment administration');
   for (const [legacy, destination] of [['/companion/', '/suitcase'], ['/app/', '/suitcase'], ['/keepsake/evening/', '/archive'], ['/workshop/index.html', '/workshop'], ['/simulator/', '/workshop?mode=simulation']]) {
     await page.goto(origin + legacy); await page.waitForURL(origin + destination);
   }
@@ -494,12 +524,13 @@ try {
   await page.waitForTimeout(2200); assert(await page.evaluate(element => document.activeElement === element, focus));
   await page.getByRole('button', { name: 'Vybrat přihrádku', exact: true }).first().click();
   await page.getByRole('heading', { name: /Spustit výběr/ }).waitFor();
-  await nav.getByRole('link', { name: 'Archiv', exact: true }).click();
-  await hasHeading('Najdi svoji hůlku.');
-  await nav.getByRole('link', { name: 'Kufr', exact: true }).click();
+  await nav.getByRole('link', { name: 'Domů', exact: true }).click();
+  await hasHeading(homeHeading());
+  await page.goto(origin + '/suitcase');
   await hasHeading('Kufr');
   await page.getByRole('heading', { name: /Spustit výběr/ }).waitFor({ state: 'hidden' });
   assert.equal(await page.getByRole('heading', { name: /Spustit výběr/ }).count(), 0, 'navigation invalidates confirmation');
+  await page.getByRole('button', { name: 'Otevřít místní ukázku' }).click();
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   assert.equal(requests.filter(request => request.method !== 'GET' && request.path.startsWith('/v1/')).length, 0, 'demo never emits physical network commands');
 
@@ -543,14 +574,14 @@ try {
             const summary = disclosure.locator('summary');
             await summary.focus();
             await page.keyboard.press('Enter');
-            assert(await page.getByLabel('Jazyk rozhraní', { exact: true }).isVisible());
+            assert(await page.locator('.interface-language-select__value').getByText('Čeština', { exact: true }).isVisible());
             assert(await page.locator('.shell-preferences-panel').evaluate(panel => {
               const rect = panel.getBoundingClientRect();
               const nav = document.querySelector('.primary-navigation').getBoundingClientRect();
               return rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= nav.top;
             }), 'preferences fit above navigation without covering Stop');
             await page.keyboard.press('Tab');
-            assert.equal(await page.locator(':focus').getAttribute('aria-describedby') !== null, true, 'language control follows the disclosure in keyboard order');
+            assert.equal(await page.locator(':focus').getAttribute('aria-label'), 'Vzhled aplikace', 'theme control follows the disclosure; Czech language is a static indicator');
             await page.keyboard.press('Escape');
             assert.equal(await disclosure.evaluate(element => element.open), false);
             assert(await summary.evaluate(element => document.activeElement === element), 'Escape returns focus to the disclosure');
@@ -568,17 +599,9 @@ try {
           assert(await installer.evaluate(link => link.getBoundingClientRect().height >= 44), 'the iPhone link retains a 44px touch target');
         }
         if (route === '/') {
-          const homeInstaller = page.getByRole('link', { name: 'Stáhnout aplikaci pro iPhone', exact: true });
-          assert.equal(await homeInstaller.getAttribute('href'), '/ios/');
-          assert(await homeInstaller.isVisible(), 'browser home makes iPhone installation discoverable');
-          assert(await page.locator('.home-primary-actions .aw-button--primary').evaluate(link => {
-            const sample = document.createElement('span');
-            sample.style.color = 'var(--aw-on-accent)';
-            link.append(sample);
-            const expected = getComputedStyle(sample).color;
-            sample.remove();
-            return getComputedStyle(link).color === expected;
-          }), 'primary links retain accessible text on the accent surface');
+          const homeGame = page.locator('.home-destinations a[href="/play"]');
+          assert(await homeGame.isVisible(), 'home keeps the main play action visible');
+          assert(await homeGame.evaluate(link => link.getBoundingClientRect().height >= 44), 'the main home action retains a 44px touch target');
         }
         const name = route.replace(/^\/|\/$/g, '').replaceAll('/', '-') || 'home';
         await page.screenshot({ path: path.join(screenshots, `${theme}-${name}-${width}.png`), fullPage: true });
@@ -590,7 +613,7 @@ try {
     await fits();
     await page.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector('.application-shell')).paddingBottom)
       >= document.querySelector('.primary-navigation').getBoundingClientRect().height - 1);
-    assert(await page.getByRole('button', { name: 'Stop', exact: true }).isVisible(), 'Stop remains visible with enlarged text');
+    assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0, 'idle home does not display an equipment Stop control');
     await page.screenshot({ path: path.join(screenshots, `${theme}-home-320-text-200.png`), fullPage: true });
     await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
   }
@@ -652,7 +675,13 @@ try {
     document.documentElement.style.setProperty('--safe-area-inset-bottom', '32px');
   });
   assert(await page.locator('.application-header').evaluate(element => parseFloat(getComputedStyle(element).paddingTop) >= 24), 'Android SystemBars top inset protects the header');
-  assert(await page.locator('.primary-navigation').evaluate(element => parseFloat(getComputedStyle(element).paddingBottom) >= 32), 'Android SystemBars bottom inset protects navigation');
+  const mobileNavigation = page.locator('.primary-navigation');
+  assert(await mobileNavigation.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight - 32), 'Android SystemBars bottom inset lifts the floating navigation');
+  await mobileNavigation.getByRole('link', { name: 'Domů', exact: true }).click();
+  await hasHeading(homeHeading());
+  const finalHomeLink = page.locator('.home-destinations a').last();
+  await finalHomeLink.scrollIntoViewIfNeeded();
+  assert(await finalHomeLink.evaluate(link => link.getBoundingClientRect().bottom <= document.querySelector('.primary-navigation').getBoundingClientRect().top), 'the final home action can scroll above the floating navigation');
   await fits();
   await page.screenshot({ path: path.join(screenshots, 'android-system-insets-390.png'), fullPage: true });
   await page.evaluate(() => {

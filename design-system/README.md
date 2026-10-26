@@ -2,9 +2,9 @@
 
 Spotřebitelská webová/iOS aplikace používá značku **Wand Night Stand**.
 Její scoped adaptér `mobilni-aplikace/src/application/consumer-brand.css`
-přepisuje stejné sémantické tokeny pouze v aplikaci; schválený opening, jeho
+přepisuje stejné sémantické tokeny pouze v aplikaci; aktuální Responsive Table, jeho
 komponenty, art a evidence popisuje [consumer game UI guide](consumer-game-ui.md)
-a hranice vzhledu shrnuje [DESIGN.md](../DESIGN.md). Zdejší generované tokeny, samostatný simulátor
+a závazný profil určuje [PRODUCT.md](../PRODUCT.md). Hranice vzhledu shrnuje [DESIGN.md](../DESIGN.md). Zdejší generované tokeny, samostatný simulátor
 a offline technické viewery zachovávají Vapour Chrome a své integrační názvy.
 
 Sdílený vizuální jazyk DildoVanderu. Přesný, klidný a současný prostor pro

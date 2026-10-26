@@ -73,12 +73,12 @@ describe('customer data disclosure panel', () => {
     wrapper.unmount();
   });
 
-  it('updates the visible disclosure in English without mounting data readers', async () => {
+  it('keeps the Czech disclosure without mounting data readers after a legacy English choice', async () => {
     const wrapper = render();
     interfaceLanguagePreference.setLanguage('en');
     await wrapper.vm.$nextTick();
-    expect(wrapper.get('h2').text()).toBe('My data');
-    expect(wrapper.get('button').text()).toBe('Show my data');
+    expect(wrapper.get('h2').text()).toBe('Moje data');
+    expect(wrapper.get('button').text()).toBe('Zobrazit moje data');
     expect(wrapper.find('[data-testid="memories"]').exists()).toBe(false);
     wrapper.unmount();
   });

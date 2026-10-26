@@ -84,7 +84,7 @@ function selectExisting(event: Event): void {
 <template>
   <div class="persona-lab">
     <header class="lab-heading">
-      <div><p class="lab-eyebrow">Vývoj postavy</p><h1>Persona Lab</h1><p>Vyzkoušejte rozhovor. Zachyťte konkrétní moment. Porovnejte verze.</p></div>
+      <div><p class="lab-eyebrow">Vývoj postavy</p><h1>AI laboratoř</h1><p>Vyzkoušejte rozhovor. Zachyťte konkrétní moment. Porovnejte verze.</p></div>
       <span class="aw-badge">{{ lab.hardware.mode || lab.hardware.bound ? 'SKUTEČNÝ KUFR · výslovný test' : 'SIMULACE · bez pohonů' }}</span>
     </header>
     <AwNotice :live="false" title="Oddělené testovací prostředí">
@@ -92,16 +92,16 @@ function selectExisting(event: Event): void {
       Audio se nearchivuje. Ukládání přepisu zapínáte zvlášť pro každé sezení.
     </AwNotice>
     <template v-if="!lab.account">
-      <AwNotice title="Nejprve se přihlaste">Persona Lab je dostupná přihlášeným testerům. Výsledky patří vašemu účtu.</AwNotice>
+      <AwNotice title="Nejprve se přihlaste">AI laboratoř je dostupná přihlášeným testerům. Výsledky patří vašemu účtu.</AwNotice>
       <RouterLink :to="{ path: '/signin', query: { return: '/persona-lab' } }" class="aw-button aw-button--primary">Přihlásit se</RouterLink>
     </template>
     <template v-else>
       <section class="aw-card" aria-labelledby="lab-provider-title">
         <h2 id="lab-provider-title">Předání dat OpenAI</h2>
         <p>Pro testování zvolené persony a generování odpovědí předáváme společnosti OpenAI instrukce persony, zvolený scénář, testovací paměť a kontext rozhovoru. Odesláním textu předáte svou zprávu; spuštěním hlasu předáte zvuk mikrofonu.</p>
-        <label class="lab-check"><input id="lab-provider-consent" v-model="lab.providerConsent" type="checkbox" :disabled="lab.busy || lab.voiceActive || lab.recoveryPending || lab.hardware.active" /><span>Souhlasím s tímto předáním dat OpenAI pro testy během tohoto otevření Persona Lab.<small>Souhlas je ve výchozím stavu vypnutý. Ukládání přepisu a předání fotografie potvrzujete samostatně.</small></span></label>
+        <label class="lab-check"><input id="lab-provider-consent" v-model="lab.providerConsent" type="checkbox" :disabled="lab.busy || lab.voiceActive || lab.recoveryPending || lab.hardware.active" /><span>Souhlasím s tímto předáním dat OpenAI pro testy během tohoto otevření AI laboratoře.<small>Souhlas je ve výchozím stavu vypnutý. Ukládání přepisu a předání fotografie potvrzujete samostatně.</small></span></label>
       </section>
-      <nav class="lab-navigation" aria-label="Části Persona Lab">
+      <nav class="lab-navigation" aria-label="Části AI laboratoře">
         <AwButton :aria-pressed="section === 'playground'" @click="section = 'playground'">Playground</AwButton>
         <AwButton :aria-pressed="section === 'evaluation'" @click="section = 'evaluation'">Hodnocení</AwButton>
         <AwButton :aria-pressed="section === 'comparison'" @click="section = 'comparison'">Porovnání a přehled</AwButton>

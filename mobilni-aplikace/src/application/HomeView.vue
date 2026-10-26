@@ -1,29 +1,22 @@
 <script setup lang="ts">
-import keepsakeArtwork from '../assets/brand/keepsake-still-life.webp';
+import tableScene from '../assets/brand/responsive-table/table-scene.webp';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { Capacitor } from '@capacitor/core';
 import { account, accountDeletionRequested, accountRequest } from '../features/identity/session';
-import { deviceSession } from '../features/suitcase/deviceSession';
 import { useRoute } from 'vue-router';
-import { canOperateSuitcase, isCustomerAccount } from './access';
+import { isCustomerAccount } from './access';
 import AwNotice from '../components/AwNotice.vue';
+import EveningSetupLinks from './EveningSetupLinks.vue';
 import CustomerJourneyCard from '../features/customer/CustomerJourneyCard.vue';
 import { SessionRecoveryController, type SessionRecoveryState } from '../features/customer/sessionRecovery';
 import type { CustomerJourneyInput } from '../features/customer/customerJourney';
 import { projectCustomerResult, type CustomerResultProjection } from '../features/customer/customerResult';
-import { customerCopy, type CustomerCopyKey } from './customerCopy';
+import { customerCopy } from './customerCopy';
 
 const route = useRoute();
-const canOperate = computed(() => canOperateSuitcase(account.value));
 const isCustomer = computed(() => isCustomerAccount(account.value) && !accountDeletionRequested.value);
-const source = computed(() => deviceSession.target.value);
-const browserMode = !Capacitor.isNativePlatform();
 const greeting = computed(() => account.value
   ? customerCopy.text('home.greeting-account', { name: account.value.displayName })
   : customerCopy.text('home.greeting-public'));
-const evening = ref<{ label: string; latest?: string } | null>(null);
-const eveningState = ref<CustomerCopyKey>('home.evening-loading');
-const eveningController = new AbortController();
 interface CustomerProfileSnapshot { profile: { status: string } | null; sessionState: string | null; activeSession: boolean; latestResult: CustomerResultProjection | null }
 interface CustomerSessionsResponse { items: unknown[] }
 const terminalSessionStates = new Set(['completed', 'failed']);
@@ -153,61 +146,63 @@ function parseSessionState(value: CustomerSessionsResponse): string | null {
   return states.find(state => !terminalSessionStates.has(state)) ?? states[0] ?? null;
 }
 
-onMounted(async () => {
+onMounted(() => {
   pageMounted.value = true;
   document.addEventListener('visibilitychange', onVisibilityChange);
   window.addEventListener('online', onOnline);
   window.addEventListener('offline', onOffline);
   refreshCustomerJourney();
-  try {
-    const response = await fetch('/guest/v1/evening?limit=1', { credentials: 'omit', cache: 'no-store', redirect: 'error', signal: eveningController.signal });
-    if (!response.ok) throw new Error();
-    const value = await response.json();
-    if (eveningController.signal.aborted) return;
-    if (value.schemaVersion !== 1) throw new Error();
-    if (value.evening && typeof value.evening.label === 'string') {
-      evening.value = { label: value.evening.label.slice(0, 240), latest: typeof value.latest?.officialName === 'string' ? value.latest.officialName.slice(0, 240) : undefined };
-      eveningState.value = 'home.evening-active';
-    } else { eveningState.value = 'home.evening-closed'; }
-  } catch {
-    if (!eveningController.signal.aborted) eveningState.value = 'home.evening-unavailable';
-  }
 });
 onBeforeUnmount(() => {
   pageMounted.value = false;
   document.removeEventListener('visibilitychange', onVisibilityChange);
   window.removeEventListener('online', onOnline);
   window.removeEventListener('offline', onOffline);
-  eveningController.abort();
   journeyRecovery.dispose();
 });
 </script>
 
 <template>
-  <div class="home-layout">
-    <section class="home-introduction page-stack">
+  <div class="home-layout" :class="{ 'home-layout--customer': isCustomer }">
+    <EveningSetupLinks />
+    <section class="home-introduction page-stack" :aria-label="customerCopy.text(isCustomer ? 'home.customer-context' : account ? 'home.host-context' : 'home.public-context')">
+      <p class="eyebrow home-context">{{ customerCopy.text(isCustomer ? 'home.customer-context' : account ? 'home.host-context' : 'home.public-context') }}</p>
       <h1>{{ greeting }}</h1>
       <p class="home-lead">{{ customerCopy.text('home.lead') }}</p>
       <AwNotice v-if="['operator', 'administrator'].includes(String(route.query.access))" tone="warning">{{ customerCopy.text('home.access-role') }}</AwNotice>
       <AwNotice v-if="route.query.access === 'online'" tone="warning">{{ customerCopy.text('home.access-online') }}</AwNotice>
-      <div v-if="canOperate" class="home-primary-actions"><RouterLink class="aw-button aw-button--primary" :to="source === 'unavailable' ? '/connections' : '/suitcase'">{{ customerCopy.text(source === 'unavailable' ? 'home.connect-suitcase' : 'home.open-suitcase') }}</RouterLink><RouterLink class="aw-button aw-button--secondary" to="/archive">{{ customerCopy.text('home.find-wand-story') }}</RouterLink></div>
-      <CustomerJourneyCard v-if="isCustomer" :journey="customerJourney" />
-      <nav v-if="isCustomer" class="home-primary-actions" :aria-label="customerCopy.text('home.tasks-aria')"><RouterLink class="aw-button aw-button--secondary" to="/me/keepsakes">{{ customerCopy.text('home.customer-keepsakes') }}</RouterLink></nav>
-      <div v-else-if="!canOperate" class="home-primary-actions"><a v-if="browserMode" class="aw-button aw-button--primary" href="/ios/">{{ customerCopy.text('home.download-iphone') }}</a><RouterLink class="aw-button" :class="browserMode ? 'aw-button--secondary' : 'aw-button--primary'" :to="account ? '/settings' : { path: '/signin', query: { return: '/suitcase' } }">{{ customerCopy.text(account ? 'home.my-account' : 'shell.sign-in') }}</RouterLink></div>
-      <div v-if="browserMode" class="home-download"><p class="aw-muted">{{ customerCopy.text('home.web-capabilities') }}</p><a v-if="canOperate" class="aw-button aw-button--secondary" href="/ios/">{{ customerCopy.text('home.download-iphone') }}</a></div>
-      <p v-if="!account" class="aw-muted">{{ customerCopy.text('home.public-guidance') }}</p>
-      <RouterLink v-if="!canOperate" to="/demo">{{ customerCopy.text('home.demo-link') }}</RouterLink>
-      <section class="home-evening" :aria-label="customerCopy.text('home.evening-aria')"><p class="eyebrow">{{ customerCopy.text(eveningState) }}</p><template v-if="evening"><h2>{{ evening.label }}</h2><p v-if="evening.latest">{{ customerCopy.text('home.latest-wand', { wand: evening.latest }) }}</p><RouterLink to="/archive">{{ customerCopy.text('home.open-evening') }}</RouterLink></template></section>
+      <CustomerJourneyCard v-if="isCustomer" :journey="customerJourney" prefer-game />
+      <nav v-if="isCustomer" class="home-destinations" :aria-label="customerCopy.text('home.tasks-aria')">
+        <RouterLink class="home-destination" to="/me/character"><span class="home-destination-icon" aria-hidden="true">✦</span><span><strong>{{ customerCopy.text('shell.nav-character') }}</strong><small>{{ customerCopy.text('home.character-path') }}</small></span></RouterLink>
+        <RouterLink class="home-destination" to="/play"><span class="home-destination-icon" aria-hidden="true">◇</span><span><strong>Hra</strong><small>{{ customerCopy.text('home.game-path') }}</small></span></RouterLink>
+        <RouterLink class="home-destination" to="/me/keepsakes"><span class="home-destination-icon" aria-hidden="true">▤</span><span><strong>{{ customerCopy.text('shell.nav-keepsakes') }}</strong><small>{{ customerCopy.text('home.keepsakes-path') }}</small></span></RouterLink>
+        <RouterLink class="home-destination" to="/me/account"><span class="home-destination-icon" aria-hidden="true">⚙</span><span><strong>{{ customerCopy.text('shell.nav-account') }}</strong><small>{{ customerCopy.text('home.account-path') }}</small></span></RouterLink>
+      </nav>
+      <nav v-else class="home-destinations" :aria-label="customerCopy.text('home.tasks-aria')">
+        <RouterLink class="home-destination home-destination--primary" :to="account ? '/play' : '/demo'"><span class="home-destination-icon" aria-hidden="true">◇</span><span><strong>{{ account ? 'Hra' : customerCopy.text('home.demo-link') }}</strong><small>{{ customerCopy.text('home.game-path') }}</small></span></RouterLink>
+        <RouterLink class="home-destination" to="/archive"><span class="home-destination-icon" aria-hidden="true">▤</span><span><strong>{{ customerCopy.text('shell.nav-archive') }}</strong><small>{{ customerCopy.text('home.keepsakes-path') }}</small></span></RouterLink>
+        <RouterLink class="home-destination" :to="account ? '/settings' : '/signin'"><span class="home-destination-icon" aria-hidden="true">⚙</span><span><strong>{{ customerCopy.text('shell.nav-account') }}</strong><small>{{ customerCopy.text('home.account-path') }}</small></span></RouterLink>
+      </nav>
     </section>
-    <figure v-if="!canOperate" class="home-brand-art"><img :src="keepsakeArtwork" alt="" width="960" height="640" /></figure>
-    <section v-if="canOperate" class="home-readiness" aria-labelledby="readiness-title"><span class="eyebrow">{{ customerCopy.text('home.now') }}</span><h2 id="readiness-title">{{ customerCopy.text('home.your-suitcase') }}</h2>
-      <template v-if="source === 'unavailable'"><p class="readiness-value">{{ customerCopy.text('home.waiting-connection') }}</p><p>{{ customerCopy.text('home.pairing-guidance') }}</p><RouterLink to="/connections">{{ customerCopy.text('home.connect-and-pair') }}</RouterLink></template>
-      <template v-else><p class="readiness-value">{{ customerCopy.text(source === 'demo' ? 'home.demo-mode' : source === 'simulator' ? 'home.simulator' : 'home.local-connection') }}</p><p>{{ deviceSession.message.value || customerCopy.text('home.device-guidance') }}</p><RouterLink to="/suitcase">{{ customerCopy.text('home.show-status') }}</RouterLink></template>
-    </section>
-    <section class="home-workspaces" :aria-label="customerCopy.text('home.tasks-aria')">
-      <RouterLink class="workspace-link" to="/workshop"><span class="workspace-number">{{ customerCopy.text('home.workshop-number') }}</span><h2>{{ customerCopy.text('home.workshop-title') }}</h2><p>{{ customerCopy.text('home.workshop-description') }}</p><span class="workspace-action">{{ customerCopy.text('home.workshop-action') }}</span></RouterLink>
-      <RouterLink class="workspace-link" to="/archive"><span class="workspace-number">{{ customerCopy.text('home.archive-number') }}</span><h2>{{ customerCopy.text('home.archive-title') }}</h2><p>{{ customerCopy.text('home.archive-description') }}</p><span class="workspace-action">{{ customerCopy.text('home.archive-action') }}</span></RouterLink>
-      <RouterLink class="workspace-link" to="/settings"><span class="workspace-number">{{ customerCopy.text('home.account-number') }}</span><h2>{{ customerCopy.text('home.account-title') }}</h2><p>{{ customerCopy.text('home.account-description') }}</p><span class="workspace-action">{{ customerCopy.text('home.account-action') }}</span></RouterLink>
-    </section>
+    <figure class="home-brand-art"><img :src="tableScene" alt="" width="853" height="1844" /></figure>
   </div>
 </template>
+
+<style scoped>
+.home-context { margin: 0; }
+.home-introduction { min-width: 0; }
+.home-lead { max-width: 36ch; }
+.home-destinations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin-top: 1rem; }
+.home-destination { display: flex; align-items: center; gap: .8rem; min-width: 0; min-height: 4.5rem; padding: .85rem; border: 1px solid var(--aw-border-subtle); border-radius: var(--aw-radius-control); background: var(--aw-surface); color: var(--aw-ivory); text-decoration: none; }
+.home-destination:hover { border-color: var(--aw-accent); }
+.home-destination > span:last-child { display: grid; gap: .2rem; min-width: 0; }
+.home-destination strong { font-weight: 600; }
+.home-destination small { color: var(--aw-muted); line-height: 1.35; }
+.home-destination-icon { display: grid; place-items: center; flex: 0 0 2.35rem; width: 2.35rem; height: 2.35rem; border-radius: 50%; color: var(--aw-accent); background: var(--aw-void); }
+.home-destination--primary { border-color: var(--aw-accent); }
+.home-brand-art { align-self: center; }
+@media (max-width: 600px) {
+  .home-destinations { grid-template-columns: minmax(0, 1fr); }
+  .home-brand-art { order: -1; }
+}
+</style>

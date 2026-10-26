@@ -1,6 +1,6 @@
 # Midnight Table implementation evidence
 
-Verified 26 October 2026 with synthetic fixtures against the actual production Vue bundle. The [approved local board](../../reference/midnight-table-board.png) remains the design target. These are rendered application captures, with live controls and fixture content.
+Historical captures verified 26 October 2026 with synthetic fixtures against the then-current production Vue bundle. The [original board](../../reference/midnight-table-board.png) records that iteration. The current application target is Responsive Table in [PRODUCT.md](../../../PRODUCT.md); these captures do not override it. Controls and content here use fixtures.
 
 | State | 390px capture |
 | --- | --- |

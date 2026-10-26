@@ -1,13 +1,12 @@
 # Guest language and conversation preferences
 
-The shared web/iOS application offers Czech and English interface text. The
-header selector affects presentation only. Signed-out visitors have a separate
-device preference; each signed-in account has its own preference on that device.
-Switching accounts reads that account's choice instead of copying the previous
-visitor's language. If local storage is unavailable, the selector explicitly
-describes the choice as temporary. It does not claim cross-device synchronization.
+The shared web/iOS interface is Czech, as defined in [PRODUCT.md](../PRODUCT.md).
+The header shows the language without offering an English switch. Legacy saved
+English preferences resolve to Czech in both visitor and account scopes. This
+presentation migration does not change server-owned conversation preferences.
 
-Conversation language is a separate, server-owned preference. Under **My account**,
+Conversation language is a separate, server-owned preference. On the retained
+conversation route (`/me/conversation`),
 a guest with a character can select Czech (`cs-CZ`) or English (`en-US`) and a
 gentle, cheeky, or adult roast style. Editing the form does not send a mutation;
 the guest saves the choices explicitly. The interface language does not change
@@ -47,7 +46,7 @@ content. Account deletion and manual-only retention keep their existing meaning.
 The focused frontend tests cover malformed responses, profile binding, independent
 interface language, explicit save, concurrency conflicts, and late responses after
 an account switch. The compiled application browser fixture exercises persistence,
-both themes, narrow screens, and enlarged English text using synthetic APIs.
+both themes, narrow screens, and enlarged Czech text using synthetic APIs.
 The backend's `--customer-preferences` tests exercise authenticated HTTPS behavior;
 `--voice-providers` and `--conversation-engines` cover language request shapes and
 provider lifecycle behavior. Run the native identity harness on macOS to verify

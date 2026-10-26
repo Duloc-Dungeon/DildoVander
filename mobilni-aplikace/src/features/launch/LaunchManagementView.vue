@@ -3,10 +3,14 @@ import LaunchManagementPanel from './LaunchManagementPanel.vue';
 </script>
 
 <template>
-  <main class="page-stack launch-management-page">
+  <div class="page-stack launch-management-page">
     <RouterLink to="/settings/admin">← Zpět ke správě účtů a oprávnění</RouterLink>
+    <header>
+      <h1>Večer a pozvánky</h1>
+      <p>Připravte skupinu, pozvěte účastníky a potvrďte odpočet do otevření večera.</p>
+    </header>
     <LaunchManagementPanel />
-  </main>
+  </div>
 </template>
 
 <style scoped>

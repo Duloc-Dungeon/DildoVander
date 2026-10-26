@@ -51,7 +51,7 @@ name and Unix-second `eveningAt` come only from that owner's captured customer
 session; linked viewers always receive null for both. A deleted captured profile
 suppresses its character name.
 
-The account list UI uses the Czech locale by default and supports English. It
+The account list UI uses Czech, following [PRODUCT.md](../PRODUCT.md). It
 polls the first page every five seconds for up to twelve polls while online,
 pauses expanded pages for manual refresh, and caps the visible list at 200 rows. Search and access filters reset
 the current rows and cursor; sign-out, account-context change, or going offline

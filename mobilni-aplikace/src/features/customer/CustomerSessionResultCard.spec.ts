@@ -438,20 +438,20 @@ describe('customer session result card', () => {
 
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.text()).toContain('The result is awaiting verification. The app will not generate it again automatically.');
-    expect(wrapper.text()).toContain('The keepsake text is available.');
+    expect(wrapper.text()).toContain('Výsledek čeká na ověření. Aplikace ho automaticky znovu nevytváří.');
+    expect(wrapper.text()).toContain('Text památky je dostupný.');
     expect(api.request).toHaveBeenCalledTimes(1);
 
     window.dispatchEvent(new Event('offline'));
     await nextTick();
-    expect(wrapper.text()).toContain('Offline. Last verified status: The result is awaiting verification.');
+    expect(wrapper.text()).toContain('Offline. Poslední ověřený stav: Výsledek čeká na ověření.');
     expect(wrapper.find('a[href*="keepsake"]').exists()).toBe(false);
 
     window.dispatchEvent(new Event('online'));
     await flushPromises();
     expect(api.request).toHaveBeenCalledTimes(2);
-    expect(wrapper.text()).toContain('Could not refresh status. Last verified status: The result is awaiting verification.');
-    expect(wrapper.text()).toContain('In the last verified result:');
+    expect(wrapper.text()).toContain('Stav se nepodařilo obnovit. Poslední ověřený stav: Výsledek čeká na ověření.');
+    expect(wrapper.text()).toContain('V posledním ověřeném výsledku:');
     expect(wrapper.text()).not.toContain('private-provider-secret');
     expect(wrapper.find('a[href*="keepsake"]').exists()).toBe(false);
     wrapper.unmount();

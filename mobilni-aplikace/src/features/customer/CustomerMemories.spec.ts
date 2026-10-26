@@ -96,15 +96,15 @@ describe('personal memory controls', () => {
     expect(wrapper.text()).not.toContain('Modrá je moje oblíbená.');
   });
 
-  it('reacts to English without losing forget consequences or the owner data warning', async () => {
+  it('keeps Czech memory copy after a legacy English choice', async () => {
     api.read.mockResolvedValue(list([fact]));
     wrapper = mount(CustomerMemories); await flushPromises();
     interfaceLanguagePreference.setLanguage('en');
     await flushPromises();
-    expect(wrapper.text()).toContain('My memories');
-    expect(wrapper.text()).toContain('Personal facts that are currently available to this account. Memories are not automatically deleted.');
-    await button('Forget').trigger('click');
-    expect(wrapper.text()).toContain('Forget this memory and all its previous versions? This change cannot be undone.');
+    expect(wrapper.text()).toContain('Moje paměti');
+    expect(wrapper.text()).toContain('Paměti se automaticky nemažou.');
+    await button('Zapomenout').trigger('click');
+    expect(wrapper.text()).toContain('Zapomenout tuto paměť a všechny její předchozí verze?');
   });
 
   it('blocks offline actions and refreshes on return without retrying a write', async () => {

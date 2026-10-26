@@ -45,11 +45,11 @@ describe('lost access guidance', () => {
     await wrapper.get('summary').trigger('click');
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.get('summary').text()).toBe('Lost access?');
-    expect(wrapper.get('a[href="/support"]').text()).toBe('contact support');
-    expect(wrapper.text()).toContain('only the service owner can issue a one-time recovery code');
-    expect(wrapper.text()).toContain('original keys are removed and other sessions are signed out');
-    expect(wrapper.text()).toContain('Never send anyone your passkeys or recovery codes.');
+    expect(wrapper.get('summary').text()).toBe('Ztratili jste přístup?');
+    expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktujte podporu');
+    expect(wrapper.text()).toContain('jednorázový kód obnovy může vystavit pouze vlastník služby');
+    expect(wrapper.text()).toContain('původní klíče odebrány a ostatní relace odhlášeny');
+    expect(wrapper.text()).toContain('Nikomu neposílejte přístupové klíče ani obnovovací kódy.');
     wrapper.unmount();
   });
 });

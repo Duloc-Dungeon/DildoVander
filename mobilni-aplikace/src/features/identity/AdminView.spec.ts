@@ -17,6 +17,19 @@ beforeEach(()=>{
   api.request.mockImplementation(async(path:string)=>path==='/app/v1/admin/users'?{users:[],grants:[]}:path==='/app/v1/admin/launch/groups'?{groups:[{id:'group-a',name:'Pátek',launchAt:123456,revision:1}]}:{token:invitationToken,purpose:'invite'});
 });
 describe('account invitations',()=>{
+  it('shows Czech owner controls while preserving server role values and invitation anchors', async () => {
+    const wrapper = render();
+    try {
+      await flushPromises();
+      expect(wrapper.find('#invitations').exists()).toBe(true);
+      expect(wrapper.get('#invite-role option[value="Owner"]').text()).toBe('Vlastník');
+      expect(wrapper.get('#invite-role option[value="Customer"]').text()).toBe('Účastník');
+      api.setAccount({ id: 'administrator', displayName: 'Správce', roles: ['Administrator'] });
+      await flushPromises();
+      expect(wrapper.find('#invitations').exists()).toBe(false);
+    } finally { wrapper.unmount(); }
+  });
+
   it('retains a confirmed one-use invitation without making an unrelated list refresh that could misreport failure',async()=>{
     const wrapper=render();await flushPromises();if(wrapper.find('#invitation-group').exists())await wrapper.get('#invitation-group').setValue('group-a');
     await wrapper.get('#invite-role').setValue('Tester');

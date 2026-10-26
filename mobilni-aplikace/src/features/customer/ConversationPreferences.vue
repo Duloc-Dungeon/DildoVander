@@ -83,7 +83,7 @@ onBeforeUnmount(() => { ++generation; request?.abort(); });
       <AwField :id="`${instanceId}-language`" :label="customerCopy.text('preferences.language')">
         <select :id="`${instanceId}-language`" v-model="language" class="aw-select" :disabled="busy">
           <option value="cs-CZ" lang="cs">Čeština</option>
-          <option value="en-US" lang="en">English</option>
+          <option value="en-US" lang="en">Angličtina</option>
         </select>
       </AwField>
       <AwField :id="`${instanceId}-tone`" :label="customerCopy.text('preferences.tone')" :hint="customerCopy.text('preferences.limits')" v-slot="field">

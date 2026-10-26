@@ -179,13 +179,13 @@ async function layout(page, label) {
 
 async function signInViaProtectedLink(page) {
   await page.goto(origin);
-  assert.equal(await page.getByRole('link', { name: 'Persona Lab', exact: true }).count(), 0, 'Public navigation hides staff-only tools');
+  assert.equal(await page.getByRole('link', { name: 'AI laboratoř', exact: true }).count(), 0, 'Public navigation hides staff-only tools');
   await page.goto(`${origin}/persona-lab`);
   await page.waitForURL(url => url.pathname === '/signin' && url.searchParams.get('return') === '/persona-lab');
   await page.getByRole('button', { name: 'Přihlásit přístupovým klíčem', exact: true }).click();
   await page.waitForURL('**/persona-lab');
-  await page.getByRole('heading', { name: 'Persona Lab', exact: true }).waitFor();
-  await page.getByRole('link', { name: 'Persona Lab', exact: true }).first().waitFor();
+  await page.getByRole('heading', { name: 'AI laboratoř', exact: true }).waitFor();
+  assert.equal(await page.getByRole('navigation', { name: 'Sekce aplikace' }).getByRole('link', { name: 'AI laboratoř', exact: true }).count(), 0, 'staff-only tools remain outside primary navigation');
   await page.getByRole('button', { name: 'Připravit sezení', exact: true }).waitFor();
   assert.equal(await page.locator('#lab-provider-consent').isChecked(), false, 'OpenAI data consent starts unchecked');
   assert(await page.getByRole('button', { name: 'Připravit sezení', exact: true }).isDisabled(), 'new session requires OpenAI data consent');

@@ -4,6 +4,7 @@ import AwButton from '../../components/AwButton.vue';
 import AwDialog from '../../components/AwDialog.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
+import CharacterBriefAssistant from './CharacterBriefAssistant.vue';
 import { customerCopy } from '../../application/customerCopy';
 
 export interface NewCharacterDraft {
@@ -110,6 +111,7 @@ function blankDraft(): NewCharacterDraft {
       <AwField id="new-character-description" :label="customerCopy.text('new-character.description')">
         <textarea id="new-character-description" v-model="draft.description" class="aw-input" maxlength="1200" rows="4" :disabled="busy" />
       </AwField>
+      <CharacterBriefAssistant v-model="draft.description" :disabled="busy" />
       <AwField id="new-character-language" :label="customerCopy.text('new-character.language')">
         <input id="new-character-language" v-model="draft.language" class="aw-input" maxlength="35" :disabled="busy" />
       </AwField>

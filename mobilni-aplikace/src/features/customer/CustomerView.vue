@@ -15,6 +15,7 @@ import { account, accountRequest } from '../identity/session';
 import AccountArchiveList from '../identity/AccountArchiveList.vue';
 import SettingsView from '../identity/SettingsView.vue';
 import NewCharacterDialog, { type NewCharacterDraft } from './NewCharacterDialog.vue';
+import CharacterBriefAssistant from './CharacterBriefAssistant.vue';
 import CustomerSessionResultCard from './CustomerSessionResultCard.vue';
 import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
 import CustomerWaiting from './CustomerWaiting.vue';
@@ -531,7 +532,7 @@ onBeforeUnmount(() => {
         <p role="status">{{ customerCopy.text(profileStatusKeys[profile.status] ?? 'customer.status-unknown') }} · {{ customerCopy.text('customer.revision', { revision: profile.revision }) }}</p>
         <p v-if="profile.status === 'saved'">{{ customerCopy.text('customer.saved-guidance') }}</p>
         <AwNotice v-if="clarificationText" tone="info">{{ customerCopy.text('customer.clarification', { text: clarificationText }) }}</AwNotice>
-        <RouterLink v-if="['saved', 'ready'].includes(profile.status) || startInProgress" class="aw-button aw-button--primary" to="/me/conversation">{{ customerCopy.text(startInProgress ? 'customer.return-conversation' : 'customer.continue-conversation') }}</RouterLink>
+        <RouterLink v-if="['saved', 'ready'].includes(profile.status) || startInProgress" class="aw-button aw-button--primary" :to="startInProgress ? '/me/conversation' : '/play'">{{ startInProgress ? customerCopy.text('customer.return-conversation') : 'Pokračovat do hry' }}</RouterLink>
         <p class="aw-muted">{{ customerCopy.text('customer.correction-guidance') }}</p>
         <AwButton type="button" variant="secondary" :disabled="busy" @click="beginNewCharacter">{{ customerCopy.text('customer.new-character') }}</AwButton>
       </section>
@@ -542,6 +543,7 @@ onBeforeUnmount(() => {
       <AwField id="character-world" :label="customerCopy.text('profile.world')"><input id="character-world" v-model="form.world" class="aw-input" maxlength="160" required /></AwField>
       <AwField id="character-version" :label="customerCopy.text('profile.version')"><input id="character-version" v-model="form.version" class="aw-input" maxlength="120" /></AwField>
       <AwField id="character-description" :label="customerCopy.text('profile.description')"><textarea id="character-description" v-model="form.description" class="aw-input" maxlength="1200" rows="4" /></AwField>
+      <CharacterBriefAssistant v-model="form.description" :disabled="busy" />
       <AwField id="character-language" :label="customerCopy.text('new-character.language')"><input id="character-language" v-model="form.language" class="aw-input" maxlength="35" /></AwField>
       <AwField id="character-openai-consent" :label="customerCopy.text('profile.optional-ai-title')"><label><input id="character-openai-consent" v-model="enrichmentOpenAiConsent" type="checkbox" /> {{ customerCopy.text('customer.enrichment-consent') }}</label></AwField>
       <p class="aw-muted">{{ customerCopy.text('customer.no-ai-save') }}</p>
@@ -593,6 +595,7 @@ onBeforeUnmount(() => {
         </AwField>
         <CustomerSessionResultCard :key="resultSession.id" :session-id="resultSession.id" />
       </section>
+      <ConversationPreferences v-if="profile" :profile-id="profile.profileId" :profile-revision="profile.revision" />
     </section>
 
     <section v-else-if="pane === 'keepsakes'" class="page-stack">
@@ -601,7 +604,6 @@ onBeforeUnmount(() => {
       <CustomerDuelHistory />
     </section>
     <section v-else-if="pane === 'account'" class="page-stack">
-      <ConversationPreferences v-if="profile" :profile-id="profile.profileId" :profile-revision="profile.revision" />
       <SettingsView customer-surface />
     </section>
   </section>

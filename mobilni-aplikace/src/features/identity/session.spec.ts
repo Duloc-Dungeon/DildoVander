@@ -400,8 +400,8 @@ describe('durable account deletion', () => {
     interfaceLanguagePreference.setLanguage('en');
     const identity = await signedIn();
     const confirmation = vi.fn().mockReturnValue(false); vi.stubGlobal('confirm', confirmation);
-    await expect(identity.deleteAccount('current')).rejects.toThrow('not confirmed');
-    expect(confirmation).toHaveBeenCalledWith(expect.stringContaining('associated private content'));
+    await expect(identity.deleteAccount('current')).rejects.toThrow('nebyla potvrzena');
+    expect(confirmation).toHaveBeenCalledWith(expect.stringContaining('přidružený soukromý obsah'));
     expect(identity.account.value?.id).toBe('current');
   });
 

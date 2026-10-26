@@ -2,10 +2,10 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BetaAdmissionPanel from './BetaAdmissionPanel.vue';
 
-const api = vi.hoisted(() => ({ request: vi.fn() }));
+const api = vi.hoisted(() => ({ request: vi.fn(), reauthenticate: vi.fn() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
-  return { account: ref({ id: 'owner', displayName: 'Owner', roles: ['Owner'] }), accountRequest: api.request };
+  return { account: ref({ id: 'owner', displayName: 'Owner', roles: ['Owner'] }), accountRequest: api.request, authenticatePasskey: api.reauthenticate };
 });
 
 const groupId = '0123456789abcdef0123456789abcdef';
@@ -33,6 +33,45 @@ beforeEach(() => {
 });
 
 describe('owner waiting room and group countdown', () => {
+  it('requires saving an initial countdown draft before confirming a new group', async () => {
+    effectiveGroups[0] = group(groupId, 'Interní beta', { countdownDurationSeconds: null });
+    const view = mount(BetaAdmissionPanel);
+    try {
+      await flushPromises();
+      const confirm = () => view.findAll('button').find(button => button.text() === 'Potvrdit a spustit odpočet')!;
+      expect(confirm().attributes('disabled')).toBeDefined();
+      await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
+      await flushPromises();
+      expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/countdown`, 'PUT', {
+        expectedRevision: 2, durationSeconds: 600, forceStartAtEnd: false,
+      });
+      expect(confirm().attributes('disabled')).toBeUndefined();
+    } finally { view.unmount(); }
+  });
+
+  it('preserves the countdown draft on expired owner authentication and never automatically replays it', async () => {
+    api.reauthenticate.mockReset().mockResolvedValue(undefined);
+    const defaultRequest = api.request.getMockImplementation()!;
+    api.request.mockImplementation(async (path, method, ...args) => {
+      if (method === 'PUT') throw Object.assign(new Error('Nejprve ověřte svou totožnost.'), { code: 'recent_passkey_required' });
+      return defaultRequest(path, method, ...args);
+    });
+    const view = mount(BetaAdmissionPanel);
+    try {
+      await flushPromises();
+      await view.get('#countdown-minutes').setValue(25);
+      await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
+      await flushPromises();
+      expect(view.text()).toContain('Nejprve ověřte svou totožnost.');
+      expect((view.get('#countdown-minutes').element as HTMLInputElement).value).toBe('25');
+      await view.findAll('button').find(button => button.text() === 'Ověřit totožnost přístupovým klíčem')!.trigger('click');
+      await flushPromises();
+      expect(api.reauthenticate).toHaveBeenCalledWith('reauth');
+      expect(api.request.mock.calls.filter(([, method]) => method === 'PUT')).toHaveLength(1);
+      expect(view.text()).toContain('Původní změnu nyní odešlete znovu.');
+    } finally { view.unmount(); }
+  });
+
   it('loads every roster page before enabling group changes', async () => {
     const defaultRequest = api.request.getMockImplementation()!;
     api.request.mockImplementation(async (path: string, ...args: unknown[]) => {

@@ -23,6 +23,36 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.setAccount({ id: 'one' }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('presents real server scores, identities, round count and stock using the responsive table art', async () => {
+    api.setAccount({ id: 'one', displayName: 'Vojta' });
+    api.transport.mockResolvedValue(Response.json(snapshot({ mode: 'tactical', playerScore: 2, opponentScore: 3,
+      completedRounds: 4, totalRounds: 8, playerInventory: { strike: 2, trick: 1, shield: 0 } })));
+    const view = await render();
+    expect(view.classes()).toContain('responsive-table');
+    expect(view.get('.game-score--duel').text()).toContain('Vojta');
+    expect(view.get('.game-score--duel').text()).toContain('Eliška');
+    expect(view.findAll('.game-score--duel strong').map(score => score.text())).toEqual(['2', '3']);
+    expect(view.findAll('.game-round-dots > span')).toHaveLength(8);
+    expect(view.findAll('.game-round-dots > .done')).toHaveLength(4);
+    expect(view.get('input[value="shield"]').attributes('disabled')).toBeDefined();
+    expect(view.get('input[value="trick"]').element.closest('label')?.textContent).toContain('1 použití');
+    expect(view.findAll('.game-spell-token')).toHaveLength(3);
+    expect(view.get('.game-spell-token').attributes('src')).toContain('token-strike.webp');
+    expect(view.find('img[src*="mira"]').exists()).toBe(false);
+    await view.get('input[value="trick"]').setValue();
+    expect(api.transport).toHaveBeenCalledTimes(1);
+    expect(view.findAll('.game-score--duel strong').map(score => score.text())).toEqual(['2', '3']);
+  });
+
+  it('keeps the original seven-round practice contract and explains the real cyclic rules', async () => {
+    const view = await render('/play/practice');
+    expect(view.findAll('.game-round-dots > span')).toHaveLength(7);
+    expect(view.get('.game-header').text()).toContain('Trénink · bez XP');
+    expect(view.get('.game-rules').text()).toContain('Úder přeruší lest');
+    expect(view.find('.game-spark').exists()).toBe(false);
+    expect(api.transport).not.toHaveBeenCalled();
+  });
+
   it('selects locally and commits action and spark together only after confirmation', async () => {
     api.transport.mockImplementation(async (_path: string, init: RequestInit) => Response.json(snapshot(init.method === 'POST' ? { revision: 3, ownChoiceLocked: true } : {})));
     const view = await render();

@@ -21,8 +21,8 @@ export const router = createRouter({
     { path: '/me/conversation', name: 'customer-conversation', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Rozhovor s kufrem', private: true, requiresAccount: true } },
     { path: '/me/keepsakes', name: 'customer-keepsakes', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Moje památky', private: true, requiresAccount: true } },
     { path: '/me/account', name: 'customer-account', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Můj účet', private: true, requiresAccount: true } },
-    { path: '/testing-sessions', name: 'testing-sessions', component: () => import('../features/testing-sessions/TestingSessionsView.vue'), meta: { title: 'Testing Sessions', private: true, requiresAccount: true, tester: true } },
-    { path: '/persona-lab', name: 'persona-lab', component: () => import('../features/persona-lab/PersonaLabView.vue'), meta: { title: 'AI Persona Lab', private: true, requiresAccount: true, lab: true } },
+    { path: '/testing-sessions', name: 'testing-sessions', component: () => import('../features/testing-sessions/TestingSessionsView.vue'), meta: { title: 'Testovací relace', private: true, requiresAccount: true, tester: true } },
+    { path: '/persona-lab', name: 'persona-lab', component: () => import('../features/persona-lab/PersonaLabView.vue'), meta: { title: 'AI laboratoř', private: true, requiresAccount: true, lab: true } },
     { path: '/tonight', name: 'tonight', component: () => import('../features/tonight/TonightPage.vue'), meta: { title: 'Dnešní provoz', private: true, requiresAccount: true, operation: true, staff: true } },
     { path: '/suitcase', name: 'suitcase', component: () => import('../features/suitcase/SuitcaseView.vue'), meta: { title: 'Kufr', keepAlive: true, requiresAccount: true, operation: true, offlineLocal: true, private: true, staff: true } },
     { path: '/connections', name: 'connections', component: () => import('../features/suitcase/ConnectionsView.vue'), meta: { title: 'Připojení', keepAlive: true, requiresAccount: true, operation: true, offlineLocal: true, private: true, staff: true } },
@@ -38,7 +38,7 @@ export const router = createRouter({
     { path: '/signin', name: 'signin', component: () => import('../features/identity/SignInView.vue'), meta: { title: 'Přihlášení', private: true } },
     { path: '/settings', name: 'settings', component: () => import('../features/identity/SettingsView.vue'), meta: { title: 'Nastavení', private: true, requiresAccount: true, lab: true } },
     { path: '/settings/admin', name: 'admin', component: () => import('../features/identity/AdminView.vue'), meta: { title: 'Správa', private: true, requiresAccount: true, administrator: true, staff: true } },
-    { path: '/settings/admin/launch', name: 'launch-admin', component: () => import('../features/launch/LaunchManagementView.vue'), meta: { title: 'Launch Management', private: true, requiresAccount: true, administrator: true, staff: true } },
+    { path: '/settings/admin/launch', name: 'launch-admin', component: () => import('../features/launch/LaunchManagementView.vue'), meta: { title: 'Večer a pozvánky', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/admin/customer-sessions', name: 'customer-admin', component: () => import('../features/customer/CustomerAdminView.vue'), meta: { title: 'Zákaznické relace', private: true, requiresAccount: true, staff: true, operation: true } },
     { path: '/app/:pathMatch(.*)*', redirect: '/suitcase' },
     { path: '/companion/:pathMatch(.*)*', redirect: '/suitcase' },
@@ -47,7 +47,12 @@ export const router = createRouter({
     { path: '/workshop/viewer.html', redirect: '/workshop' },
     { path: '/:pathMatch(.*)*', component: () => import('./NotFoundView.vue'), meta: { title: 'Stránka nenalezena' } },
   ],
-  scrollBehavior(to, from, saved) { return saved ?? (to.path === from.path ? false : { top: 0 }); },
+  scrollBehavior(to, from, saved) {
+    if (saved) return saved;
+    if ((to.path === '/settings/admin' && to.hash === '#invitations')
+      || (to.path === '/settings/admin/launch' && to.hash === '#waiting-room')) return { el: to.hash, top: 112 };
+    return to.path === from.path ? false : { top: 0 };
+  },
 });
 
 const localizedRouteTitles: Partial<Record<string, CustomerCopyKey>> = {

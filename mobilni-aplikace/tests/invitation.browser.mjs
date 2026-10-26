@@ -76,9 +76,10 @@ try{
       long=true;revision++;await page.reload();await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('.launch-final').waitFor();
       await page.evaluate(()=>{document.documentElement.style.fontSize='125%';window.scrollTo(0,0);});
       await capture(page,`launch-long-250chars-text125-${width}x${height}-${theme}-cs`,{route:'/launch',state:'80-char name,160-char universe,250-char card,125% text',viewport:`${width}x${height}`,theme,language:'cs'});
-      assert.equal(await page.locator('.launch-joke').evaluate(el=>el.scrollHeight>el.clientHeight),false);
-      long=false;await page.getByRole('combobox',{name:'Jazyk rozhraní'}).selectOption('en');
-      await capture(page,`launch-revealed-${width}x${height}-${theme}-en`,{route:'/launch',state:'revealed,125% text',viewport:`${width}x${height}`,theme,language:'en'});
+      const jokeBox = await page.locator('.launch-joke').evaluate(el => ({ scroll: el.scrollHeight, client: el.clientHeight, lineHeight: getComputedStyle(el).lineHeight, overflow: getComputedStyle(el).overflow }));
+      assert.ok(jokeBox.scroll <= jokeBox.client, `Joke overflow at ${width}px: ${JSON.stringify(jokeBox)}`);
+      assert.equal(await page.getByRole('combobox',{name:'Jazyk rozhraní'}).count(),0);
+      assert.equal(await page.locator('html').getAttribute('lang'),'cs');
       await context.close();
     }
   }

@@ -1,5 +1,7 @@
 # Implementační plán AI kufru
 
+> **Aktuální rozsah, 26. 10. 2026:** fyzický kufr je pozastavený. Aktivní mobilní zákaznickou cestu, češtinu, humor a vzhled určuje [PRODUCT.md](../PRODUCT.md). Níže zůstávají technické kontrakty a historie etap; starší produktové a vizuální pokyny nepřebíjejí aktuální profil.
+
 > **Show Pack – zadání majitele 19. 10. 2026:** rozšířit současné DV01/DV02/DV10
 > o režii a procedurální finále, šest osobností, náladu, explicitní ambient,
 > identitu/proroctví, izolovanou paměť/kroniku, duely, Director iOS/web a offline
