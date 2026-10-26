@@ -96,11 +96,14 @@ try {
       await installFixtures(context);
       const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
       await page.goto(origin + '/signin');
+      await page.getByRole('button', { name: 'Začít', exact: true }).click();
       await page.getByLabel('Jméno postavy').waitFor();
       assert.equal(await page.getByRole('checkbox').isChecked(), false);
       await capture(page, `beta-enroll-${width}x${height}-${theme}`, 'new participant form', `${width}x${height}`, theme);
       if (width === 390) {
-        betaAvailable = false; await page.reload(); await page.getByText('Přijímání nových účastníků je nyní uzavřené.').waitFor();
+        betaAvailable = false; await page.reload();
+        await page.getByRole('button', { name: 'Začít', exact: true }).click();
+        await page.getByText('Přijímání nových účastníků je nyní uzavřené.').waitFor();
         await capture(page, `beta-closed-${theme}`, 'recruitment closed', `${width}x${height}`, theme);
         currentAccount = { id: 'fixture-member', displayName: 'Ava Longname', roles: ['Customer'] }; guestLaunchAt = null;
         betaAvailable = true; await page.goto(origin + '/launch'); await page.locator('.portrait-stage').waitFor();
@@ -156,12 +159,12 @@ try {
     await guestContext.addInitScript(value => localStorage.setItem('dildovander.theme', value), theme);
     await installFixtures(guestContext);
     const guest = await guestContext.newPage(); guest.on('pageerror', error => errors.push(error.message));
-    await guest.goto(origin + '/launch'); await guest.locator('.countdown-wait').getByText('Brzy').waitFor();
+    await guest.goto(origin + '/launch'); await guest.locator('.character-countdown-wait').getByText('Brzy').waitFor();
     await capture(guest, `guest-soon-unconfirmed-${theme}`, 'guest sees Soon before owner confirmation', '390x844', theme);
-    guestLaunchAt = Date.now() + 60_000; await guest.reload(); await guest.locator('.countdown-grid').waitFor();
+    guestLaunchAt = Date.now() + 60_000; await guest.reload(); await guest.locator('.character-countdown-grid').waitFor();
     await capture(guest, `guest-countdown-confirmed-${theme}`, 'guest countdown after owner confirmation', '390x844', theme);
-    guestLaunchAt = Date.now() - 1000; await guest.reload(); await guest.locator('.countdown-wait').getByText('Brzy').waitFor();
-    assert.equal(await guest.locator('.countdown-grid').count(), 0, 'expired non-force countdown stays Soon');
+    guestLaunchAt = Date.now() - 1000; await guest.reload(); await guest.locator('.character-countdown-wait').getByText('Brzy').waitFor();
+    assert.equal(await guest.locator('.character-countdown-grid').count(), 0, 'expired non-force countdown stays Soon');
     await capture(guest, `guest-soon-after-expiry-${theme}`, 'guest remains Soon after non-force countdown expires', '390x844', theme);
     await guestContext.close();
   }

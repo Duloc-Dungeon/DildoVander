@@ -11,9 +11,13 @@ import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
 import { launchCopy as copy } from './launchCopy';
 import PortraitCurtain from './PortraitCurtain.vue';
+import SceneShell from '../../components/scene/SceneShell.vue';
+import PaperSurface from '../../components/scene/PaperSurface.vue';
+import CharacterCountdown from '../../components/scene/CharacterCountdown.vue';
 import { invitationVisibleMs, invitationIntroDuration, presentationForeground, selectInvitationPresentation, finishInvitationPresentation } from './launchPresentation';
 import type { PrelaunchCharacterResponse as PrelaunchState } from './generatedPrelaunchCharacter';
 import brandMark from '../../assets/brand/emblem-small.webp';
+import openingArtwork from '../../assets/brand/midnight/opening.webp';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { customerFixedUniverse, customerMembershipState, refreshCustomerMembership } from '../../application/launchAccess';
 import { isCustomerAccount } from '../../application/access';
@@ -34,6 +38,9 @@ const busy = ref(false);
 const error = ref('');
 const remaining = ref(0);
 const revealed = ref(false);
+const groupOpening = ref(false);
+const groupBusy = ref(false);
+const formFocused = ref(false);
 let characterRead = 0;
 let accountEpoch = 0;
 let controller: AbortController | undefined;
@@ -81,6 +88,7 @@ const timeParts = computed(() => {
 });
 watch(() => account.value?.id, id => {
   accountEpoch++;
+  groupOpening.value = false;
   characterRead++;
   portrait.clear();
   state.value = null;
@@ -112,6 +120,11 @@ watch(() => state.value?.character?.profileId, () => { consent.value = false; re
 function rememberDraft(): void {
   if (account.value && !state.value?.character && !writing.value && !uncertain.value) setInvitationDraft(account.value.id, name.value, universe.value);
 }
+function formFocusOut(event: FocusEvent): void {
+  const form = event.currentTarget;
+  if (form instanceof HTMLElement && event.relatedTarget instanceof Node && form.contains(event.relatedTarget)) return;
+  formFocused.value = false;
+}
 async function refreshPolicy(): Promise<void> {
   const owner = account.value?.id;
   const value = await accountRequest<LaunchPolicy>('/app/v1/launch');
@@ -121,15 +134,48 @@ async function refreshPolicy(): Promise<void> {
   monotonicAnchor = performance.now();
   policy.value = value;
   if (value.audience === 'revoked') {
+    groupOpening.value = false;
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = undefined; }
     window.dispatchEvent(new Event('customer-access-revoked'));
     return;
   }
+  if (!value.allowed) {
+    const wasOpening = groupOpening.value;
+    groupOpening.value = false;
+    // A pause may arrive before the opening scene ever fetched a character.
+    // Reconcile the waiting scene with reads, never a second enrollment/save.
+    if (wasOpening && account.value && customerMembershipState.value === 'active') {
+      try { await refreshCharacter(controller?.signal); beginPolling(); }
+      catch { error.value = copy.value.readFailed; }
+    }
+  }
   updateCountdown();
   // Server permission always wins over local presentation, including staff/testers.
-  if (value.allowed && account.value && (!isCustomerAccount(account.value) || customerMembershipState.value === 'active')) {
+  if (value.allowed && account.value && !isCustomerAccount(account.value)) {
+    // Operational accounts keep their established destination. The consumer
+    // group-opening presentation must not become a staff onboarding detour.
     await router.replace(defaultSignedInDestination(account.value));
+    return;
   }
+  if (value.allowed && account.value && customerMembershipState.value === 'active') {
+    const seenKey = `wand.group-opening-seen.v1.${account.value.id}`;
+    let alreadySeen = false;
+    try { alreadySeen = sessionStorage.getItem(seenKey) === 'seen'; } catch { /* Static presentation remains safe without storage. */ }
+    if (alreadySeen) await router.replace(defaultSignedInDestination(account.value));
+    else groupOpening.value = true;
+  }
+}
+async function enterGroup(): Promise<void> {
+  const owner = account.value;
+  if (!owner || groupBusy.value || !policy.value?.allowed || (isCustomerAccount(owner) && customerMembershipState.value !== 'active')) return;
+  groupBusy.value = true;
+  error.value = '';
+  try { await refreshPolicy(); }
+  catch { error.value = copy.value.readFailed; groupBusy.value = false; return; }
+  if (!policy.value?.allowed || account.value?.id !== owner.id) { groupBusy.value = false; return; }
+  try { sessionStorage.setItem(`wand.group-opening-seen.v1.${owner.id}`, 'seen'); } catch { /* The server still checks access at the destination. */ }
+  try { await router.replace(defaultSignedInDestination(owner)); }
+  finally { groupBusy.value = false; }
 }
 async function refreshBetaEnrollment(): Promise<void> {
   try {
@@ -299,9 +345,12 @@ onMounted(async () => {
       await refreshCustomerMembership();
     }
     await refreshPolicy();
+    if (controller.signal.aborted) return;
     if (isCustomerAccount(account.value) && customerMembershipState.value !== 'active') {
       if (customerMembershipState.value === 'unassigned') await refreshBetaEnrollment();
       else if (customerMembershipState.value === null) error.value = copy.value.readFailed;
+    } else if (policy.value?.allowed) {
+      startPolicyPolling();
     } else {
       await refreshCharacter(controller.signal);
       beginPolling();
@@ -324,54 +373,60 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="launch-page" aria-labelledby="launch-title">
+  <SceneShell v-if="groupOpening" class="launch-page group-opening" labelled-by="group-opening-title" :active="presentationForeground">
+    <img class="group-opening-art" data-scene-enter :src="openingArtwork" alt="" fetchpriority="high" />
+      <section class="group-opening-copy" aria-live="polite">
+      <h1 id="group-opening-title">{{ language === 'en' ? 'The evening begins.' : 'Večer začíná.' }}</h1>
+      <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup">{{ copy.retry }}</button></AwNotice>
+      <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup">{{ language === 'en' ? 'Enter' : 'Vstoupit' }}</AwButton>
+      <button class="launch-skip" :disabled="groupBusy" @click="enterGroup">{{ language === 'en' ? 'Skip animation' : 'Přeskočit animaci' }}</button>
+    </section>
+    <footer class="launch-footer"><details class="launch-account-options"><summary>{{ copy.account }}</summary><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
+  </SceneShell>
+  <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" labelled-by="launch-title">
     <header class="launch-masthead">
       <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><img :src="brandMark" alt="" width="48" height="48" /><span>Wand<br />Night Stand</span></RouterLink>
       <label class="launch-language"><span class="sr-only">{{ language === 'en' ? 'Interface language' : 'Jazyk rozhraní' }}</span><select v-model="language"><option value="cs">Čeština</option><option value="en">English</option></select></label>
     </header>
     <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">
-      <div class="launch-copy">
+      <PaperSurface class="launch-copy">
         <h1 id="launch-title">{{ language === 'en' ? 'Request beta access' : 'Požádat o přístup do bety' }}</h1>
         <p>{{ language === 'en' ? 'Your account is ready. You can join the current beta group while it is accepting participants.' : 'Tvůj účet je připravený. Do současné beta skupiny můžeš vstoupit, dokud přijímá účastníky.' }}</p>
         <AwNotice v-if="betaEnrollmentAvailable === false" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
         <p v-else-if="betaEnrollmentAvailable === null" role="status">{{ language === 'en' ? 'We could not check the current beta access rules.' : 'Aktuální pravidla vstupu do bety se nepodařilo ověřit.' }}</p>
         <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
         <p v-if="membershipRequestMessage" role="status">{{ membershipRequestMessage }}</p>
-        <AwButton v-if="betaEnrollmentAvailable === true" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>
-      </div>
+        <AwButton v-if="betaEnrollmentAvailable === true" variant="primary" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>
+      </PaperSurface>
     </section>
     <section v-else class="launch-card">
-      <div class="launch-copy">
-        <h1 id="launch-title">{{ state?.character?.name || (draftProvided ? name : copy.title) }}</h1>
-        <p v-if="state?.character || draftProvided" class="launch-universe">{{ state?.character?.universe || universe }}</p>
-        <p class="launch-status" role="status" aria-atomic="true">{{ statusMessage }}</p>
+      <PaperSurface class="launch-copy">
+        <h1 v-if="!state?.character" id="launch-title">{{ draftProvided ? name : copy.title }}</h1>
         <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <AwNotice v-if="phase === 'failed'" tone="warning" role="alert">{{ copy.failed }} <button class="launch-retry" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
         <template v-if="!account"><RouterLink class="aw-button aw-button--primary" to="/signin">{{ copy.invitation }}</RouterLink></template>
-        <form v-else-if="characterVerified && !state?.character && !writing" class="launch-form" @submit.prevent="saveCharacter">
+        <form v-else-if="characterVerified && !state?.character && !writing" class="launch-form" @submit.prevent="saveCharacter" @focusin="formFocused = true" @focusout="formFocusOut">
           <p v-if="draftProvided && !uncertain">{{ copy.accountReady }}</p>
           <template v-if="!draftProvided">
             <AwField id="character-name" :label="copy.name" :hint="copy.nameHint"><input id="character-name" aria-describedby="character-name-hint" v-model="name" class="aw-input" maxlength="80" autocomplete="nickname" required @input="rememberDraft" /></AwField>
-            <AwField id="character-universe" :label="copy.universe" :hint="customerFixedUniverse ? (language === 'en' ? 'This universe is fixed for your beta group.' : 'Univerzum je pevně určené pro tvoji beta skupinu.') : copy.universeHint"><input id="character-universe" aria-describedby="character-universe-hint" v-model="universe" class="aw-input" maxlength="160" autocomplete="off" required :readonly="!!customerFixedUniverse" @input="rememberDraft" /></AwField>
+            <div v-if="customerFixedUniverse" class="fixed-universe"><span>{{ copy.universe }}</span><strong>{{ customerFixedUniverse }}</strong><p>{{ language === 'en' ? 'Set by your invitation group.' : 'Určeno skupinou, která tě pozvala.' }}</p></div>
+            <AwField v-else id="character-universe" :label="copy.universe" :hint="copy.universeHint"><input id="character-universe" aria-describedby="character-universe-hint" v-model="universe" class="aw-input" maxlength="160" autocomplete="off" required @input="rememberDraft" /></AwField>
           </template>
           <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
           <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></details>
-          <AwButton type="submit" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
+          <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
-        <form v-else-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait">
+        <form v-else-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait" @focusin="formFocused = true" @focusout="formFocusOut">
           <p>{{ copy.missingPortrait }}</p>
           <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
           <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></details>
-          <AwButton type="submit" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
+          <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
-        <section class="countdown" :aria-label="copy.countdownLabel">
-          <p>{{ copy.countdown }}</p>
-          <div v-if="policy?.launchAt != null && remaining > 0" class="countdown-grid" aria-live="off"><div v-for="(part, index) in timeParts" :key="index"><strong>{{ index ? String(part).padStart(2, '0') : part }}</strong><span>{{ [copy.days, copy.hours, copy.minutes, copy.seconds][index] }}</span></div></div>
-          <p v-else class="countdown-wait">{{ copy.unscheduled }}</p>
-        </section>
-      </div>
+        <CharacterCountdown v-if="state?.character" class="countdown" heading-id="launch-title" :name="state.character.name" :universe="state.character.universe" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
+      </PaperSurface>
       <PortraitCurtain class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" @revealed="revealed = $event" @failed="portrait.fail()" />
       <div class="launch-text">
+        <p class="launch-status" role="status" aria-atomic="true">{{ statusMessage }}</p>
         <div v-if="revealed && hasPortrait" class="launch-final">
           <template v-if="state?.artwork?.welcome"><p class="launch-joke">{{ state.artwork.welcome.joke }}</p><p v-if="state.artwork.welcome.identity" class="launch-identity">{{ state.artwork.welcome.identity }}</p><p v-if="state.artwork.welcome.teaser" class="launch-teaser">{{ state.artwork.welcome.teaser }}</p></template>
           <p v-else class="launch-joke">{{ finalMessage }}</p>
@@ -380,43 +435,42 @@ onBeforeUnmount(() => {
       </div>
     </section>
     <footer class="launch-footer"><details v-if="account" class="launch-account-options"><summary>{{ copy.account }}</summary><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
-  </section>
+  </SceneShell>
 </template>
 
 <style scoped>
-.launch-page { max-width: 88rem; min-height: 100dvh; margin: 0 auto; padding: max(1.5rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) max(1.5rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1.5rem, env(safe-area-inset-left, 0px)); color: var(--aw-ivory); }
+.launch-page { min-height: 100dvh; padding: max(1rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px)); color: var(--aw-ivory); }
 .launch-masthead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .5rem 2rem; }
 .launch-wordmark { min-height: 44px; display: flex; align-items: center; gap: .8rem; color: var(--aw-ivory); text-decoration: none; font-family: var(--aw-font-display); font-size: 1.8rem; font-weight: 500; line-height: .9; letter-spacing: -.025em; }
-.launch-wordmark img { flex-shrink: 0; }
+.launch-wordmark img { display: none; }
 .launch-wordmark span { white-space: nowrap; }
-.launch-language select { font: inherit; font-size: .875rem; color: var(--aw-ivory); background: var(--aw-surface); border: 1px solid var(--aw-border-subtle); border-radius: 8px; min-height: 44px; max-width: 7rem; padding: .5rem; }
-.launch-card { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); grid-template-areas: 'art copy' 'art text'; align-items: center; column-gap: clamp(2rem, 6vw, 7rem); }
-.launch-art { grid-area: art; }
-.launch-copy { grid-area: copy; min-width: 0; max-width: 35rem; }
-.launch-copy h1 { font-family: var(--aw-font-display); font-size: clamp(2.75rem, 5.8vw, 5.75rem); font-weight: 500; line-height: 1.05; letter-spacing: -.025em; margin: 0; overflow-wrap: anywhere; }
-.launch-universe { color: var(--aw-muted); margin-block: .5rem 1rem; overflow-wrap: anywhere; }
-.launch-status { color: var(--aw-link); line-height: 1.5; min-height: 3em; margin-block: .5rem; font-size: .875rem; }
-.launch-text { grid-area: text; min-width: 0; padding-top: 1.5rem; align-self: start; }
+.launch-language select { font: inherit; font-size: .875rem; color: var(--aw-game-paper, var(--aw-ivory)); background: rgb(3 24 22 / .72); border: 1px solid var(--aw-game-brass, var(--aw-border-subtle)); border-radius: 8px; min-height: 44px; max-width: 7rem; padding: .5rem; }
+.launch-card { width: min(100%, 42rem); margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
+.launch-art { order: 2; width: 100%; }
+.launch-copy { order: 1; min-width: 0; }
+.launch-copy :deep(h1) { font-family: var(--aw-font-display); font-size: clamp(2rem, 8vw, 3.5rem); font-weight: 500; line-height: 1.05; letter-spacing: -.025em; margin: 0; overflow-wrap: anywhere; color: var(--aw-game-ink, #2a2019); }
+.launch-status { color: var(--aw-game-muted-ink, #625340); line-height: 1.5; min-height: 1.5em; margin-block: .5rem; font-size: .875rem; }
+.launch-text { order: 3; min-width: 0; padding-top: .25rem; align-self: stretch; text-align: center; }
 .launch-text p { overflow-wrap: anywhere; margin: 0; }
+.launch-text .launch-status { color: var(--aw-game-muted); }
 .launch-final { display: grid; gap: 1rem; }
 .launch-joke, .launch-generic { color: var(--aw-ivory); font-size: 1.125rem; line-height: 1.5; }
-.launch-identity { font-size: 1rem; line-height: 1.6; }
+.launch-joke { font-family: var(--aw-font-display); font-size: clamp(1.6rem, 6.5vw, 2rem); line-height: 1.15; font-weight: 500; }
+.launch-identity { font-family: var(--aw-font-display); font-size: 1.2rem; line-height: 1.6; }
 .launch-teaser { color: var(--aw-muted); font-size: .875rem; line-height: 1.6; }
 .launch-form { display: grid; gap: 1rem; margin-block: 1rem 1.5rem; }
 .launch-form p { margin: 0; }
 .launch-form .aw-input { min-height: 48px; font-size: 1rem; }
-.launch-consent { display: flex; gap: .75rem; align-items: start; min-height: 44px; color: var(--aw-ivory); font-size: .875rem; line-height: 1.6; cursor: pointer; }
+.fixed-universe { display: grid; gap: .25rem; padding-block: .25rem; color: var(--aw-game-ink, #2a2019); }
+.fixed-universe span { font-size: .875rem; font-weight: 600; }
+.fixed-universe strong { font: 500 1.2rem/1.3 var(--aw-font-display); overflow-wrap: anywhere; }
+.fixed-universe p { margin: 0; color: var(--aw-game-muted-ink, #625340); font-size: .875rem; }
+.launch-consent { display: flex; gap: .75rem; align-items: start; min-height: 44px; color: var(--aw-game-ink, #2a2019); font-size: .875rem; line-height: 1.6; cursor: pointer; }
 .launch-consent input { flex-shrink: 0; width: 24px; height: 24px; margin: .1rem 0 0; accent-color: var(--aw-accent); }
-.launch-data-details { color: var(--aw-muted); font-size: .875rem; line-height: 1.6; }
+.launch-data-details { color: var(--aw-game-muted-ink, #625340); font-size: .875rem; line-height: 1.6; }
 .launch-data-details summary { min-height: 44px; padding-block: .6rem; cursor: pointer; }
 .launch-data-details a { display: inline-flex; min-height: 44px; align-items: center; }
-.countdown { margin-block: 1.5rem 0; }
-.countdown > p:first-child { margin: 0 0 .75rem; }
-.countdown-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; padding-bottom: 1.5rem; }
-.countdown-grid > div { display: grid; gap: .25rem; min-width: 0; }
-.countdown-grid strong { font-weight: 500; font-variant-numeric: lining-nums tabular-nums; font-size: clamp(1.75rem, 4vw, 3.2rem); letter-spacing: -.03em; line-height: 1.1; overflow-wrap: anywhere; }
-.countdown-grid span, .countdown-wait { color: var(--aw-muted); font-size: .875rem; line-height: 1.6; }
-.countdown-wait { margin-block: 0 1.5rem; }
+.countdown { margin-block: 0; color: var(--aw-game-ink, #2a2019); }
 .launch-retry { color: inherit; text-decoration: underline; text-underline-offset: .2em; background: none; border: 0; cursor: pointer; min-height: 44px; padding: .5rem; font: inherit; }
 .aw-button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: .85rem 1.25rem; border-radius: 8px; text-decoration: none; }
 .aw-button--primary { color: var(--aw-on-accent); background: var(--aw-accent); }
@@ -425,16 +479,24 @@ onBeforeUnmount(() => {
 .launch-footer a { display: inline-flex; align-items: center; min-height: 44px; color: var(--aw-muted); }
 .launch-account-options { max-width: 100%; }
 .launch-account-options summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
+.group-opening { display: flex; flex-direction: column; align-items: center; overflow: hidden; }
+.group-opening-art { display: block; width: min(100%, 36rem); max-height: 58dvh; object-fit: contain; margin: 0 auto; }
+.group-opening-copy { position: relative; width: min(100% - 2rem, 30rem); display: grid; justify-items: center; gap: 1rem; padding: 1rem 2rem max(1rem, env(safe-area-inset-bottom)); text-align: center; }
+.group-opening-copy h1 { margin: 0; font: 500 clamp(2.5rem, 10vw, 4.5rem)/1.05 var(--aw-font-display); color: var(--aw-ivory); text-shadow: 0 .2rem 1rem #000; }
+.group-opening-copy :deep(.aw-button) { width: min(100%, 22rem); }
+.group-opening > .launch-footer { width: min(100%, 42rem); margin-top: auto; }
+.launch-skip { min-height: 44px; padding: .5rem; color: var(--aw-ivory); background: transparent; border: 0; text-decoration: underline; text-underline-offset: .2em; font: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--aw-info); outline-offset: 3px; }
 @media (max-width: 760px) {
-  .launch-page { padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
+  .launch-page { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
   .launch-masthead { padding-block: 0 1.5rem; }
   .launch-wordmark { font-size: 1.55rem; }
   .launch-wordmark img { width: 40px; height: 40px; }
-  .launch-card { display: flex; flex-direction: column; gap: 0; align-items: stretch; }
+  .launch-card { gap: .85rem; }
   .launch-copy { max-width: none; }
-  .launch-copy h1 { font-size: 2.25rem; line-height: 1.1; }
+  .launch-copy :deep(h1) { font-size: 2.25rem; line-height: 1.1; }
   .launch-art { flex-shrink: 0; }
+  .keyboard-priority .launch-art { display: none; }
   .launch-footer { flex-wrap: wrap; }
 }
 @media (max-width: 340px) { .launch-page { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); } }

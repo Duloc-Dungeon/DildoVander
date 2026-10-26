@@ -9,7 +9,7 @@ import { customerFixedUniverse, customerMembershipState } from '../../applicatio
 const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: vi.fn(), portrait: vi.fn() }));
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
-vi.mock('./PortraitCurtain.vue', () => ({ default: { props: ['image'], template: '<div class="portrait-stage" />' } }));
+vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', props: ['image'], template: '<div class="portrait-stage" />' } }));
 vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
@@ -33,7 +33,7 @@ function savedCreation(status: 'saving' | 'uncertain' | 'confirmed' = 'confirmed
   beginInvitationPresentation('guest', draft.creationId);
 }
 beforeEach(() => {
-  vi.useFakeTimers(); localStorage.clear(); invitationRegistration.value = null;
+  vi.useFakeTimers(); localStorage.clear(); sessionStorage.clear(); invitationRegistration.value = null;
   selectInvitationPresentation(); presentationForeground.value = true;
   api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'] });
   image = ref(''); failed = ref(false);
@@ -103,10 +103,21 @@ it('J: an account draft is not a character and never writes before explicit cons
   try { await flushPromises(); expect(view.text()).toContain('Přístup je připravený.'); expect(view.find('#character-name').exists()).toBe(false); expect(view.get<HTMLInputElement>('input[type="checkbox"]').element.checked).toBe(false); expect(api.request.mock.calls.some(([, method]) => method === 'PUT')).toBe(false); expect(getInvitationRegistration('guest')?.status).toBe('draft'); }
   finally { view.unmount(); }
 });
-it('K: a current server grant bypasses the entire introduction', async () => {
-  persisted = true; savedCreation(); allowed = true; const view = entry();
+it('K: an already seen server-authorized opening sends returning guests straight to their destination', async () => {
+  persisted = true; savedCreation(); allowed = true; sessionStorage.setItem('wand.group-opening-seen.v1.guest', 'seen'); const view = entry();
   try { await flushPromises(); expect(api.replace).toHaveBeenCalledWith('/me/character'); }
   finally { view.unmount(); }
+});
+it.each(['Owner', 'Viewer'])('keeps the authorized %s account on its existing operational destination', async role => {
+  allowed = true;
+  api.setAccount({ id: 'staff', displayName: 'Staff', roles: [role] });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(api.replace).toHaveBeenCalledWith('/settings');
+    expect(view.find('.group-opening').exists()).toBe(false);
+    expect(api.request.mock.calls.some(([path]) => path === '/app/v1/prelaunch/character')).toBe(false);
+  } finally { view.unmount(); }
 });
 it('lets an existing unassigned customer explicitly request beta admission before loading character data', async () => {
   memberState = 'unassigned';
@@ -178,7 +189,7 @@ it('announces offline immediately during the presentation and reconnects with re
   } finally { view.unmount(); }
 });
 
-it('K: checks the actual deadline during the introduction and immediately follows a new server grant', async () => {
+it('K: a server grant opens the static group scene with immediate authorized entry', async () => {
   const deadline=Date.now()+4000;
   persisted=true; savedCreation();
   const original=api.request.getMockImplementation()!;
@@ -188,9 +199,42 @@ it('K: checks the actual deadline during the introduction and immediately follow
   try {
     await flushPromises(); await vi.advanceTimersByTimeAsync(3000); expect(api.replace).not.toHaveBeenCalled();
     allowed=true; await vi.advanceTimersByTimeAsync(1000); await flushPromises();
+    expect(api.replace).not.toHaveBeenCalled();
+    expect(view.text()).toContain('Večer začíná.');
+    await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
     expect(api.replace).toHaveBeenCalledWith('/me/character');
-    expect(view.text()).not.toContain('Postava je uložená.');
+    expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBe('seen');
   } finally {view.unmount();}
+});
+it('rechecks server authorization when entering and closes the scene if access was revoked', async () => {
+  allowed = true;
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.text()).toContain('Večer začíná.');
+    allowed = false;
+    await view.get('.group-opening-copy button').trigger('click');
+    await flushPromises();
+    expect(api.replace).not.toHaveBeenCalled();
+    expect(view.text()).not.toContain('Večer začíná.');
+  } finally { view.unmount(); }
+});
+it('loads the waiting scene when access is paused after the initial group opening', async () => {
+  allowed = true;
+  persisted = true;
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.text()).toContain('Večer začíná.');
+    expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/prelaunch/character')).toHaveLength(0);
+    allowed = false;
+    await vi.advanceTimersByTimeAsync(15000);
+    await flushPromises();
+    expect(view.text()).not.toContain('Večer začíná.');
+    expect(view.text()).toContain('Raven');
+    expect(view.find('.countdown').exists()).toBe(true);
+    expect(api.request.mock.calls.some(([, method]) => method === 'PUT')).toBe(false);
+  } finally { view.unmount(); }
 });
 it('a zero local countdown cannot grant entry when the server still denies it', async () => {
   const deadline=Date.now()+1000;
@@ -201,25 +245,27 @@ it('a zero local countdown cannot grant entry when the server still denies it', 
   finally {view.unmount();}
 });
 it('shows Soon before the owner confirms a countdown', async () => {
+  persisted = true;
   const original = api.request.getMockImplementation()!;
   api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
     ? { allowed: false, audience: 'beta', launchAt: null, serverNow: Date.now() } : original(path, method));
   const view = entry();
   try {
     await flushPromises();
-    expect(view.get('.countdown-wait').text()).toBe('Brzy');
-    expect(view.find('.countdown-grid').exists()).toBe(false);
+    expect(view.get('.character-countdown-wait').text()).toBe('Brzy');
+    expect(view.find('.character-countdown-grid').exists()).toBe(false);
   } finally { view.unmount(); }
 });
 it('shows Soon after a non-force countdown expires until the server opens the night', async () => {
+  persisted = true;
   const original = api.request.getMockImplementation()!;
   api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
     ? { allowed: false, audience: 'beta', launchAt: Date.now() - 1000, serverNow: Date.now() } : original(path, method));
   const view = entry();
   try {
     await flushPromises();
-    expect(view.get('.countdown-wait').text()).toBe('Brzy');
-    expect(view.find('.countdown-grid').exists()).toBe(false);
+    expect(view.get('.character-countdown-wait').text()).toBe('Brzy');
+    expect(view.find('.character-countdown-grid').exists()).toBe(false);
     expect(api.replace).not.toHaveBeenCalled();
   } finally { view.unmount(); }
 });
