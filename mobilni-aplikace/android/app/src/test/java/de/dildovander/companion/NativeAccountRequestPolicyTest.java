@@ -13,6 +13,16 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void mobileGameRoutesAreExplicitAndMethodBound() {
+        String match = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/matches", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/matches/" + match, "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/matches/" + match + "/choose", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/matches/" + match + "/choose", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/matches/" + match + "/choose?extra=1", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/matches/" + match + "/admin", "POST"));
+    }
     @Test public void acceptsAccountRoutesAndRejectsExternalOrArbitraryAdminRoutes() {
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/account", "GET"));
         assertTrue(NativeAccountRequestPolicy.allows("/v1/admin/show/chronicle?deviceId=device-1&eveningId=evening-1", "GET"));

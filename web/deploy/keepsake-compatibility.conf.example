@@ -429,6 +429,135 @@ location = /api { return 404; }
 if ($host != keepsake.example.invalid) { return 421; }
 # One application. Exact route allowlist never catches APIs, callbacks or downloads.
 # Preserve installer /ios/, websocket and explicit backend locations in the server shell.
+location = /play {
+    if ($request_uri !~ "^/play(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
+
+location = /play/challenge {
+    if ($request_uri !~ "^/play/challenge(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
+
+location = /play/practice {
+    if ($request_uri !~ "^/play/practice(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
+
+location = /play/chronicle {
+    if ($request_uri !~ "^/play/chronicle(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
+
+location = /play/boss {
+    if ($request_uri !~ "^/play/boss(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
+
+location = /play/keeper {
+    if ($request_uri !~ "^/play/keeper(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
+
+location = /play/ranking {
+    if ($request_uri !~ "^/play/ranking(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
+
+location = /play/messages {
+    if ($request_uri !~ "^/play/messages(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
+
+location = /play/teams {
+    if ($request_uri !~ "^/play/teams(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
+
+location ~ "^/play/(?:match|boss|team)/[0-9a-f]{32}$" {
+    if ($request_uri !~ "^/play/(?:match|boss|team)/[0-9a-f]{32}(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files /index.html =404;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    access_log off;
+}
 location = /access-revoked {
     if ($request_uri !~ "^/access-revoked(?:[?]|$)") { return 404; }
     if ($request_method !~ "^(GET|HEAD)$") { return 405; }

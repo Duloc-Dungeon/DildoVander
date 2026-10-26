@@ -19,6 +19,9 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .application-shell.launch-mode { display: block; padding: 0; }
 .launch-mode .application-sidebar, .launch-mode .application-header, .launch-mode .application-footer, .launch-mode .notification-stack { display: none; }
 .launch-mode .application-main { max-width: none; padding: 0; }
+.application-shell.game-mode { display: block; padding: 0; }
+.game-mode .application-sidebar, .game-mode .application-header, .game-mode .application-footer { display: none; }
+.game-mode .application-main { max-width: none; padding: 0; }
 .application-sidebar { position: sticky; top: 0; height: 100dvh; overflow-y: auto; padding: 2rem 1rem; border-right: 1px solid var(--aw-border-subtle); display: flex; flex-direction: column; gap: 3rem; background: var(--aw-surface); }
 .application-brand { display: flex; align-items: center; gap: .75rem; padding-inline: .5rem; color: var(--aw-ivory); text-decoration: none; font-weight: 600; letter-spacing: -.03em; }
 .application-brand small { display: block; font-size: .68rem; color: var(--aw-muted); font-weight: 400; letter-spacing: 0; margin-top: .25rem; }
@@ -173,3 +176,4 @@ textarea { resize: vertical; }
 :root[data-theme="lord-voldemort"] .primary-navigation a { color: var(--aw-muted); }
 :root[data-theme="lord-voldemort"] .primary-navigation a.selected,
 :root[data-theme="lord-voldemort"] .primary-navigation a:hover { color: var(--aw-link); }
+:root[data-theme] .game-mode .application-main { padding: 0; max-width: none; }

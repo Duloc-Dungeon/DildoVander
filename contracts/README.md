@@ -85,6 +85,11 @@ na probíhající sekvenci. Kalibrace 0 nesmí být vydávána za ready, mikrofo
 bez I2S je unavailable a terminální výsledky mají physicalVerification
 unavailable. Předání snapshotu není fyzická akceptace.
 
+`game-openapi-v1.json` popisuje samostatnou účtovou mobilní hru, včetně
+souhlasů, revizí, YOLO, týmu, bosse a progrese. `verify-game-api.mjs` ověřuje
+schémata, metody, cookie/CSRF a přesné ingress cesty. Pravidla a cílené kontroly
+jsou v [mobilní hře](../docs/mobile-game.md).
+
 `backend-openapi-v1.json` je HTTP kontrakt E2.6. Pokrývá výměnu servisně
 provisionovaného device credential za 15minutový access token, založení
 sezení, textový tah, WAV přepis, syntézu, polling/rušení operace, stažení

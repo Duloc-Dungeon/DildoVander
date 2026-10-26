@@ -7,6 +7,12 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--mobile-game"]) { MobileGameTests.Run(); return; }
+if (args is ["--mobile-game-http"]) { await MobileGameTests.RunHttpAsync(); return; }
+if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); return; }
+if (args is ["--mobile-game-teams"]) { GameTeamTests.Run(); return; }
+if (args is ["--mobile-game-progress"]) { GameProgressTests.Run(); return; }
+if (args is ["--mobile-game-yolo-live"]) { await GameYoloLiveTests.RunAsync(); return; }
 if (args is ["--dv01-consolidation"]) { GptLiveVoiceTests.Run(); await AutonomousLiveTests.RunVoiceFallbackAsync(); await PersonalityTests.RunAsync(); return; }
 if (args is ["--character-portraits"]) { await CharacterPortraitTests.RunAsync(); return; }
 if (args is ["--prelaunch-http"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(); return; }

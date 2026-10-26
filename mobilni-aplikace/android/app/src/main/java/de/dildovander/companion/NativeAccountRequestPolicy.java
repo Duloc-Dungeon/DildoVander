@@ -99,6 +99,20 @@ final class NativeAccountRequestPolicy {
     }
 
     private static boolean allowsAppPath(String path, String method, String query) {
+        if (query == null && "/app/v1/game".equals(path)) return "GET".equals(method);
+        if (query == null && "/app/v1/game/matches".equals(path)) return "POST".equals(method);
+        if (query == null && "/app/v1/game/progress".equals(path)) return "GET".equals(method);
+        if (query == null && "/app/v1/game/progress/ack".equals(path)) return "POST".equals(method);
+        if (query == null && path.matches("^/app/v1/admin/game/groups/[0-9a-f]{32}/boss$")) return "GET".equals(method) || "POST".equals(method);
+        if (query == null && "/app/v1/game/teams".equals(path)) return "GET".equals(method) || "POST".equals(method);
+        if (query == null && path.matches("^/app/v1/game/teams/[0-9a-f]{32}$")) return "GET".equals(method);
+        if (query == null && path.matches("^/app/v1/game/teams/[0-9a-f]{32}/(accept|decline|cancel|choose|transfer)$")) return "POST".equals(method);
+        if (query == null && "/app/v1/game/boss".equals(path)) return "GET".equals(method);
+        if (query == null && "/app/v1/game/boss/attempts".equals(path)) return "POST".equals(method);
+        if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}$")) return "GET".equals(method);
+        if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}/(choose|cancel)$")) return "POST".equals(method);
+        if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}$")) return "GET".equals(method);
+        if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}/(accept|decline|cancel|choose|loadout|task|retry)$")) return "POST".equals(method);
         if (query != null && !query.isEmpty()) {
             if ("/app/v1/admin/launch/waiting-room".equals(path) && "GET".equals(method)) return query.matches("^after=[0-9a-f]{32}$");
             if ("/app/v1/admin/operations/logs".equals(path) && "GET".equals(method)) return validOptionalQuery(query, "after", "level");

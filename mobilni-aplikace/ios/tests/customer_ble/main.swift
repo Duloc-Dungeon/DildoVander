@@ -1,5 +1,14 @@
 import Foundation
 
+let gameMatch = String(repeating: "a", count: 32)
+precondition(AccountTransportPolicy.account(path: "/app/v1/game", method: "GET"))
+precondition(AccountTransportPolicy.account(path: "/app/v1/game/matches", method: "POST"))
+precondition(AccountTransportPolicy.account(path: "/app/v1/game/matches/\(gameMatch)", method: "GET"))
+precondition(AccountTransportPolicy.account(path: "/app/v1/game/matches/\(gameMatch)/choose", method: "POST"))
+precondition(!AccountTransportPolicy.account(path: "/app/v1/game/matches/\(gameMatch)/choose", method: "GET"))
+precondition(!AccountTransportPolicy.account(path: "/app/v1/game/matches/\(gameMatch)/choose\n", method: "POST"))
+precondition(!AccountTransportPolicy.account(path: "/app/v1/game/matches/\(gameMatch)?admin=true", method: "GET"))
+
 let valid: [String: Any] = ["v": 1, "deviceId": "kufr-1",
     "bootId": "12345678-1234-4234-8234-123456789abc",
     "challenge": "22345678-1234-4234-8234-123456789abc",

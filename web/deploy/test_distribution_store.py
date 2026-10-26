@@ -1,6 +1,7 @@
 """Synthetic frozen archive publication; no real CAD/toolchain or deployment."""
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -161,7 +162,9 @@ class DistributionTests(unittest.TestCase):
         self.assertIn('location = /downloads/index.json', config)
         self.assertIn('root /var/lib/dildovander/downloads/legacy;', config)
         self.assertIn('location /downloads/ { return 404; }', config)
-        for block in config.split('location ~ ')[1:]:
+        blocks = re.findall(r'location ~ "\^/(?:downloads|workshop)/[^\n]+\n(.*?)\n}', config, re.DOTALL)
+        self.assertEqual(len(blocks), 2, 'both distribution payload families are checked')
+        for block in blocks:
             self.assertIn('Content-Disposition "attachment"', block)
             self.assertIn('application/octet-stream', block)
             self.assertIn('nosniff', block)
