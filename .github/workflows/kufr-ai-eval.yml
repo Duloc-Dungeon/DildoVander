@@ -9,7 +9,8 @@ permissions:
 
 jobs:
   offline:
-    runs-on: ubuntu-24.04
+    # Only canonical main builds may use the isolated ARM64 pool; candidates stay hosted.
+    runs-on: ${{ fromJSON(vars.ARM64_BUILD_RUNNERS == 'true' && github.repository == 'Duloc-Dungeon/DildoVander' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && !fromJSON(toJSON(github.event)).inputs.pr_number && !fromJSON(toJSON(github.event)).inputs.expected_head_sha && !fromJSON(toJSON(github.event)).inputs.expected_base_sha && '["self-hosted","Linux","ARM64","build-arm64"]' || '["ubuntu-24.04"]') }}
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -1,4 +1,7 @@
 self-hosted-runner:
   labels:
+    - build-arm64
+    - build-arm64-1
+    - build-arm64-2
     - kufr-backend
     - kufr-control
