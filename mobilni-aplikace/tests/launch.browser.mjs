@@ -201,7 +201,8 @@ try {
   await page.goto(`${origin}/signin#invite=fixture-invitation-token-1234567890`, { waitUntil: 'networkidle' });
   assert.equal(await page.getByText(/kufr|dílna|archiv|konverzac|památk/i).count(), 0, await page.locator('body').innerText());
   await page.getByRole('button', { name: /Odhlásit a pokračovat/ }).click();
-  await page.getByLabel('Kód pozvánky').waitFor();
+  await page.getByLabel('Jméno postavy', { exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Kód pozvánky', { exact: true }).count(), 0, 'known invitation code stays in memory, not a redundant field');
   assert.equal(await page.locator('.application-sidebar').count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-invitation.png'), fullPage: true });
 

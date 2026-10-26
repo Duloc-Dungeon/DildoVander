@@ -37,10 +37,12 @@ async function save(): Promise<void> {
   if (busy.value || props.disabled) return;
   error.value = ''; notice.value = '';
   if (!name.value.trim()) { error.value = 'Zadejte název skupiny.'; return; }
-  const launchAt = opening.value ? new Date(opening.value).getTime() : null;
+  const group = selected.value;
+  const launchAt = group && opening.value === localInput(group.launchAt)
+    ? group.launchAt
+    : opening.value ? new Date(opening.value).getTime() : null;
   if (launchAt !== null && !Number.isFinite(launchAt)) { error.value = 'Zadejte platný čas otevření.'; return; }
   const expected = epoch;
-  const group = selected.value;
   busy.value = true;
   try {
     const result = await accountRequest<{ group: LaunchGroup }>(group ? `/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}` : '/app/v1/admin/launch/groups', group ? 'PUT' : 'POST', {
@@ -50,7 +52,7 @@ async function save(): Promise<void> {
     if (!result?.group?.id) throw new Error('group_unconfirmed');
     groups.value = [...groups.value.filter(value => value.id !== result.group.id), result.group];
     choose(result.group.id);
-    notice.value = 'Termín je uložený pouze pro členy této skupiny.';
+    notice.value = 'Skupina je uložená. Odpočet nastavíte a potvrdíte ve správě čekárny.';
   } catch { if (expected === epoch) error.value = 'Skupinu se nepodařilo uložit. Před dalším pokusem obnovte její aktuální stav.'; }
   finally { if (expected === epoch) busy.value = false; }
 }
@@ -69,7 +71,7 @@ onBeforeUnmount(() => { epoch++; });
         <AwButton v-if="selected" :disabled="busy" @click="choose('')">Nová skupina</AwButton>
         <label for="invitation-group-name">Název skupiny</label><input id="invitation-group-name" v-model="name" class="aw-input" maxlength="80" />
         <label for="invitation-group-opening">Čas otevření ({{ zone }})</label><input id="invitation-group-opening" v-model="opening" class="aw-input" type="datetime-local" />
-        <p>Bez termínu zůstane skupina uzavřená. Změna uloženého termínu platí pro všechny členy této skupiny.</p>
+        <p>Bez termínu zůstane skupina uzavřená. Změna data uloží jen návrh; odpočet pro všechny členy začne až po potvrzení ve správě čekárny.</p>
         <AwButton :busy="busy" @click="save">{{ selected ? 'Uložit termín skupiny' : 'Vytvořit skupinu' }}</AwButton>
       </div>
     </details>

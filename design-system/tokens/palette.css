@@ -35,6 +35,14 @@
   --aw-link: #a6acff;
   --aw-skill: #c2a1ff;
   --aw-dialog-backdrop: #00000099;
+  --aw-game-felt: #082F2C;
+  --aw-game-paper: #EFE0C3;
+  --aw-game-ink: #2A2019;
+  --aw-game-muted-ink: #62513F;
+  --aw-game-brass: #D6A45F;
+  --aw-game-crimson: #6C1427;
+  --aw-game-walnut: #342016;
+  --aw-game-muted: #D7C9AD;
   --aw-radius-card: 8px;
   --aw-radius-control: 6px;
   --aw-panel-padding: 20px;
@@ -73,6 +81,14 @@
   --aw-link: var(--aw-accent);
   --aw-skill: var(--aw-accent);
   --aw-dialog-backdrop: #00000099;
+  --aw-game-felt: #082F2C;
+  --aw-game-paper: #EFE0C3;
+  --aw-game-ink: #2A2019;
+  --aw-game-muted-ink: #62513F;
+  --aw-game-brass: #D6A45F;
+  --aw-game-crimson: #6C1427;
+  --aw-game-walnut: #342016;
+  --aw-game-muted: #D7C9AD;
   --aw-radius-card: 10px;
   --aw-radius-control: 6px;
   --aw-panel-padding: 24px;
@@ -111,6 +127,14 @@
   --aw-link: var(--aw-accent);
   --aw-skill: var(--aw-accent);
   --aw-dialog-backdrop: #00000099;
+  --aw-game-felt: #082F2C;
+  --aw-game-paper: #EFE0C3;
+  --aw-game-ink: #2A2019;
+  --aw-game-muted-ink: #62513F;
+  --aw-game-brass: #D6A45F;
+  --aw-game-crimson: #6C1427;
+  --aw-game-walnut: #342016;
+  --aw-game-muted: #D7C9AD;
   --aw-radius-card: 10px;
   --aw-radius-control: 6px;
   --aw-panel-padding: 24px;
@@ -149,6 +173,14 @@
   --aw-link: var(--aw-accent);
   --aw-skill: var(--aw-accent);
   --aw-dialog-backdrop: #00000099;
+  --aw-game-felt: #082F2C;
+  --aw-game-paper: #EFE0C3;
+  --aw-game-ink: #2A2019;
+  --aw-game-muted-ink: #62513F;
+  --aw-game-brass: #D6A45F;
+  --aw-game-crimson: #6C1427;
+  --aw-game-walnut: #342016;
+  --aw-game-muted: #D7C9AD;
   --aw-radius-card: 10px;
   --aw-radius-control: 6px;
   --aw-panel-padding: 24px;
@@ -188,5 +220,13 @@
     --aw-link: var(--aw-accent);
     --aw-skill: var(--aw-accent);
     --aw-dialog-backdrop: #00000099;
+    --aw-game-felt: #082F2C;
+    --aw-game-paper: #EFE0C3;
+    --aw-game-ink: #2A2019;
+    --aw-game-muted-ink: #62513F;
+    --aw-game-brass: #D6A45F;
+    --aw-game-crimson: #6C1427;
+    --aw-game-walnut: #342016;
+    --aw-game-muted: #D7C9AD;
   }
 }
