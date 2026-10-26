@@ -144,7 +144,7 @@ async function submit(): Promise<void> {
         <AwButton v-if="customerEnrollment" @click="customerEnrollment = false">{{ customerCopy.text('signin.back-to-signin') }}</AwButton>
         <AwButton v-else-if="!enrollment && launchAllowed === true" @click="customerEnrollment = true; error = ''">{{ customerCopy.text('signin.create-customer') }}</AwButton>
       </form>
-      <LostAccessHelp v-if="!account" />
+      <LostAccessHelp v-if="!account && !customerEnrollment" />
       <nav class="signin-help" aria-label="Nápověda"><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></nav>
     </div>
   </section>
