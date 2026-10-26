@@ -221,7 +221,7 @@ try {
     await page.goto(origin + entry);
     await page.waitForURL(url => url.pathname === '/signin' && url.searchParams.get('return') === '/me/character');
   }
-  await page.goto(origin + '/signin'); await page.getByRole('heading', { name: 'Přihlásit se', exact: true }).waitFor();
+  await page.goto(origin + '/signin'); await page.getByRole('heading', { name: 'Vstup na vlastní pověst.', exact: true }).waitFor();
   const lostAccess = page.locator('.lost-access-help');
   const lostAccessSummary = lostAccess.locator('summary');
   assert.equal(await lostAccess.getAttribute('open'), null);
@@ -233,6 +233,7 @@ try {
   assert.equal(await page.locator('.shell-preferences').count(), 0, 'sign-in keeps the prelaunch shell free of feature navigation and preferences');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(origin + '/signin');
+  await page.getByRole('button', { name: 'Už mám přístupový klíč', exact: true }).click();
   await page.getByRole('button', { name: 'Vytvořit zákaznický účet', exact: true }).click();
   assert.equal(await page.locator('.lost-access-help').count(), 0, 'enrollment keeps its own recovery guidance');
   assert(await page.getByLabel('Jak vám máme říkat?').isVisible());

@@ -38,6 +38,10 @@
 
 # Python environments and analysis caches
 /ai-eval/results/
+# Local invitation acceptance evidence and verification output.
+/.codex/artifacts/wand-invitation/
+/.codex/invitation-*.log
+/.codex/invitation-design-detector.json
 .venv/
 venv/
 .pytest_cache/

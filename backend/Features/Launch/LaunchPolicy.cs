@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Launch;
 
@@ -27,6 +28,9 @@ internal sealed record LaunchConfigurationUpdate(long ExpectedRevision, bool Bet
 internal sealed record EffectiveLaunchAccess(bool Allowed, string Audience, long? LaunchAt, long ServerNow,
     string Teaser, string InitialLoadingMessage, bool PersonalizedLoadingEnabled);
 internal sealed record LaunchAuditEntry(string ActorId, long ChangedAt, long Revision, string ChangeSummary);
+internal sealed record LaunchGroup(string Id, string Name, long? LaunchAt, long Revision);
+internal sealed record LaunchGroupCreate(string Name, long? LaunchAt);
+internal sealed record LaunchGroupUpdate(long ExpectedRevision, string Name, long? LaunchAt);
 
 internal sealed class LaunchConfigurationException(string code, int status) : Exception(code)
 {
@@ -58,6 +62,9 @@ internal sealed class LaunchPolicyStore
             CREATE TABLE IF NOT EXISTS launch_audit (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id TEXT NOT NULL, changed_at INTEGER NOT NULL,
                 revision INTEGER NOT NULL, change_summary TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS launch_groups (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                launch_at INTEGER NULL, revision INTEGER NOT NULL, updated_at INTEGER NOT NULL);
             INSERT OR IGNORE INTO launch_configuration VALUES
                 (1,0,0,NULL,0,0,NULL,0,'Europe/Prague',
                  'A little something is getting ready for you.',
@@ -105,6 +112,98 @@ internal sealed class LaunchPolicyStore
         return new(reader.GetInt64(0), reader.GetBoolean(1), NullableInt64(reader, 2), reader.GetBoolean(3),
             reader.GetBoolean(4), NullableInt64(reader, 5), reader.GetBoolean(6), reader.GetString(7),
             reader.GetString(8), reader.GetString(9), reader.GetBoolean(10), reader.GetString(11));
+    }
+
+    internal LaunchGroup[] ReadGroups()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id,name,launch_at,revision FROM launch_groups ORDER BY name COLLATE NOCASE,id";
+        using var reader = command.ExecuteReader();
+        var groups = new List<LaunchGroup>();
+        while (reader.Read()) { groups.Add(ReadGroup(reader)); }
+        return groups.ToArray();
+    }
+
+    internal LaunchGroup? ReadGroup(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id.Length > 64) { return null; }
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id,name,launch_at,revision FROM launch_groups WHERE id=$id";
+        command.Parameters.AddWithValue("$id", id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadGroup(reader) : null;
+    }
+
+    internal LaunchGroup CreateGroup(string actorId, LaunchGroupCreate request, long now)
+    {
+        ValidateGroup(request.Name, request.LaunchAt);
+        var group = new LaunchGroup(Guid.NewGuid().ToString("N"), request.Name.Trim(), request.LaunchAt, 1);
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "INSERT INTO launch_groups(id,name,launch_at,revision,updated_at) VALUES($id,$name,$launch,1,$now)";
+        command.Parameters.AddWithValue("$id", group.Id);
+        command.Parameters.AddWithValue("$name", group.Name);
+        AddNullable(command, "$launch", group.LaunchAt);
+        command.Parameters.AddWithValue("$now", now);
+        try { command.ExecuteNonQuery(); }
+        catch (SqliteException error) when (error.SqliteErrorCode == 19)
+        { throw new LaunchConfigurationException("launch_group_name_conflict", 409); }
+        InsertGroupAudit(connection, transaction, actorId, now, 1, "launch_group_created");
+        transaction.Commit();
+        return group;
+    }
+
+    internal LaunchGroup UpdateGroup(string actorId, string id, LaunchGroupUpdate request, long now)
+    {
+        ValidateGroup(request.Name, request.LaunchAt);
+        if (request.ExpectedRevision < 1) { throw new LaunchConfigurationException("invalid_launch_group", 400); }
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE launch_groups SET name=$name,launch_at=$launch,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected";
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$name", request.Name.Trim());
+        AddNullable(command, "$launch", request.LaunchAt);
+        command.Parameters.AddWithValue("$now", now);
+        command.Parameters.AddWithValue("$expected", request.ExpectedRevision);
+        try
+        {
+            if (command.ExecuteNonQuery() != 1)
+            { throw new LaunchConfigurationException("launch_group_revision_conflict", 409); }
+        }
+        catch (SqliteException error) when (error.SqliteErrorCode == 19)
+        { throw new LaunchConfigurationException("launch_group_name_conflict", 409); }
+        InsertGroupAudit(connection, transaction, actorId, now, request.ExpectedRevision + 1, "launch_group_updated");
+        transaction.Commit();
+        return ReadGroup(id)!;
+    }
+
+    private static LaunchGroup ReadGroup(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1),
+        NullableInt64(reader, 2), reader.GetInt64(3));
+
+    private static void ValidateGroup(string? name, long? launchAt)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 80 || name.Any(char.IsControl)
+            || launchAt is < 0 or > 253402300799999)
+        { throw new LaunchConfigurationException("invalid_launch_group", 400); }
+    }
+
+    private static void InsertGroupAudit(SqliteConnection connection, SqliteTransaction transaction,
+        string actorId, long now, long revision, string summary)
+    {
+        using var audit = connection.CreateCommand();
+        audit.Transaction = transaction;
+        audit.CommandText = "INSERT INTO launch_audit(actor_id,changed_at,revision,change_summary) VALUES($actor,$now,$revision,$summary)";
+        audit.Parameters.AddWithValue("$actor", actorId);
+        audit.Parameters.AddWithValue("$now", now);
+        audit.Parameters.AddWithValue("$revision", revision);
+        audit.Parameters.AddWithValue("$summary", summary);
+        audit.ExecuteNonQuery();
     }
 
     internal IReadOnlyList<LaunchAuditEntry> ReadAudit(int count = 50)
@@ -230,11 +329,31 @@ internal sealed class LaunchPolicyStore
     private static void AddNullable(SqliteCommand command, string name, long? value) => command.Parameters.AddWithValue(name, (object?)value ?? DBNull.Value);
 }
 
-internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider timeProvider)
+internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider timeProvider,
+    IServiceScopeFactory? scopeFactory = null)
 {
     internal LaunchConfiguration Configuration => store.Read();
 
     internal EffectiveLaunchAccess Evaluate(ClaimsPrincipal principal)
+        => Evaluate(principal, null, null);
+
+    internal EffectiveLaunchAccess Evaluate(ClaimsPrincipal principal, string? groupId, LaunchGroup? group)
+        => EvaluateGroupAware(principal, groupId, group);
+
+    internal async Task<EffectiveLaunchAccess> EvaluateAsync(ClaimsPrincipal principal)
+    {
+        if (AccountRoles.IsStaff(principal) || principal.IsInRole(AccountRoles.Tester)) { return Evaluate(principal); }
+        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId) || scopeFactory is null) { return Evaluate(principal); }
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+        var groupId = await db.Users.AsNoTracking().Where(user => user.Id == userId)
+            .Select(user => user.LaunchGroupId).SingleOrDefaultAsync();
+        if (groupId is null) { return Evaluate(principal); }
+        return EvaluateGroupAware(principal, groupId, store.ReadGroup(groupId));
+    }
+
+    private EffectiveLaunchAccess EvaluateGroupAware(ClaimsPrincipal principal, string? groupId, LaunchGroup? group)
     {
         var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
         var config = store.Read();
@@ -248,6 +367,13 @@ internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider 
         }
 
         var beta = principal.IsInRole(AccountRoles.Beta);
+        if (groupId is not null)
+        {
+            var schedule = group is not null && group.Id == groupId ? group.LaunchAt : null;
+            var groupAllowed = schedule is not null && now >= schedule.Value;
+            return new(groupAllowed, beta ? "beta" : "production", schedule, now,
+                teaser, initialLoadingMessage, config.PersonalizedLoadingEnabled);
+        }
         var enabled = beta ? config.BetaEnabled : config.ProductionEnabled;
         var launchAt = beta ? config.BetaLaunchAt : config.ProductionLaunchAt;
         var manuallyUnlocked = beta ? config.BetaUnlocked : config.ProductionUnlocked;

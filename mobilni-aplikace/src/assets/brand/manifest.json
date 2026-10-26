@@ -88,6 +88,30 @@
       "license": "Distributed with this project under AGPL-3.0-only",
       "sha256": "9cf8b2ff25cad0ae917556dc914774b6228a09cd229cacd345036994b95210da",
       "bytes": 36056
+    },
+    {
+      "file": "curtain-closed-concept.png",
+      "origin": "User-provided ImageGen invitation handoff, 26 October 2026; original pixels and alpha preserved. DOM clipping and translation create independently moving wings under the stationary open frame.",
+      "dimensions": [
+        1122,
+        1402
+      ],
+      "use": "Private portrait curtain: fixed 4:5 scene, two translated wings and stationary frame/valance.",
+      "license": "User-provided project artwork, distributed with this project under AGPL-3.0-only",
+      "sha256": "a26c2698fd85162ba23f5978f19d231423e14bd57a16acc1a708147847e0c0ed",
+      "bytes": 2045899
+    },
+    {
+      "file": "curtain-open-concept.png",
+      "origin": "User-provided ImageGen invitation handoff, 26 October 2026; original pixels and alpha preserved. DOM clipping and translation create independently moving wings under the stationary open frame.",
+      "dimensions": [
+        1122,
+        1402
+      ],
+      "use": "Private portrait curtain: fixed 4:5 scene, two translated wings and stationary frame/valance.",
+      "license": "User-provided project artwork, distributed with this project under AGPL-3.0-only",
+      "sha256": "4f55baf071618a05e7b8974c2f9c0365411092e7e1f20354746e02b4d6245933",
+      "bytes": 770286
     }
   ]
 }

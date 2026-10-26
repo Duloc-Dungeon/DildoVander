@@ -82,6 +82,28 @@ internal static class LaunchPolicyTests
             Check(reloaded.Revision == 2 && reloaded.ProductionUnlocked && reloaded.PersonalizedLoadingPrompt == "safe prompt",
                 "configuration survives store restart");
 
+            var nightOne = store.CreateGroup("admin-1", new("Night one", 4_000), 3_000);
+            var nightTwo = store.CreateGroup("admin-1", new("Night two", 5_000), 3_000);
+            var noLaunchTime = store.CreateGroup("admin-1", new("Unscheduled", null), 3_000);
+            Check(store.ReadGroups().Length == 3 && new LaunchPolicyStore(root).ReadGroup(nightOne.Id) == nightOne,
+                "group names and schedules persist independently");
+            Check(!policy.Evaluate(customer, nightOne.Id, nightOne).Allowed
+                && policy.Evaluate(customer, nightOne.Id, nightOne).LaunchAt == 4_000
+                && !policy.Evaluate(customer, nightTwo.Id, nightTwo).Allowed
+                && !policy.Evaluate(customer, noLaunchTime.Id, noLaunchTime).Allowed,
+                "future and unscheduled groups override an already unlocked global audience");
+            Check(!policy.Evaluate(customer, "missing-group", null).Allowed
+                && policy.Evaluate(tester, nightOne.Id, nightOne).Allowed,
+                "unresolved memberships fail closed while tester retains its bypass");
+            clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(4_000));
+            Check(policy.Evaluate(customer, nightOne.Id, nightOne).Allowed
+                && !policy.Evaluate(customer, nightTwo.Id, nightTwo).Allowed,
+                "group schedules open independently according to server time");
+            var closed = store.UpdateGroup("admin-1", nightOne.Id,
+                new(nightOne.Revision, nightOne.Name, null), 4_000);
+            Check(closed.Revision == 2 && !policy.Evaluate(customer, closed.Id, closed).Allowed,
+                "clearing a group's launch time keeps its members closed");
+
             await RunAccessBoundaryAsync(root);
         }
         finally

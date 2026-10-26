@@ -712,3 +712,34 @@ rechecked on reconnection; the independent paired ESP identity remains required
 for local physical control. The additive `/app/v1/session.expiresAt` value is the
 actual database expiry; older clients may ignore it, and older servers cannot
 create a native offline snapshot.
+
+## Pozvánka a čekárna Wand Night Stand
+
+Smartphone `/signin` používá jedno jméno pro nový účet i postavu (80 znaků)
+a univerzum (160). Účet/passkey lze dokončit bez AI souhlasu. Návrh se ukládá
+lokálně pod ID účtu bez pozvánkového či obnovovacího tokenu; až explicitní
+souhlas povolí podmíněný prelaunch PUT. Nejistý zápis se nejprve rekonciluje GETem.
+
+`launchPresentation.ts` uchovává osm sekund viditelného času od skutečného PUTu,
+pauzuje v pozadí webu i přes Capacitor App a neslouží jako potvrzení zápisu.
+Soukromý portrét stále načítá a dekóduje `privateCharacterPortrait.ts` s ochranou
+account/profile/revision. `PortraitCurtain.vue` používá původní PNG v jednom
+souřadném systému: dvě překrývající se pohyblivá křídla, pevný průhledný rám,
+volán a podlahu. Nejde o prolnutí obrázků. Dokončené zhlédnutí se eviduje pouze
+lokálně pro účet/profil/revizi; přerušené otevření se přehraje nad stejným obrazem.
+
+Nové `artwork.welcome` obsahuje jen `joke`, `identity`, `teaser`. Starší
+`finalMessage` zůstává jediným nerozděleným textem. Kontrakt a generované DTO
+vlastní `contracts/prelaunch-welcome.schema.json` a `npm --prefix contracts run generate`.
+
+Při tvorbě pozvánky ve správě účtů vyberte skupinu nebo vytvořte její vlastní
+termín. Čas platí jen pro účty vzniklé z pozvánek této skupiny; změna termínu
+ovlivní její členy, nikoli globální plán. Obnova účtu členství nemění.
+
+`npm run test:invitation:browser` po buildu pořídí označené mobilní screenshoty
+a krátké WebM do `.codex/artifacts/wand-invitation/` v kořeni repozitáře.
+Používá pouze loopback fixture a existující portrét, žádnou placenou generaci.
+Záznam interruption testu přidává pouze v testu prostor pro odrolování mimo rám.
+Viewport s výškou 440 px simuluje dostupný prostor klávesnice; není důkazem
+nativní klávesnice. Nativní iPhone/Android a živé odpovědi provideru mají
+samostatné ověření.

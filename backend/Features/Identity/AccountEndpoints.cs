@@ -12,7 +12,7 @@ namespace Kufr.Backend.Features.Identity;
 
 internal sealed record EnrollmentRequest(string Token, string DisplayName);
 internal sealed record PasskeyResponse(JsonElement Credential);
-internal sealed record InvitationRequest(string Role, string? RecoveryUserId);
+internal sealed record InvitationRequest(string Role, string? RecoveryUserId, string? LaunchGroupId = null);
 internal sealed record UserChange(string Role, bool Disabled);
 internal sealed record GrantRequest(string UserId, string ResourceType, string ResourceId, string Permission);
 internal sealed record InstallationChange(string Name, bool Trusted);
@@ -264,7 +264,8 @@ internal static partial class AccountEndpoints
         }
         var user = invitation.UserId is null ? new AccountUser
         {
-            Id = ceremony.UserId, UserName = ceremony.UserId, DisplayName = ceremony.DisplayName, CreatedAt = Now()
+            Id = ceremony.UserId, UserName = ceremony.UserId, DisplayName = ceremony.DisplayName, CreatedAt = Now(),
+            LaunchGroupId = invitation.LaunchGroupId
         } : await users.FindByIdAsync(invitation.UserId);
         if (user is null || user.Disabled) { return Error(context, "recovery_unavailable"); }
         if (invitation.UserId is null)

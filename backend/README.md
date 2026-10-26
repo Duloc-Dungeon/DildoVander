@@ -211,3 +211,26 @@ MCP, společný postup s iOS a GitHub workflow **Kufr server logs**. Pro přím�
 MCP lze v `backend-production` přidat volitelný secret `LOG_READER_CREDENTIAL`;
 deploy uloží jeho hash. Bez něj funguje iOS/admin a GitHub čtení přes existující
 admin secret. Čtení neprovádí provider volání ani změny serveru.
+
+## Skupiny pozvánek a předstartovní přivítání
+
+`GET/POST /app/v1/admin/launch/groups` a
+`PUT /app/v1/admin/launch/groups/{id}` spravují samostatné skupiny
+`{id,name,launchAt,revision}`. Zápis termínu používá očekávanou revizi;
+`launchAt=null` drží skupinu uzavřenou. API pro pozvánky přijímá volitelné
+`launchGroupId`. Členství se uloží pouze při skutečném založení nového účtu
+z dané pozvánky; obnova účtu jej nepřepisuje. Správa je chráněna stávajícími
+administrátorskými/operačními kontrolami.
+
+EF migrace `20261026045830_AccountLaunchGroupMembership` přidává nullable
+členství účtům a pozvánkám. Nepřiřazené starší účty používají dosavadní plán.
+Pro přiřazený účet je autoritou serverový termín jeho skupiny, i když je
+globální plán otevřený; neexistující skupina zůstává uzavřená. Výjimky staff/tester
+a ostatní audience/capability/resource oprávnění zůstávají samostatné.
+
+Prelaunch artwork vrací volitelné `welcome:{joke,identity,teaser}` vedle
+kompatibilního `finalMessage`. ID ověřených faktů, zdroje a povolené téma
+zůstávají interní. Text i ilustrace používají stávající souhlas, budgety a
+omezené retries; chyba textu ukládá stabilní fallback a nebrání obrázku.
+Cílené kontroly: `--customer-profiles`, `--character-portraits`,
+`--prelaunch-http`, `--launch-policy` v konzolovém `backend-tests` executable.

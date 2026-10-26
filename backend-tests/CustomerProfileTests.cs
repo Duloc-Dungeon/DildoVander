@@ -193,6 +193,19 @@ internal static class CustomerProfileTests
             EvidenceKind = "web_sources", Sources = [source], Facts = [new("A fictional fact", [source.Url])]
         };
         CharacterEnrichmentValidation.Validate(result, 3);
+        foreach (var oversized in new[] {
+            result with { Summary = new string('s', 1001) },
+            result with { Facts = [new(new string('f', 401), [source.Url])] },
+            result with { ConversationIdeas = [new string('i', 401)] },
+            result with { Ambiguities = [new string('a', 401)] } })
+        {
+            try
+            {
+                CharacterEnrichmentValidation.Validate(oversized, 3);
+                throw new InvalidOperationException("Oversized research field accepted.");
+            }
+            catch (InvalidDataException) { }
+        }
         try
         {
             CharacterEnrichmentValidation.Validate(result with { Facts = [new("Invented source", ["https://invented.example/fact"])] }, 3);

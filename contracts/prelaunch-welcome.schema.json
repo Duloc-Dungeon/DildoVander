@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://dildovander.app/contracts/prelaunch-welcome.schema.json",
+  "title": "Prelaunch character welcome",
+  "description": "Public welcome copy only. Evidence IDs and teaser classification remain internal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["joke", "identity", "teaser"],
+  "properties": {
+    "joke": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "identity": { "type": "string", "maxLength": 120 },
+    "teaser": { "type": "string", "maxLength": 100 }
+  }
+}

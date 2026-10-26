@@ -33,6 +33,19 @@ public final class NativeAccountRequestPolicyTest {
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/account#fragment", "GET"));
     }
 
+    @Test public void launchGroupsHaveNarrowMethodsAndNoQueriesOrTraversal() {
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef", "DELETE"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups", "DELETE"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups?other=1", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/../audit", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/not-a-group", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups//0123456789abcdef0123456789abcdef", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/", "PUT"));
+    }
+
     @Test public void requestConstructionAddsOriginCookieCsrfAndExplicitConfirmation() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Accept", "application/json");
