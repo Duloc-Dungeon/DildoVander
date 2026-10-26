@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -12,7 +14,12 @@ internal static partial class AccountIdentityTests
     internal static async Task RunPrelaunchHttpAsync()
     {
         await using var fixture = await Fixture.StartAsync(customerFeatures: true, betaRecruitmentOpen: false,
-            configureServices: services => services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider()));
+            configureServices: services => {
+                services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider());
+                // This combined journey exceeds the per-IP command window. Rate limiting has separate tests.
+                services.AddRateLimiter(options => options.AddPolicy("account", _ =>
+                    System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("prelaunch-journey")));
+            });
         using var owner = fixture.Client();
         using var customer = fixture.Client();
         using var unassignedClient = fixture.Client();

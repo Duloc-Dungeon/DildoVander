@@ -72,3 +72,12 @@ For the next separately approved screen, the implementation normally starts with
 ```
 
 Example invocation: `$wns-implement-locked-screen Implement WNS-<screen-id> from its approved local specification; reuse the shared scene and connect the existing feature owner.` This requests only that screen. WNS-OPEN-D was used to exercise the workflow for this delivery; see the evidence record.
+
+WNS-OPEN-D/E include an optional private findings review below the countdown.
+Owners can inspect sources and uncertainties, save manual corrections, or consent
+to regeneration from revised input. Errors remain visible with the panel closed.
+`CharacterReview.vue` owns the form; the feature API owns revisions and admission.
+The compiled launch browser fixture verifies the expanded form at 390px and
+1440px, consent gating and overflow; component tests cover uncertain saves,
+revision refresh and account changes. This browser evidence does not establish
+native-device acceptance.

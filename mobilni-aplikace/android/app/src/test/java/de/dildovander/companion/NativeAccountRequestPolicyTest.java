@@ -13,6 +13,14 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void characterReviewHasExactMethodsAndNoQuery() {
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/prelaunch/character/review", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/prelaunch/character/review", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/prelaunch/character/review", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/prelaunch/character/review?owner=other", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/prelaunch/character/review/other", "PUT"));
+    }
+
     @Test public void acceptsAccountRoutesAndRejectsExternalOrArbitraryAdminRoutes() {
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/account", "GET"));
         assertTrue(NativeAccountRequestPolicy.allows("/v1/admin/show/chronicle?deviceId=device-1&eveningId=evening-1", "GET"));

@@ -663,6 +663,7 @@ enum AccountTransportPolicy {
     private static func prelaunchAccount(path: String, method: String, query: [URLQueryItem]) -> Bool {
         if path == "/app/v1/launch" { return method == "GET" && query.isEmpty }
         if path == "/app/v1/prelaunch/character" { return query.isEmpty && ["GET", "PUT"].contains(method) }
+        if path == "/app/v1/prelaunch/character/review" { return query.isEmpty && ["GET", "PUT"].contains(method) }
         if path == "/app/v1/prelaunch/character/retry" { return method == "POST" && query.isEmpty }
         if prelaunchPortrait(path: path + (query.isEmpty ? "" : "?" + query.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")), method: method) { return true }
         if path == "/app/v1/admin/launch" { return query.isEmpty && ["GET", "PUT"].contains(method) }

@@ -108,3 +108,9 @@ precondition(!AccountTransportPolicy.account(path: "/app/v1/prelaunch/character/
 precondition(!AccountTransportPolicy.account(path: "/app/v1/prelaunch/character/portrait?profileId=12345678123442348234123456789abc&revision=2&revision=3", method: "GET"))
 precondition(!AccountTransportPolicy.account(path: "/app/v1/prelaunch/character/portrait?profileId=12345678123442348234123456789abc&revision=2&profileId=12345678123442348234123456789abc", method: "GET"))
 precondition(AccountTransportPolicy.account(path: "/app/v1/prelaunch/character/portrait?revision=2&profileId=12345678-1234-4234-8234-123456789abc", method: "GET"))
+
+precondition(AccountTransportPolicy.account(path: "/app/v1/prelaunch/character/review", method: "GET"))
+precondition(AccountTransportPolicy.account(path: "/app/v1/prelaunch/character/review", method: "PUT"))
+precondition(!AccountTransportPolicy.account(path: "/app/v1/prelaunch/character/review", method: "POST"))
+precondition(!AccountTransportPolicy.account(path: "/app/v1/prelaunch/character/review?owner=other", method: "GET"))
+precondition(!AccountTransportPolicy.account(path: "/app/v1/prelaunch/character/review/other", method: "PUT"))
