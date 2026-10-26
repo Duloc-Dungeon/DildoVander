@@ -10,7 +10,7 @@ WORKFLOWS = ROOT / '.github/workflows'
 
 
 class PublicWorkflowTests(unittest.TestCase):
-    def test_every_public_workflow_uses_hosted_runners_without_production_secrets(self):
+    def test_public_workflows_keep_production_secrets_and_runners_isolated(self):
         signing_secrets = {
             'kufr-ios-sign.yml': {'IOS_DISTRIBUTION_CERTIFICATE_BASE64', 'IOS_DISTRIBUTION_PROFILE_BASE64',
                                   'IOS_P12_PASSWORD', 'IOS_KEYCHAIN_PASSWORD'},
@@ -21,7 +21,21 @@ class PublicWorkflowTests(unittest.TestCase):
         for path in WORKFLOWS.glob('*.yml'):
             with self.subTest(workflow=path.name):
                 source = path.read_text()
-                self.assertNotIn('self-hosted', source)
+                if path.name in ('kufr-web.yml', 'kufr-ai-eval.yml'):
+                    for guard in ("vars.ARM64_BUILD_RUNNERS == 'true'",
+                                  "github.repository == 'Duloc-Dungeon/DildoVander'",
+                                  "github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'",
+                                  '!fromJSON(toJSON(github.event)).inputs.pr_number', '!fromJSON(toJSON(github.event)).inputs.expected_head_sha',
+                                  '!fromJSON(toJSON(github.event)).inputs.expected_base_sha', "|| '[\"ubuntu-24.04\"]'"):
+                        self.assertIn(guard, source)
+                    self.assertIn('["self-hosted","Linux","ARM64","build-arm64"]', source)
+                elif path.name == 'build-runner-check.yml':
+                    self.assertIn('runner: [1, 2]', source)
+                    self.assertIn("github.ref == 'refs/heads/main'", source)
+                    self.assertIn("github.event_name == 'workflow_dispatch'", source)
+                    self.assertNotIn('environment:', source)
+                else:
+                    self.assertNotIn('self-hosted', source)
                 self.assertNotIn('backend-production', source)
                 self.assertNotIn('/var/www/', source)
                 if path.name == 'dependabot-publish.yml':
