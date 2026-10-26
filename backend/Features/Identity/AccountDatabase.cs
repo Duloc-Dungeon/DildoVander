@@ -7,6 +7,7 @@ namespace Kufr.Backend.Features.Identity;
 internal sealed class AccountUser : IdentityUser
 {
     public string DisplayName { get; set; } = "";
+    public string? LaunchGroupId { get; set; }
     public bool Disabled { get; set; }
     public long CreatedAt { get; set; }
 }
@@ -28,6 +29,7 @@ internal sealed class AccountInvitation
     public string Purpose { get; set; } = "invite";
     public string Role { get; set; } = AccountRoles.Viewer;
     public string? UserId { get; set; }
+    public string? LaunchGroupId { get; set; }
     public long ExpiresAt { get; set; }
     public bool Consumed { get; set; }
 }

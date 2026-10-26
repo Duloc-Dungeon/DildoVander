@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 namespace Kufr.Backend.Features.Customers;
 
 internal sealed record CharacterPortrait(string Status, string? LoadingMessage, string? FinalMessage,
-    string? ErrorCode, int Attempt, long UpdatedAt);
+    string? ErrorCode, int Attempt, long UpdatedAt, CharacterWelcome? Welcome = null);
 internal sealed record CharacterPortraitJob(string AccountId, string ProfileId, long Revision, string LeaseToken,
     int Attempt, CharacterUserInput Input, CharacterEnrichment Enrichment);
 internal sealed record PortraitJobSummary(string ProfileId, long Revision, string Status, int Attempt, string? ErrorCode, long UpdatedAt);
@@ -19,7 +19,7 @@ internal sealed partial class CharacterProfileStore
             CREATE TABLE IF NOT EXISTS character_portraits (
                 account_id TEXT PRIMARY KEY REFERENCES character_profiles(account_id) ON DELETE CASCADE,
                 profile_id TEXT NOT NULL, revision INTEGER NOT NULL, status TEXT NOT NULL,
-                loading_message TEXT NULL, final_message TEXT NULL, image BLOB NULL, error_code TEXT NULL,
+                loading_message TEXT NULL, final_message TEXT NULL, welcome_json TEXT NULL, image BLOB NULL, error_code TEXT NULL,
                 attempt INTEGER NOT NULL DEFAULT 0, lease_token TEXT NULL,
                 lease_until INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS character_portrait_queue ON character_portraits(status,updated_at);
@@ -30,6 +30,12 @@ internal sealed partial class CharacterProfileStore
         if ((long)column.ExecuteScalar()! == 0)
         {
             column.CommandText = "ALTER TABLE character_portraits ADD COLUMN final_message TEXT NULL";
+            column.ExecuteNonQuery();
+        }
+        column.CommandText = "SELECT COUNT(*) FROM pragma_table_info('character_portraits') WHERE name='welcome_json'";
+        if ((long)column.ExecuteScalar()! == 0)
+        {
+            column.CommandText = "ALTER TABLE character_portraits ADD COLUMN welcome_json TEXT NULL";
             column.ExecuteNonQuery();
         }
     }
@@ -53,7 +59,7 @@ internal sealed partial class CharacterProfileStore
             INSERT INTO character_portraits(account_id,profile_id,revision,status,updated_at)
             VALUES($account,$profile,$revision,'queued',$now)
             ON CONFLICT(account_id) DO UPDATE SET profile_id=$profile,revision=$revision,status='queued',
-                loading_message=NULL,final_message=NULL,image=NULL,error_code=NULL,attempt=0,lease_token=NULL,lease_until=0,updated_at=$now
+                loading_message=NULL,final_message=NULL,welcome_json=NULL,image=NULL,error_code=NULL,attempt=0,lease_token=NULL,lease_until=0,updated_at=$now
             WHERE character_portraits.profile_id!=$profile OR character_portraits.revision!=$revision;
             """;
         command.Parameters.AddWithValue("$profile", profile.ProfileId);
@@ -67,7 +73,7 @@ internal sealed partial class CharacterProfileStore
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT a.status,a.loading_message,a.error_code,a.attempt,a.updated_at,p.status,a.final_message
+            SELECT a.status,a.loading_message,a.error_code,a.attempt,a.updated_at,p.status,a.final_message,a.welcome_json
             FROM character_portraits a JOIN character_profiles p USING(account_id)
             WHERE a.account_id=$account AND a.profile_id=$profile AND a.revision=$revision
                 AND a.profile_id=p.profile_id AND a.revision=p.revision;
@@ -81,7 +87,7 @@ internal sealed partial class CharacterProfileStore
         return new(enrichmentFailed ? "failed" : reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1),
             reader.IsDBNull(6) ? null : reader.GetString(6),
             enrichmentFailed ? "character_enrichment_failed" : reader.IsDBNull(2) ? null : reader.GetString(2),
-            reader.GetInt32(3), reader.GetInt64(4));
+            reader.GetInt32(3), reader.GetInt64(4), reader.IsDBNull(7) ? null : JsonSerializer.Deserialize<CharacterWelcome>(reader.GetString(7)));
     }
 
     internal byte[]? ReadPortraitImage(string accountId, string profileId, long revision)
@@ -158,17 +164,20 @@ internal sealed partial class CharacterProfileStore
         "loading_message=$message", command => command.Parameters.AddWithValue("$message", message));
 
     internal bool CompletePortrait(CharacterPortraitJob job, byte[]? image, string? errorCode,
-        string? finalMessage = null)
+        string? finalMessage = null, CharacterWelcome? welcome = null)
     {
         if (image is { Length: > 8 * 1024 * 1024 or 0 }) { throw new InvalidDataException("Portrait size invalid."); }
         finalMessage = image is null ? null
             : PortraitContentPolicy.ValidMessage(finalMessage) ? finalMessage
             : PortraitContentPolicy.FinalMessageFallback(job.Input);
-        return UpdatePortrait(job, "status=$status,image=$image,final_message=$final,error_code=$error,lease_until=0", command =>
+        if (image is null) { welcome = null; }
+        else if (!CharacterWelcomePolicy.Valid(welcome, job)) { welcome = CharacterWelcomePolicy.Fallback; }
+        return UpdatePortrait(job, "status=$status,image=$image,final_message=$final,welcome_json=$welcome,error_code=$error,lease_until=0", command =>
         {
             command.Parameters.AddWithValue("$status", image is null ? "failed" : "ready");
             command.Parameters.AddWithValue("$image", (object?)image ?? DBNull.Value);
             command.Parameters.AddWithValue("$final", (object?)finalMessage ?? DBNull.Value);
+            command.Parameters.AddWithValue("$welcome", welcome is null ? DBNull.Value : JsonSerializer.Serialize(welcome));
             command.Parameters.AddWithValue("$error", (object?)errorCode ?? DBNull.Value);
         });
     }

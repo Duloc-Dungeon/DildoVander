@@ -13,6 +13,7 @@ internal static class CharacterPortraitTests
         try
         {
             await ExperienceWireContractAsync();
+            WelcomeContract();
             await ConsentAndDurabilityAsync(Path.Combine(root, "durable"));
             await ProfileIdentityFenceAsync(Path.Combine(root, "identity"));
             await RevisionAndDeletionAsync(Path.Combine(root, "fences"));
@@ -40,10 +41,8 @@ internal static class CharacterPortraitTests
             }
             Check(!PortraitContentPolicy.ValidMessage(new string('x', 251)), "oversized message rejected");
             var finalFallback = PortraitContentPolicy.FinalMessageFallback(new("Raven", "wizarding world"));
-            Check(finalFallback.Length <= 250 && finalFallback.Contains("Raven", StringComparison.Ordinal)
-                && finalFallback.Contains("wizarding world", StringComparison.Ordinal)
-                && finalFallback.Contains("kocovin", StringComparison.OrdinalIgnoreCase),
-                "bounded Czech fallback includes character, fictional world and prelaunch Olivander hangover joke");
+            Check(finalFallback == "Tvá pověst dorazila před tebou. Už jsme se jí omluvili.",
+                "text failure uses the stable, non-identifying Czech fallback");
             var enrichment = new CharacterEnrichment("Raven", "wizarding world",
                 "Raven is a fictional wizard who speaks with birds. Source: https://example.invalid/private. Account detail.",
                 [], [], ["private ambiguity"], false, [new("Private source", "https://example.invalid/private")],
@@ -72,18 +71,117 @@ internal static class CharacterPortraitTests
         var handler = new PortraitExperienceHandler();
         using var provider = new OpenAiCharacterPortraitProvider(configuration, new HttpClient(handler));
         var input = new CharacterUserInput("Raven", "Original fiction");
-        var result = await provider.GenerateExperienceAsync(input,
-            Result(new("wire", "offline", "profile", 1, input, null, "lease", 1)),
+        var job = new CharacterPortraitJob("offline", "profile", 1, "lease", 1, input,
+            Result(new("wire", "offline", "profile", 1, input, null, "lease", 1)));
+        var result = await provider.GenerateExperienceAsync(job,
             "Keep the surprise secret.", true, CancellationToken.None);
         Check(handler.Calls == 1 && result.LoadingMessage == PortraitExperienceHandler.Loading
-            && result.FinalMessage == PortraitExperienceHandler.Final,
-            "real SDK request satisfies JSON-mode input contract and parses both generated lines without retry or fallback");
+            && result.Welcome?.Joke == PortraitExperienceHandler.Joke
+            && result.FinalMessage == PortraitExperienceHandler.Joke,
+            "one Responses call parses structured welcome and retains the legacy finalMessage projection");
+    }
+
+    private static void WelcomeContract()
+    {
+        var cases = new[]
+        {
+            ("Hermiona Grangerová", "Harry Potter", "contrary_will", "Učebnice máš nastudované. Teď už jen čekáš, až ti někdo zadá život za domácí úkol.", "Bystrá nebelvírská čarodějka z mudlovské rodiny, která pomáhá přátelům znalostmi i odvahou.", "Některé věci tu mají vlastní vůli. Povinnou četbu nemají."),
+            ("Darth Vader", "Star Wars", "rivalry", "Tolik temné moci. A dovolenou ti stejně musí podepsat císař.", "Anakin Skywalker, někdejší rytíř Jedi, který přešel na temnou stranu a sloužil císaři.", "Možná tě čeká nesouhlas, který se nevyřídí rozkazem."),
+            ("Mrakoplaš", "Zeměplocha", "independent_choice", "Tvůj talent pro útěk je obdivuhodný. Zvlášť když tě dobrodružství pokaždé najde dřív.", "Mimořádně neschopný mág známý rychlým útěkem, který se opakovaně ocitá na nebezpečných výpravách.", "Něco si tě možná vybere samo. Útěk tentokrát nebude v nabídce.")
+        };
+        foreach (var item in cases)
+        {
+            var job = WelcomeJob(item.Item1, item.Item2, "fixture-profile", 7);
+            var welcome = new CharacterWelcome(item.Item4, item.Item5, item.Item6,
+                WelcomeWriterInput.Facts(job.Input, job.Enrichment, job.ProfileId, job.Revision).Select(fact => fact.Id).ToArray(), item.Item3);
+            Check(CharacterWelcomePolicy.Valid(welcome, job), item.Item1 + " editorial welcome satisfies the strict contract");
+            Check(!CharacterWelcomePolicy.Valid(welcome with { Joke = "Opona má trému. Slyšela, koho má představit." }, job),
+                "welcome cannot repeat the waiting joke already displayed in this journey");
+            Check(welcome.Joke.Length <= 120 && welcome.Identity.Length <= 120 && welcome.Teaser.Length <= 100
+                && welcome.Joke.Length + welcome.Identity.Length + welcome.Teaser.Length + 2 <= 250,
+                item.Item1 + " example stays within individual and combined limits");
+            var invalidTeaserId = item.Item3 == "rivalry" ? "contrary_will" : "rivalry";
+            Check(!CharacterWelcomePolicy.Valid(welcome with { TeaserId = invalidTeaserId }, job),
+                item.Item1 + " cannot change the application-approved teaser category");
+        }
+
+        var other = WelcomeJob("Sam Elánius", "Zeměplocha", "other-profile", 1);
+        var selectedTheme = WelcomeWriterInput.AllowedTeaserId(other.Input, other.Enrichment);
+        Check(new[] { "contrary_will", "rivalry", "independent_choice" }.Contains(selectedTheme),
+            "non-fixture character receives exactly one permitted stable theme");
+        Check(selectedTheme == WelcomeWriterInput.AllowedTeaserId(other.Input, other.Enrichment),
+            "non-fixture theme selection is stable");
+
+        var original = WelcomeJob("Hermiona Grangerová", "Harry Potter", "profile-a", 3);
+        var alias = original with { Input = new CharacterUserInput("Hermiona", "HP") };
+        Check(WelcomeWriterInput.IdentityReliable(alias.Input, alias.Enrichment),
+            "source-backed canonical recognition can differ from the unchanged user name and world alias");
+        Check(alias.Input.Name == "Hermiona", "recognition never rewrites the user name");
+        var clarification = original.Enrichment with { NeedsClarification = true };
+        Check(!WelcomeWriterInput.IdentityReliable(original.Input, clarification),
+            "unresolved clarification never becomes reliable identity");
+        var noEvidence = original.Enrichment with { Facts = [], Sources = [] };
+        Check(!WelcomeWriterInput.IdentityReliable(original.Input, noEvidence),
+            "model interpretation without evidence never becomes reliable identity");
+        var generic = original with { Enrichment = noEvidence };
+        Check(CharacterWelcomePolicy.Valid(new("Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.", "",
+            "Některé věci tu mají vlastní vůli.", [], WelcomeWriterInput.AllowedTeaserId(generic.Input, noEvidence)), generic),
+            "a generic approved teaser requires no invented factual evidence");
+        var reordered = original with { Enrichment = original.Enrichment with { Facts = original.Enrichment.Facts.Reverse().ToArray() } };
+        var originalIds = WelcomeWriterInput.Facts(original.Input, original.Enrichment, original.ProfileId, original.Revision)
+            .ToDictionary(fact => fact.Text, fact => fact.Id, StringComparer.Ordinal);
+        var reorderedIds = WelcomeWriterInput.Facts(reordered.Input, reordered.Enrichment, reordered.ProfileId, reordered.Revision)
+            .ToDictionary(fact => fact.Text, fact => fact.Id, StringComparer.Ordinal);
+        Check(originalIds.Count == reorderedIds.Count && originalIds.All(pair => reorderedIds[pair.Key] == pair.Value),
+            "fact IDs are stable when research result ordering changes");
+        Check(originalIds.Values.All(id => !WelcomeWriterInput.Facts(original.Input, original.Enrichment, original.ProfileId, 4)
+                .Any(fact => fact.Id == id))
+            && originalIds.Values.All(id => !WelcomeWriterInput.Facts(original.Input, original.Enrichment, "profile-b", 3)
+                .Any(fact => fact.Id == id)),
+            "fact IDs bind to profile and revision");
+
+        var untrusted = new CharacterWelcome("Darth Vader se připravuje na souboj.", "", "", [], null);
+        Check(!CharacterWelcomePolicy.Valid(untrusted, WelcomeJob("Darth Vader", "Star Wars", "p", 1)),
+            "welcome text cannot expose a prohibited topic");
+        Check(CharacterWelcomePolicy.Fallback.Identity.Length == 0 && CharacterWelcomePolicy.Fallback.Teaser.Length == 0,
+            "stable fallback omits identity and teaser when evidence or text generation is unavailable");
+    }
+
+    private static CharacterPortraitJob WelcomeJob(string name, string world, string profileId, long revision)
+    {
+        var input = new CharacterUserInput(name, world);
+        var factTexts = name switch
+        {
+            "Hermiona Grangerová" => new[]
+            {
+                "Je čarodějka z mudlovské rodiny, dcera dvou zubařů, a patří do Nebelvíru.",
+                "Je známá svou inteligencí a pilností; stihla přečíst učebnice ještě před nástupem do Bradavic a dosahovala výborných výsledků.",
+                "Je blízkou přítelkyní Harryho a Rona a její odvaha, věrnost i schopnost řešit problémy jsou pro jejich společné úsilí důležité."
+            },
+            "Darth Vader" => new[]
+            {
+                "Darth Vader je Anakin Skywalker, někdejší rytíř Jedi a hrdina Klonových válek, který byl zlákán temnou stranou Síly.",
+                "Sloužil císaři Darthu Sidiousovi a prosazoval vůli Impéria, mimo jiné pronásledováním přeživších Jediů a bojem proti povstalcům."
+            },
+            "Mrakoplaš" => new[]
+            {
+                "Oficiální průvodce postavami Terryho Pratchetta ho charakterizuje jako mimořádně neschopného mága, jehož nejvýraznější schopností je rychlý útěk; zároveň ho povolávají na nebezpečné výpravy, když je třeba mág.",
+                "V Barvě kouzel se živí také využíváním mimořádného nadání pro cizí jazyky a vyhýbání se práci je popsáno jako jedno z jeho životních pravidel."
+            },
+            _ => Array.Empty<string>()
+        };
+        var urls = factTexts.Select((_, index) => $"https://example.test/{index}").ToArray();
+        var facts = factTexts.Select((text, index) => new CharacterFact(text, [urls[index]])).ToArray();
+        var sources = urls.Select((url, index) => new CharacterSource("Evidence " + index, url)).ToArray();
+        var enrichment = new CharacterEnrichment(name, world, "Doložená fikční postava.", facts, [], [], false,
+            sources, "fixture", "welcome-test", 1, revision, "web_sources");
+        return new("account", profileId, revision, "lease", 1, input, enrichment);
     }
 
     private sealed class PortraitExperienceHandler : HttpMessageHandler
     {
         internal const string Loading = "Raven zaslechl za zavřenými dveřmi své jméno. Olivander si vyžádal vývar.";
-        internal const string Final = "Raven, tvůj portrét. Olivander má kocovinu; větší slávu dnes nečekej.";
+        internal const string Joke = "Tvá pověst dorazila před tebou. Už jsme se jí omluvili.";
         internal int Calls { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -93,10 +191,11 @@ internal static class CharacterPortraitTests
                 "experience uses one Responses request through the injected offline transport");
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
             var payload = body.RootElement;
-            Check(payload.GetProperty("text").GetProperty("format").GetProperty("type").GetString() == "json_object"
+            Check(payload.GetProperty("store").GetBoolean() == false
+                && payload.GetProperty("text").GetProperty("format").GetProperty("type").GetString() == "json_object"
                 && payload.GetProperty("input").GetString()!.Contains("json", StringComparison.OrdinalIgnoreCase),
                 "JSON-mode instruction must occur inside input, not only the separate instructions field");
-            var text = JsonSerializer.Serialize(new { loadingMessage = Loading, finalMessage = Final });
+            var text = JsonSerializer.Serialize(new { loadingMessage = Loading, joke = Joke, identity = "", teaser = "", usedFactIds = Array.Empty<string>(), teaserId = (string?)null });
             var response = JsonSerializer.Serialize(new
             {
                 status = "completed",

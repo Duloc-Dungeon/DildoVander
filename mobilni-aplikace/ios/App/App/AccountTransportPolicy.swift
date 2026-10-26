@@ -663,6 +663,13 @@ enum AccountTransportPolicy {
         if path == "/app/v1/prelaunch/character/retry" { return method == "POST" && query.isEmpty }
         if prelaunchPortrait(path: path + (query.isEmpty ? "" : "?" + query.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")), method: method) { return true }
         if path == "/app/v1/admin/launch" { return query.isEmpty && ["GET", "PUT"].contains(method) }
+        if path == "/app/v1/admin/launch/groups" { return query.isEmpty && ["GET", "POST"].contains(method) }
+        let groupParts = path.split(separator: "/").map(String.init)
+        if groupParts.count == 6 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "groups"] {
+            return path == "/app/v1/admin/launch/groups/\(groupParts[5])"
+                && groupParts[5].count == 32 && groupParts[5].allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) }
+                && method == "PUT" && query.isEmpty
+        }
         if path == "/app/v1/admin/launch/audit" || path == "/app/v1/admin/launch/artwork" {
             return method == "GET" && query.isEmpty
         }

@@ -111,6 +111,8 @@ final class NativeAccountRequestPolicy {
         if ("/app/v1/prelaunch/character".equals(path)) return "GET".equals(method) || "PUT".equals(method);
         if ("/app/v1/prelaunch/character/retry".equals(path)) return "POST".equals(method);
         if ("/app/v1/admin/launch".equals(path)) return "GET".equals(method) || "PUT".equals(method);
+        if ("/app/v1/admin/launch/groups".equals(path)) return "GET".equals(method) || "POST".equals(method);
+        if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}$")) return "PUT".equals(method);
         if ("/app/v1/admin/launch/audit".equals(path) || "/app/v1/admin/launch/artwork".equals(path)) return "GET".equals(method);
         if ("/app/v1/admin/launch/personalization-preview".equals(path)) return "POST".equals(method);
         if ("/app/v1/admin/launch/artwork".equals(path)) return "GET".equals(method);

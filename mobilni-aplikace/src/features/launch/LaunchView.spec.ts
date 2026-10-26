@@ -1,117 +1,155 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { ref } from 'vue';
 import LaunchView from './LaunchView.vue';
+import { getInvitationRegistration, invitationRegistration, setInvitationDraft } from '../identity/invitationRegistration';
+import { beginInvitationPresentation, presentationForeground, selectInvitationPresentation } from './launchPresentation';
 
-const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: vi.fn() }));
+const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: vi.fn(), portrait: vi.fn() }));
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
+vi.mock('./PortraitCurtain.vue', () => ({ default: { props: ['image'], template: '<div class="portrait-stage" />' } }));
+vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
   const account = ref({ id: 'guest', displayName: 'Guest', roles: ['Customer'] });
   api.setAccount.mockImplementation(value => { account.value = value; });
-  return { account,
-    accountRequest: api.request, accountTransport: vi.fn() };
+  return { account, accountDeletionRequested: ref(false), accountRequest: api.request, accountTransport: vi.fn() };
 });
-
-beforeEach(() => { vi.useFakeTimers(); api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'] }); });
-afterEach(() => { vi.useRealTimers(); });
-
-it('recovers a committed character when the save response is lost instead of repeating creation', async () => {
-  let persisted = false;
+let image: ReturnType<typeof ref<string>>;
+let failed: ReturnType<typeof ref<boolean>>;
+let persisted = false;
+let allowed = false;
+let artworkStatus = 'queued';
+const character = { profileId: 'profile', revision: 1, name: 'Raven', universe: 'Fiction', status: 'queued' };
+function entry() { return mount(LaunchView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); }
+function savedCreation(status: 'saving' | 'uncertain' | 'confirmed' = 'confirmed') {
+  const draft = setInvitationDraft('guest', 'Raven', 'Fiction');
+  invitationRegistration.value = { ...draft, status, writeStarted: true, ...(status === 'confirmed' ? { profileId: 'profile', revision: 1 } : {}) };
+  beginInvitationPresentation('guest', draft.creationId);
+}
+beforeEach(() => {
+  vi.useFakeTimers(); localStorage.clear(); invitationRegistration.value = null;
+  selectInvitationPresentation(); presentationForeground.value = true;
+  api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'] });
+  image = ref(''); failed = ref(false);
+  api.portrait.mockReturnValue({ url: image, failed, pending: ref(false), clear: vi.fn(() => { image.value = ''; }), retry: vi.fn(), fail: vi.fn() });
+  persisted = false; allowed = false; artworkStatus = 'queued';
   api.request.mockImplementation(async (path: string, method?: string) => {
-    if (path === '/app/v1/launch') return { allowed: false, launchAt: Date.now() + 86_400_000,
-      serverNow: Date.now(), teaser: 'Hvězdy čekají.', initialLoadingMessage: 'Rovnáme hvězdy.', personalizedLoadingEnabled: false };
+    if (path === '/app/v1/launch') return { allowed, launchAt: Date.now() + 86400000, serverNow: Date.now() };
     if (method === 'PUT') { persisted = true; throw new Error('Response lost'); }
-    return persisted ? { character: { profileId: 'profile', revision: 1, name: 'Raven', universe: 'Fiction', status: 'queued' },
-      artwork: { status: 'queued' } } : { character: null, artwork: null };
+    return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL' } : null };
   });
-  const view = mount(LaunchView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } });
+});
+afterEach(() => { selectInvitationPresentation(); vi.useRealTimers(); });
+it('reconciles a lost save response without a second registration or PUT', async () => {
+  const view = entry();
   try {
     await flushPromises();
-    await view.get('#character-name').setValue('Raven');
-    await view.get('#character-universe').setValue('Fiction');
-    await view.get('input[type="checkbox"]').setValue(true);
-    await view.get('form').trigger('submit');
-    await flushPromises();
-    expect(view.text()).toContain('Raven');
-    expect(view.text()).toContain('Každé kouzlo má svůj čas');
-    expect(view.text()).not.toContain('Response lost');
-    expect(view.find('form').exists()).toBe(false);
+    await view.get('#character-name').setValue('Raven'); await view.get('#character-universe').setValue('Fiction');
+    await view.get('input[type="checkbox"]').setValue(true); await view.get('form').trigger('submit'); await flushPromises();
+    expect(view.text()).toContain('Raven'); expect(view.text()).toContain('Do otevření');
+    expect(view.text()).not.toContain('Response lost'); expect(view.find('form').exists()).toBe(false);
     expect(api.request.mock.calls.filter(([, method]) => method === 'PUT')).toHaveLength(1);
   } finally { view.unmount(); }
 });
-
-function waitingPolicy() {
-  return { allowed: false, launchAt: Date.now() + 86_400_000, serverNow: Date.now(),
-    teaser: 'Pozvánka čeká.', initialLoadingMessage: 'Olivander má kocovinu.', personalizedLoadingEnabled: true };
-}
-function entry() { return mount(LaunchView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); }
-
-it('preserves an unsaved same-account draft when returning from another tab', async () => {
-  api.request.mockImplementation(async (path: string) => path === '/app/v1/launch' ? waitingPolicy() : { character: null, artwork: null });
+it('A: starts the reveal at decoded image time 4s, cancelling the remaining introduction', async () => {
+  persisted = true; savedCreation(); const view = entry();
+  try {
+    await flushPromises(); await vi.advanceTimersByTimeAsync(4000);
+    expect(view.text()).not.toContain('Postava je uložená.');
+    image.value = 'blob:authorised-decoded'; await flushPromises();
+    expect(view.findComponent({ name: 'PortraitCurtain' }).props('image')).toBe('blob:authorised-decoded');
+    expect(view.get('.launch-status').text()).toBe('');
+  } finally { view.unmount(); }
+});
+it('B: confirms at 8 visible seconds when the image takes 30 seconds', async () => {
+  persisted = true; savedCreation(); const view = entry();
+  try {
+    await flushPromises(); await vi.advanceTimersByTimeAsync(7999);
+    expect(view.get('.launch-status').text()).toBe('Chvíli strpení…');
+    await vi.advanceTimersByTimeAsync(101); expect(view.get('.launch-status').text()).toBe('Postava je uložená. Můžeš se vrátit později.');
+    await vi.advanceTimersByTimeAsync(21900); image.value = 'blob:decoded'; await flushPromises();
+    expect(view.get('.launch-status').text()).toBe('');
+  } finally { view.unmount(); }
+});
+it('C: eight seconds cannot turn an uncertain write into success', async () => {
+  savedCreation('uncertain'); const view = entry();
+  try { await flushPromises(); await vi.advanceTimersByTimeAsync(9000); expect(view.get('.launch-status').text()).toContain('Ověřujeme'); expect(view.text()).not.toContain('Postava je uložená.'); }
+  finally { view.unmount(); }
+});
+it('D: preparation and decode errors appear immediately without waiting for the introduction', async () => {
+  persisted = true; savedCreation(); const view = entry();
+  try { await flushPromises(); await vi.advanceTimersByTimeAsync(2000); failed.value = true; await flushPromises(); expect(view.get('[role="alert"]').text()).toContain('Přípravu se nepodařilo'); }
+  finally { view.unmount(); }
+});
+it('E: pauses at 3 seconds and restores only five seconds on remount', async () => {
+  persisted = true; savedCreation(); let view = entry();
+  await flushPromises(); await vi.advanceTimersByTimeAsync(3000); view.unmount();
+  await vi.advanceTimersByTimeAsync(100000); view = entry();
+  try { await flushPromises(); await vi.advanceTimersByTimeAsync(4900); expect(view.get('.launch-status').text()).toBe('Chvíli strpení…'); await vi.advanceTimersByTimeAsync(200); expect(view.text()).toContain('Postava je uložená.'); }
+  finally { view.unmount(); }
+});
+it('J: an account draft is not a character and never writes before explicit consent', async () => {
+  setInvitationDraft('guest', 'Raven', 'Fiction'); const view = entry();
+  try { await flushPromises(); expect(view.text()).toContain('Přístup je připravený.'); expect(view.find('#character-name').exists()).toBe(false); expect(view.get<HTMLInputElement>('input[type="checkbox"]').element.checked).toBe(false); expect(api.request.mock.calls.some(([, method]) => method === 'PUT')).toBe(false); expect(getInvitationRegistration('guest')?.status).toBe('draft'); }
+  finally { view.unmount(); }
+});
+it('K: a current server grant bypasses the entire introduction', async () => {
+  persisted = true; savedCreation(); allowed = true; const view = entry();
+  try { await flushPromises(); expect(api.replace).toHaveBeenCalledWith('/me/character'); }
+  finally { view.unmount(); }
+});
+it('old characters get no introduction and public loading ignores host and research text', async () => {
+  persisted = true; const view = entry();
+  try { await flushPromises(); expect(view.get('.launch-status').text()).toContain('Postava je uložená.'); expect(view.text()).toContain('Opona má trému.'); expect(view.text()).not.toContain('PRIVATE FINAL'); expect(view.text()).not.toContain('Od pořadatele'); }
+  finally { view.unmount(); }
+});
+it('preserves an unfinished same-account draft and clears it from another account’s view', async () => {
   const view = entry();
   try {
-    await flushPromises();
-    await view.get('#character-name').setValue('Noční archivář');
-    await view.get('#character-universe').setValue('Město za zrcadlem');
-    await view.get('input[type="checkbox"]').setValue(true);
-    document.dispatchEvent(new Event('visibilitychange'));
-    await flushPromises();
-    expect((view.get('#character-name').element as HTMLInputElement).value).toBe('Noční archivář');
-    expect((view.get('#character-universe').element as HTMLInputElement).value).toBe('Město za zrcadlem');
-    expect((view.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(true);
+    await flushPromises(); await view.get('#character-name').setValue('Noční archivář'); await view.get('#character-universe').setValue('Město');
+    expect(getInvitationRegistration('guest')?.name).toBe('Noční archivář');
+    api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'] }); await flushPromises();
+    expect(view.get<HTMLInputElement>('#character-name').element.value).toBe(''); expect(view.text()).not.toContain('Noční archivář');
   } finally { view.unmount(); }
 });
 
-it('never carries another account’s AI consent or late mutation error into the new form', async () => {
-  let rejectSave!: (reason: Error) => void;
-  api.request.mockImplementation(async (path: string, method?: string) => {
-    if (path === '/app/v1/launch') return waitingPolicy();
-    if (method === 'PUT') return new Promise((_, reject) => { rejectSave = reject; });
-    return { character: null, artwork: null };
-  });
-  const view = entry();
+it('a matching existing profile without a local PUT never starts or stalls in an introduction', async () => {
+  persisted = true; setInvitationDraft('guest', 'Raven', 'Fiction'); const view = entry();
+  try { await flushPromises(); expect(view.get('.launch-status').text()).toContain('Postava je uložená.'); expect(getInvitationRegistration('guest')?.writeStarted).toBe(false); }
+  finally { view.unmount(); }
+});
+it('announces offline immediately during the presentation and reconnects with reads only', async () => {
+  persisted = true; savedCreation(); const view = entry();
   try {
-    await flushPromises();
-    await view.get('#character-name').setValue('První host');
-    await view.get('#character-universe').setValue('První svět');
-    await view.get('input[type="checkbox"]').setValue(true);
-    await view.get('form').trigger('submit');
-    api.setAccount({ id: 'second-guest', displayName: 'Druhý host', roles: ['Customer'] });
-    await flushPromises();
-    expect((view.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false);
-    expect((view.get('#character-name').element as HTMLInputElement).value).toBe('');
-    expect(view.get('button[type="submit"]').attributes('disabled')).toBeDefined();
-    rejectSave(new Error('Private old request failure'));
-    await flushPromises();
-    expect(view.text()).not.toContain('Private old request failure');
+    await flushPromises(); await vi.advanceTimersByTimeAsync(2000); window.dispatchEvent(new Event('offline')); await flushPromises();
+    expect(view.get('[role="alert"]').text()).toContain('Zkontroluj připojení');
+    window.dispatchEvent(new Event('online')); await flushPromises();
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    expect(api.request.mock.calls.some(([,method])=>method==='PUT')).toBe(false);
   } finally { view.unmount(); }
 });
 
-it('shows the admin opening text, then a recognized-character update without leaking final text early', async () => {
-  let researched = false;
-  let generatedMessage = false;
-  api.request.mockImplementation(async (path: string) => path === '/app/v1/launch' ? waitingPolicy() : {
-    character: { profileId: 'profile', revision: 1, name: 'Archivář', universe: 'Město za zrcadlem', status: researched ? 'ready' : 'running' },
-    artwork: { status: researched ? 'running' : 'queued', loadingMessage: generatedMessage ? 'Archiváři, katalog právě odmítl evidovat tvé ego.' : null, finalMessage: 'UNRELEASED FINAL TEXT' },
-  });
-  const view = entry();
+it('K: checks the actual deadline during the introduction and immediately follows a new server grant', async () => {
+  const deadline=Date.now()+4000;
+  persisted=true; savedCreation();
+  const original=api.request.getMockImplementation()!;
+  api.request.mockImplementation(async(path:string,method?:string)=>path==='/app/v1/launch'
+    ? {allowed,launchAt:deadline,serverNow:Date.now()} : original(path,method));
+  const view=entry();
   try {
-    await flushPromises();
-    expect(view.get('.launch-status').text()).toBe('Olivander má kocovinu.');
-    expect(view.text()).not.toContain('UNRELEASED FINAL TEXT');
-    researched = true;
-    await vi.advanceTimersByTimeAsync(5000);
-    await flushPromises();
-    expect(view.get('.launch-status').text()).toContain('Archivář ze světa „Město za zrcadlem“');
-    expect(view.get('.launch-status').text()).toContain('Za zamčenými dveřmi');
-    expect(view.text()).not.toContain('UNRELEASED FINAL TEXT');
-    generatedMessage = true;
-    await vi.advanceTimersByTimeAsync(5000);
-    await flushPromises();
-    expect(view.get('.launch-status').text()).toContain('katalog právě odmítl evidovat tvé ego');
-    expect(view.text()).not.toContain('UNRELEASED FINAL TEXT');
-    expect(view.find('[aria-current="step"]').exists()).toBe(false);
-    expect(view.text()).not.toMatch(/Poznáváme postavu|Mícháme barvy|portrét už malujeme/);
-  } finally { view.unmount(); }
+    await flushPromises(); await vi.advanceTimersByTimeAsync(3000); expect(api.replace).not.toHaveBeenCalled();
+    allowed=true; await vi.advanceTimersByTimeAsync(1000); await flushPromises();
+    expect(api.replace).toHaveBeenCalledWith('/me/character');
+    expect(view.text()).not.toContain('Postava je uložená.');
+  } finally {view.unmount();}
+});
+it('a zero local countdown cannot grant entry when the server still denies it', async () => {
+  const deadline=Date.now()+1000;
+  api.request.mockImplementation(async(path:string)=>path==='/app/v1/launch'
+    ? {allowed:false,launchAt:deadline,serverNow:Date.now()} : {character:null,artwork:null});
+  const view=entry();
+  try {await flushPromises();await vi.advanceTimersByTimeAsync(2000);expect(api.replace).not.toHaveBeenCalled();}
+  finally {view.unmount();}
 });

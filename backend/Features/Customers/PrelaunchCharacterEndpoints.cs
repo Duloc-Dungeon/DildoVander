@@ -126,7 +126,10 @@ internal static class PrelaunchCharacterEndpoints
                 loadingMessage = PortraitContentPolicy.ValidLoadingMessage(portrait.LoadingMessage) ? portrait.LoadingMessage : null,
                 portrait.ErrorCode,
                 finalMessage = portrait.Status == "ready"
-                    ? portrait.FinalMessage ?? PortraitContentPolicy.FinalMessageFallback(profile!.UserInput) : null,
+                    ? portrait.FinalMessage ?? CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback) : null,
+                welcome = portrait.Status == "ready" && portrait.Welcome is { } welcome
+                    ? new { joke = welcome.Joke, identity = welcome.Identity, teaser = welcome.Teaser }
+                    : null,
                 url = portrait.Status == "ready"
                     ? $"/app/v1/prelaunch/character/portrait?profileId={Uri.EscapeDataString(profile!.ProfileId)}&revision={profile.Revision}" : null }
         };
@@ -183,18 +186,20 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
             return;
         }
         var config = scope.ServiceProvider.GetService<LaunchPolicyStore>()?.Read() ?? LaunchConfiguration.Default;
-        var finalMessage = PortraitContentPolicy.FinalMessageFallback(job.Input);
+        var finalMessage = CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback);
+        var welcome = CharacterWelcomePolicy.Fallback;
         if (await IsCurrentAsync())
         {
             using var experienceDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             experienceDeadline.CancelAfter(TimeSpan.FromSeconds(20));
             try
             {
-                var experience = await provider.GenerateExperienceAsync(job.Input, job.Enrichment,
+                var experience = await provider.GenerateExperienceAsync(job,
                     config.PersonalizedLoadingPrompt, config.PersonalizedLoadingEnabled, experienceDeadline.Token);
                 if (config.PersonalizedLoadingEnabled && PortraitContentPolicy.ValidLoadingMessage(experience.LoadingMessage)
                     && !store.SetPortraitMessage(job, experience.LoadingMessage!)) { return; }
                 if (PortraitContentPolicy.ValidMessage(experience.FinalMessage)) { finalMessage = experience.FinalMessage; }
+                if (CharacterWelcomePolicy.Valid(experience.Welcome, job)) { welcome = experience.Welcome!; }
             }
             catch (Exception error) when (error is not OutOfMemoryException)
             {
@@ -213,7 +218,7 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
                 activity?.SetTag("app.outcome", "discarded");
                 return;
             }
-            var completed = store.CompletePortrait(job, image, null, finalMessage);
+            var completed = store.CompletePortrait(job, image, null, finalMessage, welcome);
             activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
             logger.LogInformation("Character portrait {Outcome} {ProfileId} {Revision} {Attempt}",
                 completed ? "completed" : "discarded", job.ProfileId, job.Revision, job.Attempt);

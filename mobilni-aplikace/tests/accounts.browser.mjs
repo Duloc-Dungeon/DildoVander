@@ -33,9 +33,10 @@ try {
   }
   async function enroll(page, link, name) {
     await page.goto(link);
-    await page.getByLabel('Zobrazované jméno', { exact: true }).fill(name);
+    await page.getByLabel('Jméno postavy', { exact: true }).fill(name);
+    await page.getByLabel('Univerzum', { exact: true }).fill('Izolovaný testovací svět');
     assert.equal(new URL(page.url()).hash, '', 'enrollment fragment removed before application requests');
-    await page.getByRole('button', { name: 'Vytvořit přístupový klíč', exact: true }).click();
+    await page.getByRole('button', { name: 'Přijmout pozvánku', exact: true }).click();
     await page.waitForURL(url => url.pathname === '/settings');
     await page.getByRole('heading', { name, exact: true }).waitFor();
   }
@@ -44,6 +45,11 @@ try {
   const ownerSession = await owner.context.request.get(origin.origin + '/app/v1/session');
   assert.equal(ownerSession.status(), 200); assert((await ownerSession.json()).account.roles.includes('Owner'));
   await owner.page.goto(origin.origin + '/settings/admin');
+  await owner.page.locator('.invitation-group summary').click();
+  await owner.page.getByLabel('Název skupiny', { exact: true }).fill('Izolovaná skupina');
+  await owner.page.getByLabel(/Čas otevření \(/).fill('2020-01-01T00:00');
+  await owner.page.getByRole('button', { name: 'Vytvořit skupinu', exact: true }).click();
+  await owner.page.getByText('Termín je uložený pouze pro členy této skupiny.').waitFor();
   // A newer app talking to an older backend can receive invalid_role. Exercise
   // the real rejection and in-app diagnostic without inventing a successful invite.
   await owner.page.getByLabel('Role nového účtu', { exact: true }).evaluate(select => select.add(new Option('Unsupported role', 'UnsupportedRole')));
@@ -119,8 +125,9 @@ try {
   assert.equal((await (await viewer.context.request.get(origin.origin + '/app/v1/session')).json()).account.displayName, 'Izolovaný návštěvník');
   const replay = await participant();
   await replay.page.goto(invitation);
-  await replay.page.getByLabel('Zobrazované jméno', { exact: true }).fill('Nepovolené opakování');
-  await replay.page.getByRole('button', { name: 'Vytvořit přístupový klíč', exact: true }).click();
+  await replay.page.getByLabel('Jméno postavy', { exact: true }).fill('Nepovolené opakování');
+  await replay.page.getByLabel('Univerzum', { exact: true }).fill('Izolovaný testovací svět');
+  await replay.page.getByRole('button', { name: 'Přijmout pozvánku', exact: true }).click();
   await replay.page.getByRole('alert').filter({ hasText: /Pozvánka už není platná/ }).waitFor();
   assert.equal((await (await replay.context.request.get(origin.origin + '/app/v1/session')).json()).account, null);
 

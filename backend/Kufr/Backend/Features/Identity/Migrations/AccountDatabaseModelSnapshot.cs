@@ -182,6 +182,9 @@ namespace Kufr.Backend.Features.Identity.Migrations
                     b.Property<long>("ExpiresAt")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("LaunchGroupId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Purpose")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -287,6 +290,9 @@ namespace Kufr.Backend.Features.Identity.Migrations
 
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("LaunchGroupId")
+                        .HasColumnType("TEXT");
 
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("INTEGER");

@@ -6,6 +6,7 @@ import SignInView from './SignInView.vue';
 import { account } from './session';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { launchAllowed } from '../../application/launchAccess';
+import { clearInvitationRegistration, getInvitationRegistration } from './invitationRegistration';
 
 const api = vi.hoisted(() => ({
   authenticate: vi.fn(),
@@ -18,6 +19,8 @@ vi.mock('./session', async () => {
   return {
     account: ref(null),
     accountsEnabled: ref(true),
+    accountRequest: vi.fn(),
+    accountDeletionRequested: ref(false),
     initialized: ref(true),
     loading: ref(false),
     signingOut: ref(false),
@@ -34,7 +37,10 @@ function createSignInRouter() {
   return createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/', component: { template: '<div />' } },
       { path: '/signin', component: { template: '<div />' } },
+      { path: '/privacy', component: { template: '<div />' } },
+      { path: '/launch', component: { template: '<div />' } },
       { path: '/settings', component: { template: '<div />' } },
       { path: '/support', component: { template: '<div />' } },
       { path: '/suitcase', component: { template: '<div />' } },
@@ -44,11 +50,15 @@ function createSignInRouter() {
   });
 }
 
-async function mountSignIn(returnPath?: string) {
+async function mountSignIn(returnPath?: string, startInInvite = false) {
   const router = createSignInRouter();
   await router.push({ path: '/signin', query: returnPath ? { return: returnPath } : {} });
-  const wrapper = mount(SignInView, { global: { plugins: [router] } });
+  const wrapper = mount(SignInView, { attachTo: document.body, global: { plugins: [router] } });
   await flushPromises();
+  if (!api.enrollment && !startInInvite) {
+    await wrapper.findAll('button').find(button => button.text() === 'Už mám přístupový klíč')?.trigger('click');
+    await flushPromises();
+  }
   return { router, wrapper };
 }
 
@@ -60,13 +70,14 @@ beforeEach(() => {
   api.authenticate.mockReset();
   api.signOut.mockReset();
   api.enrollment = null;
+  clearInvitationRegistration('new-invitee');
 });
 
 describe('sign-in destinations', () => {
   it('hides customer feature descriptions and public signup while launch access is unknown', async () => {
     launchAllowed.value = null;
     const { wrapper } = await mountSignIn();
-    expect(wrapper.text()).not.toMatch(/suitcase|workshop|archive|kufr|dílna|archiv|konverzac|památk/i);
+    expect(wrapper.text()).not.toMatch(/Vyzkoušet příběh|Zákaznický účet vám uloží|Vytvořit zákaznický účet/i);
     expect(wrapper.text()).not.toContain('Vytvořit zákaznický účet');
     wrapper.unmount();
   });
@@ -121,6 +132,27 @@ describe('sign-in destinations', () => {
     wrapper.unmount();
   });
 
+  it('opens the invitation form by default and switches to recovery without carrying its code', async () => {
+    const { wrapper } = await mountSignIn(undefined, true);
+    expect(wrapper.find('#account-name').exists()).toBe(true);
+    expect(wrapper.find('#account-universe').exists()).toBe(true);
+    expect(wrapper.find('#account-invite').exists()).toBe(true);
+    expect(wrapper.find('select#enrollment-kind').exists()).toBe(false);
+    expect(wrapper.find('h1').text()).toBe('Vstup na vlastní pověst.');
+    await wrapper.get('#account-invite').setValue('invitation-secret');
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    await wrapper.findAll('button').find(button => button.text() === 'Obnovit přístup')!.trigger('click');
+    expect(wrapper.find('#account-name').exists()).toBe(false);
+    expect(wrapper.find('#account-universe').exists()).toBe(false);
+    expect((wrapper.get('#account-invite').element as HTMLInputElement).value).toBe('');
+    expect(wrapper.text()).toContain('nahradí všechny původní klíče');
+    expect(wrapper.find('a[href="/support"]').exists()).toBe(true);
+    expect(wrapper.find('a[href="/privacy"]').exists()).toBe(true);
+    await wrapper.findAll('button').find(button => button.text() === 'Zpět k pozvánce')!.trigger('click');
+    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false);
+    wrapper.unmount();
+  });
+
   it('keeps recovery enrollment behavior and defaults a staff account to settings', async () => {
     api.enrollment = { kind: 'recovery', token: 'private-recovery-code' };
     api.authenticate.mockImplementation(async () => {
@@ -132,7 +164,7 @@ describe('sign-in destinations', () => {
     expect(wrapper.find('#account-name').exists()).toBe(false);
     expect(wrapper.text()).toContain('nahradí všechny původní klíče');
     expect(wrapper.text()).toContain('oprávnění zůstanou zachovány');
-    expect(wrapper.find('details').exists()).toBe(false);
+    expect(wrapper.find('.consent-fieldset details').exists()).toBe(false);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
 
@@ -141,14 +173,45 @@ describe('sign-in destinations', () => {
     wrapper.unmount();
   });
 
-  it('keeps invitation enrollment separate from lost-access help', async () => {
+  it('collects one shared name and universe, keeps AI consent optional, and preserves recovery separation', async () => {
     api.enrollment = { kind: 'invite', token: 'private-invitation-code' };
-    const { wrapper } = await mountSignIn();
+    api.authenticate.mockImplementation(async () => {
+      account.value = { id: 'new-invitee', displayName: 'Luna Lovegood', roles: ['Customer'] };
+    });
+    const { router, wrapper } = await mountSignIn(undefined, true);
 
-    expect(wrapper.get('h1').text()).toBe('Přijmout pozvánku');
-    expect(wrapper.find('details').exists()).toBe(false);
+    expect(wrapper.get('h1').text()).toBe('Vstup na vlastní pověst.');
+    expect(wrapper.find('details').exists()).toBe(true);
+    expect(wrapper.get('details summary').text()).toBe('Soukromí');
     expect(wrapper.get('#account-invite').attributes('type')).toBe('password');
     expect(wrapper.text()).toContain('Kód získáte soukromě od vlastníka.');
+    expect(wrapper.get('#account-name').attributes('maxlength')).toBe('80');
+    expect(wrapper.get('#account-universe').attributes('maxlength')).toBe('160');
+    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).required).toBe(false);
+    await wrapper.get('#account-name').setValue('  Luna Lovegood  ');
+    await wrapper.get('#account-universe').setValue('  Kouzelnický svět  ');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(api.authenticate).toHaveBeenCalledWith('enroll', 'private-invitation-code', 'Luna Lovegood');
+    expect(getInvitationRegistration('new-invitee')).toMatchObject({ name: 'Luna Lovegood', universe: 'Kouzelnický svět', status: 'draft' });
+    expect(router.currentRoute.value.path).toBe('/launch');
+    wrapper.unmount();
+  });
+
+  it('retains entered invitation data when the passkey dialog is canceled', async () => {
+    api.enrollment = { kind: 'invite', token: 'private-invitation-code' };
+    api.authenticate.mockRejectedValueOnce(new DOMException('Canceled', 'NotAllowedError'));
+    const { router, wrapper } = await mountSignIn();
+    await wrapper.get('#account-name').setValue('Luna');
+    await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect((wrapper.get('#account-name').element as HTMLInputElement).value).toBe('Luna');
+    expect((wrapper.get('#account-universe').element as HTMLInputElement).value).toBe('Kouzelnický svět');
+    expect((wrapper.get('#account-invite').element as HTMLInputElement).value).toBe('private-invitation-code');
+    expect(wrapper.get('[role="alert"]').text()).toContain('Ověření bylo zrušeno nebo vypršelo.');
+    expect(document.activeElement).toBe(wrapper.get('#account-name').element);
+    expect(router.currentRoute.value.path).toBe('/signin');
     wrapper.unmount();
   });
 
@@ -222,7 +285,7 @@ describe('sign-in destinations', () => {
     expect(wrapper.find('details').exists()).toBe(true);
     await wrapper.findAll('button').find(button => button.text() === 'Vytvořit zákaznický účet')!.trigger('click');
     await flushPromises();
-    expect(wrapper.find('details').exists()).toBe(false);
+    expect(wrapper.find('.consent-fieldset details').exists()).toBe(false);
     await wrapper.get('#customer-account-name').setValue('Nový zákazník');
     await wrapper.get('form').trigger('submit');
     await flushPromises();
@@ -231,4 +294,14 @@ describe('sign-in destinations', () => {
     expect(router.currentRoute.value.path).toBe('/me/character');
     wrapper.unmount();
   });
+});
+
+it('reauthenticates an existing account from the default invitation screen without hidden fields', async () => {
+  account.value = { id: 'existing', displayName: 'Existing', roles: ['Customer'] };
+  const { wrapper } = await mountSignIn(undefined, true);
+  try {
+    await wrapper.get('button').trigger('click');
+    await flushPromises();
+    expect(api.authenticate).toHaveBeenCalledWith('reauth', '', '');
+  } finally { wrapper.unmount(); }
 });

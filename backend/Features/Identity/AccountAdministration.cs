@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Kufr.Backend.Features.Access;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Kufr.Backend.Features.Launch;
 
 namespace Kufr.Backend.Features.Identity;
 
@@ -21,7 +22,7 @@ internal static partial class AccountEndpoints
             grants = await db.ResourceGrants.OrderBy(x => x.Id).Take(1000).ToArrayAsync(),
             invitations = await db.Invitations.Where(x => x.Purpose != "bootstrap" && !x.Consumed && x.ExpiresAt > Now())
                 .OrderBy(x => x.ExpiresAt).ThenBy(x => x.TokenHash)
-                .Select(x => new { x.Purpose, x.Role, x.UserId, x.ExpiresAt }).Take(100).ToArrayAsync()
+                .Select(x => new { x.Purpose, x.Role, x.UserId, x.LaunchGroupId, x.ExpiresAt }).Take(100).ToArrayAsync()
         });
     }
 
@@ -32,6 +33,14 @@ internal static partial class AccountEndpoints
         // resources, but cannot manufacture a second owner or take over accounts.
         if (!context.User.IsInRole(AccountRoles.Owner)) { return ApiProblem.Create(context, 403, "owner_required"); }
         if (!AccountRoles.All.Contains(request.Role)) { return Error(context, "invalid_role"); }
+        if (request.RecoveryUserId is not null && request.LaunchGroupId is not null)
+        { return Error(context, "recovery_group_assignment_forbidden"); }
+        if (request.LaunchGroupId is not null)
+        {
+            var launchStore = context.RequestServices.GetService<LaunchPolicyStore>();
+            if (launchStore is null) { return ApiProblem.Create(context, 503, "launch_groups_unavailable"); }
+            if (launchStore.ReadGroup(request.LaunchGroupId) is null) { return Error(context, "launch_group_unavailable"); }
+        }
         if (request.RecoveryUserId is not null && await users.FindByIdAsync(request.RecoveryUserId) is not { Disabled: false })
         {
             return Error(context, "recovery_unavailable");
@@ -44,7 +53,8 @@ internal static partial class AccountEndpoints
         var invitation = new AccountInvitation
         {
             TokenHash = Hash(token), Purpose = request.RecoveryUserId is null ? "invite" : "recovery",
-            Role = request.Role, UserId = request.RecoveryUserId, ExpiresAt = Now() + 3600
+            Role = request.Role, UserId = request.RecoveryUserId, LaunchGroupId = request.LaunchGroupId,
+            ExpiresAt = Now() + 3600
         };
         db.Invitations.Add(invitation);
         await db.SaveChangesAsync();

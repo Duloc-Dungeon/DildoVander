@@ -21,22 +21,22 @@ internal static class LaunchEndpoints
 
     internal static void MapLaunchEndpoints(this WebApplication app)
     {
-        app.MapMethods("/app/v1/launch/resource-access", ["GET", "HEAD"], (HttpContext context) =>
+        app.MapMethods("/app/v1/launch/resource-access", ["GET", "HEAD"], async (HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             var policy = context.RequestServices.GetService<LaunchAccessService>();
             var allowed = !context.RequestServices.GetRequiredService<AccountConfiguration>().Enabled
-                || policy?.Evaluate(context.User).Allowed == true
+                || policy is not null && (await policy.EvaluateAsync(context.User)).Allowed
                 || context.RequestServices.GetService<ServerAdminAccess>()?.Authenticate(context) == true
                 || HasResourceReadbackCredential(context);
             // nginx auth_request accepts 2xx/401/403; never return the countdown's 423 here.
             return Results.StatusCode(allowed ? 204 : 403);
         });
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) { return; }
-        app.MapGet("/app/v1/launch", (HttpContext context, LaunchAccessService policy) =>
+        app.MapGet("/app/v1/launch", async (HttpContext context, LaunchAccessService policy) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            return Results.Ok(policy.Evaluate(context.User));
+            return Results.Ok(await policy.EvaluateAsync(context.User));
         }).RequireRateLimiting("account");
 
         var admin = app.MapGroup("/app/v1/admin/launch").RequireAuthorization().RequireRateLimiting("account");
@@ -45,6 +45,37 @@ internal static class LaunchEndpoints
             : ValueTask.FromResult<object?>(ApiProblem.Create(invocation.HttpContext, 403, "account_admin_required")));
         admin.MapGet("", (LaunchPolicyStore store) => Results.Ok(store.Read()));
         admin.MapGet("/audit", (LaunchPolicyStore store) => Results.Ok(new { entries = store.ReadAudit() }));
+        admin.MapGet("/groups", (LaunchPolicyStore store) => Results.Ok(new { groups = store.ReadGroups() }));
+        admin.MapPost("/groups", async (LaunchGroupCreate request, HttpContext context, LaunchPolicyStore store,
+            TimeProvider timeProvider) =>
+        {
+            var recent = await AccountAuthorization.RequireRecentAsync(context);
+            if (recent is not null) { return recent; }
+            if (context.Request.Headers["X-DV-Confirm"] != "yes")
+            { return ApiProblem.Create(context, 409, "confirmation_required"); }
+            try
+            {
+                var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+                return Results.Ok(new { group = store.CreateGroup(actor, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
+            }
+            catch (LaunchConfigurationException error)
+            { return ApiProblem.Create(context, error.Status, error.Code); }
+        });
+        admin.MapPut("/groups/{id}", async (string id, LaunchGroupUpdate request, HttpContext context,
+            LaunchPolicyStore store, TimeProvider timeProvider) =>
+        {
+            var recent = await AccountAuthorization.RequireRecentAsync(context);
+            if (recent is not null) { return recent; }
+            if (context.Request.Headers["X-DV-Confirm"] != "yes")
+            { return ApiProblem.Create(context, 409, "confirmation_required"); }
+            try
+            {
+                var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+                return Results.Ok(new { group = store.UpdateGroup(actor, id, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
+            }
+            catch (LaunchConfigurationException error)
+            { return ApiProblem.Create(context, error.Status, error.Code); }
+        });
         admin.MapPut("", async (LaunchConfigurationUpdate update, HttpContext context, LaunchPolicyStore store,
             TimeProvider timeProvider) =>
         {
@@ -88,7 +119,7 @@ internal static class LaunchEndpoints
                 return;
             }
 
-            var access = context.RequestServices.GetRequiredService<LaunchAccessService>().Evaluate(context.User);
+            var access = await context.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(context.User);
             var hasAccountSession = context.User.HasClaim(claim => claim.Type == AccountIdentity.SessionClaim);
             var isPublicDeviceApi = !hasAccountSession && path.StartsWithSegments("/v1")
                 && !path.StartsWithSegments("/v1/admin")
