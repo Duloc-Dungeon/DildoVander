@@ -260,16 +260,54 @@ jsou samostatné správcovské kroky; lokální testy je v produkci neprovedou.
 
 `GET/POST /app/v1/admin/launch/groups` a
 `PUT /app/v1/admin/launch/groups/{id}` spravují samostatné skupiny
-`{id,name,launchAt,revision}`. Zápis termínu používá očekávanou revizi;
+`{id,name,launchAt,revision,countdownDurationSeconds,forceStartAtEnd,countdownConfirmedAt,openedAt}`.
+Zápis termínu používá očekávanou revizi;
 `launchAt=null` drží skupinu uzavřenou. API pro pozvánky přijímá volitelné
 `launchGroupId`. Členství se uloží pouze při skutečném založení nového účtu
 z dané pozvánky; obnova účtu jej nepřepisuje. Správa je chráněna stávajícími
 administrátorskými/operačními kontrolami.
 
+### Čekárna a potvrzené odpočty skupin
+
+Správa čekárny zobrazuje přijaté zákaznické účty, které čekají na otevření své
+skupiny, i nepřiřazené účty a odebraný přístup. Nejde o ukazatel okamžité online
+přítomnosti. Přesun je výslovná správcovská akce se zdrojovou skupinou a očekávanou
+revizí členství; zachovává účet, postavu, passkeys, souhlasy, univerzum i případnou
+revokaci. Výchozí náborová skupina se tím nemění. Již otevřená zdrojová skupina
+nepatří do této čekárny. Přesun do otevřené cílové skupiny umožní aktivnímu členovi
+vstup ihned; odebranému členovi přístup neobnovuje.
+
+Každá skupina má vlastní návrh délky odpočtu a volbu `forceStartAtEnd`:
+
+1. Uložení návrhu odpočet nespouští; host vidí „Brzy“.
+2. Potvrzení spustí celou nastavenou délku od serverového času potvrzení.
+3. S volbou Force se večer otevře automaticky až po skončení potvrzeného odpočtu.
+4. Bez Force zůstává po skončení odpočtu vstup uzavřený a host vidí „Brzy“, dokud
+   správce výslovně nepotvrdí zahájení večera.
+
+Force nikdy neznamená okamžité otevření při uložení návrhu nebo přeskočení
+potvrzení odpočtu. Globální odemčení nepotlačuje skupinové potvrzení ani revokaci.
+Změna názvu skupiny běžící odpočet nemění. Migrace ani restart nic automaticky
+nepotvrzují; starší uložený termín se převádí na nepotvrzený návrh délky od
+poslední změny plánu (nejméně jedna sekunda), nikoli na povolení otevřít skupinu.
+
+`GET /app/v1/admin/launch/waiting-room` vrací soukromý přehled pro správu
+ve stránkách po 100 účtech jako `{members,nextCursor}`. Další stránka používá
+`?after=<nextCursor>`; aplikace načte všechny stránky před povolením změn.
+`PUT /app/v1/admin/launch/waiting-room/{userId}/group` přijímá
+`{expectedMembershipRevision,expectedSourceGroupId,targetGroupId}`.
+Návrh odpočtu ukládá `PUT /app/v1/admin/launch/groups/{id}/countdown` s
+`{expectedRevision,durationSeconds,forceStartAtEnd}`. Potvrzení používá
+`POST /app/v1/admin/launch/groups/{id}/countdown/confirm` a ruční zahájení po
+skončení odpočtu `POST /app/v1/admin/launch/groups/{id}/start`; obě akce posílají
+`{expectedRevision}`. Zůstávají platné dosavadní CSRF/origin, správcovské role,
+recent-passkey, potvrzení a audit. Veřejné `/app/v1/launch` vrací účinný čas až
+po potvrzení odpočtu; neověřený nebo ukončený neotevřený odpočet neodemyká API.
+
 EF migrace `20261026045830_AccountLaunchGroupMembership` přidává nullable
 členství účtům a pozvánkám. Nepřiřazené starší účty používají dosavadní plán.
-Pro přiřazený účet je autoritou serverový termín jeho skupiny, i když je
-globální plán otevřený; neexistující skupina zůstává uzavřená. Výjimky staff/tester
+Pro přiřazený účet je autoritou potvrzený odpočet a stav otevření jeho skupiny,
+i když je globální plán otevřený; neexistující skupina zůstává uzavřená. Výjimky staff/tester
 a ostatní audience/capability/resource oprávnění zůstávají samostatné.
 
 Prelaunch artwork vrací volitelné `welcome:{joke,identity,teaser}` vedle

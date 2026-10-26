@@ -50,6 +50,19 @@ public final class NativeAccountRequestPolicyTest {
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/not-a-group", "PUT"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups//0123456789abcdef0123456789abcdef", "PUT"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/", "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room?after=abcdef0123456789abcdef0123456789", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room?after=bad", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room?after=abcdef0123456789abcdef0123456789&extra=1", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room/abcdef0123456789abcdef0123456789/group", "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/countdown", "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/countdown/confirm", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/start", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room/not-a-user/group", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room/abcdef0123456789abcdef0123456789/group?other=1", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/countdown/confirm", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/../countdown", "PUT"));
     }
 
     @Test public void betaAdmissionAndMemberRoutesHaveNarrowMethods() {

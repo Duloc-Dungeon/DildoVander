@@ -734,7 +734,7 @@ vlastní `contracts/prelaunch-welcome.schema.json` a `npm --prefix contracts run
 
 Při tvorbě pozvánky ve správě účtů vyberte skupinu nebo vytvořte její vlastní
 termín. Čas platí jen pro účty vzniklé z pozvánek této skupiny; změna termínu
-ovlivní její členy, nikoli globální plán. Obnova účtu členství nemění.
+je návrh pro správu odpočtu, nikoli automatické spuštění. Obnova účtu členství nemění.
 
 `npm run test:invitation:browser` po buildu pořídí označené mobilní screenshoty
 a krátké WebM do `.codex/artifacts/wand-invitation/` v kořeni repozitáře.
@@ -762,3 +762,18 @@ Serverové kontrakty a postup migrace popisuje [backend README](../backend/READM
 320/375/390/430 CSS px a obě témata a ukládá screenshoty do
 `.codex/artifacts/wand-beta-admission/`. Jde o webové ověření; transportní
 allowlisty mají vlastní iOS/Android regresní testy a vyžadují nativní toolchain.
+
+### Správa čekárny a skupin
+
+Ve správě spuštění je přehled čekajících účastníků ze všech skupin i účtů bez
+skupiny. U účastníka vyberte cílovou skupinu a potvrďte přesun. Účet ani postava se
+nevytváří znovu; odebraný přístup zůstává odebraný. Přesun do již otevřené skupiny
+umožní aktivnímu účastníkovi vstup ihned a potvrzení na to upozorní. Tento výběr
+nemění výchozí skupinu pro nové registrace.
+
+Pro každou skupinu nastavte délku odpočtu a případně zaškrtněte Force, tedy
+automatické zahájení večera po jeho skončení. Uložení pouze připraví návrh: host
+zatím vidí „Brzy“. Teprve samostatné potvrzení spustí celou délku odpočtu.
+S Force se při nule otevře večer. Bez Force zůstane „Brzy“, dokud po skončení
+odpočtu nepotvrdíte zahájení večera. Force neotevírá večer okamžitě a nenahrazuje
+potvrzení začátku odpočtu. Ostatní skupiny se řídí svými vlastními potvrzeními.

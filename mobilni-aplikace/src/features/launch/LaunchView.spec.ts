@@ -244,3 +244,28 @@ it('a zero local countdown cannot grant entry when the server still denies it', 
   try {await flushPromises();await vi.advanceTimersByTimeAsync(2000);expect(api.replace).not.toHaveBeenCalled();}
   finally {view.unmount();}
 });
+it('shows Soon before the owner confirms a countdown', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: false, audience: 'beta', launchAt: null, serverNow: Date.now() } : original(path, method));
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('.character-countdown-wait').text()).toBe('Brzy');
+    expect(view.find('.character-countdown-grid').exists()).toBe(false);
+  } finally { view.unmount(); }
+});
+it('shows Soon after a non-force countdown expires until the server opens the night', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: false, audience: 'beta', launchAt: Date.now() - 1000, serverNow: Date.now() } : original(path, method));
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('.character-countdown-wait').text()).toBe('Brzy');
+    expect(view.find('.character-countdown-grid').exists()).toBe(false);
+    expect(api.replace).not.toHaveBeenCalled();
+  } finally { view.unmount(); }
+});

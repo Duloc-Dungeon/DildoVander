@@ -28,9 +28,12 @@ internal sealed record LaunchConfigurationUpdate(long ExpectedRevision, bool Bet
 internal sealed record EffectiveLaunchAccess(bool Allowed, string Audience, long? LaunchAt, long ServerNow,
     string Teaser, string InitialLoadingMessage, bool PersonalizedLoadingEnabled);
 internal sealed record LaunchAuditEntry(string ActorId, long ChangedAt, long Revision, string ChangeSummary);
-internal sealed record LaunchGroup(string Id, string Name, long? LaunchAt, long Revision);
+internal sealed record LaunchGroup(string Id, string Name, long? LaunchAt, long Revision,
+    long? CountdownDurationSeconds, bool ForceStartAtEnd, long? CountdownConfirmedAt, long? OpenedAt);
 internal sealed record LaunchGroupCreate(string Name, long? LaunchAt);
 internal sealed record LaunchGroupUpdate(long ExpectedRevision, string Name, long? LaunchAt);
+internal sealed record LaunchGroupCountdownUpdate(long ExpectedRevision, long DurationSeconds, bool ForceStartAtEnd);
+internal sealed record LaunchGroupRevision(long ExpectedRevision);
 internal sealed record BetaAdmissionConfiguration(long Revision, string? GroupId, bool RecruitmentOpen,
     string? FixedUniverse);
 internal sealed record BetaAdmissionUpdate(long ExpectedRevision, string? GroupId, bool RecruitmentOpen,
@@ -73,6 +76,11 @@ internal sealed class LaunchPolicyStore
             CREATE TABLE IF NOT EXISTS launch_groups (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
                 launch_at INTEGER NULL, revision INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+            """;
+        command.ExecuteNonQuery();
+        EnsureGroupCountdownColumns(connection);
+        using var setup = connection.CreateCommand();
+        setup.CommandText = """
             CREATE TABLE IF NOT EXISTS beta_admission (
                 id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
                 group_id TEXT NULL, recruitment_open INTEGER NOT NULL DEFAULT 0,
@@ -85,7 +93,7 @@ internal sealed class LaunchPolicyStore
                  'A peculiar little surprise is taking shape…',0,
                  'Write one brief, playful, mysterious loading message inspired by the supplied fictional character context. Do not reveal product features or repeat research facts.');
             """;
-        command.ExecuteNonQuery();
+        setup.ExecuteNonQuery();
         using var defaults = connection.CreateCommand();
         defaults.CommandText = """
             UPDATE launch_configuration SET teaser=$teaser,initial_loading_message=$message,
@@ -116,6 +124,36 @@ internal sealed class LaunchPolicyStore
         previousDefaults.ExecuteNonQuery();
     }
 
+    private static void EnsureGroupCountdownColumns(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(launch_groups)";
+        using var reader = command.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read()) { columns.Add(reader.GetString(1)); }
+        reader.Close();
+        using var migration = connection.CreateCommand();
+        if (!columns.Contains("countdown_duration_seconds"))
+        { migration.CommandText += "ALTER TABLE launch_groups ADD COLUMN countdown_duration_seconds INTEGER NULL;"; }
+        if (!columns.Contains("force_start_at_end"))
+        { migration.CommandText += "ALTER TABLE launch_groups ADD COLUMN force_start_at_end INTEGER NOT NULL DEFAULT 0;"; }
+        if (!columns.Contains("countdown_confirmed_at"))
+        { migration.CommandText += "ALTER TABLE launch_groups ADD COLUMN countdown_confirmed_at INTEGER NULL;"; }
+        if (!columns.Contains("opened_at"))
+        { migration.CommandText += "ALTER TABLE launch_groups ADD COLUMN opened_at INTEGER NULL;"; }
+        // Existing absolute schedules were never explicitly confirmed. Close them on upgrade.
+        migration.CommandText += """
+            UPDATE launch_groups
+            SET countdown_duration_seconds=CASE
+                WHEN launch_at>updated_at THEN (launch_at-updated_at+999)/1000
+                ELSE 1 END
+            WHERE launch_at IS NOT NULL AND countdown_confirmed_at IS NULL
+                AND countdown_duration_seconds IS NULL;
+            UPDATE launch_groups SET launch_at=NULL WHERE countdown_confirmed_at IS NULL;
+            """;
+        migration.ExecuteNonQuery();
+    }
+
     internal LaunchConfiguration Read()
     {
         using var connection = Open();
@@ -132,7 +170,7 @@ internal sealed class LaunchPolicyStore
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id,name,launch_at,revision FROM launch_groups ORDER BY name COLLATE NOCASE,id";
+        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at FROM launch_groups ORDER BY name COLLATE NOCASE,id";
         using var reader = command.ExecuteReader();
         var groups = new List<LaunchGroup>();
         while (reader.Read()) { groups.Add(ReadGroup(reader)); }
@@ -202,6 +240,41 @@ internal sealed class LaunchPolicyStore
         }
     }
 
+    internal WaitingRoomMoveReservation? ReserveWaitingRoomMove(string? sourceGroupId,
+        string targetGroupId)
+    {
+        var connection = Open();
+        SqliteTransaction? transaction = null;
+        try
+        {
+            transaction = connection.BeginTransaction();
+            if (!LockGroup(connection, transaction, targetGroupId))
+            {
+                transaction.Dispose();
+                connection.Dispose();
+                return null;
+            }
+            if (sourceGroupId is not null) { _ = LockGroup(connection, transaction, sourceGroupId); }
+            var source = sourceGroupId is null ? null : ReadGroup(connection, transaction, sourceGroupId);
+            return new WaitingRoomMoveReservation(connection, transaction, source);
+        }
+        catch
+        {
+            transaction?.Dispose();
+            connection.Dispose();
+            throw;
+        }
+    }
+
+    private static bool LockGroup(SqliteConnection connection, SqliteTransaction transaction, string id)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE launch_groups SET updated_at=updated_at WHERE id=$id";
+        command.Parameters.AddWithValue("$id", id);
+        return command.ExecuteNonQuery() == 1;
+    }
+
     internal BetaAdmissionConfiguration UpdateBetaAdmission(string actorId, BetaAdmissionUpdate update, long now)
     {
         if (update.ExpectedRevision < 1 || update.FixedUniverse is { Length: > 100 }
@@ -247,7 +320,8 @@ internal sealed class LaunchPolicyStore
             var existing = ReadGroupByName(connection, transaction, "Interní beta");
             if (existing is null)
             {
-                group = new LaunchGroup(Guid.NewGuid().ToString("N"), "Interní beta", null, 1);
+                group = new LaunchGroup(Guid.NewGuid().ToString("N"), "Interní beta", null, 1,
+                    null, false, null, null);
                 using var create = connection.CreateCommand();
                 create.Transaction = transaction;
                 create.CommandText = "INSERT INTO launch_groups(id,name,launch_at,revision,updated_at) VALUES($id,$name,NULL,1,$now)";
@@ -308,7 +382,7 @@ internal sealed class LaunchPolicyStore
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT id,name,launch_at,revision FROM launch_groups WHERE id=$id";
+        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at FROM launch_groups WHERE id=$id";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadGroup(reader) : null;
@@ -318,7 +392,7 @@ internal sealed class LaunchPolicyStore
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT id,name,launch_at,revision FROM launch_groups WHERE name=$name COLLATE NOCASE";
+        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at FROM launch_groups WHERE name=$name COLLATE NOCASE";
         command.Parameters.AddWithValue("$name", name);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadGroup(reader) : null;
@@ -338,7 +412,7 @@ internal sealed class LaunchPolicyStore
         if (string.IsNullOrWhiteSpace(id) || id.Length > 64) { return null; }
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id,name,launch_at,revision FROM launch_groups WHERE id=$id";
+        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at FROM launch_groups WHERE id=$id";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadGroup(reader) : null;
@@ -347,15 +421,17 @@ internal sealed class LaunchPolicyStore
     internal LaunchGroup CreateGroup(string actorId, LaunchGroupCreate request, long now)
     {
         ValidateGroup(request.Name, request.LaunchAt);
-        var group = new LaunchGroup(Guid.NewGuid().ToString("N"), request.Name.Trim(), request.LaunchAt, 1);
+        var draftDuration = LegacyDraftDuration(request.LaunchAt, now);
+        var group = new LaunchGroup(Guid.NewGuid().ToString("N"), request.Name.Trim(), null, 1,
+            draftDuration, false, null, null);
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "INSERT INTO launch_groups(id,name,launch_at,revision,updated_at) VALUES($id,$name,$launch,1,$now)";
+        command.CommandText = "INSERT INTO launch_groups(id,name,launch_at,revision,updated_at,countdown_duration_seconds,force_start_at_end) VALUES($id,$name,NULL,1,$now,$duration,0)";
         command.Parameters.AddWithValue("$id", group.Id);
         command.Parameters.AddWithValue("$name", group.Name);
-        AddNullable(command, "$launch", group.LaunchAt);
+        AddNullable(command, "$duration", group.CountdownDurationSeconds);
         command.Parameters.AddWithValue("$now", now);
         try { command.ExecuteNonQuery(); }
         catch (SqliteException error) when (error.SqliteErrorCode == 19)
@@ -371,12 +447,20 @@ internal sealed class LaunchPolicyStore
         if (request.ExpectedRevision < 1) { throw new LaunchConfigurationException("invalid_launch_group", 400); }
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
+        var current = ReadGroup(connection, transaction, id)
+            ?? throw new LaunchConfigurationException("launch_group_unavailable", 404);
+        var scheduleChanged = request.LaunchAt is not null && current.LaunchAt != request.LaunchAt;
+        var draftDuration = scheduleChanged ? LegacyDraftDuration(request.LaunchAt, now) : null;
+        if (scheduleChanged)
+        { EnsureGroupCountdownEditable(connection, transaction, id, now); }
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "UPDATE launch_groups SET name=$name,launch_at=$launch,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected";
+        command.CommandText = !scheduleChanged
+            ? "UPDATE launch_groups SET name=$name,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected"
+            : "UPDATE launch_groups SET name=$name,countdown_duration_seconds=$duration,force_start_at_end=0,launch_at=NULL,countdown_confirmed_at=NULL,opened_at=NULL,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected";
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$name", request.Name.Trim());
-        AddNullable(command, "$launch", request.LaunchAt);
+        if (scheduleChanged) { command.Parameters.AddWithValue("$duration", draftDuration!.Value); }
         command.Parameters.AddWithValue("$now", now);
         command.Parameters.AddWithValue("$expected", request.ExpectedRevision);
         try
@@ -391,14 +475,146 @@ internal sealed class LaunchPolicyStore
         return ReadGroup(id)!;
     }
 
+    internal LaunchGroup SaveCountdown(string actorId, string id, LaunchGroupCountdownUpdate request, long now)
+    {
+        if (request.ExpectedRevision < 1 || request.DurationSeconds is < 1 or > 253402300799)
+        { throw new LaunchConfigurationException("invalid_launch_countdown", 400); }
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        EnsureGroupCountdownEditable(connection, transaction, id, now);
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE launch_groups SET countdown_duration_seconds=$duration,force_start_at_end=$force,launch_at=NULL,countdown_confirmed_at=NULL,opened_at=NULL,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected";
+        command.Parameters.AddWithValue("$duration", request.DurationSeconds);
+        command.Parameters.AddWithValue("$force", request.ForceStartAtEnd);
+        command.Parameters.AddWithValue("$now", now);
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$expected", request.ExpectedRevision);
+        if (command.ExecuteNonQuery() != 1)
+        { throw GroupRevisionOrMissing(connection, transaction, id); }
+        InsertGroupAudit(connection, transaction, actorId, now, request.ExpectedRevision + 1, "launch_group_countdown_draft_saved");
+        transaction.Commit();
+        return ReadGroup(id)!;
+    }
+
+    internal LaunchGroup ConfirmCountdown(string actorId, string id, LaunchGroupRevision request, long now)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE launch_groups SET launch_at=$deadline,countdown_confirmed_at=$now,opened_at=NULL,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected AND countdown_duration_seconds IS NOT NULL AND launch_at IS NULL";
+        command.Parameters.AddWithValue("$deadline", checked(now + ReadCountdownDuration(connection, transaction, id)));
+        command.Parameters.AddWithValue("$now", now);
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$expected", request.ExpectedRevision);
+        if (request.ExpectedRevision < 1 || command.ExecuteNonQuery() != 1)
+        { throw GroupRevisionOrMissing(connection, transaction, id); }
+        InsertGroupAudit(connection, transaction, actorId, now, request.ExpectedRevision + 1, "launch_group_countdown_confirmed");
+        transaction.Commit();
+        return ReadGroup(id)!;
+    }
+
+    internal LaunchGroup StartGroup(string actorId, string id, LaunchGroupRevision request, long now)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE launch_groups SET opened_at=$now,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected AND launch_at IS NOT NULL AND launch_at<=$now AND force_start_at_end=0 AND opened_at IS NULL";
+        command.Parameters.AddWithValue("$now", now);
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$expected", request.ExpectedRevision);
+        if (request.ExpectedRevision < 1 || command.ExecuteNonQuery() != 1)
+        { throw GroupRevisionOrMissing(connection, transaction, id); }
+        InsertGroupAudit(connection, transaction, actorId, now, request.ExpectedRevision + 1, "launch_group_started");
+        transaction.Commit();
+        return ReadGroup(id)!;
+    }
+
+    internal LaunchGroup? CompleteForcedCountdown(string id, long now)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE launch_groups SET opened_at=$now,revision=revision+1,updated_at=$now WHERE id=$id AND launch_at IS NOT NULL AND launch_at<=$now AND force_start_at_end=1 AND opened_at IS NULL";
+        command.Parameters.AddWithValue("$now", now);
+        command.Parameters.AddWithValue("$id", id);
+        if (command.ExecuteNonQuery() == 1)
+        {
+            using var audit = connection.CreateCommand();
+            audit.Transaction = transaction;
+            audit.CommandText = "INSERT INTO launch_audit(actor_id,changed_at,revision,change_summary) SELECT 'system',updated_at,revision,'launch_group_force_started' FROM launch_groups WHERE id=$id";
+            audit.Parameters.AddWithValue("$id", id);
+            audit.ExecuteNonQuery();
+        }
+        transaction.Commit();
+        return ReadGroup(id);
+    }
+
+    private static long ReadCountdownDuration(SqliteConnection connection, SqliteTransaction transaction, string id)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT countdown_duration_seconds FROM launch_groups WHERE id=$id";
+        command.Parameters.AddWithValue("$id", id);
+        var value = command.ExecuteScalar();
+        if (value is null or DBNull) { throw new LaunchConfigurationException("launch_countdown_draft_unavailable", 409); }
+        return Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture) * 1000;
+    }
+
+    private static void EnsureGroupCountdownEditable(SqliteConnection connection,
+        SqliteTransaction transaction, string id, long now)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM launch_groups WHERE id=$id AND (opened_at IS NOT NULL OR (force_start_at_end=1 AND launch_at IS NOT NULL AND launch_at<=$now))";
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$now", now);
+        if (command.ExecuteScalar() is not null)
+        { throw new LaunchConfigurationException("launch_group_already_open", 409); }
+    }
+
+    private static LaunchConfigurationException GroupRevisionOrMissing(SqliteConnection connection,
+        SqliteTransaction transaction, string id)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM launch_groups WHERE id=$id";
+        command.Parameters.AddWithValue("$id", id);
+        return command.ExecuteScalar() is null
+            ? new LaunchConfigurationException("launch_group_unavailable", 404)
+            : new LaunchConfigurationException("launch_group_revision_conflict", 409);
+    }
+
     private static LaunchGroup ReadGroup(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1),
-        NullableInt64(reader, 2), reader.GetInt64(3));
+        NullableInt64(reader, 2), reader.GetInt64(3), NullableInt64(reader, 4), reader.GetBoolean(5),
+        NullableInt64(reader, 6), NullableInt64(reader, 7));
 
     private static void ValidateGroup(string? name, long? launchAt)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 80 || name.Any(char.IsControl)
             || launchAt is < 0 or > 253402300799999)
         { throw new LaunchConfigurationException("invalid_launch_group", 400); }
+    }
+
+    private static long? LegacyDraftDuration(long? launchAt, long now)
+    {
+        if (launchAt is null) { return null; }
+        if (launchAt <= now) { throw new LaunchConfigurationException("invalid_launch_group", 400); }
+        var duration = Math.Max(1, (launchAt.Value - now + 999) / 1000);
+        return duration;
+    }
+
+    internal void AuditBetaMemberMoved(string actorId, string accountId, string? sourceGroupId,
+        string? targetGroupId, long revision, long now)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        InsertGroupAudit(connection, transaction, actorId, now, revision,
+            $"waiting_room_member_moved:{accountId}:{sourceGroupId ?? "unassigned"}:{targetGroupId ?? "unassigned"}");
+        transaction.Commit();
     }
 
     private static void InsertGroupAudit(SqliteConnection connection, SqliteTransaction transaction,
@@ -550,9 +766,24 @@ internal sealed class BetaEnrollmentReservation(SqliteConnection connection, Sql
     }
 }
 
+internal sealed class WaitingRoomMoveReservation(SqliteConnection connection, SqliteTransaction transaction,
+    LaunchGroup? source) : IDisposable
+{
+    internal bool SourceStarted(long now) => source?.OpenedAt is not null
+        || source?.ForceStartAtEnd == true && source.LaunchAt is not null && source.LaunchAt <= now;
+
+    public void Dispose()
+    {
+        transaction.Dispose();
+        connection.Dispose();
+    }
+}
+
 internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider timeProvider,
     IServiceScopeFactory? scopeFactory = null)
 {
+    private sealed record AccountLaunchSnapshot(string? GroupId, long? RevokedAt, long Revision);
+
     internal LaunchConfiguration Configuration => store.Read();
 
     internal EffectiveLaunchAccess Evaluate(ClaimsPrincipal principal)
@@ -568,18 +799,40 @@ internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider 
         if (string.IsNullOrWhiteSpace(userId) || scopeFactory is null) { return Evaluate(principal); }
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
-        var accountAccess = await db.Users.AsNoTracking().Where(user => user.Id == userId)
-            .Select(user => new { user.LaunchGroupId, user.LaunchGroupRevokedAt }).SingleOrDefaultAsync();
-        if (accountAccess?.LaunchGroupRevokedAt is not null)
-        {
-            var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-            var config = store.Read();
-            return new(false, "revoked", null, now, config.Teaser, config.InitialLoadingMessage,
-                config.PersonalizedLoadingEnabled);
-        }
-        var groupId = accountAccess?.LaunchGroupId;
-        if (groupId is null) { return Evaluate(principal); }
-        return EvaluateGroupAware(principal, groupId, store.ReadGroup(groupId));
+        var initial = await ReadAccountLaunchSnapshotAsync(db, userId);
+        var result = initial?.RevokedAt is not null
+            ? DenyForChangedMembership(principal, initial)
+            : initial?.GroupId is { } groupId
+                ? EvaluateGroupAware(principal, groupId, store.ReadGroup(groupId))
+                : Evaluate(principal);
+        var current = await ReadAccountLaunchSnapshotAsync(db, userId);
+        if (!SameAccountLaunchSnapshot(initial, current))
+        { return DenyForChangedMembership(principal, current); }
+        return result;
+    }
+
+    private static async Task<AccountLaunchSnapshot?> ReadAccountLaunchSnapshotAsync(AccountDatabase db,
+        string userId)
+    {
+        var account = await db.Users.AsNoTracking().Where(user => user.Id == userId)
+            .Select(user => new { user.LaunchGroupId, user.LaunchGroupRevokedAt, user.LaunchGroupAccessRevision })
+            .SingleOrDefaultAsync();
+        return account is null ? null
+            : new(account.LaunchGroupId, account.LaunchGroupRevokedAt, account.LaunchGroupAccessRevision);
+    }
+
+    private static bool SameAccountLaunchSnapshot(AccountLaunchSnapshot? first,
+        AccountLaunchSnapshot? second)
+        => first?.GroupId == second?.GroupId && first?.RevokedAt == second?.RevokedAt
+            && first?.Revision == second?.Revision;
+
+    private EffectiveLaunchAccess DenyForChangedMembership(ClaimsPrincipal principal,
+        AccountLaunchSnapshot? current)
+    {
+        var baseline = EvaluateGroupAware(principal, null, null);
+        var audience = current?.RevokedAt is not null ? "revoked"
+            : principal.IsInRole(AccountRoles.Beta) ? "beta" : "production";
+        return baseline with { Allowed = false, Audience = audience, LaunchAt = null };
     }
 
     private EffectiveLaunchAccess EvaluateGroupAware(ClaimsPrincipal principal, string? groupId, LaunchGroup? group)
@@ -598,8 +851,9 @@ internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider 
         var beta = principal.IsInRole(AccountRoles.Beta);
         if (groupId is not null)
         {
-            var schedule = group is not null && group.Id == groupId ? group.LaunchAt : null;
-            var groupAllowed = schedule is not null && now >= schedule.Value;
+            var current = group is not null && group.Id == groupId ? store.CompleteForcedCountdown(groupId, now) : null;
+            var schedule = current?.LaunchAt;
+            var groupAllowed = current?.OpenedAt is not null;
             return new(groupAllowed, beta ? "beta" : "production", schedule, now,
                 teaser, initialLoadingMessage, config.PersonalizedLoadingEnabled);
         }

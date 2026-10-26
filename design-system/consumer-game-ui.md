@@ -53,6 +53,8 @@ This direction applies to the Wand Night Stand consumer journey only. Simulator,
 
 The [implementation evidence](evidence/midnight-table/README.md) records actual checks, representative captures and native-device gaps. Run `npm run build --prefix mobilni-aplikace`, then `npm run preview:opening --prefix mobilni-aplikace`. Its loopback fixture picker exposes six real application states and the important failures without live private data or a production debug route.
 
+WNS-OPEN-D and WNS-OPEN-E also use the shared countdown for group waiting: an unconfirmed group draft shows “Brzy”/“Soon”, and an expired countdown stays on “Soon” until server-authorized opening. The scene, paper and portrait theatre remain unchanged. [Launch regression tests](../mobilni-aplikace/src/features/launch/LaunchView.spec.ts) cover both waiting states; the beta-admission browser journey covers draft, confirmed and expired countdowns in both themes. These checks do not establish native-device acceptance.
+
 Runtime art has nine variants totaling about 583 kB. Editable source PNGs and export instructions live in [`assets/midnight/`](assets/midnight/README.md); `scripts/prepare_midnight_assets.py` regenerates them and the manifest. The portrait aperture is exactly 4:5; independent wings move within it while the outer frame stays fixed. Opening art has a 550ms optional entrance through `SceneShell`'s `data-scene-enter` marker, pauses through its `active` prop and has a static reduced-motion state. Buttons work immediately.
 
 For the next separately approved screen, the implementation normally starts with this composition, using its existing feature state:

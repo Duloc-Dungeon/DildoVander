@@ -24,3 +24,22 @@ it('updates only the selected group with its optimistic revision', async () => {
     expect(api.request.mock.calls.some(([path])=>path==='/app/v1/admin/launch')).toBe(false);
   } finally { view.unmount(); }
 });
+it('preserves the exact confirmed deadline when renaming without changing its displayed minute', async () => {
+  const exactLaunchAt = Date.UTC(2026, 10, 6, 19, 0, 37, 842);
+  api.request.mockReset().mockImplementation(async (_path, method) => method
+    ? { group: { id: 'group-a', name: 'Pátek nově', launchAt: exactLaunchAt, revision: 4 } }
+    : { groups: [{ id: 'group-a', name: 'Pátek', launchAt: exactLaunchAt, revision: 3 }] });
+  const view = mount(InvitationGroupFields, { props: { modelValue: 'group-a' } });
+  try {
+    await flushPromises();
+    await view.get('#invitation-group').setValue('group-a');
+    const displayedMinute = (view.get('#invitation-group-opening').element as HTMLInputElement).value;
+    expect(displayedMinute).toMatch(/T\d{2}:\d{2}$/);
+    await view.get('#invitation-group-name').setValue('Pátek nově');
+    await view.findAll('button').at(-1)!.trigger('click');
+    await flushPromises();
+    expect(api.request).toHaveBeenCalledWith('/app/v1/admin/launch/groups/group-a', 'PUT', {
+      expectedRevision: 3, name: 'Pátek nově', launchAt: exactLaunchAt,
+    });
+  } finally { view.unmount(); }
+});

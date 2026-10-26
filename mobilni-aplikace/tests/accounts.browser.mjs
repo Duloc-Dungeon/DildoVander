@@ -47,9 +47,18 @@ try {
   await owner.page.goto(origin.origin + '/settings/admin');
   await owner.page.locator('.invitation-group summary').click();
   await owner.page.getByLabel('Název skupiny', { exact: true }).fill('Izolovaná skupina');
-  await owner.page.getByLabel(/Čas otevření \(/).fill('2020-01-01T00:00');
+  const futureOpening = new Date(Date.now() + 86400000).toISOString().slice(0, 16);
+  await owner.page.getByLabel(/Čas otevření \(/).fill(futureOpening);
+  const createdGroupResponse = owner.page.waitForResponse(response =>
+    response.url() === origin.origin + '/app/v1/admin/launch/groups' && response.request().method() === 'POST');
   await owner.page.getByRole('button', { name: 'Vytvořit skupinu', exact: true }).click();
-  await owner.page.getByText('Termín je uložený pouze pro členy této skupiny.').waitFor();
+  const createdGroup = await createdGroupResponse;
+  assert.equal(createdGroup.status(), 200);
+  const { group: invitationGroup } = await createdGroup.json();
+  assert.equal(invitationGroup.launchAt, null, 'saving a group keeps its countdown unconfirmed');
+  assert.equal(invitationGroup.countdownConfirmedAt, null);
+  assert(invitationGroup.countdownDurationSeconds > 0, 'opening date is saved only as a duration draft');
+  await owner.page.getByText('Skupina je uložená. Odpočet nastavíte a potvrdíte ve správě čekárny.').waitFor();
   // A newer app talking to an older backend can receive invalid_role. Exercise
   // the real rejection and in-app diagnostic without inventing a successful invite.
   await owner.page.getByLabel('Role nového účtu', { exact: true }).evaluate(select => select.add(new Option('Unsupported role', 'UnsupportedRole')));

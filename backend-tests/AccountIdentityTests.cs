@@ -662,8 +662,10 @@ internal static partial class AccountIdentityTests
                 var admission = launch.ReadBetaAdmission();
                 var selected = launch.CreateOrSelectBetaGroup("test-fixture",
                     new(admission.Revision), now);
-                launch.UpdateGroup("test-fixture", selected.Group.Id,
-                    new(selected.Group.Revision, selected.Group.Name, now - 1000), now);
+                var countdown = launch.SaveCountdown("test-fixture", selected.Group.Id,
+                    new(selected.Group.Revision, 1, true), now - 2000);
+                launch.ConfirmCountdown("test-fixture", selected.Group.Id,
+                    new(countdown.Revision), now - 2000);
                 launch.UpdateBetaAdmission("test-fixture",
                     new(selected.Admission.Revision, selected.Group.Id, true, null), now);
             }
