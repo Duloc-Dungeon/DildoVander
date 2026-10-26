@@ -1,0 +1,81 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace = "de.dildovander.companion"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "de.dildovander.companion"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode = Integer.parseInt(System.getenv('ANDROID_VERSION_CODE') ?: '1')
+        versionName = System.getenv('ANDROID_VERSION_NAME') ?: '0.1.0'
+        buildConfigField('String', 'ACCOUNT_ORIGIN', groovy.json.JsonOutput.toJson(System.getenv('KUFR_ACCOUNT_ORIGIN') ?: 'https://dildovander.de'))
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildFeatures { buildConfig true }
+    signingConfigs {
+        release {
+            if (System.getenv('ANDROID_KEYSTORE_PATH')) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias = System.getenv('ANDROID_KEY_ALIAS') ?: 'wand-night-stand'
+                keyPassword = System.getenv('ANDROID_KEY_PASSWORD') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:5.3.0'
+    implementation 'androidx.credentials:credentials:1.6.0'
+    implementation 'androidx.credentials:credentials-play-services-auth:1.6.0'
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    // Espresso's older JDK7/8 split artifacts must match the merged stdlib.
+    androidTestImplementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+// A release must never silently produce an unsigned APK or use a debug key.
+tasks.configureEach { task ->
+    if (task.name == 'validateSigningRelease') {
+        task.doFirst {
+            if (!System.getenv('ANDROID_KEYSTORE_PATH') || !System.getenv('ANDROID_KEYSTORE_PASSWORD')) {
+                throw new GradleException('Release signing requires ANDROID_KEYSTORE_PATH and ANDROID_KEYSTORE_PASSWORD')
+            }
+            if (android.defaultConfig.versionCode < 1 || android.defaultConfig.versionCode > 2100000000) {
+                throw new GradleException('ANDROID_VERSION_CODE must be between 1 and 2100000000')
+            }
+            def origin = new URI(System.getenv('KUFR_ACCOUNT_ORIGIN') ?: 'https://dildovander.de')
+            if (origin.scheme != 'https' || !origin.host || origin.userInfo || origin.query || origin.fragment || !(origin.path in ['', '/'])) {
+                throw new GradleException('KUFR_ACCOUNT_ORIGIN must be an HTTPS origin')
+            }
+        }
+    }
+}

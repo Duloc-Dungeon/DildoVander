@@ -98,6 +98,7 @@ if (args is ["--keepsake-readiness"])
     await AccountIdentityTests.RunCustomerSessionResultHttpAsync();
     return;
 }
+if (args is ["--android-identity"]) { await AccountIdentityTests.RunAndroidAssociationAsync(); return; }
 if (args is ["--identity"])
 {
     await LaunchPolicyTests.RunAsync();

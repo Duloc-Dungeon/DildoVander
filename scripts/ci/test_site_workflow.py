@@ -16,6 +16,7 @@ class PublicWorkflowTests(unittest.TestCase):
                                   'IOS_P12_PASSWORD', 'IOS_KEYCHAIN_PASSWORD'},
             'kufr-ios-app-store.yml': {'IOS_APP_STORE_CERTIFICATE_BASE64', 'IOS_APP_STORE_PROFILE_BASE64',
                                       'IOS_APP_STORE_P12_PASSWORD', 'IOS_APP_STORE_KEYCHAIN_PASSWORD'},
+            'kufr-android-release.yml': {'ANDROID_RELEASE_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD'},
         }
         for path in WORKFLOWS.glob('*.yml'):
             with self.subTest(workflow=path.name):
@@ -33,6 +34,22 @@ class PublicWorkflowTests(unittest.TestCase):
                     self.assertNotIn('workflow_run:', source)
                 secrets = set(re.findall(r'secrets\.([A-Z0-9_]+)', source))
                 self.assertTrue(secrets <= signing_secrets.get(path.name, set()))
+
+    def test_android_signing_has_isolated_main_only_credentials_and_no_distribution(self):
+        source = (WORKFLOWS / 'kufr-android-release.yml').read_text()
+        for block in [source.split('  verify:', 1)[1].split('  signed-apk:', 1)[0],
+                      source.split('  signed-apk:', 1)[1]]:
+            for guard in ("github.repository == 'Duloc-Dungeon/DildoVander'",
+                          "github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'"):
+                self.assertIn(guard, block)
+        self.assertIn('environment: android-signing', source)
+        self.assertIn('artifact-ids: ${{ needs.verify.outputs.artifact_id }}', source)
+        self.assertNotIn('FIREBASE', source)
+        self.assertNotIn('appdistribution:distribute', source)
+        self.assertIn('android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407', source)
+        for name in ('kufr-android.yml', 'kufr-android-release.yml'):
+            android = (WORKFLOWS / name).read_text()
+            self.assertRegex(android, r'android-actions/setup-android@[^\n]+\n\s+with:\n\s+packages: platform-tools')
 
     def test_app_store_signing_has_isolated_main_only_credentials_and_no_upload(self):
         source = (WORKFLOWS / 'kufr-ios-app-store.yml').read_text()

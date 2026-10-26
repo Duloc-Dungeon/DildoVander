@@ -31,13 +31,13 @@ class ProjectSelectionTests(unittest.TestCase):
             (["backend-tests/Program.cs"], {"backend"}),
             (["global.json", "Directory.Build.props"], {"backend"}),
             (["NuGet.Config"], {"backend"}),
-            (["mobilni-aplikace/public/icon.svg"], {"web", "ios", "site"}),
-            (["mobilni-aplikace/ios/App/App/KufrDebugPlugin.swift"], {"web", "ios", "site"}),
-            (["mobilni-aplikace/tests/native_debug/main.swift"], {"web", "ios", "site"}),
+            (["mobilni-aplikace/public/icon.svg"], {"web", "ios", "android", "site"}),
+            (["mobilni-aplikace/ios/App/App/KufrDebugPlugin.swift"], {"web", "ios", "android", "site"}),
+            (["mobilni-aplikace/tests/native_debug/main.swift"], {"web", "ios", "android", "site"}),
             (["ai-eval/cases.json"], {"ai-eval"}),
             (["firmware/src/production/main.cpp", "backend/Program.cs"], {"firmware", "backend"}),
             (["mechanika/final/mechanism.py", "docs/a.md"], {"repository"}),
-            (["design-system/tokens/colors.css"], {"repository", "web", "ios", "site"}),
+            (["design-system/tokens/colors.css"], {"repository", "web", "ios", "android", "site"}),
             (["web/build-site.py"], {"site"}),
         ]:
             with self.subTest(paths=paths):
@@ -45,8 +45,8 @@ class ProjectSelectionTests(unittest.TestCase):
 
     def test_shared_dependencies_select_their_consumers(self):
         self.assertEqual(self.selected("contracts/control-message-v1.schema.json"),
-                         {"backend", "firmware", "web", "ios", "site"})
-        self.assertEqual(self.selected("firmware/simulator/bridge.cpp"), {"firmware", "web", "ios"})
+                         {"backend", "firmware", "web", "ios", "android", "site"})
+        self.assertEqual(self.selected("firmware/simulator/bridge.cpp"), {"firmware", "web", "ios", "android"})
         self.assertEqual(self.selected("scripts/ci/package.py"), {"repository", "backend", "firmware", "web", "site"})
 
     def test_nested_simulator_does_not_inherit_the_broad_firmware_filter(self):
@@ -54,23 +54,23 @@ class ProjectSelectionTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(self.selected("firmware/simulator/" + name), {"site"})
         self.assertEqual(self.selected("firmware/simulator/native/host_main.cpp"),
-                         {"firmware", "web", "ios"})
+                         {"firmware", "web", "ios", "android"})
         self.assertEqual(self.selected("firmware/simulator/dashboard.test.mjs"),
-                         {"firmware", "web", "ios", "site"})
+                         {"firmware", "web", "ios", "android", "site"})
 
     def test_integrated_app_dependency_paths_select_real_consumers_without_cad(self):
         for name in ("controller.mjs", "serial.mjs", "profiles.mjs", "auto-calibration.mjs", "mcp.mjs"):
-            self.assertEqual(self.selected("firmware/diagnostics/servo-bench/web/" + name), {"web", "ios", "site"})
+            self.assertEqual(self.selected("firmware/diagnostics/servo-bench/web/" + name), {"web", "ios", "android", "site"})
         for name in ("generate-control-validator.mjs", "control-validator-core.mjs", "generated/control-message-v1.validator.mjs"):
-            self.assertEqual(self.selected("contracts/" + name), {"backend", "firmware", "web", "ios", "site"})
+            self.assertEqual(self.selected("contracts/" + name), {"backend", "firmware", "web", "ios", "android", "site"})
         self.assertEqual(self.selected("backend/Features/ModelReleases/ModelReleaseStore.cs"), {"backend"})
-        self.assertEqual(self.selected("mobilni-aplikace/src/features/identity/ModelReleasesPanel.vue"), {"backend", "web", "ios", "site"})
+        self.assertEqual(self.selected("mobilni-aplikace/src/features/identity/ModelReleasesPanel.vue"), {"backend", "web", "ios", "android", "site"})
 
     def test_account_ui_runs_real_https_account_journey_without_cad(self):
         for path in ("src/features/identity/SignInView.vue", "tests/accounts.browser.mjs",
                      "tests/accounts.fixture.browser.mjs"):
-            self.assertEqual(self.selected("mobilni-aplikace/" + path), {"backend", "web", "ios", "site"})
-        self.assertEqual(self.selected("mobilni-aplikace/src/application/HomeView.vue"), {"web", "ios", "site"})
+            self.assertEqual(self.selected("mobilni-aplikace/" + path), {"backend", "web", "ios", "android", "site"})
+        self.assertEqual(self.selected("mobilni-aplikace/src/application/HomeView.vue"), {"web", "ios", "android", "site"})
 
     def test_ios_impact_remains_conservative_for_shared_and_native_inputs(self):
         for path in (
@@ -87,15 +87,15 @@ class ProjectSelectionTests(unittest.TestCase):
                 self.assertTrue(select_projects([path])["ios"])
 
     def test_unknown_paths_inside_product_roots_keep_their_consumers(self):
-        self.assertEqual(self.selected("mobilni-aplikace/new-adapter/config.custom"), {"web", "ios", "site"})
+        self.assertEqual(self.selected("mobilni-aplikace/new-adapter/config.custom"), {"web", "ios", "android", "site"})
         self.assertEqual(self.selected("backend/new-feature/custom.input"), {"backend"})
-        self.assertEqual(self.selected("contracts/new-contract.custom"), {"backend", "firmware", "web", "ios", "site"})
+        self.assertEqual(self.selected("contracts/new-contract.custom"), {"backend", "firmware", "web", "ios", "android", "site"})
 
     def test_shared_build_inputs_and_unknown_root_files_never_select_zero_checks(self):
         for path in ("Directory.Build.targets", "Directory.Packages.props"):
             with self.subTest(path=path):
                 self.assertEqual(self.selected(path), {"backend"})
-        conservative = {"repository", "backend", "firmware", "web", "ios", "site"}
+        conservative = {"repository", "backend", "firmware", "web", "ios", "android", "site"}
         self.assertEqual(self.selected("new-root-tooling.toml"), conservative)
         self.assertEqual(self.selected("shared-build/config.toml"), conservative)
         self.assertEqual(self.selected("backend/Program.cs", "new-root-tooling.toml"), conservative)
@@ -189,7 +189,7 @@ class ProjectSelectionTests(unittest.TestCase):
 
     def test_ui_inputs_keep_real_consumers_and_unknown_mechanics_conservative(self):
         self.assertEqual(self.selected("design-system/tokens.json"),
-                         {"repository", "backend", "web", "ios", "site"})
+                         {"repository", "backend", "web", "ios", "android", "site"})
         self.assertEqual(self.selected("mechanika/final/viewer.js"), {"site"})
         self.assertEqual(self.selected("mechanika/final/new-mechanism.py"), {"repository"})
         self.assertEqual(self.selected("firmware/simulator/dashboard-ui.js"), {"site"})

@@ -24,11 +24,13 @@ const lastObservedAt = computed(() => savedDevice.value.deviceId
 const discovered = shallowRef<Array<{ deviceId: string; host: string; capabilities: string[] }>>([]);
 const bleDevices = shallowRef<ProvisioningDevice[]>([]);
 const bleStatus = shallowRef<ProvisioningStatus | null>(null);
-const bleMessage = ref('Bluetooth vyžaduje nativní aplikaci na iPhonu.');
+const platform = Capacitor.getPlatform();
+const native = platform === 'ios' || platform === 'android';
+const provisioningSupported = platform === 'ios';
+const bleMessage = ref(provisioningSupported ? 'Bluetooth vyžaduje nativní aplikaci na iPhonu.' : 'Nativní servisní Wi-Fi a aktualizace nejsou pro tuto platformu dostupné.');
 const blePending = ref(false);
 const journal = new DebugJournal();
 const journalEntries = shallowRef(journal.read());
-const native = Capacitor.getPlatform() === 'ios';
 const provisioningBridge = registerPlugin<ProvisioningBridge>('KufrProvisioning');
 let connection: Connection | null = null;
 let generation = 0;
@@ -117,7 +119,7 @@ async function connectSaved(): Promise<void> {
   if (!native) return;
   await perform(async () => {
     const requested = generation;
-    if (!await provisioning.refreshLocalAddress() || generation !== requested || document.hidden) {
+    if (provisioningSupported && (!await provisioning.refreshLocalAddress() || generation !== requested || document.hidden)) {
       message.value = 'Bluetooth adresu neobnovilo. Dokončete BLE připojení a zkuste znovu.';
       return;
     }
@@ -125,7 +127,7 @@ async function connectSaved(): Promise<void> {
     if (generation !== requested || document.hidden) return;
     savedDevice.value = saved;
     if (!saved.paired || !saved.deviceId || !saved.host) {
-      message.value = 'Chybí ověřené párování v Keychain. Spárujte kufr přes Bluetooth.';
+      message.value = 'Chybí ověřené párování v bezpečném úložišti telefonu. Spárujte kufr přes Bluetooth.';
       return;
     }
     // Reuse the same adapter to preserve unresolved command reconciliation.
@@ -192,7 +194,7 @@ async function useSimulator(): Promise<void> {
 }
 
 async function discoverBle(): Promise<void> {
-  if (!native || blePending.value) return;
+  if (!provisioningSupported || blePending.value) return;
   await perform(async () => { await provisioning.disconnect(); bleMessage.value = 'Hledám Bluetooth kufry…';
     bleDevices.value = (await provisioningBridge.discover()).devices;
     bleMessage.value = bleDevices.value.length ? 'Vyberte kufr. Nativní dialog ověří PoP.' : 'Žádný kufr. Ověřte Bluetooth a servisní okno.'; });
@@ -242,7 +244,7 @@ function stopLabVoice(expected: { deviceId: string; bootId: string; connectionEp
 }
 
 export const deviceSession = {
-  snapshot, target, pending, stopPending, message, native, savedDevice, lastObservedAt, discovered, bleDevices, bleStatus, bleMessage, blePending, journalEntries,
+  snapshot, target, pending, stopPending, message, native, provisioningSupported, savedDevice, lastObservedAt, discovered, bleDevices, bleStatus, bleMessage, blePending, journalEntries,
   connected: computed(() => snapshot.value !== null && snapshot.value.phase !== 'disconnected'),
   refreshSaved: () => perform(refreshSaved), connectSaved, discoverLocal, setAddress, pairManual, forgetDevice, useDemo, useSimulator, disconnect, stop,
   requestOffline: async (kind: OfflineCommandKind, compartment?: number, commandId?: string, options?: OfflineCommandOptions) => {
@@ -269,18 +271,18 @@ export const deviceSession = {
   startLabVoice, stopLabVoice,
   labConnectionEpoch: () => labConnectionGeneration,
   startDance: () => protocol()?.startDance(), stopDance: () => protocol()?.stopDance(),
-  discoverBle, connectBle: (name: string) => provisioning.connect(name), disconnectBle: () => provisioning.disconnect(),
+  discoverBle, connectBle: (name: string) => provisioningSupported ? provisioning.connect(name) : Promise.resolve(), disconnectBle: () => provisioningSupported ? provisioning.disconnect() : Promise.resolve(),
   showConnections: (visible: boolean) => provisioning.show(visible),
-  pairLocal: () => provisioning.pairLocal(async () => {
+  pairLocal: () => provisioningSupported ? provisioning.pairLocal(async () => {
     disconnect(); ++connectionEpoch; connection = null; snapshot.value = null;
     target.value = 'unavailable'; connectedDeviceId = undefined;
     await refreshSaved();
-  }),
-  configureNetwork: (profile: 'hotspot' | 'fallback') => provisioning.perform(() => provisioningBridge.configure({ profile })),
+  }) : Promise.resolve(),
+  configureNetwork: (profile: 'hotspot' | 'fallback') => provisioningSupported ? provisioning.perform(() => provisioningBridge.configure({ profile })) : Promise.resolve(),
   networkCommand: (command: 'test' | 'delete' | 'ota-check' | 'ota-install' | 'ota-policy', profile: 'hotspot' | 'fallback', automaticInstall?: boolean) =>
-    provisioning.perform(() => provisioningBridge.command({ command, profile, automaticInstall })),
-  refreshBle: () => provisioning.perform(() => provisioningBridge.status()),
-  openSettings: () => perform(() => provisioningBridge.openSettings()),
+    provisioningSupported ? provisioning.perform(() => provisioningBridge.command({ command, profile, automaticInstall })) : Promise.resolve(),
+  refreshBle: () => provisioningSupported ? provisioning.perform(() => provisioningBridge.status()) : Promise.resolve(),
+  openSettings: () => provisioningSupported ? perform(() => provisioningBridge.openSettings()) : Promise.resolve(),
   clearJournal: () => { journal.clear(); journalEntries.value = []; },
   exportJournal: () => journal.export(),
   dispose(): void {

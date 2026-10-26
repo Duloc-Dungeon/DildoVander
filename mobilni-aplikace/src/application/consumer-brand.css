@@ -55,7 +55,7 @@ input, textarea { caret-color: var(--aw-accent); }
 :root[data-theme] .application-brand .brand-mark { width: 2.75rem; height: 2.75rem; flex-shrink: 0; background: none; border: 0; }
 .application-sidebar { padding-top: 2.5rem; gap: 2.5rem; }
 .primary-navigation a { border-radius: 8px; }
-.launch-emergency-stop { position: fixed; z-index: 40; inset-block-end: max(1rem, env(safe-area-inset-bottom)); inset-inline-end: max(1rem, env(safe-area-inset-right)); min-width: 6rem; min-height: 48px; }
+.launch-emergency-stop { position: fixed; z-index: 40; inset-block-end: max(1rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))); inset-inline-end: max(1rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))); min-width: 6rem; min-height: 48px; }
 .primary-navigation a.selected { box-shadow: inset 0 0 0 1px var(--aw-border-subtle); }
 .application-footer > span:first-child { color: var(--aw-ivory); }
 .application-main .eyebrow { color: var(--aw-muted); text-transform: none; letter-spacing: 0; }

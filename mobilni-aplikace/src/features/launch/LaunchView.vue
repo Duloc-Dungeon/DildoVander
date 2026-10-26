@@ -313,7 +313,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.launch-page { max-width: 88rem; min-height: 100dvh; display: grid; grid-template-rows: auto 1fr auto auto; margin: 0 auto; padding: max(1.5rem, env(safe-area-inset-top)) max(1.5rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left)); color: var(--aw-ivory); }
+.launch-page { max-width: 88rem; min-height: 100dvh; display: grid; grid-template-rows: auto 1fr auto auto; margin: 0 auto; padding: max(1.5rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) max(1.5rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(1rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(1.5rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))); color: var(--aw-ivory); }
 .launch-masthead { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .5rem 2rem; }
 .launch-wordmark { display: flex; align-items: center; gap: .8rem; color: var(--aw-ivory); text-decoration: none; font-family: var(--aw-font-display); font-size: 1.8rem; font-weight: 500; line-height: .86; letter-spacing: -.025em; }
 .launch-wordmark img { flex-shrink: 0; }
@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) { .launch-portrait { animation: none; } }
 @media (min-width: 1600px) { .launch-page { padding-top: 3rem; } }
 @media (max-width: 760px) {
-  .launch-page { padding-inline: max(1.25rem, env(safe-area-inset-left)) max(1.25rem, env(safe-area-inset-right)); }
+  .launch-page { padding-inline: max(1.25rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) max(1.25rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))); }
   .launch-masthead { padding-block: 0 1.5rem; }
   .launch-wordmark { font-size: 1.55rem; }
   .launch-wordmark img { width: 40px; height: 40px; }

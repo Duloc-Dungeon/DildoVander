@@ -47,7 +47,7 @@ summary::-webkit-details-marker { display: none; }
 summary::after { content: ''; width: .4rem; height: .4rem; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); margin-bottom: .2rem; }
 details[open] summary { background: var(--aw-accent-soft); }
 details[open] summary::after { transform: rotate(225deg); margin-bottom: -.2rem; }
-.shell-preferences-panel { position: absolute; z-index: 1; top: 100%; inset-inline-end: max(.75rem, env(safe-area-inset-right)); width: min(24rem, calc(100% - 1.5rem)); max-height: max(6rem, calc(100dvh - var(--application-navigation-height, 5rem) - 9rem)); overflow-y: auto; overscroll-behavior: contain; display: grid; gap: var(--aw-space-4); padding: var(--aw-space-4); background: var(--aw-surface); border: 1px solid var(--aw-border); border-radius: var(--aw-radius-card); }
+.shell-preferences-panel { position: absolute; z-index: 1; top: 100%; inset-inline-end: max(.75rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))); width: min(24rem, calc(100% - 1.5rem)); max-height: max(6rem, calc(100dvh - var(--application-navigation-height, 5rem) - 9rem)); overflow-y: auto; overscroll-behavior: contain; display: grid; gap: var(--aw-space-4); padding: var(--aw-space-4); background: var(--aw-surface); border: 1px solid var(--aw-border); border-radius: var(--aw-radius-card); }
 .shell-preferences-panel :deep(.interface-language-select) { width: 100%; }
 .theme-control { display: grid; gap: var(--aw-space-2); font-size: var(--aw-text-small); }
 .theme-control select { width: 100%; max-width: 100%; font-size: 1rem; }

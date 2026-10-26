@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Capacitor } from '@capacitor/core';
+import { androidNavigationKey } from '../platform/androidAppLinks';
 import { useRoute, useRouter } from 'vue-router';
 import AwButton from '../components/AwButton.vue';
 import AwNotice from '../components/AwNotice.vue';
@@ -24,7 +25,7 @@ const launchExperience = computed(() => route.path === '/launch' || route.path =
 const browserMode = !Capacitor.isNativePlatform();
 const main = ref<HTMLElement>();
 const navigationElement = ref<HTMLElement>();
-const navigationHeight = ref('calc(5rem + env(safe-area-inset-bottom))');
+const navigationHeight = ref('calc(5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))');
 let navigationObserver: ResizeObserver | undefined;
 const viewError = ref('');
 const customerAccount = computed(() => isCustomerAccount(account.value));
@@ -54,6 +55,10 @@ const navigation = computed(() => customerAccount.value ? [
   { to: '/signin', label: customerCopy.text('shell.nav-account'), symbol: '⚙' },
 ]);
 const identityKey = computed(() => account.value ? `${account.value.id}:${account.value.roles.join(',')}` : 'public');
+function renderedViewKey(renderedRoute: { name?: string | symbol | null; fullPath: string; meta: { requiresAccount?: boolean } }): string {
+  const identity = renderedRoute.meta.requiresAccount ? identityKey.value : 'public';
+  return `${String(renderedRoute.name)}:${identity}:${androidNavigationKey(renderedRoute.fullPath)}`;
+}
 function revealActiveNavigation(): void {
   const navigation = navigationElement.value;
   const selected = navigation?.querySelector<HTMLElement>('a.selected');
@@ -164,7 +169,7 @@ onBeforeUnmount(() => {
         <AwNotice v-if="viewError" tone="danger"><p>{{ viewError }}</p><AwButton @click="router.go(0)">{{ customerCopy.text('shell.reload') }}</AwButton></AwNotice>
         <RouterView v-else-if="routeAccessible" v-slot="{ Component, route: renderedRoute }">
           <KeepAlive :key="identityKey"><component :is="Component" v-if="renderedRoute.meta.keepAlive" :key="renderedRoute.name" /></KeepAlive>
-          <component :is="Component" v-if="!renderedRoute.meta.keepAlive" :key="renderedRoute.meta.requiresAccount ? `${String(renderedRoute.name)}:${identityKey}` : renderedRoute.name" />
+          <component :is="Component" v-if="!renderedRoute.meta.keepAlive" :key="renderedViewKey(renderedRoute)" />
         </RouterView>
       </main>
       <footer v-if="!launchExperience" class="application-footer"><span>Wand Night Stand</span><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink><a v-if="browserMode" class="application-install-link" href="/ios/">{{ customerCopy.text('shell.iphone') }}</a><span>{{ customerCopy.text('shell.verification') }}</span></footer>

@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   test: {
     environment: 'happy-dom',
-    include: ['tests/**/*.spec.ts', 'src/features/**/*.spec.ts', 'src/application/**/*.spec.ts'],
+    include: ['tests/**/*.spec.ts', 'src/features/**/*.spec.ts', 'src/application/**/*.spec.ts', 'src/platform/**/*.spec.ts'],
     restoreMocks: true,
   },
 });

@@ -46,6 +46,13 @@ class ApplicationRoutingTests(unittest.TestCase):
         self.assertIn('location / { return 404; }', config)
         self.assertIn('location ^~ /app/v1/', config)
 
+    def test_android_association_has_exact_read_only_backend_route(self):
+        config = proxy.render_compatibility('keepsake.example.invalid')
+        block = config.split('location = /.well-known/assetlinks.json {', 1)[1].split('\n}', 1)[0]
+        for value in ('GET|HEAD', 'proxy_pass http://127.0.0.1:5080;', 'no-store', 'nosniff'):
+            self.assertIn(value, block)
+        self.assertNotIn('try_files', block)
+
     def test_all_static_vue_entries_have_an_exact_server_page(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
         pages = set(re.findall(r'location = ([^ ]+) \{\n(?:(?!\n}).)*?try_files /index.html =404;', config, re.DOTALL))

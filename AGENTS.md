@@ -52,6 +52,12 @@ If Engram is unavailable, report the gap and continue authorized work from sourc
 
 ## Přijaté hranice systému
 
+- Android uses the existing shared Capacitor frontend with native Java bridges in
+  `mobilni-aplikace/android/` (minimum API28 for passkeys). Follow
+  `mobilni-aplikace/ANDROID.md` for SDK/JDK/signing and platform acceptance.
+  Source builds/signing stay here; Firebase upload authority stays in the
+  private deployment repository. No Firebase runtime service replaces the backend.
+
 - ESP32-S3 je samostatný klient backendu přes HTTPS a vlastník rozhovoru i fyzické sekvence. Telefon není cloudový prostředník. Backend vrací validovaná data, nikdy přímo nespíná pohony.
 - iOS je první mobilní platforma: TypeScript/Vite + Capacitor/Swift, vývoj na Windows. Od rozhodnutí majitele 14. 10. 2026 PR CI při změně mobilu či jeho závislostí ověřuje web, nativní Swift testy a nepodepsaný iOS Simulator build přes `kufr-ios.yml` na macOS GitHub Actions. Podpis IPA provádí `kufr-ios-sign.yml` a `kufr-ios-app-store.yml` přes automatický main controller nebo ruční recovery. Webový režim slouží pro vývoj/simulátor.
 - Produkční rozhovor používá výhradně DV01 a GPT Live `gpt-live-1`. GPT Realtime 2.1 `gpt-realtime-2.1` je neaktivní záloha ve zdrojích; runtime, klienti ani Persona Lab jej nesmějí spustit. Live tvoří běžnou řeč, úzká backendová delegace rozhoduje o katalogu a nástrojích. Pinned SDK 2.14.0 obsluhuje Responses/Realtime; izolovaný Live adaptér používá oficiální Live WebSocket protokol. Řetězený STT/dialog/TTS, Responses rozhovor, skriptovaný Live a oddělený Realtime PTT jsou vyřazeny; staré route vracejí410 s požadavkem upgradu. Telefon posílá PCM trvalým autentizovaným WebSocketem; skutečné schopnosti určují duplex (Live telefon s AEC, ESP poloduplex). Kanonickou lokální paměť a kontext používá GPT Live s povinným DV01, osobní kontinuita vyžaduje výslovné ověřené guest binding. Archiv zůstává do ručního smazání. Viz [aktuální kontrakt](docs/autonomous-live-memory.md). Návrh je pouze 1–6 nebo žádný. Majitel 30. 9. zvolil autonomní AI výběr bez potvrzení obsluhou. Hůlka zůstává v přihrádce; servo ji vysune a po prezentaci zase zasune. Normální návrat obnovuje dostupnost, Stop/chyba vyžadují zotavení. Místní brána ESP32 ověřuje návrh, snapshot, kalibraci a bezpečný stav; nepředstírá ruční lease. Offline ruční řízení nesmí potřebovat AI ani WAN.

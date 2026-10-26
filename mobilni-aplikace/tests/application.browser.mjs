@@ -630,6 +630,21 @@ try {
       await page.screenshot({ path: path.join(screenshots, `${theme}-synthetic-owner-admin-${width}.png`), fullPage: true });
     }
   }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin + '/settings');
+  await page.getByLabel('Název přístupového klíče 1', { exact: true }).waitFor();
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--safe-area-inset-top', '24px');
+    document.documentElement.style.setProperty('--safe-area-inset-bottom', '32px');
+  });
+  assert(await page.locator('.application-header').evaluate(element => parseFloat(getComputedStyle(element).paddingTop) >= 24), 'Android SystemBars top inset protects the header');
+  assert(await page.locator('.primary-navigation').evaluate(element => parseFloat(getComputedStyle(element).paddingBottom) >= 32), 'Android SystemBars bottom inset protects navigation');
+  await fits();
+  await page.screenshot({ path: path.join(screenshots, 'android-system-insets-390.png'), fullPage: true });
+  await page.evaluate(() => {
+    document.documentElement.style.removeProperty('--safe-area-inset-top');
+    document.documentElement.style.removeProperty('--safe-area-inset-bottom');
+  });
   assert(ownerRequests.every(request => request.method === 'GET'), 'theme checks never send a management mutation');
   await page.goto(origin + '/connections');
   await hasHeading('Připojení kufru');

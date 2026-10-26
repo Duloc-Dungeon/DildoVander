@@ -13,13 +13,15 @@ import urllib.request
 from cad_impact import classify_path
 
 
-PROJECTS = ("repository", "backend", "firmware", "web", "ios", "ai-eval", "site")
+PROJECTS = ("repository", "backend", "firmware", "web", "ios", "android", "ai-eval", "site")
 BUILD_WORKFLOWS = {
     ".github/workflows/kufr-backend.yml": "backend",
     ".github/workflows/kufr-firmware.yml": "firmware",
     ".github/workflows/kufr-web.yml": "web",
     ".github/workflows/kufr-ios.yml": "ios",
     ".github/workflows/kufr-ios-sign.yml": "ios",
+    ".github/workflows/kufr-android.yml": "android",
+    ".github/workflows/kufr-android-release.yml": "android",
     ".github/workflows/kufr-ai-eval.yml": "ai-eval",
     ".github/workflows/kufr-site.yml": "site",
 }
@@ -125,20 +127,23 @@ def select_projects(paths):
             }:
                 selected["site"] = True
             else:
-                selected["firmware"] = selected["web"] = selected["ios"] = True
+                selected["firmware"] = selected["web"] = selected["ios"] = selected["android"] = True
                 if PurePosixPath(path).name.startswith("dashboard"):
                     selected["site"] = True
         elif path.startswith("firmware/diagnostics/servo-bench/web/") or path == "firmware/diagnostics/servo-bench/tools/serve_panel.py":
             selected["site"] = True
             if PurePosixPath(path).name in {"controller.mjs", "serial.mjs", "profiles.mjs", "auto-calibration.mjs", "mcp.mjs"}:
-                selected["web"] = selected["ios"] = True
+                selected["web"] = selected["ios"] = selected["android"] = True
         elif path.startswith("firmware/"):
             selected["firmware"] = True
         if path in {"CMakeLists.txt", "platformio.ini", "firmware/CMakeLists.txt", "firmware/platformio.ini"}:
             selected["firmware"] = True
-        if path.startswith("mobilni-aplikace/"):
+        if path.startswith("mobilni-aplikace/android/") or path.startswith("mobilni-aplikace/scripts/android") or path.startswith("mobilni-aplikace/scripts/init-android") or path.startswith("mobilni-aplikace/scripts/generate-android"):
+            selected["android"] = True
+        elif path.startswith("mobilni-aplikace/"):
             selected["web"] = True
             selected["ios"] = True
+            selected["android"] = True
             selected["site"] = True
             if path.startswith("mobilni-aplikace/src/features/identity/") or PurePosixPath(path).name in {
                 "accounts.browser.mjs", "accounts.fixture.browser.mjs"
@@ -153,6 +158,7 @@ def select_projects(paths):
             selected["repository"] = True
             selected["web"] = True
             selected["ios"] = True
+            selected["android"] = True
             # The self-contained archival card consumes generated C# tokens.
             if path.endswith("tokens.json"):
                 selected["backend"] = True
@@ -162,13 +168,13 @@ def select_projects(paths):
         if path.startswith("ai-eval/"):
             selected["ai-eval"] = True
         if path.startswith("contracts/"):
-            for name in ("backend", "firmware", "web", "ios", "site"):
+            for name in ("backend", "firmware", "web", "ios", "android", "site"):
                 selected[name] = True
         # Unknown shared inputs conservatively run the local product checks.
         # Evaluate each path separately so an earlier recognized file cannot
         # hide an unclassified dependency. CAD retains its manual policy.
         if cad_impact == "none" and not any(selected.values()):
-            for name in ("repository", "backend", "firmware", "web", "ios", "site"):
+            for name in ("repository", "backend", "firmware", "web", "ios", "android", "site"):
                 selected[name] = True
         for name in PROJECTS:
             result[name] |= selected[name]

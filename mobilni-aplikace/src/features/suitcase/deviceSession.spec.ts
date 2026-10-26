@@ -192,3 +192,16 @@ describe('explicit device connection boundary', () => {
   });
 
 });
+
+it('supports Android device transport while keeping provisioning controls unavailable', async () => {
+  harness.platform = 'android';
+  vi.resetModules();
+  session = (await import('./deviceSession')).deviceSession;
+  expect(session.native).toBe(true);
+  expect(session.provisioningSupported).toBe(false);
+  await session.refreshSaved();
+  await session.connectSaved();
+  expect(harness.saved).toHaveBeenCalled();
+  expect(harness.refreshBle).not.toHaveBeenCalled();
+  expect(harness.adapters).toHaveLength(1);
+});

@@ -1,4 +1,7 @@
-# DildoVander: společná webová a iOS aplikace
+# DildoVander: společná webová, iOS a Android aplikace
+
+Android setup, signing, platform coverage and the verified release artifact
+handoff are documented in [ANDROID.md](ANDROID.md).
 
 Vue 3 SFC s Composition API, TypeScriptem a Vue Routerem sdílejí stejné
 obrazovky na webu a v Capacitor WKWebView. Spotřebitelská značka **Wand Night Stand**
