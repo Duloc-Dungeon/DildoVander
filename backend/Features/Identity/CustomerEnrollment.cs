@@ -1,4 +1,5 @@
 using Kufr.Backend.Features.Access;
+using Kufr.Backend.Features.Launch;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -32,6 +33,11 @@ internal static partial class AccountEndpoints
         {
             return ApiProblem.Create(context, 503, "customer_registration_unavailable");
         }
+        var launchStore = context.RequestServices.GetService<LaunchPolicyStore>();
+        if (launchStore is null || !launchStore.TryReadOpenBetaAdmission(out var admission, out _))
+        {
+            return ApiProblem.Create(context, 423, "beta_enrollment_closed");
+        }
         if (await db.Ceremonies.CountAsync(ceremony => ceremony.Kind == "customer-enroll"
             && !ceremony.Consumed && ceremony.ExpiresAt > Now()) >= 1000)
         {
@@ -41,7 +47,8 @@ internal static partial class AccountEndpoints
         var name = request.DisplayName.Trim();
         var label = PasskeyLabels.Account(name, [AccountRoles.Customer]);
         var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = id, Name = label, DisplayName = label });
-        await SaveCeremonyAsync(context, db, "customer-enroll", id, name, null);
+        await SaveCeremonyAsync(context, db, "customer-enroll", id, name, null,
+            admission.GroupId, admission.Revision);
         return Results.Content(options, "application/json");
     }
 
@@ -63,6 +70,14 @@ internal static partial class AccountEndpoints
         {
             return Error(context, "passkey_not_verified");
         }
+        var launchStore = context.RequestServices.GetService<LaunchPolicyStore>();
+        using var enrollment = launchStore is null || ceremony.EnrollmentGroupId is null || ceremony.EnrollmentRevision is null
+            ? null
+            : launchStore.ReserveBetaEnrollment(ceremony.EnrollmentGroupId, ceremony.EnrollmentRevision.Value);
+        if (enrollment is null)
+        {
+            return ApiProblem.Create(context, 409, "beta_enrollment_closed_or_changed");
+        }
         await using var transaction = await db.Database.BeginTransactionAsync();
         if (!await CustomerRegistrationAvailableAsync(db))
         {
@@ -71,7 +86,9 @@ internal static partial class AccountEndpoints
         var user = new AccountUser
         {
             Id = ceremony.UserId, UserName = ceremony.UserId,
-            DisplayName = ceremony.DisplayName, CreatedAt = Now()
+            DisplayName = ceremony.DisplayName, CreatedAt = Now(),
+            LaunchGroupId = enrollment.Admission.GroupId, LaunchGroupJoinedAt = Now(),
+            LaunchGroupAccessRevision = 1, AdmissionUniverse = enrollment.Admission.FixedUniverse
         };
         // Role is assigned exclusively here, never read from a request or attestation.
         if (!(await users.CreateAsync(user)).Succeeded

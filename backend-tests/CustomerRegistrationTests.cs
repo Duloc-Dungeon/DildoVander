@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
+using Kufr.Backend.Features.Launch;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -21,6 +22,14 @@ internal static partial class AccountIdentityTests
         Check((await customer.PostAsJsonAsync(path + "/options", new { displayName = "Guest" })).StatusCode
             == HttpStatusCode.ServiceUnavailable, "public signup cannot preempt owner bootstrap");
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Owner");
+        var launch = fixture.App.Services.GetRequiredService<LaunchPolicyStore>();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var initialAdmission = launch.ReadBetaAdmission();
+        var selected = launch.CreateOrSelectBetaGroup("fixture-owner", new(initialAdmission.Revision), now);
+        launch.UpdateGroup("fixture-owner", selected.Group.Id,
+            new(selected.Group.Revision, selected.Group.Name, now + 3_600_000), now);
+        launch.UpdateBetaAdmission("fixture-owner",
+            new(selected.Admission.Revision, selected.Group.Id, true, null), now);
         customer.DefaultRequestHeaders.Remove("Origin");
         customer.DefaultRequestHeaders.Add("Origin", "https://wrong.example");
         Check((await customer.PostAsJsonAsync(path + "/options", new { displayName = "Guest" })).StatusCode
@@ -37,6 +46,15 @@ internal static partial class AccountIdentityTests
         var customerId = account.GetProperty("id").GetString()!;
         Check(account.GetProperty("roles").EnumerateArray().Select(role => role.GetString()).SequenceEqual(["Customer"]),
             "registration role is exclusively server-selected Customer");
+        var member = await fixture.App.Services.GetRequiredService<AccountDatabase>().Users
+            .SingleAsync(user => user.Id == customerId);
+        Check(member.LaunchGroupId == selected.Group.Id && member.LaunchGroupAccessRevision == 1
+            && member.LaunchGroupRevokedAt is null,
+            "customer joins only the configured default group and starts active even while group launch is future");
+        Check((await customer.GetAsync("/app/v1/prelaunch/character")).IsSuccessStatusCode,
+            "new member can prepare a character before the group's launch");
+        var group = launch.ReadGroup(selected.Group.Id)!;
+        launch.UpdateGroup("fixture-owner", group.Id, new(group.Revision, group.Name, now - 1000), now);
         Check((await customer.GetAsync("/app/v1/admin/users")).StatusCode == HttpStatusCode.Forbidden,
             "customer has no account administration permission");
         await SeedAsync(fixture.App, async db =>
@@ -51,11 +69,17 @@ internal static partial class AccountIdentityTests
         var details = await JsonAsync(await customer.GetAsync("/app/v1/account"));
         Check(details.GetProperty("devices").GetArrayLength() == 0,
             "Customer cannot inherit staff device capabilities even from erroneous resource grants");
+        var withoutConsent = await customer.PutAsJsonAsync("/app/v1/customer/character",
+            new CharacterWriteRequest(0, new("  Gandalf  ", "The Lord of the Rings", Description: "My own version")));
+        Check(withoutConsent.StatusCode == HttpStatusCode.Conflict
+            && System.Text.Json.JsonDocument.Parse(await withoutConsent.Content.ReadAsStringAsync())
+                .RootElement.GetProperty("code").GetString() == "openai_consent_required",
+            "generic HTTP profile API rejects missing explicit AI consent");
         var initial = await JsonAsync(await customer.PutAsJsonAsync("/app/v1/customer/character",
-            new CharacterWriteRequest(0, new("  Gandalf  ", "The Lord of the Rings", Description: "My own version"))));
+            new CharacterWriteRequest(0, new("  Gandalf  ", "The Lord of the Rings", Description: "My own version"), OpenAiConsent: true)));
         var profile = initial.GetProperty("profile");
-        Check(profile.GetProperty("status").GetString() == "saved",
-            "HTTP profile save without OpenAI consent remains local");
+        Check(profile.GetProperty("status").GetString() == "queued",
+            "explicit HTTP consent creates the character and queues enrichment");
         var profileId = profile.GetProperty("profileId").GetString()!;
         var revision = profile.GetProperty("revision").GetInt64();
         Check(profile.GetProperty("userInput").GetProperty("name").GetString() == "  Gandalf  ",
@@ -65,7 +89,7 @@ internal static partial class AccountIdentityTests
         Check(ownerProfile.GetProperty("profile").ValueKind == System.Text.Json.JsonValueKind.Null,
             "account-derived profile read cannot access another account");
         Check((await customer.PutAsJsonAsync("/app/v1/customer/character",
-            new CharacterWriteRequest(0, new("Frodo", "Middle-earth")))).StatusCode == HttpStatusCode.Conflict,
+            new CharacterWriteRequest(0, new("Frodo", "Middle-earth"), OpenAiConsent: true))).StatusCode == HttpStatusCode.Conflict,
             "stale profile edits are rejected");
         customer.DefaultRequestHeaders.Remove("X-DV-CSRF");
         Check((await customer.DeleteAsync($"/app/v1/customer/character?expectedRevision={revision}&expectedProfileId={profileId}")).StatusCode

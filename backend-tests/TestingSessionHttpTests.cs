@@ -75,10 +75,17 @@ internal static partial class AccountIdentityTests
             "backend truthfully reports absent provider configuration");
         Check((await tester.PostAsJsonAsync("/app/v1/persona-lab/sessions/" + labId + "/turns", new { text="No fake response" })).StatusCode == HttpStatusCode.ServiceUnavailable,
             "missing provider remains an actual API failure and cannot produce a fake successful reply");
-        var character = await JsonAsync(await tester.PostAsJsonAsync("/app/v1/testing-sessions/characters", new
+        using var withoutConsent = await tester.PostAsJsonAsync("/app/v1/testing-sessions/characters", new
         {
             userInput = new { name="Clockmaker", world="Original fiction", description="Repairs clocks" },
             openAiConsent=false, longTermConsent=false, expectedRevision=0
+        });
+        Check(withoutConsent.StatusCode == HttpStatusCode.Conflict,
+            "test character creation also requires explicit AI consent");
+        var character = await JsonAsync(await tester.PostAsJsonAsync("/app/v1/testing-sessions/characters", new
+        {
+            userInput = new { name="Clockmaker", world="Original fiction", description="Repairs clocks" },
+            openAiConsent=true, longTermConsent=false, expectedRevision=0
         }));
         var characterId=character.GetProperty("id").GetString()!;
         await JsonAsync(await tester.PostAsJsonAsync("/app/v1/testing-sessions/"+id+"/character",new { characterId,expectedRevision=created.GetProperty("revision").GetInt32() }));
@@ -154,7 +161,7 @@ internal static partial class AccountIdentityTests
         using var saved = await tester.PostAsJsonAsync("/app/v1/testing-sessions/characters", new
         {
             userInput = new { name = "Clockmaker", world = "Original fiction" },
-            openAiConsent = false, longTermConsent = false, expectedRevision = 0
+            openAiConsent = true, longTermConsent = false, expectedRevision = 0
         });
         Check(saved.IsSuccessStatusCode, "polling cannot reject an explicit character save");
         using var session = await tester.GetAsync("/app/v1/session");

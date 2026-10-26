@@ -254,6 +254,7 @@ try {
     if (url.origin !== origin) return route.abort();
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session') return json({ enabled: true, account: { id: 'fixture-owner', displayName: 'Luna', roles: ['Customer'] }, csrfToken: 'fixture-csrf' });
+    if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'fixture-beta', groupName: 'Interní beta', joinedAt: Math.floor(Date.now() / 1000), accessRevision: 1, fixedUniverse: null, recruitmentOpen: false, launchAt: null });
     if (url.pathname === '/app/v1/launch') return json({ allowed: true, audience: 'production', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false });
     if (url.pathname === '/app/v1/customer/character') return json({ profile: { profileId: 'fixture-profile', revision: 1, status: 'ready', userInput: { name: 'Luna', world: 'Syntetický svět' } }, generatedWand: ownedWand, artwork: artwork() });
     if (url.pathname === `/app/v1/archive/owned/${id}/assets/${imageAssetId}`) { assetReads.push(url.pathname); return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: imageBytes }); }

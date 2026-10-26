@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.Diagnostics;
+using Kufr.Backend.Features.CustomerData;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Keepsakes;
 using Microsoft.EntityFrameworkCore;
@@ -43,8 +44,30 @@ internal static class CharacterEndpoints
             {
                 return ApiProblem.Create(http, 401, "account_required");
             }
-            try { return await next(invocation); }
+            try
+            {
+                using var admission = http.RequestServices.GetRequiredService<CustomerAdmissionAuthority>()
+                    .AcquireAccountCookie(http, http.RequestAborted);
+                var write = invocation.Arguments.OfType<CharacterWriteRequest>().FirstOrDefault();
+                if (admission.Proof.FixedUniverse is { } universe && write?.UserInput is { } input
+                    && !string.Equals(input.World?.Trim(), universe, StringComparison.Ordinal))
+                {
+                    return ApiProblem.Create(http, 409, "invitation_universe_required");
+                }
+                if (admission.Proof.FixedUniverse is { } fixedUniverse
+                    && invocation.Arguments.OfType<CharacterCorrectionRequest>().Any())
+                {
+                    var current = await http.RequestServices.GetRequiredService<CharacterProfileStore>()
+                        .ReadAsync(accountId, http.RequestAborted);
+                    if (current is not null && current.UserInput.World.Trim() != fixedUniverse)
+                    {
+                        return ApiProblem.Create(http, 409, "invitation_universe_required");
+                    }
+                }
+                return await next(invocation);
+            }
             catch (CharacterException error) { return ApiProblem.Create(http, error.Status, error.Code); }
+            catch (CustomerDataAccessException error) { return ApiProblem.Create(http, error.Status, error.Code); }
         });
         group.MapGet("", async (HttpContext http, CharacterProfileStore store) =>
         {
@@ -113,6 +136,7 @@ internal sealed class CharacterEnrichmentWorker(IServiceScopeFactory scopes, Cha
                 logs?.Write("info", "character_job_started", operationId: Guid.Parse(job.Id).ToString(), attempt: job.Attempt);
                 using var scope = scopes.CreateScope();
                 var accounts = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+                var authority = scope.ServiceProvider.GetRequiredService<CustomerAdmissionAuthority>();
                 var disabled = await accounts.Users.AsNoTracking().Where(user => user.Id == job.AccountId)
                     .Select(user => (bool?)user.Disabled).SingleOrDefaultAsync(stoppingToken);
                 if (disabled is null)
@@ -135,10 +159,19 @@ internal sealed class CharacterEnrichmentWorker(IServiceScopeFactory scopes, Cha
                 }
                 try
                 {
-                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                    CharacterWorkLease work;
+                    using (var admission = authority.AcquireAccount(job.AccountId, stoppingToken))
+                    {
+                        work = store.BeginAccountWork(job.AccountId, stoppingToken);
+                    }
+                    using var activeWork = work;
+                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(activeWork.Token);
                     deadline.CancelAfter(TimeSpan.FromSeconds(45));
-                    if (!await store.CanDispatchAsync(job, deadline.Token))
-                    { activity?.SetTag("app.outcome", "discarded"); continue; }
+                    using (var admission = authority.AcquireAccount(job.AccountId, deadline.Token))
+                    {
+                        if (!await store.CanDispatchAsync(job, deadline.Token))
+                        { activity?.SetTag("app.outcome", "discarded"); continue; }
+                    }
                     activity?.SetTag("app.phase", "provider");
                     var enrichment = await provider.EnrichAsync(job, deadline.Token);
                     // Recheck revocation after network work and before publishing a result.
@@ -157,6 +190,7 @@ internal sealed class CharacterEnrichmentWorker(IServiceScopeFactory scopes, Cha
                         continue;
                     }
                     activity?.SetTag("app.phase", "persistence");
+                    using var completionAdmission = authority.AcquireAccount(job.AccountId, stoppingToken);
                     var completed = await store.CompleteAsync(job, enrichment, null, stoppingToken);
                     activity?.SetTag("app.phase", "completed");
                     activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
@@ -165,6 +199,10 @@ internal sealed class CharacterEnrichmentWorker(IServiceScopeFactory scopes, Cha
                 }
                 catch (OperationCanceledException error) when (stoppingToken.IsCancellationRequested)
                 { BackendTelemetry.Failed(activity, error, stoppingToken); break; }
+                catch (CustomerDataAccessException)
+                {
+                    activity?.SetTag("app.outcome", "discarded");
+                }
                 catch (Exception error)
                 {
                     BackendTelemetry.Failed(activity, error, stoppingToken);

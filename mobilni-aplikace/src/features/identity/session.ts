@@ -150,6 +150,10 @@ let authenticationPending: Promise<void> | null = null;
 class IdentityRequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string, readonly rejectedGeneration?: number) { super(message); }
 }
+export class CustomerEnrollmentCompletionUncertainError extends Error {
+  readonly code = 'customer_enrollment_completion_uncertain';
+  constructor(options?: ErrorOptions) { super('Account enrollment completion could not be confirmed.', options); }
+}
 class AccountContextChangedError extends DOMException {
   constructor() { super('Požadavek patřil předchozímu ověření účtu.', 'AbortError'); }
 }
@@ -246,7 +250,7 @@ async function sendAccountTransport(path: string, init: RequestInit): Promise<Re
   return new Response([204, 205, 304].includes(response.status) ? null : body, { status: response.status, headers: response.headers });
 }
 
-export async function accountRequest<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
+export async function accountRequest<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal, confirmationMessage?: string): Promise<T> {
   const generation = authGeneration;
   const deletingAccountId = path === '/app/v1/account' && method === 'DELETE' ? account.value?.id : undefined;
   throwIfAborted(signal);
@@ -258,7 +262,7 @@ export async function accountRequest<T>(path: string, method = 'GET', body?: unk
   const confirmation = path === '/app/v1/account' && method === 'DELETE'
     ? customerCopy.text('deletion.native-confirmation')
     : 'Potvrdit tuto změnu správy? Změna může ovlivnit přístup uživatelů nebo provoz serveru.';
-  const confirmed = sensitive && window.confirm(confirmation);
+  const confirmed = sensitive && window.confirm(confirmationMessage ?? confirmation);
   if (sensitive && !confirmed) throw new IdentityRequestError(customerCopy.text('deletion.cancelled'), 0, 'confirmation_cancelled');
   requireCurrentAuthentication(generation);
   if (path === '/app/v1/account' && method === 'DELETE' && (!deletingAccountId || deletingAccountId !== account.value?.id)) throw new AccountContextChangedError();
@@ -300,6 +304,9 @@ export async function accountRequest<T>(path: string, method = 'GET', body?: unk
   if (status < 200 || status >= 300) {
     const rejectedGeneration = status === 401 && generation === authGeneration ? advanceAuthentication(true) : undefined;
     const code = (value as { code?: string } | undefined)?.code;
+    if (code === 'customer_access_revoked' && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('customer-access-revoked'));
+    }
     const explanations: Record<string, string> = {
       accounts_not_configured: 'Správce musí nejprve nakonfigurovat přihlašování serveru.',
       invitation_expired_or_used: 'Pozvánka už není platná. Vyžádejte si novou od vlastníka.',
@@ -486,7 +493,11 @@ async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'custome
     await nativeIdentity.passkey({ mode, token, displayName });
     requireCurrentAuthentication(generation);
     advanceAuthentication();
-    await refreshIdentity();
+    try { await refreshIdentity(); }
+    catch (cause) {
+      if (mode === 'customer-enroll') throw new CustomerEnrollmentCompletionUncertainError(cause instanceof Error ? { cause } : undefined);
+      throw cause;
+    }
     return;
   }
   if (!window.isSecureContext || !window.PublicKeyCredential) throw new Error('Přístupové klíče vyžadují HTTPS a podporovaný prohlížeč.');
@@ -510,8 +521,18 @@ async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'custome
   if (!credential) throw new Error('Ověření bylo zrušeno.');
   requireCurrentAuthentication(generation);
   const complete = mode === 'reauth' ? '/passkeys/reauthenticate' : mode === 'signin' ? '/passkeys/sign-in' : mode === 'add' ? '/passkeys/complete' : mode === 'customer-enroll' ? '/customer/enrollment/complete' : '/enrollment/complete';
-  await accountRequest('/app/v1' + complete, 'POST', { credential: credentialJson(credential) });
-  requireCurrentAuthentication(generation);
-  advanceAuthentication();
-  await refreshIdentity();
+  try {
+    await accountRequest('/app/v1' + complete, 'POST', { credential: credentialJson(credential) });
+    requireCurrentAuthentication(generation);
+    advanceAuthentication();
+    await refreshIdentity();
+  } catch (cause) {
+    const knownAdmissionRejection = cause instanceof IdentityRequestError
+      && ['beta_enrollment_closed', 'beta_enrollment_unavailable', 'beta_enrollment_closed_or_changed'].includes(cause.code ?? '');
+    if (mode === 'customer-enroll' && !knownAdmissionRejection
+      && !(cause instanceof IdentityRequestError && cause.status >= 400 && cause.status < 500)) {
+      throw new CustomerEnrollmentCompletionUncertainError(cause instanceof Error ? { cause } : undefined);
+    }
+    throw cause;
+  }
 }

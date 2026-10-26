@@ -15,11 +15,13 @@ import { accessDenial, canEnterStaffArea, canOperateSuitcase, isCustomerAccount 
 import { accessRedirect } from './accessGuard';
 import ShellPreferences from './ShellPreferences.vue';
 import { customerCopy } from './customerCopy';
-import { launchAllowed, refreshLaunchAccess } from './launchAccess';
+import { customerMembershipState, launchAllowed, refreshCustomerMembership, refreshLaunchAccess } from './launchAccess';
 
 const route = useRoute();
 const router = useRouter();
 const launchExperience = computed(() => route.path === '/launch' || route.path === '/signin'
+  || customerMembershipState.value === 'revoked'
+  || (customerAccount.value && customerMembershipState.value !== 'active')
   || (launchAllowed.value !== true && (['/privacy', '/support', '/account-deletion'].includes(route.path)
     || !canEnterStaffArea(account.value) && !account.value?.roles.includes('Tester'))));
 const browserMode = !Capacitor.isNativePlatform();
@@ -108,6 +110,15 @@ watch(offlineSession, () => {
   const redirect = accessRedirect(route);
   if (redirect) void router.replace(redirect);
 }, { flush: 'sync' });
+watch(customerMembershipState, state => {
+  if (state !== 'revoked' || !customerAccount.value) return;
+  nativeDebug.invalidatePrivateState();
+  void nativeDebug.cancel();
+  void Promise.resolve(deviceSession.clearUserGrants()).catch(() => {});
+  if (!['/access-revoked', '/privacy', '/support', '/account-deletion', '/me/account'].includes(route.path)) {
+    void router.replace('/access-revoked');
+  }
+}, { flush: 'sync' });
 watch(() => route.path, () => {
   viewError.value = '';
   // Announce route changes while leaving same-route form/telemetry focus intact.
@@ -116,8 +127,13 @@ watch(() => route.path, () => {
 const removeRouterError = router.onError(() => { viewError.value = customerCopy.text('shell.page-error'); });
 function refreshSession(): void {
   if (!document.hidden) {
-    void refreshIdentity().catch(() => { /* Offline local operation remains available. */ });
-    void refreshLaunchAccess();
+    void refreshIdentity().catch(() => { /* Offline local operation remains available. */ }).then(() => {
+      if (document.hidden) return;
+      // Account changes reset cached access state synchronously. Fetch policies
+      // after identity reconciliation so own-account routes can render the shell.
+      void refreshLaunchAccess();
+      void refreshCustomerMembership();
+    });
   }
 }
 onMounted(() => {

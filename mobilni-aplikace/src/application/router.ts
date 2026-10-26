@@ -12,6 +12,7 @@ export const router = createRouter({
     { path: '/privacy', name: 'privacy', component: () => import('../features/information/PrivacyView.vue'), meta: { title: 'Ochrana soukromí' } },
     { path: '/launch', name: 'launch', component: () => import('../features/launch/LaunchView.vue'), meta: { title: 'Brzy', private: true, requiresAccount: true } },
     { path: '/account-deletion', name: 'account-deletion', component: () => import('../features/identity/AccountDeletionStatusView.vue'), meta: { title: 'Stav smazání účtu', private: true } },
+    { path: '/access-revoked', name: 'access-revoked', component: () => import('../features/identity/RevokedAccessView.vue'), meta: { title: 'Přístup odebrán', private: true, requiresAccount: true } },
     { path: '/me', redirect: '/me/character' },
     { path: '/me/character', name: 'customer-character', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Moje postava', private: true, requiresAccount: true } },
     { path: '/me/conversation', name: 'customer-conversation', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Rozhovor s kufrem', private: true, requiresAccount: true } },

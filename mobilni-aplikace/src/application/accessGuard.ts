@@ -1,8 +1,8 @@
 import type { Router, RouteLocationNormalized } from 'vue-router';
 import { account, accountRequest, offlineSession, offlineSessionExpiresAt, refreshIdentity } from '../features/identity/session';
-import { accessDenial } from './access';
+import { accessDenial, isCustomerAccount } from './access';
 import { safeReturnPath } from './navigation';
-import { launchAllowed } from './launchAccess';
+import { launchAllowed, refreshCustomerMembership } from './launchAccess';
 
 export function accessRedirect(route: Pick<RouteLocationNormalized, 'meta' | 'fullPath'>) {
   const denied = accessDenial(route.meta, account.value, offlineSession.value);
@@ -33,6 +33,12 @@ export function installAccessGuard(router: Router): void {
     }
     const denied = accessRedirect(to);
     if (denied) return denied;
+    if (isCustomerAccount(account.value) && !['/access-revoked', '/privacy', '/support', '/account-deletion', '/me/account'].includes(to.path)) {
+      const membership = await refreshCustomerMembership();
+      if (membership === 'revoked') return { path: '/access-revoked', replace: true };
+      if (membership !== 'active' && to.path !== '/launch') return { path: '/launch', replace: true };
+    }
+    if (['/access-revoked', '/me/account'].includes(to.path)) return undefined;
     if (to.path !== '/launch' && account.value) {
       try {
         const launch = await accountRequest<{ allowed: boolean }>('/app/v1/launch');

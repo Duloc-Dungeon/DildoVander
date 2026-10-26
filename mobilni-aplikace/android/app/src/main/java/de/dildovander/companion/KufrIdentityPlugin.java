@@ -512,7 +512,7 @@ public final class KufrIdentityPlugin extends Plugin {
                 @Override public void onResult(GetCredentialResponse response) {
                     Credential credential = response.getCredential();
                     if (!(credential instanceof PublicKeyCredential)) { finishCeremony(call, "invalid_credential"); return; }
-                    completePasskey(call, completionPath, csrf, ((PublicKeyCredential) credential).getAuthenticationResponseJson());
+                    completePasskey(call, mode, completionPath, csrf, ((PublicKeyCredential) credential).getAuthenticationResponseJson());
                 }
                 @Override public void onError(@NonNull GetCredentialException error) {
                     finishCeremony(call, error instanceof NoCredentialException ? "passkey_not_found" : "passkey_cancelled");
@@ -523,7 +523,7 @@ public final class KufrIdentityPlugin extends Plugin {
             manager.createCredentialAsync(getActivity(), request, null, main, new CredentialManagerCallback<androidx.credentials.CreateCredentialResponse, CreateCredentialException>() {
                 @Override public void onResult(androidx.credentials.CreateCredentialResponse response) {
                     if (!(response instanceof CreatePublicKeyCredentialResponse)) { finishCeremony(call, "invalid_credential"); return; }
-                    completePasskey(call, completionPath, csrf, ((CreatePublicKeyCredentialResponse) response).getRegistrationResponseJson());
+                    completePasskey(call, mode, completionPath, csrf, ((CreatePublicKeyCredentialResponse) response).getRegistrationResponseJson());
                 }
                 @Override public void onError(@NonNull CreateCredentialException error) {
                     finishCeremony(call, "passkey_cancelled");
@@ -532,20 +532,42 @@ public final class KufrIdentityPlugin extends Plugin {
         }
     }
 
-    private void completePasskey(PluginCall call, String completionPath, String csrf, String response) {
+    private void completePasskey(PluginCall call, String mode, String completionPath, String csrf, String response) {
         ceremonyExecutor.execute(() -> {
+            boolean completionStarted = false;
             try {
                 org.json.JSONObject request = new org.json.JSONObject().put("credential", new org.json.JSONObject(response));
                 String url = origin() + completionPath;
                 Request.Builder builder = new Request.Builder().url(url).post(RequestBody.create(request.toString(), okhttp3.MediaType.parse("application/json; charset=utf-8")))
                     .header("Origin", origin()).header("X-DV-CSRF", csrf);
                 addCookies(builder, origin());
+                completionStarted = true;
                 try (Response result = client.newCall(builder.build()).execute()) {
                     persistCookies(origin(), result);
-                    if (result.code() != 204) { finishCeremony(call, "passkey_rejected"); return; }
+                    if (result.code() != 204) {
+                        String code = "passkey_rejected";
+                        if ("customer-enroll".equals(mode)) {
+                            if (result.code() >= 400) {
+                                try {
+                                    String body = result.body() == null ? "" : result.body().string();
+                                    String serverCode = new org.json.JSONObject(body).optString("code", "");
+                                    if (!serverCode.isEmpty()) code = serverCode;
+                                } catch (Exception ignored) { /* Keep a definitive generic rejection. */ }
+                            }
+                            if (result.code() >= 500 && !"beta_enrollment_closed".equals(code)
+                                && !"beta_enrollment_unavailable".equals(code)
+                                && !"beta_enrollment_closed_or_changed".equals(code)) {
+                                code = "customer_enrollment_completion_uncertain";
+                            }
+                        }
+                        finishCeremony(call, code); return;
+                    }
                     getActivity().runOnUiThread(() -> finishCeremony(call, null));
                 }
-            } catch (Exception exception) { finishCeremony(call, "passkey_unavailable"); }
+            } catch (Exception exception) {
+                finishCeremony(call, completionStarted && "customer-enroll".equals(mode)
+                    ? "customer_enrollment_completion_uncertain" : "passkey_unavailable");
+            }
         });
     }
 

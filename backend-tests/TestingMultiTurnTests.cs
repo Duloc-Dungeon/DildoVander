@@ -59,7 +59,7 @@ internal static class TestingMultiTurnTests
             service = new(resources, store, runtime, hardware, TimeProvider.System);
             var session = service.Create("tester", new(engine, OpenAiConsent: true, RecordContent: true,
                 OperationId: Guid.NewGuid().ToString()));
-            var character = await service.SaveCharacterAsync("tester", null, new(new("Mira", "Fictional clock library")), default);
+            var character = await service.SaveCharacterAsync("tester", null, new(new("Mira", "Fictional clock library"), OpenAiConsent: true), default);
             await service.SelectCharacterAsync("tester", session.Id, new(character.Id, session.Revision), default);
             if(engine==RealtimeProtocol.Model)
             {

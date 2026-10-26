@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Kufr.Backend.Features.Access;
+using Kufr.Backend.Features.CustomerData;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.Observability;
@@ -108,8 +109,30 @@ internal static class PrelaunchCharacterEndpoints
         {
             return ApiProblem.Create(http, 401, "account_required");
         }
-        try { return await next(invocation); }
+        try
+        {
+            using var admission = http.RequestServices.GetRequiredService<CustomerAdmissionAuthority>()
+                .AcquireAccountCookie(http, http.RequestAborted);
+            var write = invocation.Arguments.OfType<PrelaunchCharacterWrite>().FirstOrDefault();
+            if (admission.Proof.FixedUniverse is { } universe && write is not null
+                && !string.Equals(write.Universe?.Trim(), universe, StringComparison.Ordinal))
+            {
+                return ApiProblem.Create(http, 409, "invitation_universe_required");
+            }
+            if (admission.Proof.FixedUniverse is { } fixedUniverse && http.Request.Method == "POST"
+                && http.Request.Path.Equals("/app/v1/prelaunch/character/retry", StringComparison.OrdinalIgnoreCase))
+            {
+                var current = await http.RequestServices.GetRequiredService<CharacterProfileStore>()
+                    .ReadAsync(owner, http.RequestAborted);
+                if (current is not null && current.UserInput.World.Trim() != fixedUniverse)
+                {
+                    return ApiProblem.Create(http, 409, "invitation_universe_required");
+                }
+            }
+            return await next(invocation);
+        }
         catch (CharacterException error) { return ApiProblem.Create(http, error.Status, error.Code); }
+        catch (CustomerDataAccessException error) { return ApiProblem.Create(http, error.Status, error.Code); }
     }
 
     private static async Task<object> ViewAsync(HttpContext http, CharacterProfileStore store)
@@ -176,21 +199,36 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
         activity?.SetTag("app.operation_id", job.ProfileId);
         activity?.SetTag("app.attempt", job.Attempt);
         using var scope = scopes.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
-        async Task<bool> IsCurrentAsync() => store.CanDispatchPortrait(job)
-            && await db.Users.AsNoTracking().AnyAsync(user => user.Id == job.AccountId && !user.Disabled, stoppingToken);
+        var authority = scope.ServiceProvider.GetRequiredService<CustomerAdmissionAuthority>();
+        Task<bool> IsCurrentAsync()
+        {
+            try
+            {
+                using var admission = authority.AcquireAccount(job.AccountId, stoppingToken);
+                return Task.FromResult(store.CanDispatchPortrait(job));
+            }
+            catch (CustomerDataAccessException) { return Task.FromResult(false); }
+        }
 
         if (!await IsCurrentAsync())
         {
             store.CompletePortrait(job, null, "portrait_account_unavailable");
             return;
         }
+        CharacterWorkLease work;
+        try
+        {
+            using var admission = authority.AcquireAccount(job.AccountId, stoppingToken);
+            work = store.BeginAccountWork(job.AccountId, stoppingToken);
+        }
+        catch (CustomerDataAccessException) { return; }
+        using var activeWork = work;
         var config = scope.ServiceProvider.GetService<LaunchPolicyStore>()?.Read() ?? LaunchConfiguration.Default;
         var finalMessage = CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback);
         var welcome = CharacterWelcomePolicy.Fallback;
         if (await IsCurrentAsync())
         {
-            using var experienceDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            using var experienceDeadline = CancellationTokenSource.CreateLinkedTokenSource(activeWork.Token);
             experienceDeadline.CancelAfter(TimeSpan.FromSeconds(20));
             try
             {
@@ -208,7 +246,7 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
             }
         }
         if (!await IsCurrentAsync()) { return; }
-        using var imageDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        using var imageDeadline = CancellationTokenSource.CreateLinkedTokenSource(activeWork.Token);
         imageDeadline.CancelAfter(TimeSpan.FromSeconds(180));
         try
         {
@@ -218,6 +256,7 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
                 activity?.SetTag("app.outcome", "discarded");
                 return;
             }
+            using var completionAdmission = authority.AcquireAccount(job.AccountId, stoppingToken);
             var completed = store.CompletePortrait(job, image, null, finalMessage, welcome);
             activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
             logger.LogInformation("Character portrait {Outcome} {ProfileId} {Revision} {Attempt}",

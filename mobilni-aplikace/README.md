@@ -743,3 +743,22 @@ Záznam interruption testu přidává pouze v testu prostor pro odrolování mim
 Viewport s výškou 440 px simuluje dostupný prostor klávesnice; není důkazem
 nativní klávesnice. Nativní iPhone/Android a živé odpovědi provideru mají
 samostatné ověření.
+
+## Vstup do společné bety
+
+Bez explicitní pozvánky aplikace načte serverový stav náboru a nabídne jméno,
+univerzum, samostatný AI souhlas a vytvoření vlastní passkey. Host dostává pouze
+instalační pozvánku TestFlight/Firebase. Pevné univerzum se řídí přiřazeným
+členstvím i po reinstalaci; změna výchozí skupiny nepřesouvá existující účty.
+Při zavřeném náboru zůstává přihlášení, obnova a podpora. Nejisté dokončení
+registrace nejprve ověří session; další registrace se automaticky nespouští.
+
+V existující správě otevřete „Beta skupina a účastníci“, vyberte nebo vytvořte
+výchozí skupinu, nastavte její termín a povolte přijímání. Po přijetí známých
+hostů nábor vypněte. Jednotlivý účet lze odebrat nebo obnovit bez smazání dat.
+Serverové kontrakty a postup migrace popisuje [backend README](../backend/README.md#samoobslužná-beta-a-členství).
+
+`npm run test:beta-admission:browser` používá pouze loopback fixture, kontroluje
+320/375/390/430 CSS px a obě témata a ukládá screenshoty do
+`.codex/artifacts/wand-beta-admission/`. Jde o webové ověření; transportní
+allowlisty mají vlastní iOS/Android regresní testy a vyžadují nativní toolchain.

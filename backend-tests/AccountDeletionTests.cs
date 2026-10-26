@@ -61,8 +61,8 @@ internal static partial class AccountIdentityTests
             var bobExportAccess = new CustomerDataAccess("bob", "export-session-bob", "export-revision-bob");
             var bobExportRequest = Guid.NewGuid();
             var bobExport = exports.Create(bobExportAccess, bobExportRequest);
-            await characters.SaveAsync("alice", new(0, new CharacterUserInput("Secret", "Original")));
-            await characters.SaveAsync("bob", new(0, new CharacterUserInput("Other", "Original")));
+            await characters.SaveAsync("alice", new(0, new CharacterUserInput("Secret", "Original"), OpenAiConsent: true));
+            await characters.SaveAsync("bob", new(0, new CharacterUserInput("Other", "Original"), OpenAiConsent: true));
             var aliceLab = lab.CreateSession("alice", new(lab.ActiveRevisionId, "gpt-live-1", "first-visit", "empty", "private"));
             var bobLab = lab.CreateSession("bob", new(lab.ActiveRevisionId, "gpt-live-1", "first-visit", "empty", "other"));
             var evening = memory.GetStatus("device").EveningId;
@@ -235,7 +235,7 @@ internal static partial class AccountIdentityTests
             catch (LabException) { }
             try { lab.CreateSuite("alice", new(lab.ActiveRevisionId, "gpt-live-1", "empty", ["first-visit"], "late")); throw new Exception("Missing suite fence"); }
             catch (LabException) { }
-            try { await characters.SaveAsync("alice", new(0, new CharacterUserInput("Late", "Original"))); throw new Exception("Missing character fence"); }
+            try { await characters.SaveAsync("alice", new(0, new CharacterUserInput("Late", "Original"), OpenAiConsent: true)); throw new Exception("Missing character fence"); }
             catch (CharacterException) { }
             try
             {

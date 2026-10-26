@@ -22,6 +22,12 @@ public final class NativeAccountRequestPolicyTest {
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/unlisted", "GET"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/passkeys/request-options", "POST"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/launch", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/enrollment/default", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/enrollment/default", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/enrollment/default/admit", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/enrollment/default/admit", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/access", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/access", "PUT"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/archive/owned/11111111-1111-4111-a111-111111111111", "GET"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/completion-updates?limit=20", "GET"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/testing-sessions/0123456789abcdef0123456789abcdef/character", "POST"));
@@ -44,6 +50,17 @@ public final class NativeAccountRequestPolicyTest {
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/not-a-group", "PUT"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups//0123456789abcdef0123456789abcdef", "PUT"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/", "PUT"));
+    }
+
+    @Test public void betaAdmissionAndMemberRoutesHaveNarrowMethods() {
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/beta-admission", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/beta-admission", "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/beta-admission/group", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/members", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/members/abcdef0123456789abcdef0123456789", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/not-a-group/members", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/members/../users", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/beta-admission", "DELETE"));
     }
 
     @Test public void requestConstructionAddsOriginCookieCsrfAndExplicitConfirmation() {

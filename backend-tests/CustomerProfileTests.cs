@@ -11,6 +11,7 @@ internal static class CustomerProfileTests
         {
             await PersistenceAndFencesAsync(root);
             await OpenAiConsentAsync(Path.Combine(root, "consent"));
+            await MembershipWorkFenceAsync(Path.Combine(root, "membership"));
             ProviderEvidence();
             await AccountIdentityTests.RunCustomerRegistrationAsync();
             Console.WriteLine("Customer profile revision, job, deletion and source-evidence tests passed.");
@@ -140,17 +141,20 @@ internal static class CustomerProfileTests
     {
         var store = new CharacterProfileStore(root);
         var input = new CharacterUserInput("Private fixture", "Original");
-        var local = await store.SaveAsync("local", new(0, input));
-        Check(local.Status == "saved" && await store.ClaimAsync() is null,
-            "omitted OpenAI consent saves locally without creating provider work");
-        await ExpectAsync("openai_consent_required", () => store.CorrectAsync("local", new(local.Revision, local.ProfileId)));
-        var queued = await store.SaveAsync("local", new(local.Revision, input, local.ProfileId, OpenAiConsent: true));
+        await ExpectAsync("openai_consent_required", () => store.SaveAsync("local", new(0, input)));
+        Check(await store.ReadAsync("local") is null && await store.ClaimAsync() is null,
+            "omitted OpenAI consent creates neither a profile nor provider work");
+        var queued = await store.SaveAsync("local", new(0, input, OpenAiConsent: true));
+        await ExpectAsync("openai_consent_required", () => store.CorrectAsync("local", new(queued.Revision, queued.ProfileId)));
         var consentJob = await store.ClaimAsync();
         Check(queued.Status == "queued" && consentJob is { OpenAiConsent: true } && await store.CanDispatchAsync(consentJob),
             "explicit consent queues a durable consent-bearing provider job");
-        var saved = await store.SaveAsync("local", new(queued.Revision, input, queued.ProfileId));
-        Check(saved.Status == "saved" && await store.ClaimAsync() is null && !await store.CanDispatchAsync(consentJob!),
-            "saving without consent cancels unfinished enrichment work");
+        await ExpectAsync("openai_consent_required", () => store.SaveAsync("local", new(queued.Revision, input, queued.ProfileId)));
+        store.SuspendAccountWork("local");
+        Check((await store.ReadAsync("local"))?.Status == "saved" && await store.ClaimAsync() is null
+            && !await store.CanDispatchAsync(consentJob!)
+            && !await store.CompleteAsync(consentJob!, null, "late_response"),
+            "revocation preserves the profile and invalidates late job completion");
         var legacy = await store.SaveAsync("legacy", new(0, input, OpenAiConsent: true));
         using (var connection = new SqliteConnection("Data Source=" + Path.Combine(root, "customer-characters.sqlite")))
         {
@@ -169,6 +173,25 @@ internal static class CustomerProfileTests
             throw new InvalidOperationException("Provider admitted missing consent.");
         }
         catch (CharacterException error) when (error.Code == "openai_consent_required") { }
+    }
+
+    private static async Task MembershipWorkFenceAsync(string root)
+    {
+        var store = new CharacterProfileStore(root);
+        var profile = await store.SaveAsync("member", new(0, new("Raven", "Original"),
+            OpenAiConsent: true, PortraitConsent: true));
+        var job = (await store.ClaimAsync())!;
+        await store.CompleteAsync(job, Result(job), null);
+        var portrait = store.ClaimPortrait()!;
+        using var work = store.BeginAccountWork("member", CancellationToken.None);
+        store.SuspendAccountWork("member");
+        Check(work.Token.IsCancellationRequested && !store.CanDispatchPortrait(portrait)
+            && !store.CompletePortrait(portrait, [1, 2, 3], null),
+            "revocation cancels live provider work and fences late portrait results");
+        var restarted = new CharacterProfileStore(root);
+        Check((await restarted.ReadAsync("member"))?.ProfileId == profile.ProfileId
+            && await restarted.ClaimAsync() is null && restarted.ClaimPortrait() is null,
+            "restart preserves the same character without restarting canceled operations");
     }
 
     private static void ProviderEvidence()

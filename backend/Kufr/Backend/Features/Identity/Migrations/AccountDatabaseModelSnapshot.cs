@@ -92,6 +92,12 @@ namespace Kufr.Backend.Features.Identity.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("EnrollmentGroupId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("EnrollmentRevision")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("ExpiresAt")
                         .HasColumnType("INTEGER");
 
@@ -270,6 +276,9 @@ namespace Kufr.Backend.Features.Identity.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("AdmissionUniverse")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");
@@ -291,8 +300,17 @@ namespace Kufr.Backend.Features.Identity.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long>("LaunchGroupAccessRevision")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("LaunchGroupId")
                         .HasColumnType("TEXT");
+
+                    b.Property<long?>("LaunchGroupJoinedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("LaunchGroupRevokedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("INTEGER");

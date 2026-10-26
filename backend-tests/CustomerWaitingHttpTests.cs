@@ -39,7 +39,7 @@ internal static partial class AccountIdentityTests
         var identity = await CsrfAsync(customer);
         var customerId = identity.GetProperty("account").GetProperty("id").GetString()!;
         var profileResponse = await customer.PutAsJsonAsync("/app/v1/customer/character",
-            new CharacterWriteRequest(0, new("Waiting character", "Fixture world")));
+            new CharacterWriteRequest(0, new("Waiting character", "Fixture world"), OpenAiConsent: true));
         var profileEnvelope = await JsonAsync(profileResponse);
         var profile = profileEnvelope.GetProperty("profile");
         var profileId = profile.GetProperty("profileId").GetString()!;
@@ -243,7 +243,7 @@ internal static partial class AccountIdentityTests
             "ticket redemption persists a real account-bound customer session");
 
         var editedProfile = await PutCharacterWithCsrfAsync(customer,
-            new CharacterWriteRequest(profileRevision, new("Edited while session is active", "Fixture world"), profileId));
+            new CharacterWriteRequest(profileRevision, new("Edited while session is active", "Fixture world"), profileId, OpenAiConsent: true));
         var editedRevision = editedProfile.GetProperty("profile").GetProperty("revision").GetInt64();
         var issuedReplay = await PostAsJsonWithCsrfAsync(customer, "/app/v1/customer/start-tickets", ticketRequest);
         Check(issuedReplay.GetProperty("ticket").GetString() == ticket
@@ -306,7 +306,7 @@ internal static partial class AccountIdentityTests
         }
         await CsrfAsync(secondCustomer);
         var secondProfileEnvelope = await PutCharacterWithCsrfAsync(secondCustomer,
-            new CharacterWriteRequest(0, new("Second waiting character", "Fixture world")));
+            new CharacterWriteRequest(0, new("Second waiting character", "Fixture world"), OpenAiConsent: true));
         var secondProfile = secondProfileEnvelope.GetProperty("profile");
         var secondProfileId = secondProfile.GetProperty("profileId").GetString()!;
         var secondProfileRevision = secondProfile.GetProperty("revision").GetInt64();
@@ -383,7 +383,7 @@ internal static partial class AccountIdentityTests
         Check(eventBackOnAId != eventBId && eventBackOnA.GetProperty("event").GetProperty("eveningId").GetString() == eveningId,
             "A-to-B-to-A requires a new event bound to the newly advanced A activation");
         var replacementProfileEnvelope = await PutCharacterWithCsrfAsync(customer,
-            new CharacterWriteRequest(0, new("Replacement character", "Fixture world")));
+            new CharacterWriteRequest(0, new("Replacement character", "Fixture world"), OpenAiConsent: true));
         var replacementProfileId = replacementProfileEnvelope.GetProperty("profile").GetProperty("profileId").GetString()!;
         await PostAsJsonWithCsrfAsync(customer, customerPath + "/join",
             new { schemaVersion = 1, requestId = Guid.NewGuid().ToString("D"), eventId, profileId = replacementProfileId,

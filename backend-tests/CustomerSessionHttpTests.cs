@@ -171,6 +171,6 @@ internal static partial class AccountIdentityTests
         Check((await client.PostAsJsonAsync("/app/v1/customer/enrollment/complete", new { credential })).IsSuccessStatusCode, "customer enrolls");
         await CsrfAsync(client);
         return (await JsonAsync(await client.PutAsJsonAsync("/app/v1/customer/character",
-            new CharacterWriteRequest(0, new("Harry Potter", "Fictional fixture"))))).GetProperty("profile").Clone();
+            new CharacterWriteRequest(0, new("Harry Potter", "Fictional fixture"), OpenAiConsent: true)))).GetProperty("profile").Clone();
     }
 }

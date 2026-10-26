@@ -164,6 +164,7 @@ internal sealed partial class CharacterProfileStore
     {
         using var activity = BackendTelemetry.StartOperation("character.save");
         token.ThrowIfCancellationRequested();
+        if (!request.OpenAiConsent) { throw new CharacterException("openai_consent_required", 409); }
         Validate(request.UserInput);
         using var connection = Open();
         using var transaction = connection.BeginTransaction();

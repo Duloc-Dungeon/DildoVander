@@ -8,6 +8,10 @@ internal sealed class AccountUser : IdentityUser
 {
     public string DisplayName { get; set; } = "";
     public string? LaunchGroupId { get; set; }
+    public long? LaunchGroupJoinedAt { get; set; }
+    public long LaunchGroupAccessRevision { get; set; }
+    public long? LaunchGroupRevokedAt { get; set; }
+    public string? AdmissionUniverse { get; set; }
     public bool Disabled { get; set; }
     public long CreatedAt { get; set; }
 }
@@ -41,6 +45,8 @@ internal sealed class AccountCeremony
     public string UserId { get; set; } = "";
     public string DisplayName { get; set; } = "";
     public string? InvitationHash { get; set; }
+    public string? EnrollmentGroupId { get; set; }
+    public long? EnrollmentRevision { get; set; }
     public long ExpiresAt { get; set; }
     public bool Consumed { get; set; }
 }

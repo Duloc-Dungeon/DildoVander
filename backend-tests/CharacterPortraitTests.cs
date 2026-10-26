@@ -209,8 +209,14 @@ internal static class CharacterPortraitTests
     {
         var store = new CharacterProfileStore(root);
         var input = new CharacterUserInput("Raven", "Original fiction");
-        var local = await store.SaveAsync("local", new(0, input));
-        Check(store.ReadPortrait("local", local.ProfileId, local.Revision) is null, "local-only character never requests portrait");
+        try
+        {
+            await store.SaveAsync("local", new(0, input));
+            throw new InvalidOperationException("Missing AI consent was accepted.");
+        }
+        catch (CharacterException error) when (error.Code == "openai_consent_required") { }
+        Check(await store.ReadAsync("local") is null && store.ClaimPortrait() is null,
+            "missing consent creates neither a character nor a portrait");
         var noPortrait = await store.SaveAsync("enrichment-only", new(0, input, OpenAiConsent: true));
         var firstJob = (await store.ClaimAsync())!;
         await store.CompleteAsync(firstJob, Result(firstJob), null);
@@ -242,10 +248,10 @@ internal static class CharacterPortraitTests
         await store.SaveAsync("enrichment-only", new(noPortrait.Revision, input, noPortrait.ProfileId, OpenAiConsent: true, PortraitConsent: true));
         var oldCharacterPortrait = store.ClaimPortrait()!;
         Check(oldCharacterPortrait.AccountId == "enrichment-only", "existing ready character can explicitly consent to portrait");
-        await store.SaveAsync("enrichment-only", new(noPortrait.Revision, input, noPortrait.ProfileId));
+        store.SuspendAccountWork("enrichment-only");
         Check(!store.CanDispatchPortrait(oldCharacterPortrait)
-            && store.ReadPortrait("enrichment-only", noPortrait.ProfileId, noPortrait.Revision) is null,
-            "withdrawing consent cancels queued or in-flight portrait even when enrichment is already ready");
+            && store.ReadPortrait("enrichment-only", noPortrait.ProfileId, noPortrait.Revision)?.Status == "failed",
+            "membership revocation cancels in-flight portrait and preserves completed character data");
     }
 
     private static async Task RevisionAndDeletionAsync(string root)

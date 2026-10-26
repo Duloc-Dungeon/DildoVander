@@ -561,7 +561,8 @@ internal static partial class AccountIdentityTests
         public static async Task<Fixture> StartAsync(bool browserMode = false, bool customerFeatures = false,
             bool deletionFeatures = false, bool customerMemoryFeatures = false,
             bool accountDataExportFeatures = false, Action<WebApplication>? configureEndpoints = null,
-            Action<IServiceCollection>? configureServices = null, Action<IConfiguration>? configureConfiguration = null)
+            Action<IServiceCollection>? configureServices = null, Action<IConfiguration>? configureConfiguration = null,
+            bool betaRecruitmentOpen = true)
         {
             var root = Path.Combine(Path.GetTempPath(), "dv-account-tests-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -654,6 +655,18 @@ internal static partial class AccountIdentityTests
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
+            if (betaRecruitmentOpen)
+            {
+                var launch = app.Services.GetRequiredService<LaunchPolicyStore>();
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var admission = launch.ReadBetaAdmission();
+                var selected = launch.CreateOrSelectBetaGroup("test-fixture",
+                    new(admission.Revision), now);
+                launch.UpdateGroup("test-fixture", selected.Group.Id,
+                    new(selected.Group.Revision, selected.Group.Name, now - 1000), now);
+                launch.UpdateBetaAdmission("test-fixture",
+                    new(selected.Admission.Revision, selected.Group.Id, true, null), now);
+            }
             app.UseWebSockets(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy();
             app.MapLaunchEndpoints(); app.MapAccountEndpoints(); app.MapDigitalTwin(); app.MapModelReleases();
             if (customerFeatures || customerMemoryFeatures || accountDataExportFeatures)

@@ -5,6 +5,7 @@ import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import { accountRequest } from '../identity/session';
+import BetaAdmissionPanel from './BetaAdmissionPanel.vue';
 
 interface LaunchConfig {
   revision: number;
@@ -155,6 +156,7 @@ onBeforeUnmount(() => { if (previewTimer) clearInterval(previewTimer); });
     <header><h2 id="launch-admin-title">Spuštění aplikace</h2><p>Nastavte, kdy se otevře plný zážitek. Brány pro beta a produkční publikum platí společně pro web i iOS. Vydání jednotlivých distribucí se provádí samostatně.</p></header>
     <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
     <AwNotice v-if="message" tone="info" role="status">{{ message }}</AwNotice>
+    <BetaAdmissionPanel />
     <p v-if="!config && !error" role="status">Načítání nastavení…</p>
     <template v-if="config">
       <section class="aw-card launch-admin__schedule"><h3>Čas otevření</h3><p>Časy se zadávají a zobrazují v pásmu <strong>{{ config.timeZone }}</strong>, včetně změn letního času.</p>

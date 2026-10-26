@@ -30,12 +30,14 @@ internal static class TestingCharacterRaceTests
             var processing=resources.ProcessNextCharacterEnrichmentAsync(default);
             await provider.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
             var withdrawn=await service.SaveCharacterAsync("owner",character.Id,
-                new(new("Corrected","Library"),false,false,character.Profile.Revision),default);
+                new(new("Corrected","Library"),true,false,character.Profile.Revision),default);
             provider.Continue.SetResult();
             await processing;
             var current=service.Characters("owner").Single();
             if(current.LongTermConsent || current.Profile.Revision<withdrawn.Profile.Revision || current.Profile.UserInput.Name!="Corrected")
                 throw new InvalidOperationException("Late enrichment restored withdrawn consent or stale profile.");
+            if(!await resources.ProcessNextCharacterEnrichmentAsync(default))
+                throw new InvalidOperationException("Corrected owner's consented enrichment job was not drained before the inspector fixture.");
             var inspecting=await service.SaveCharacterAsync("inspector",null,new(new("Mira","Fictional library"),true),default);
             var session=service.Create("inspector",new(OpenAiConsent:true,RecordContent:true,OperationId:Guid.NewGuid().ToString()));
             var selected=await service.SelectCharacterAsync("inspector",session.Id,new(inspecting.Id,session.Revision),default);
@@ -56,7 +58,7 @@ internal static class TestingCharacterRaceTests
             if(System.Text.Json.JsonSerializer.Serialize(reopened.CharacterSnapshot)!=System.Text.Json.JsonSerializer.Serialize(recaptured.CharacterSnapshot)
                 ||reopened.LatestCharacter?.Profile.Enrichment is null)
                 throw new InvalidOperationException("Inspector snapshot and output did not survive reopening.");
-            var other=await service.SaveCharacterAsync("inspector",null,new(new("Other character","Different world")),default);
+            var other=await service.SaveCharacterAsync("inspector",null,new(new("Other character","Different world"),true),default);
             var raceSession=service.Create("inspector",new(OpenAiConsent:true,RecordContent:true,OperationId:Guid.NewGuid().ToString()));
             var raceSelected=await service.SelectCharacterAsync("inspector",raceSession.Id,new(inspecting.Id,raceSession.Revision),default);
             // Hold the real adapter's I/O gate to deterministically interleave

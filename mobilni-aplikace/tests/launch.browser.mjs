@@ -55,6 +55,8 @@ try {
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session' && request.method() === 'GET') return json({ enabled: true, account, csrfToken: 'fake-csrf', origin });
     if (url.pathname === '/app/v1/session' && request.method() === 'DELETE') { account = null; return route.fulfill({ status: 204, body: '' }); }
+    if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'launch-fixture-beta', groupName: 'Interní beta', joinedAt: Math.floor(Date.now() / 1000), accessRevision: 1, fixedUniverse: null, recruitmentOpen: false, launchAt: null });
+    if (url.pathname === '/app/v1/enrollment/default') return json({ available: true, groupId: 'launch-fixture-beta', groupName: 'Interní beta', fixedUniverse: null, universe: null });
     if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'GET') return json({ character, artwork: character ? artwork : null });
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'PUT') {

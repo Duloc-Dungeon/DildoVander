@@ -71,6 +71,7 @@ try {
     requests.push({ path: url.pathname, method: request.method(), url: request.url() });
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session') return json({ enabled: true, account: sessionAccount, csrfToken: 'isolated-browser-csrf' });
+    if (sessionAccount?.roles?.includes('Customer') && url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'browser-beta', groupName: 'Interní beta', joinedAt: Math.floor(Date.now() / 1000), accessRevision: 1, fixedUniverse: null, recruitmentOpen: false, launchAt: null });
     if (url.pathname === '/app/v1/launch') return json({ allowed: true, audience: 'production', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false });
     if (sessionAccount && url.pathname === '/app/v1/account') return json({ sessions: [{ id: 'browser-session', installationName: 'Tento prohlížeč', current: true, trusted: false, expiresAt: 1900000000 }], grants: [], associations: [], passkeyCount: 1, passkeys: [{ id: 'browser-passkey', name: 'Můj klíč', createdAt: '2026-10-20T00:00:00Z', isBackedUp: true }], devices: [] });
     if (sessionAccount && url.pathname === '/app/v1/customer/character') {
@@ -173,7 +174,7 @@ try {
       await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
     }
     assert(requests.slice(beforeDemo).every(request => request.method === 'GET'), 'demo never issues mutations');
-    assert(requests.slice(beforeDemo).filter(request => request.path.startsWith('/app/v1/')).every(request => ['/app/v1/session', '/app/v1/launch'].includes(request.path)), 'demo never reads private customer/account content');
+    assert(requests.slice(beforeDemo).filter(request => request.path.startsWith('/app/v1/')).every(request => ['/app/v1/session', '/app/v1/launch', '/app/v1/customer/access'].includes(request.path)), 'demo never reads private customer/account content');
     assert(requests.slice(beforeDemo).every(request => !/^\/(?:guest\/v1|v1)\//.test(request.path)), 'demo never accesses guest or device APIs');
   }
   sessionAccount = null;

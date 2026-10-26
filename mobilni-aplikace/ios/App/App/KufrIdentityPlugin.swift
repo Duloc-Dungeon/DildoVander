@@ -721,6 +721,7 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                   let lease = ceremonyLease else { return }
             credentialCompletionActive = true
             guard #available(iOS 16.0, *) else { finish(error: "Přístupové klíče vyžadují iOS 16 nebo novější.", expected: lease); return }
+            var completionRequestStarted = false
             do {
                 let credential: [String: Any]
                 if let assertion = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion {
@@ -736,10 +737,32 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                 } else { throw AccountError.invalidResponse }
                 try clearOfflineSession(origin: configuration().0)
                 try await requestScheduler.beginCredentialCommit(lease)
-                let result = try await send(path: completionPath, method: "POST", body: encode(["credential": credential]))
-                guard result.0 == 204 else { throw AccountError.verificationFailed }
+                let body = try encode(["credential": credential])
+                completionRequestStarted = true
+                let result = try await send(path: completionPath, method: "POST", body: body)
+                guard result.0 == 204 else {
+                    var code = "passkey_rejected"
+                    if completionPath == "/app/v1/customer/enrollment/complete" {
+                        if result.0 >= 400,
+                                let data = result.1.data(using: .utf8),
+                                let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                                let serverCode = body["code"] as? String, !serverCode.isEmpty {
+                            code = serverCode
+                        }
+                        if result.0 >= 500 && !["beta_enrollment_closed", "beta_enrollment_unavailable", "beta_enrollment_closed_or_changed"].contains(code) {
+                            code = "customer_enrollment_completion_uncertain"
+                        }
+                    }
+                    finish(error: code, expected: lease, code: code)
+                    return
+                }
                 finish(error: nil, expected: lease)
-            } catch { finish(error: error.localizedDescription, expected: lease) }
+            } catch {
+                let uncertain = completionRequestStarted && completionPath == "/app/v1/customer/enrollment/complete"
+                let code = uncertain ? "customer_enrollment_completion_uncertain" : nil
+                finish(error: uncertain ? "Přijetí beta účtu se nepodařilo potvrdit." : error.localizedDescription,
+                       expected: lease, code: code)
+            }
         }
     }
 
@@ -750,11 +773,11 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
         }
     }
 
-    @MainActor private func finish(error: String?, expected: AccountRequestScheduler.Lease) {
+    @MainActor private func finish(error: String?, expected: AccountRequestScheduler.Lease, code: String? = nil) {
         guard ceremonyLease?.id == expected.id else { return }
         let call = pending
         pending = nil; controller = nil; completionPath = ""; ceremonyLease = nil; credentialCompletionActive = false
-        if let error = error { call?.reject(error) } else { call?.resolve() }
+        if let error = error { call?.reject(error, code) } else { call?.resolve() }
         requestScheduler.release(expected)
     }
 
