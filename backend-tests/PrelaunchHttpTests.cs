@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.RateLimiting;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -14,12 +12,7 @@ internal static partial class AccountIdentityTests
     internal static async Task RunPrelaunchHttpAsync()
     {
         await using var fixture = await Fixture.StartAsync(customerFeatures: true, betaRecruitmentOpen: false,
-            configureServices: services => {
-                services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider());
-                // This combined journey exceeds the per-IP command window. Rate limiting has separate tests.
-                services.AddRateLimiter(options => options.AddPolicy("account", _ =>
-                    System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("prelaunch-journey")));
-            });
+            configureServices: services => services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider()));
         using var owner = fixture.Client();
         using var customer = fixture.Client();
         using var unassignedClient = fixture.Client();
@@ -274,32 +267,6 @@ internal static partial class AccountIdentityTests
             "matching revision cannot serve artwork from a different profile identity");
         Check(!(await stranger.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}")).IsSuccessStatusCode,
             "signed-out visitor cannot download private artwork");
-        var review = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character/review"));
-        Check(review.GetProperty("profile").GetProperty("enrichment").ValueKind == JsonValueKind.Object,
-            "owner can review findings before launch");
-        Check(!(await stranger.GetAsync("/app/v1/prelaunch/character/review")).IsSuccessStatusCode,
-            "review requires an account");
-        var manual = new CharacterReviewWrite(revision, profileId, new("Raven", "Original fiction", Description: "Correct context"),
-            Findings: new("Correct Raven", "Original fiction", "Correct summary", ["User supplied fact"], ["Ask about home"], []));
-        var corrected = await JsonAsync(await customer.PutAsJsonAsync("/app/v1/prelaunch/character/review", manual));
-        var correctedProfile = corrected.GetProperty("profile");
-        Check(correctedProfile.GetProperty("revision").GetInt64() == revision + 1
-            && correctedProfile.GetProperty("status").GetString() == "ready"
-            && correctedProfile.GetProperty("enrichment").GetProperty("evidenceKind").GetString() == "user_edited"
-            && correctedProfile.GetProperty("enrichment").GetProperty("sources").GetArrayLength() == 0,
-            "manual correction persists a new revision without false provider provenance");
-        Check((await customer.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}")).StatusCode == HttpStatusCode.NotFound,
-            "manual correction invalidates the old portrait");
-        Check((await customer.PutAsJsonAsync("/app/v1/prelaunch/character/review", manual)).StatusCode == HttpStatusCode.Conflict,
-            "stale corrections cannot overwrite a newer revision");
-        Check((await customer.PutAsJsonAsync("/app/v1/prelaunch/character/review",
-            manual with { ExpectedRevision = revision + 1, Regenerate = true })).StatusCode == HttpStatusCode.Conflict,
-            "regeneration requires affirmative consent");
-        var regenerated = await JsonAsync(await customer.PutAsJsonAsync("/app/v1/prelaunch/character/review",
-            manual with { ExpectedRevision = revision + 1, Regenerate = true, OpenAiConsent = true }));
-        Check(regenerated.GetProperty("profile").GetProperty("revision").GetInt64() == revision + 2
-            && regenerated.GetProperty("profile").GetProperty("status").GetString() == "queued",
-            "consented regeneration queues revised input");
         var betaInvitation = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Beta" })))
             .GetProperty("token").GetString()!;
         await EnrollAsync(beta, betaKey, betaInvitation, "Invited guest");
@@ -379,7 +346,56 @@ internal static partial class AccountIdentityTests
             && remainingWaiters.Any(member => member.GetProperty("userId").GetString() == groupTwoUserId
                 && member.GetProperty("state").GetString() == "revoked"),
             "started group members leave the waiting roster while independent group waiters and revoked accounts remain visible");
+        await RunPrelaunchReviewHttpAsync();
         Console.WriteLine("Prelaunch invitation, audience, immediate save, background artwork, private asset and manual launch HTTPS checks passed.");
+    }
+
+    private static async Task RunPrelaunchReviewHttpAsync()
+    {
+        // Keep this separate journey inside the real per-IP request limit.
+        await using var fixture = await Fixture.StartAsync(customerFeatures: true,
+            configureServices: services => services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider()));
+        using var customer = fixture.Client();
+        using var stranger = fixture.Client();
+        using var key = new VirtualPasskey();
+        await EnrollAsync(customer, key, Fixture.Bootstrap, "Review owner");
+        await CsrfAsync(customer);
+        var initial = await JsonAsync(await customer.PutAsJsonAsync("/app/v1/prelaunch/character",
+            new { expectedRevision = 0, name = "Raven", universe = "Original fiction", openAiConsent = true }));
+        var profileId = initial.GetProperty("character").GetProperty("profileId").GetString()!;
+        var revision = initial.GetProperty("character").GetProperty("revision").GetInt64();
+        for (var attempt = 0; attempt < 25; attempt++)
+        {
+            var ready = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character"));
+            if (ready.GetProperty("character").GetProperty("status").GetString() == "ready") break;
+            await Task.Delay(300);
+        }
+        var review = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character/review"));
+        Check(review.GetProperty("profile").GetProperty("enrichment").ValueKind == JsonValueKind.Object,
+            "owner can review findings before launch");
+        Check(!(await stranger.GetAsync("/app/v1/prelaunch/character/review")).IsSuccessStatusCode,
+            "review requires an account");
+        var manual = new CharacterReviewWrite(revision, profileId, new("Raven", "Original fiction", Description: "Correct context"),
+            Findings: new("Correct Raven", "Original fiction", "Correct summary", ["User supplied fact"], ["Ask about home"], []));
+        var corrected = await JsonAsync(await customer.PutAsJsonAsync("/app/v1/prelaunch/character/review", manual));
+        var correctedProfile = corrected.GetProperty("profile");
+        Check(correctedProfile.GetProperty("revision").GetInt64() == revision + 1
+            && correctedProfile.GetProperty("status").GetString() == "ready"
+            && correctedProfile.GetProperty("enrichment").GetProperty("evidenceKind").GetString() == "user_edited"
+            && correctedProfile.GetProperty("enrichment").GetProperty("sources").GetArrayLength() == 0,
+            "manual correction persists a new revision without false provider provenance");
+        Check((await customer.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}")).StatusCode == HttpStatusCode.NotFound,
+            "manual correction invalidates the old portrait");
+        Check((await customer.PutAsJsonAsync("/app/v1/prelaunch/character/review", manual)).StatusCode == HttpStatusCode.Conflict,
+            "stale corrections cannot overwrite a newer revision");
+        Check((await customer.PutAsJsonAsync("/app/v1/prelaunch/character/review",
+            manual with { ExpectedRevision = revision + 1, Regenerate = true })).StatusCode == HttpStatusCode.Conflict,
+            "regeneration requires affirmative consent");
+        var regenerated = await JsonAsync(await customer.PutAsJsonAsync("/app/v1/prelaunch/character/review",
+            manual with { ExpectedRevision = revision + 1, Regenerate = true, OpenAiConsent = true }));
+        Check(regenerated.GetProperty("profile").GetProperty("revision").GetInt64() == revision + 2
+            && regenerated.GetProperty("profile").GetProperty("status").GetString() == "queued",
+            "consented regeneration queues revised input");
     }
 
     private sealed class PrelaunchTestPortraitProvider : ICharacterPortraitProvider
