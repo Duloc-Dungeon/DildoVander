@@ -151,7 +151,13 @@ async function refreshPolicy(): Promise<void> {
   }
   updateCountdown();
   // Server permission always wins over local presentation, including staff/testers.
-  if (value.allowed && account.value && (!isCustomerAccount(account.value) || customerMembershipState.value === 'active')) {
+  if (value.allowed && account.value && !isCustomerAccount(account.value)) {
+    // Operational accounts keep their established destination. The consumer
+    // group-opening presentation must not become a staff onboarding detour.
+    await router.replace(defaultSignedInDestination(account.value));
+    return;
+  }
+  if (value.allowed && account.value && customerMembershipState.value === 'active') {
     const seenKey = `wand.group-opening-seen.v1.${account.value.id}`;
     let alreadySeen = false;
     try { alreadySeen = sessionStorage.getItem(seenKey) === 'seen'; } catch { /* Static presentation remains safe without storage. */ }
@@ -339,10 +345,11 @@ onMounted(async () => {
       await refreshCustomerMembership();
     }
     await refreshPolicy();
+    if (controller.signal.aborted) return;
     if (isCustomerAccount(account.value) && customerMembershipState.value !== 'active') {
       if (customerMembershipState.value === 'unassigned') await refreshBetaEnrollment();
       else if (customerMembershipState.value === null) error.value = copy.value.readFailed;
-    } else if (groupOpening.value) {
+    } else if (policy.value?.allowed) {
       startPolicyPolling();
     } else {
       await refreshCharacter(controller.signal);

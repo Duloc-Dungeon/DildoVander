@@ -13,7 +13,7 @@
   ],
   "consoleErrors": [],
   "nativeDeviceVerified": false,
-  "unitTests": 73,
+  "unitTests": 75,
   "invitationCaptureCount": 44,
   "representativeStates": [
     "A",
@@ -23,5 +23,7 @@
     "E",
     "F"
   ],
-  "applicationBrowserPassed": true
+  "applicationBrowserPassed": true,
+  "realHttpsAccountFixturePassed": true,
+  "passkeyVerification": "Chrome virtual authenticator; native devices remain unverified"
 }

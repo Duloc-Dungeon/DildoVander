@@ -108,6 +108,17 @@ it('K: an already seen server-authorized opening sends returning guests straight
   try { await flushPromises(); expect(api.replace).toHaveBeenCalledWith('/me/character'); }
   finally { view.unmount(); }
 });
+it.each(['Owner', 'Viewer'])('keeps the authorized %s account on its existing operational destination', async role => {
+  allowed = true;
+  api.setAccount({ id: 'staff', displayName: 'Staff', roles: [role] });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(api.replace).toHaveBeenCalledWith('/settings');
+    expect(view.find('.group-opening').exists()).toBe(false);
+    expect(api.request.mock.calls.some(([path]) => path === '/app/v1/prelaunch/character')).toBe(false);
+  } finally { view.unmount(); }
+});
 it('lets an existing unassigned customer explicitly request beta admission before loading character data', async () => {
   memberState = 'unassigned';
   customerMembershipState.value = 'unassigned';
