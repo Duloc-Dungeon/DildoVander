@@ -69,10 +69,10 @@ onBeforeUnmount(() => { cancel(); observer?.disconnect(); media?.removeEventList
     <img v-if="image" class="portrait-stage-image" :src="image" :alt="alt" :aria-hidden="phase !== 'open'" fetchpriority="high" @error="emit('failed')" />
     <img v-else class="portrait-stage-placeholder" :src="placeholder" alt="" aria-hidden="true" />
     <div class="curtain-wings" aria-hidden="true">
-      <img class="curtain-wing curtain-wing-left" :src="curtainLeft" alt="" width="561" height="980" />
-      <img class="curtain-wing curtain-wing-right" :src="curtainRight" alt="" width="561" height="980" />
+      <img class="curtain-wing curtain-wing-left" :src="curtainLeft" alt="" width="400" height="1000" />
+      <img class="curtain-wing curtain-wing-right" :src="curtainRight" alt="" width="400" height="1000" />
     </div>
-    <img class="curtain-frame" :src="frame" alt="" aria-hidden="true" width="1122" height="1402" />
+    <img class="curtain-frame" :src="frame" alt="" aria-hidden="true" width="800" height="1000" />
   </div>
 </template>
 

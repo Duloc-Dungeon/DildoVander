@@ -79,6 +79,13 @@ beforeEach(() => {
 });
 
 describe('single-group beta enrollment', () => {
+  it('keeps the existing postlaunch customer enrollment action usable from returning access', async () => {
+    const { wrapper } = await mountSignIn();
+    await wrapper.findAll('button').find(button => button.text() === 'Vytvořit zákaznický účet')!.trigger('click');
+    expect(wrapper.find('#customer-account-name').exists()).toBe(true);
+    expect(wrapper.find('.lost-access-help').exists()).toBe(false);
+    wrapper.unmount();
+  });
   it('shows arrival only for an unknown guest and lets returning access bypass it', async () => {
     const router = createSignInRouter();
     await router.push('/signin');

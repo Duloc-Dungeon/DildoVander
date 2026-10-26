@@ -219,7 +219,7 @@ async function submit(): Promise<void> {
       <label class="signin-language"><span class="sr-only">{{ language === 'en' ? 'Interface language' : 'Jazyk rozhraní' }}</span><select v-model="language"><option value="cs">Čeština</option><option value="en">English</option></select></label>
     </header>
     <div v-if="arrival && !account" class="arrival-content">
-      <img class="arrival-invitation" :src="invitationArt" alt="" width="768" height="512" fetchpriority="high" />
+      <img class="arrival-invitation" :src="invitationArt" alt="" width="740" height="450" fetchpriority="high" />
       <h1 id="sign-in-title">{{ language === 'en' ? 'Enter on your own reputation.' : 'Vstup na vlastní pověst.' }}</h1>
       <p>{{ language === 'en' ? 'Your reputation arrived before you. We have already discussed it.' : 'Tvá pověst dorazila před tebou. Už jsme se o ní omluvili.' }}</p>
       <AwButton variant="primary" @click="beginFromArrival">{{ language === 'en' ? 'Begin' : 'Začít' }}</AwButton>
@@ -227,7 +227,7 @@ async function submit(): Promise<void> {
       <nav class="signin-help" aria-label="Nápověda"><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></nav>
     </div>
     <component :is="enrollment ? PaperSurface : 'div'" v-else class="signin-content">
-      <img v-if="!enrollment && !account" class="signin-access-key" :src="accessKeyArt" alt="" width="768" height="512" />
+      <img v-if="!enrollment && !account" class="signin-access-key" :src="accessKeyArt" alt="" width="696" height="430" />
       <header class="signin-intro"><h1 id="sign-in-title">{{ account ? customerCopy.text('signin.title') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : (language === 'en' ? 'What shall we call you?' : 'Jak ti budou říkat?') : (language === 'en' ? 'Back on the scene.' : 'Zpátky na scénu.') }}</h1></header>
       <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
       <AwNotice v-if="recoveryHint" tone="warning" role="status">{{ language === 'en' ? 'We could not confirm whether account creation finished. Sign in with your existing passkey to continue; your name and universe are kept on this screen.' : 'Nepodařilo se ověřit, zda se vytvoření účtu dokončilo. Pokračuj přihlášením svým přístupovým klíčem; jméno a univerzum zůstávají na této obrazovce.' }}</AwNotice>
@@ -325,6 +325,5 @@ async function submit(): Promise<void> {
 .fixed-universe small { color: var(--aw-muted); }
 .signin-back { justify-self: start; min-height: 44px; }
 @media (max-height: 550px) { .signin-page { padding-top: .5rem; } .signin-masthead { margin-bottom: .5rem; } .signin-access-key { max-height: 10rem; object-fit: contain; } }
-.signin-page:focus-within .signin-access-key { max-height: 10rem; object-fit: contain; }
 @media (min-width: 600px) { .signin-page { padding-block: 32px; } }
 </style>

@@ -13,7 +13,7 @@
   ],
   "consoleErrors": [],
   "nativeDeviceVerified": false,
-  "unitTests": 72,
+  "unitTests": 73,
   "invitationCaptureCount": 44,
   "representativeStates": [
     "A",
@@ -22,5 +22,6 @@
     "D",
     "E",
     "F"
-  ]
+  ],
+  "applicationBrowserPassed": true
 }
