@@ -87,16 +87,18 @@ internal static class TestingSessionsTests
             Check(service.Sessions("bob").Length==0,"other account list excludes testing data");
             try{service.Read("bob",created.Id);throw new Exception("cross-account read accepted");}catch(TestingException e)when(e.Status==404){}
             var first=await service.SaveCharacterAsync("alice",null,new(new("Marta","Clock library"),true,true),default);
-            var second=await service.SaveCharacterAsync("alice",null,new(new("Alena","Sea library"),false),default);
-            Check(service.Characters("alice").Length==2&&service.Characters("bob").Length==0,"multiple persistent test characters separated by account");
+            Check(service.Characters("alice").Length==1&&service.Characters("bob").Length==0,"persistent test characters are separated by account");
             first=await service.EnrichAsync("alice",first.Id,true,default);
             Check(first.Profile.Status=="queued"&&first.Profile.Enrichment is null,
                 "requesting optional character enrichment queues work without waiting for OpenAI");
             Check(await resources.ProcessNextCharacterEnrichmentAsync(default),"isolated test worker claims the queued character job");
             first=(await service.CharactersAsync("alice",default)).Single(c=>c.Id==first.Id);
             Check(first.Profile.Enrichment?.Model=="controlled-character-double","character enrichment runs the existing provider contract and persists result");
+            var second=await service.SaveCharacterAsync("alice",null,new(new("Alena","Sea library"),true),default);
+            Check(service.Characters("alice").Length==2&&service.Characters("bob").Length==0,"multiple persistent test characters separated by account");
+            Check(await resources.ProcessNextCharacterEnrichmentAsync(default),"second character's consented enrichment is drained before the failure case");
             characterProvider.Fail=true;
-            var partial=await service.SaveCharacterAsync("alice",null,new(new("Neville","Wizarding World")),default);
+            var partial=await service.SaveCharacterAsync("alice",null,new(new("Neville","Wizarding World"),true),default);
             partial=await service.EnrichAsync("alice",partial.Id,true,default);
             Check(partial.Profile.Status=="queued","optional enrichment request responds before provider completion");
             Check(await resources.ProcessNextCharacterEnrichmentAsync(default),"test worker processes an optional enrichment failure");
@@ -107,7 +109,7 @@ internal static class TestingSessionsTests
             var active=await service.SelectCharacterAsync("alice",created.Id,new(first.Id,created.Revision),default);
             Check(active.Conversation.Testing?.CharacterContext.Contains("Clock library")==true,"actual selected character enters existing conversation context");
             CheckCharacterProviderContext(active.Conversation, first.Profile);
-            await service.SaveCharacterAsync("alice",first.Id,new(new("Changed future profile","Different library"),false,true,first.Profile.Revision),default);
+            await service.SaveCharacterAsync("alice",first.Id,new(new("Changed future profile","Different library"),true,true,first.Profile.Revision),default);
             Check((await service.DetailAsync("alice",created.Id,default)).Character?.Profile.UserInput.Name=="Marta",
                 "editing saved character does not change active immutable conversation/wand identity");
             lab.Change("alice",created.LabSessionId,s=>s with {Turns=[new("user-fixture","user","I repair clocks.",DateTimeOffset.UtcNow),new("reply-fixture","assistant","Fixture provider reply.",DateTimeOffset.UtcNow)]});
@@ -135,7 +137,7 @@ internal static class TestingSessionsTests
             Check(returningDetail.Memory.Records.Any(m=>m.Text.Contains("repair clocks")),
                 "same authenticated test character can retrieve authorized persistent personal memory in a second session");
             var editable=service.Characters("alice").Single(c=>c.Id==first.Id);
-            await service.SaveCharacterAsync("alice",first.Id,new(editable.Profile.UserInput,false,false,editable.Profile.Revision),default);
+            await service.SaveCharacterAsync("alice",first.Id,new(editable.Profile.UserInput,true,false,editable.Profile.Revision),default);
             var withdrawn=await service.DetailAsync("alice",created.Id,default);
             Check(!withdrawn.Session.LongTermConsent&&withdrawn.Memory.Records.All(record=>record.Scope!=Kufr.Backend.Features.Memory.MemoryScope.Personal),
                 "explicit consent withdrawal immediately revokes existing active returning-memory bindings");
