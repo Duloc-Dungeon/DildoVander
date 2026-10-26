@@ -13,6 +13,8 @@
 
 ## Projekty a zdroje pravdy
 
+- Aktuální mobilní zaměření, jazyk, humor a vzhled určuje [PRODUCT.md](PRODUCT.md). Při rozporu nahrazuje starší produktové a vizuální pokyny. Fyzický kufr je pozastavený; zachované technické kontrakty a bezpečnostní pravidla stále platí.
+
 - Repozitář obsahuje jediný systém AI kufru: firmware ESP32-S3 v `firmware/`, jeho hostitelský simulátor v `firmware/simulator/` a společnou webovou/iOS aplikaci v `mobilni-aplikace/`. Sdílené kontrakty jsou v `contracts/`; dokumentace je v `docs/`.
 - Architekturu, kontrakty, závislosti a kritéria etap určuje [implementační plán](docs/implementacni-plan.md). Aktuální požadavky, plány, vlastnictví, závislosti a předání vede privátní Linear podle [koordinačního workflow](docs/development-coordination.md). README popisují aktuálně existující kód, nikoli alternativní roadmapu.
 - Pro zapojení a napájení čti `docs/efekty-a-napajeni.md`, pro podkladovou pinovou mapu `docs/pin-mapa-esp32-s3.md` a pro omezení kamery `docs/kamera.md`. Předběžné profily A/B a bezpečnostní obvod jsou v kapitolách 8 a 10 plánu.
@@ -74,6 +76,8 @@ If Engram is unavailable, report the gap and continue authorized work from sourc
 - Přístupové údaje necommituj ani nevkládej do firmware image či mobilního balíčku. Device identita se provisionuje servisně, provider klíč je pouze na backendu; Apple podpisové identity pouze v odděleném CI prostředí.
 
 ## Vizuální styl všech UI
+
+- Pro aplikaci začni [profilem produktu](PRODUCT.md), [DESIGN.md](DESIGN.md) a [aktuálním consumer guide](design-system/consumer-game-ui.md). Závazný směr je Responsive Table, české rozhraní a mobilní zákaznická cesta. Starší Midnight Table zůstává pouze historickou referencí a původem některých aktiv.
 
 - Pro návštěvnickou památku DV10 čti [kanonický kontrakt a stav](docs/dv10/README.md).
   Používej tracked skills [design](.agents/skills/dildovander-keepsake-design/SKILL.md),

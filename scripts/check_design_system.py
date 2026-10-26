@@ -137,7 +137,10 @@ def inspect(root):
             problems.append(f"Missing active guidance: {relative}")
             continue
         text = path.read_text(encoding="utf-8")
-        if re.search(r"Arcane Workshop|80/15/5|mosazn[ýéí]", text, re.I):
+        # Brass is current consumer art; engineering guidance still rejects the
+        # retired Arcane Workshop palette. DESIGN.md owns the consumer direction.
+        obsolete = r"Arcane Workshop|80/15/5" if relative == "DESIGN.md" else r"Arcane Workshop|80/15/5|mosazn[ýéí]"
+        if re.search(obsolete, text, re.I):
             problems.append(f"Obsolete active visual guidance: {relative}")
     return sorted(set(problems))
 

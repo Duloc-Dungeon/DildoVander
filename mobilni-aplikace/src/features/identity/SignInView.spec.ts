@@ -310,7 +310,7 @@ describe('sign-in destinations', () => {
     ['recent_passkey_required', 'Nejprve znovu ověřte', 'Verify your identity with a passkey again.'],
     ['same_account_passkey_required', 'Vyberte přístupový klíč', 'Choose a passkey for the currently signed-in account.'],
     ['accounts_not_configured', 'Přihlášení je dostupné až po konfiguraci', 'Sign-in is available after an administrator configures'],
-  ])('preserves safe localized guidance for %s without displaying server details', async (code, czech, english) => {
+  ])('preserves safe Czech guidance for %s without displaying server details after a legacy English choice', async (code, czech) => {
     api.authenticate.mockRejectedValueOnce(Object.assign(new Error('private-server-detail-token'), { code }));
     const { wrapper } = await mountSignIn();
     await wrapper.get('form').trigger('submit');
@@ -318,7 +318,8 @@ describe('sign-in destinations', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain(czech);
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.get('[role="alert"]').text()).toContain(english);
+    expect(wrapper.get('[role="alert"]').text()).toContain(czech);
+    expect(wrapper.find('select').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('private-server-detail-token');
     wrapper.unmount();
   });
@@ -328,13 +329,13 @@ describe('sign-in destinations', () => {
     const { wrapper } = await mountSignIn();
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.get('h1').text()).toBe('Back on the scene.');
-    expect(wrapper.get('button[type="submit"]').text()).toBe('Sign in with passkey');
+    expect(wrapper.get('h1').text()).toBe('Zpátky na scénu.');
+    expect(wrapper.get('button[type="submit"]').text()).toBe('Přihlásit přístupovým klíčem');
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(wrapper.text()).toContain('Sign-in or the account change could not be completed.');
+    expect(wrapper.text()).toContain('Přihlášení nebo změnu účtu se nepodařilo dokončit.');
     expect(wrapper.text()).not.toContain('private-server-detail-token');
-    expect(wrapper.get('details summary').text()).toBe('Lost access?');
+    expect(wrapper.get('details summary').text()).toBe('Ztratili jste přístup?');
     wrapper.unmount();
   });
 

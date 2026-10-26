@@ -58,11 +58,11 @@ describe('CustomerDemo', () => {
 
     interfaceLanguagePreference.setLanguage('en');
     await wrapper.vm.$nextTick();
-    expect(wrapper.get('h1').text()).toBe('A story without a connection');
-    expect(wrapper.get('h2').text()).toBe('Conversation sample');
-    expect(wrapper.text()).toContain('does not connect to a suitcase, use a microphone, or send data to AI services');
-    expect(wrapper.get('[aria-label="Prewritten dialogue"] li').text()).toContain('Guide');
-    expect(wrapper.findAll('button').map((button) => button.text())).toEqual(['Back', 'Next step', 'Start the demo again']);
+    expect(wrapper.get('h1').text()).toBe('Příběh bez připojení');
+    expect(wrapper.get('h2').text()).toBe('Ukázka rozhovoru');
+    expect(wrapper.text()).toContain('nepřipojuje kufr, nepoužívá mikrofon ani neposílá data službám AI');
+    expect(wrapper.get('[aria-label="Předem napsaný dialog"] li').text()).toContain('Průvodce');
+    expect(wrapper.findAll('button').map((button) => button.text())).toEqual(['Zpět', 'Další krok', 'Začít ukázku znovu']);
     expect(fetch).not.toHaveBeenCalled();
 
     interfaceLanguagePreference.setLanguage('cs');

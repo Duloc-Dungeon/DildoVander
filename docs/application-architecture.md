@@ -1,5 +1,7 @@
 # One DildoVander application
 
+Current product scope follows [PRODUCT.md](../PRODUCT.md): Czech mobile customer journey, Responsive Table UI, and hardware on hold. Retained diagnostic routes below are compatibility/service surfaces, not default customer navigation.
+
 Repository architecture, 2026-10-19. Current delivery and environment limits are
 recorded in [private acceptance](development-coordination.md) and
 [PR #218](https://github.com/Blato58/DildoVander/pull/218). Earlier implementation

@@ -17,6 +17,7 @@
     "test:accounts:fixture": "node tests/accounts.fixture.browser.mjs",
     "test:invitation:browser": "node tests/invitation.browser.mjs",
     "test:beta-admission:browser": "node tests/beta-admission.browser.mjs",
+    "test:owner:browser": "node tests/owner-flows.browser.mjs",
     "preview:opening": "node tests/opening.preview.mjs",
     "test:opening:browser": "node tests/opening.browser.mjs",
     "preview:game": "node tests/game.preview.mjs",

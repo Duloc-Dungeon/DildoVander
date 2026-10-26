@@ -12,13 +12,13 @@ beforeEach(() => {
   interfaceLanguagePreference.setLanguage('cs');
 });
 
-async function render(journey: CustomerJourneyInput) {
+async function render(journey: CustomerJourneyInput, preferGame = false) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
   });
   await router.push('/');
-  return mount(CustomerJourneyCard, { props: { journey }, global: { plugins: [router] } });
+  return mount(CustomerJourneyCard, { props: { journey, preferGame }, global: { plugins: [router] } });
 }
 
 describe('customer next-action guidance', () => {
@@ -46,11 +46,11 @@ describe('customer next-action guidance', () => {
     wrapper.unmount();
   });
 
-  it('keeps non-AI profiles usable and requires suitcase and consent verification in the conversation', async () => {
-    const wrapper = await render({ account: customer, profile: { status: 'saved' } });
-    expect(wrapper.get('.aw-button--primary').attributes('href')).toBe('/me/conversation');
-    expect(wrapper.text()).toContain('ověříte blízký kufr');
-    expect(wrapper.text()).toContain('souhlasy pro tento rozhovor');
+  it('sends a ready character into the game while retaining conversation consent there', async () => {
+    const wrapper = await render({ account: customer, profile: { status: 'saved' } }, true);
+    expect(wrapper.get('.aw-button--primary').attributes('href')).toBe('/play');
+    expect(wrapper.get('.aw-button--primary').text()).toBe('Přejít do hry');
+    expect(wrapper.text()).toContain('Tvoje postava je připravená.');
     wrapper.unmount();
   });
 
@@ -63,9 +63,9 @@ describe('customer next-action guidance', () => {
     interfaceLanguagePreference.setLanguage('en');
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.text()).toContain('Your character, conversation, and keepsakes');
-    expect(wrapper.text()).toContain('Return to the existing conversation');
-    expect(action.text()).toBe('Continue conversation');
+    expect(wrapper.text()).toContain('Postava, hra a tvoje památky');
+    expect(wrapper.text()).toContain('Vraťte se k existujícímu rozhovoru.');
+    expect(action.text()).toBe('Pokračovat v rozhovoru');
     expect(action.attributes('href')).toBe('/me/conversation');
     wrapper.unmount();
   });

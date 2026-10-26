@@ -1,10 +1,12 @@
 # DildoVander
 
-Repozitář pro AI kufr: výběr ze šesti hůlek, hlas, světla, mechanické uvolnění a mobilní ovládání.
+Wand Night Stand: mobilní zážitek od pozvánky a vlastní postavy přes společný večer a hru až po památky. Závazné zaměření, češtinu, humor a vzhled určuje [profil aplikace](PRODUCT.md).
+
+Vývoj fyzického kufru je pozastavený. Níže zachované technické podklady popisují existující hardware a jeho kontrakty; nejsou zadáním běžného mobilního rozhraní.
 
 [Seznam elektroniky a odkazy k nákupu](docs/elektronika.md) obsahuje podklady pro kufr a jeho montážní materiál.
 
-## Vývoj AI kufru
+## Zachované technické zázemí
 
 ESP32-S3 samo komunikuje přes HTTPS s backendem a vlastní rozhovor i fyzickou sekvenci. iOS aplikace slouží jako místní ovladač a diagnostika. Repozitář obsahuje ESP-IDF firmware, ASP.NET Core backend se SQLite a adaptéry OpenAI, TypeScript/Vite + Capacitor/Swift aplikaci, hostitelský simulátor a parametrické CAD zdroje. Nativní iOS sestavení a podpis používají macOS GitHub Actions.
 

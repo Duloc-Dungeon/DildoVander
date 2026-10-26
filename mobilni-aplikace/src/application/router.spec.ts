@@ -18,7 +18,7 @@ describe('localized document titles', () => {
     expect(document.title).toBe('S čím potřebujete pomoct? · Wand Night Stand');
 
     interfaceLanguagePreference.setLanguage('en');
-    expect(document.title).toBe('How can we help? · Wand Night Stand');
+    expect(document.title).toBe('S čím potřebujete pomoct? · Wand Night Stand');
     expect(router.currentRoute.value.path).toBe('/support');
   });
 });

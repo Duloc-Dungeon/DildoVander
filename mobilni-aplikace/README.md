@@ -575,19 +575,16 @@ bearer token ani certifikát upstreamu. Po ztrátě spojení zablokuje povely;
 nejasný výsledek vyžaduje kontrolu mimo UI. Snapshot ani ACK nejsou důkaz
 fyzického otevření.
 
-Vzhled **Vapour Chrome** používá společné tokeny a lokálně balené fonty Inter
-a IBM Plex Mono z `../design-system/arcane-workshop.css`. Ovládání, Diagnostika a Síť kufru zachovávají
-stávající funkce; hlas a textový rozhovor zůstávají v Ovládání. Horní lišta
-ukazuje Stop kufru (ve vývoji Stop simulace) také při přepnutí do Diagnostiky nebo
-Síť kufru. Používá stejný povel a stejnou dostupnost podle přijatého stavu,
-nepřidává potvrzení a neobchází zotavení. Instalační Safari stránka sdílí vzhled
-přes generovaný canonical CSS blok vložený přímo do samostatného publisheru;
-`/design-system/arcane-workshop.css` dodává lokální fonty při připojení. Archiv
-offline používá společné systémové fontové fallbacky. Blok se generuje z
-`tokens.json` a skutečných sdílených komponent, paletu ručně nekopírujte.
+Mobilní vzhled **Responsive Table**, český hlas a humor určuje [PRODUCT.md](../PRODUCT.md).
+Adaptér `consumer-brand.css` používá společné sémantické tokeny a místní Inter;
+engineering viewery dál zachovávají Vapour Chrome. Běžná zákaznická navigace vede
+na Postavu, Hru, Památky a Účet. Připojení kufru a diagnostika jsou pozastavené
+servisní cesty. Stop se ukáže při skutečně aktivní relaci nebo hardwarové práci,
+respektuje stav zařízení a zachovává dosavadní bezpečnostní povel.
 
-Spodní navigace Ovládání/Síť kufru/Diagnostika a horní lišta respektují iOS safe
-area. Viewport má `viewport-fit=cover`; horní lišta přidává `safe-area-inset-top`
+Instalační Safari stránka používá generovaný vložený CSS blok; jeho generátor
+zůstává zdrojem pro samostatný publisher. Spodní navigace a horní lišta respektují
+iOS safe area. Viewport má `viewport-fit=cover`; horní lišta přidává `safe-area-inset-top`
 k odsazení, spodní navigace používá `safe-area-inset-bottom` a obsah má rezervu
 pod posledním ovládacím prvkem. Boční insets chrání okraje v orientaci na šířku.
 Hodnoty dodává WebKit podle zařízení a orientace. Ve webovém režimu s nulovými
@@ -768,6 +765,23 @@ Serverové kontrakty a postup migrace popisuje [backend README](../backend/READM
 allowlisty mají vlastní iOS/Android regresní testy a vyžadují nativní toolchain.
 
 ### Správa čekárny a skupin
+
+Vlastník najde přípravu pod „Večer a pozvánky“ v navigaci i na úvodní stránce.
+Osobní pozvánky vytváří vlastník; správce může řídit skupiny a večer.
+U nové skupiny nejprve uložte návrh odpočtu, potom potvrďte jeho spuštění.
+Po doběhnutí otevřete večer ručně, nebo předem zvolte automatické otevření.
+Při vypršení čerstvého ověření použijte nabízené ověření přístupovým klíčem
+a původní akci výslovně opakujte. Rozepsaný návrh zůstane zachovaný.
+
+`npm run test:owner:browser` po buildu ověřuje tuto cestu v izolované
+loopback simulaci včetně pozvánky, obnovy ověření, odpočtu a otevření večera.
+Transport přístupového klíče je testovací; nejde o ověření autentizátoru ani
+produkčního provozu. Kontrola je součástí webového CI.
+
+Rozhraní je české i při dříve uložené volbě angličtiny. Jazyk samotného
+rozhovoru zůstává samostatnou volbou. Náměty „Zadání pro AI“ v editoru postavy
+jsou místní inspirace; vložení námětu nespouští generování a nemění AI souhlas.
+Krátké přechody a indikace čekání respektují nastavení omezeného pohybu.
 
 Ve správě spuštění je přehled čekajících účastníků ze všech skupin i účtů bez
 skupiny. U účastníka vyberte cílovou skupinu a potvrďte přesun. Účet ani postava se

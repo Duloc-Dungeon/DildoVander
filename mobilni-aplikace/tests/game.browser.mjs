@@ -24,6 +24,12 @@ try {
         const count = requests.length;
         await page.getByRole('radio', { name: /Lest/ }).check();
         assert.equal(requests.length, count, 'selection must remain local');
+        const confirm = page.getByRole('button', { name: 'Potvrdit tah' });
+        await page.keyboard.press('Tab');
+        await confirm.focus();
+        assert.equal(await confirm.evaluate(button => button.matches(':focus-visible')), true);
+        assert.equal(await confirm.evaluate(button => getComputedStyle(button).outlineColor), 'rgb(247, 215, 140)', 'confirmation focus remains visible on the dark table');
+        if (width === 390) await page.screenshot({ path: path.join(output, 'confirmation-focus-390.png'), fullPage: true });
         await page.getByRole('button', { name: 'Potvrdit tah' }).click();
         await page.getByText('Tvůj tah je uzamčený.', { exact: false }).first().waitFor();
         assert.equal(requests.at(-1).body.choice, 'trick');

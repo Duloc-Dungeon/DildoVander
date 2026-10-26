@@ -37,7 +37,7 @@ describe('NewCharacterDialog', () => {
     const wrapper = mountDialog();
     await wrapper.get('#new-character-name').setValue('Nový koncept');
     await wrapper.get('#new-character-world').setValue('Jiný svět');
-    await wrapper.get('button[type="button"]').trigger('click');
+    await wrapper.get('.new-character-actions button[type="button"]').trigger('click');
 
     expect(wrapper.emitted('cancel')).toHaveLength(1);
     expect(wrapper.emitted('confirm')).toBeUndefined();
@@ -107,10 +107,10 @@ describe('NewCharacterDialog', () => {
     const wrapper = mountDialog();
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.get('dialog').attributes('aria-label')).toBe('Create a new character');
-    expect(wrapper.text()).toContain('A new character creates a separate identity. Previous conversations and keepsakes stay saved with the earlier character.');
-    expect(wrapper.text()).toContain('Unsubmitted edits to the current character are not copied. Choose Cancel to return to them.');
-    expect(wrapper.text()).toContain('I agree to send this new character’s details to OpenAI');
+    expect(wrapper.get('dialog').attributes('aria-label')).toBe('Vytvořit novou postavu');
+    expect(wrapper.text()).toContain('Nová postava vytvoří samostatnou identitu. Historie rozhovorů a památky předchozí postavy zůstanou uložené.');
+    expect(wrapper.text()).toContain('Neuložené úpravy aktuální postavy se do nové nepřenesou. Volbou Zrušit se k nim vrátíte.');
+    expect(wrapper.text()).toContain('Souhlasím s odesláním údajů této nové postavy společnosti OpenAI');
     expect((wrapper.get('#new-character-openai-consent').element as HTMLInputElement).checked).toBe(false);
     await wrapper.get('form').trigger('submit');
     expect(wrapper.emitted('confirm')?.[0]?.[0]).toMatchObject({ openAiConsent: false });
@@ -149,7 +149,7 @@ describe('NewCharacterDialog', () => {
       await wrapper.get('#new-character-world').setValue('Star Book');
       await wrapper.get('form').trigger('submit');
       expect(wrapper.emitted('confirm')?.[0]).toEqual([expect.objectContaining({ name: 'Mira', world: 'Star Book', openAiConsent: false })]);
-      await wrapper.get('button[type="button"]').trigger('click');
+      await wrapper.get('.new-character-actions button[type="button"]').trigger('click');
       expect(wrapper.emitted('cancel')).toHaveLength(1);
       await wrapper.setProps({ open: false });
       expect(wrapper.find('form').exists()).toBe(false);

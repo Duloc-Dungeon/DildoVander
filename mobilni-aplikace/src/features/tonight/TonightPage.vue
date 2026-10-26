@@ -2,6 +2,7 @@
 import { computed, markRaw, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import AwNotice from '../../components/AwNotice.vue';
+import EveningSetupLinks from '../../application/EveningSetupLinks.vue';
 import { canOperateSuitcase } from '../../application/access';
 import { DirectorClient } from '../director/DirectorClient';
 import { DirectorSession, type DirectorLocal } from '../director/DirectorSession';
@@ -145,6 +146,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page-stack tonight-page">
+    <EveningSetupLinks />
     <section class="aw-card tonight-context" aria-label="Vybraný provozní kontext">
       <p><strong>Účet obsluhy:</strong> {{ account?.displayName ?? 'ověřuje se' }}</p>
       <label v-if="authorizedDevices.length" for="tonight-device-select">

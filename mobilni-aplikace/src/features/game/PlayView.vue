@@ -5,7 +5,10 @@ import SceneShell from '../../components/scene/SceneShell.vue';
 import PaperSurface from '../../components/scene/PaperSurface.vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
-import SpellGlyph from '../archive/SpellGlyph.vue';
+import tableScene from '../../assets/brand/responsive-table/table-scene.webp';
+import strikeToken from '../../assets/brand/responsive-table/token-strike.webp';
+import trickToken from '../../assets/brand/responsive-table/token-trick.webp';
+import shieldToken from '../../assets/brand/responsive-table/token-shield.webp';
 import GameCharacter from './GameCharacter.vue';
 import GameConsent from './GameConsent.vue';
 import GameLoadouts from './GameLoadouts.vue';
@@ -58,6 +61,14 @@ const practiceDone = computed(() => practiceRounds.value.length === 7);
 const playerScore = computed(() => practice.value ? practiceRounds.value.filter(round => round.winner === 'player').length : match.value?.playerScore ?? 0);
 const opponentScore = computed(() => practice.value ? practiceRounds.value.filter(round => round.winner === 'opponent').length : match.value?.opponentScore ?? 0);
 const completed = computed(() => practice.value ? practiceDone.value : match.value?.status === 'complete');
+const tableDuel = computed(() => practice.value || Boolean(match.value && match.value.mode !== 'yolo'
+  && (match.value.status === 'active' || match.value.status === 'complete')));
+const roundCount = computed(() => practice.value ? 7 : match.value?.totalRounds ?? 0);
+const completedRoundCount = computed(() => practice.value ? practiceRounds.value.length : match.value?.completedRounds ?? 0);
+const playerName = computed(() => account.value?.displayName || 'Ty');
+const opponentName = computed(() => practice.value ? 'Cvičný mág' : match.value?.opponent.displayName || 'Soupeř');
+const spellTokens = { strike: strikeToken, trick: trickToken, shield: shieldToken };
+const selectedAction = computed(() => actions.find(action => action.id === selected.value));
 const lastRound = computed(() => practice.value ? practiceRounds.value.at(-1) : match.value?.rounds.at(-1));
 const selectedOpponent = computed(() => lobby.value?.opponents.find(opponent => opponent.id === opponentId.value));
 const advanced = computed(() => mode.value === 'tactical' && lobby.value?.player.tacticalUnlocked && (selectedOpponent.value?.xp ?? 0) >= 30);
@@ -229,18 +240,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SceneShell class="game-scene" labelled-by="game-title">
+  <SceneShell class="game-scene" :class="{ 'responsive-table': tableDuel }" :background="tableDuel ? tableScene : undefined" labelled-by="game-title">
     <div class="game-content">
       <header class="game-header">
         <RouterLink :to="route.path === '/play' ? '/me/character' : { path: '/play', query: { browse: '1' } }">← {{ route.path === '/play' ? 'Moje postava' : 'Ke hře' }}</RouterLink>
-        <span class="game-eyebrow">Wand Night Stand</span>
+        <span class="game-eyebrow">{{ tableDuel ? practice ? 'Trénink · bez XP' : modeName(match!.mode) : 'Wand Night Stand' }}</span>
+        <details v-if="tableDuel" class="game-rules"><summary aria-label="Pravidla duelu">?</summary><div><strong>Tři kouzla. Jedna volba.</strong><p>Úder přeruší lest. Lest obejde štít. Štít zastaví úder.</p><p>Vyber kouzlo a potvrď tah. Volby zůstanou tajné až do společného odhalení.</p><p v-if="!practice">Jiskru přisadíš před potvrzením. Když prohraješ, její bod získá soupeř. Při shodě se přisazené jiskry spotřebují bez bodu.</p></div></details>
       </header>
       <div v-if="error" class="game-feedback"><AwNotice tone="danger">{{ error }}</AwNotice><AwButton :busy="loading" @click="refresh">Obnovit stav</AwButton></div>
       <p v-if="loading && !match && !lobby && !practice" role="status">Připravujeme tvé místo u stolu…</p>
       <p class="game-sr" role="status" aria-live="polite">{{ liveMessage }}</p>
 
       <template v-if="practice || match">
-        <div class="game-match-heading">
+        <div class="game-match-heading" :class="{ 'game-sr': tableDuel }">
           <p class="game-eyebrow">{{ practice ? 'Trénink · bez XP' : modeName(match!.mode) }}</p>
           <h1 id="game-title">{{ practice ? 'Zkus kouzlo.' : match!.opponent.displayName }}</h1>
         </div>
@@ -285,15 +297,23 @@ onBeforeUnmount(() => {
             <div v-if="match?.mode === 'boss'" class="game-score" aria-label="Zbývající bojová energie">
               <div><span>Tvoje energie</span><strong>{{ match.playerEnergy?.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) }} / 6</strong></div><span class="game-score-divider" aria-hidden="true">·</span><div><span>Baronova energie</span><strong>{{ match.opponentEnergy?.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) }} / 5</strong></div>
             </div>
-            <div v-else class="game-score" aria-label="Skóre zápasu">
-              <div><span>Ty</span><strong>{{ playerScore }}</strong></div><span class="game-score-divider" aria-hidden="true">:</span><div><span>{{ practice ? 'Cvičný mág' : match!.opponent.displayName }}</span><strong>{{ opponentScore }}</strong></div>
+            <div v-else class="game-score game-score--duel" aria-label="Skóre zápasu">
+              <span class="game-player-avatar" aria-hidden="true">{{ playerName.slice(0, 1) }}</span>
+              <div><span>{{ playerName }}</span><strong :key="`player-${playerScore}`">{{ playerScore }}</strong></div>
+              <span class="game-score-divider" aria-hidden="true">:</span>
+              <div><span>{{ opponentName }}</span><strong :key="`opponent-${opponentScore}`">{{ opponentScore }}</strong></div>
+              <span class="game-player-avatar game-player-avatar--opponent" aria-hidden="true">{{ opponentName.slice(0, 1) }}</span>
             </div>
             <p class="game-round-label">{{ completed ? 'Dohráno' : `Výměna ${Math.min((practice ? practiceRounds.length : match!.completedRounds) + 1, practice ? 7 : match!.totalRounds)} ze ${practice ? 7 : match!.totalRounds}` }}<span v-if="match?.mode === 'tactical'"> · blok {{ match.block }}</span></p>
-            <PaperSurface class="game-paper game-reveal" aria-live="polite" aria-atomic="true">
+            <div class="game-round-dots" aria-hidden="true"><span v-for="round in roundCount" :key="round" :class="{ done: round <= completedRoundCount, current: !completed && round === completedRoundCount + 1 }" /></div>
+            <div class="game-table-stage">
+            <div class="game-clash-stage" :key="`clash-${completedRoundCount}`" :class="{ 'game-clash-stage--revealed': lastRound, 'game-clash-stage--locked': match?.ownChoiceLocked }" aria-hidden="true"><span v-if="match?.ownChoiceLocked">Tah uzamčený<span>Čekáme na soupeře</span></span></div>
+            <PaperSurface v-if="lastRound" class="game-paper game-reveal" :key="completedRoundCount" aria-live="polite" aria-atomic="true">
               <p class="game-eyebrow">{{ lastRound ? 'Poslední odhalení' : 'Tři kouzla. Jedna volba.' }}</p>
               <p v-if="lastRound">{{ roundText(lastRound) }}</p>
               <p v-else>Úder přeruší lest. Lest obejde štít. Štít zastaví úder. Oba hráči volí tajně.</p>
             </PaperSurface>
+            </div>
             <PaperSurface v-if="completed" class="game-paper game-result">
               <p class="game-eyebrow">{{ practice ? 'Trénink dokončen' : 'Výsledek' }}</p><h2>{{ resultTitle }}</h2>
               <p v-if="!practice" class="game-xp">+{{ match!.xpAwarded }} XP</p><p v-else>Teď znáš všechny tři akce. Trénink nepřidává XP ani úkoly.</p>
@@ -307,11 +327,12 @@ onBeforeUnmount(() => {
                 <fieldset class="game-spells"><legend>Vyber kouzlo</legend>
                   <label v-for="action in actions" :key="action.id" :class="{ selected: selected === action.id, exhausted: !available(action.id) }">
                     <input v-model="selected" type="radio" name="spell" :value="action.id" :disabled="busy || uncertain || !available(action.id)" />
-                    <SpellGlyph :action="action.id" /><strong>{{ action.name }}</strong><small>{{ action.beats }}</small>
+                    <img class="game-spell-token" :src="spellTokens[action.id]" alt="" width="110" height="110" /><strong>{{ action.name }}</strong><small>{{ action.beats }}</small>
                     <span v-if="match?.mode === 'tactical' || match?.mode === 'boss'">{{ match.exhibition ? 'Neomezeně' : available(action.id) ? `${match.playerInventory?.[action.id] ?? 2} použití` : 'Vyčerpáno' }}</span>
                   </label>
                 </fieldset>
-                <label v-if="!practice && (match!.sparksEnabled || match!.playerSparks > 0)" class="game-spark"><input v-model="spark" type="checkbox" :disabled="!match!.playerSparks || busy || uncertain" /><span>{{ match!.playerSparks ? `Přisadit jiskru · zbývají ${match!.playerSparks}` : 'Jiskry vyčerpány' }}<small>Když prohraješ, její bod získá soupeř.</small></span></label>
+                <p class="game-choice-explanation" aria-live="polite">{{ selectedAction ? `${selectedAction.name}. ${selectedAction.beats}.` : 'Úder přeruší lest. Lest obejde štít. Štít zastaví úder.' }}</p>
+                <label v-if="!practice && (match!.sparksEnabled || match!.playerSparks > 0)" class="game-spark"><input v-model="spark" type="checkbox" :disabled="!match!.playerSparks || busy || uncertain" /><span>{{ match!.playerSparks ? `Přisadit jiskru · zbývají ${match!.playerSparks}` : 'Jiskry vyčerpány' }}<small>Když prohraješ, její bod získá soupeř.</small></span><span class="game-spark-marks" aria-hidden="true"><span v-for="mark in match!.playerSparks" :key="mark" :class="{ 'game-spark-mark--bid': spark && mark === 1 }">✦</span></span></label>
                 <AwButton variant="primary" :busy="busy" :disabled="!selected || uncertain" @click="submitChoice">Potvrdit tah</AwButton>
                 <p v-if="match?.opponentChoiceLocked" class="game-helper">Soupeř je připraven. Jeho tah zůstává tajný.</p>
               </template>
@@ -383,7 +404,7 @@ onBeforeUnmount(() => {
         <template v-else>
           <p class="game-eyebrow">Večer má tvůj rukopis.</p><h1 id="game-title">Tvůj tah,<br /><em>{{ lobby.player.displayName }}.</em></h1>
           <PaperSurface v-if="!milestoneDismissed && progress?.pending?.length" class="game-paper game-milestone"><p class="game-eyebrow">Nová kapitola</p><h2>{{ progress.pending[0].title }}</h2><p>{{ progress.pending[0].text }}</p><AwButton variant="primary" :busy="busy" @click="acknowledge(progress.pending[0], true)">{{ progress.pending[0].action }}</AwButton><AwButton @click="milestoneDismissed = true">Pokračovat později</AwButton></PaperSurface>
-          <div class="game-lobby-stage"><div class="game-wand" aria-hidden="true"><span>✦</span></div><p>Hůlka {{ lobby.player.tacticalUnlocked ? 'II' : 'I' }}<span>O osudu rozhodují tři kouzla.<br />O historkách lidé u stolu.</span></p></div>
+          <div class="game-lobby-stage game-lobby-stage--table"><img :src="tableScene" alt="" width="853" height="1844" /><p>Hůlka {{ lobby.player.tacticalUnlocked ? 'II' : 'I' }}<span>O osudu rozhodují tři kouzla.<br />O historkách lidé u stolu.</span></p></div>
           <PaperSurface class="game-paper game-progress"><p class="game-eyebrow">{{ nextMilestone }}</p><div class="game-progress-track" role="progressbar" :aria-valuenow="Math.min(lobby.player.xp, 30)" :aria-valuemax="30" :aria-valuemin="0" aria-label="Postup k hůlce II"><span :style="{ width: `${Math.min(lobby.player.xp / 30, 1) * 100}%` }" /></div>
             <p>{{ lobby.player.matchesPlayed }} dokončených zápasů · {{ lobby.player.xp }} XP</p>
             <RouterLink class="aw-button aw-button--primary" to="/play/challenge">{{ lobby.opponents.length ? 'Vybrat soupeře' : 'Zatím není koho vyzvat' }}</RouterLink><RouterLink class="game-secondary-link" to="/play/practice">Krátký trénink bez XP</RouterLink>

@@ -36,9 +36,9 @@ describe('credential naming settings', () => {
     await flushPromises();
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.text()).toContain('Passkeys');
-    expect(wrapper.text()).toContain('Signed-in devices');
-    expect(wrapper.text()).toContain('The last key cannot be removed. Removing a key signs out other account sessions.');
+    expect(wrapper.text()).toContain('Přístupové klíče');
+    expect(wrapper.text()).toContain('Přihlášená zařízení');
+    expect(wrapper.text()).toContain('Poslední klíč nelze odebrat. Odebrání klíče odhlásí ostatní relace účtu.');
     expect(wrapper.text()).not.toContain('Assigned resources');
     expect(wrapper.text()).not.toContain('Manage users and permissions');
     expect(wrapper.findAll('h1')).toHaveLength(0);

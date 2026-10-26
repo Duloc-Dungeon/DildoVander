@@ -702,9 +702,9 @@ describe('customer conversation', () => {
     const discoveryCount = api.discover.mock.calls.length;
     interfaceLanguagePreference.setLanguage('en');
     await flushPromises();
-    expect(wrapper.text()).toContain('Conversation with the suitcase');
-    expect(wrapper.text()).toContain('AI conversation consent');
-    expect(wrapper.text()).toContain('Allow Bluetooth access');
+    expect(wrapper.text()).toContain('Rozhovor s kufrem');
+    expect(wrapper.text()).toContain('Souhlas s AI rozhovorem');
+    expect(wrapper.text()).toContain('Bluetooth');
     expect((wrapper.get('#conversation-openai-consent').element as HTMLInputElement).checked).toBe(true);
     expect((wrapper.get('#personal-memory-consent').element as HTMLInputElement).checked).toBe(true);
     expect(api.request).toHaveBeenCalledTimes(requestCount);
@@ -721,8 +721,8 @@ describe('customer conversation', () => {
     const requestCount = api.request.mock.calls.length;
     interfaceLanguagePreference.setLanguage('en');
     await flushPromises();
-    expect(wrapper.text()).toContain('My character');
-    expect(wrapper.text()).toContain('Optional AI preparation');
+    expect(wrapper.text()).toContain('Moje postava');
+    expect(wrapper.text()).toContain('Volitelná příprava pomocí AI');
     expect((wrapper.get('#character-openai-consent').element as HTMLInputElement).checked).toBe(false);
     expect(api.request).toHaveBeenCalledTimes(requestCount);
     expect(api.request.mock.calls.some(call => call[1] === 'PUT')).toBe(false);

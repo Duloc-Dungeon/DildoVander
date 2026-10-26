@@ -46,6 +46,9 @@ async function mountHome() {
       { path: '/connections', component: { template: '<div />' } },
       { path: '/suitcase', component: { template: '<div />' } },
       { path: '/workshop', component: { template: '<div />' } },
+      { path: '/play', component: { template: '<div />' } },
+      { path: '/demo', component: { template: '<div />' } },
+      { path: '/settings', component: { template: '<div />' } },
       { path: '/archive', component: { template: '<div />' } },
       { path: '/me/:pane', component: { template: '<div />' } },
       { path: '/keepsake/:pathMatch(.*)*', component: { template: '<div />' } },
@@ -88,28 +91,37 @@ afterEach(() => {
 describe('Home customer journey', () => {
   it('preserves guest and staff home actions without customer endpoint reads', async () => {
     const guest = await mountHome();
-    expect(guest.wrapper.text()).toContain('Přihlásit se');
+    expect(guest.wrapper.text()).toContain('Příběh začíná');
     expect(guest.wrapper.findComponent({ name: 'CustomerJourneyCard' }).exists()).toBe(false);
+    expect(guest.wrapper.text()).not.toContain('model kufru');
+    expect(guest.wrapper.text()).not.toContain('Připojit kufr');
+    expect(guest.wrapper.find('a[href="/connections"]').exists()).toBe(false);
+    expect(guest.wrapper.find('a[href="/workshop"]').exists()).toBe(false);
     guest.wrapper.unmount();
 
     api.setAccount(operator);
     const staff = await mountHome();
-    expect(staff.wrapper.text()).toContain('Připojit kufr');
+    expect(staff.wrapper.text()).toContain('Pro hostitele');
+    expect(staff.wrapper.get('a[href="/play"]').text()).toContain('Hra');
+    expect(staff.wrapper.text()).not.toContain('Připojit kufr');
+    expect(staff.wrapper.find('a[href="/suitcase"]').exists()).toBe(false);
+    expect(staff.wrapper.find('a[href="/connections"]').exists()).toBe(false);
+    expect(staff.wrapper.find('a[href="/workshop"]').exists()).toBe(false);
     expect(staff.wrapper.text()).not.toContain('Váš další krok');
     expect(api.request).not.toHaveBeenCalled();
     staff.wrapper.unmount();
   });
 
-  it('switches guest home copy without repeating network reads', async () => {
+  it('keeps guest home copy in Czech after a legacy English choice without repeating network reads', async () => {
     const { wrapper } = await mountHome();
     await flushPromises();
-    expect(wrapper.get('h1').text()).toBe('Kufr plný příběhů.');
+    expect(wrapper.get('h1').text()).toBe('Tvoje dobrodružství začíná tady.');
     const requests = vi.mocked(fetch).mock.calls.length;
 
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.get('h1').text()).toBe('A suitcase full of stories.');
-    expect(wrapper.text()).toContain('Explore the suitcase model and wand stories.');
+    expect(wrapper.get('h1').text()).toBe('Tvoje dobrodružství začíná tady.');
+    expect(wrapper.text()).toContain('Sebevědomí máš na světovládu. Pro dnešek ti svěříme židli.');
     expect(vi.mocked(fetch).mock.calls).toHaveLength(requests);
     expect(api.request).not.toHaveBeenCalled();
     wrapper.unmount();
@@ -119,7 +131,8 @@ describe('Home customer journey', () => {
     api.setAccount({ ...customer, roles: ['Customer', 'Operator'] });
     const { wrapper } = await mountHome();
 
-    expect(wrapper.text()).toContain('Připojit kufr');
+    expect(wrapper.text()).toContain('Pro hostitele');
+    expect(wrapper.text()).not.toContain('Připojit kufr');
     expect(wrapper.text()).not.toContain('Váš další krok');
     expect(api.request).not.toHaveBeenCalled();
     wrapper.unmount();
@@ -132,7 +145,8 @@ describe('Home customer journey', () => {
 
     expect(wrapper.text()).toContain('Váš další krok');
     expect(wrapper.get('a[href="/me/character"]').text()).toBe('Vytvořit postavu');
-    expect(wrapper.get('a[href="/me/keepsakes"]').text()).toBe('Moje památky');
+    expect(wrapper.get('a[href="/me/keepsakes"]').text()).toContain('Památky');
+    expect(wrapper.find('a[href="/me/conversation"]').exists()).toBe(false);
     expect(api.request.mock.calls.map(([path, method]) => [path, method])).toEqual([
       ['/app/v1/customer/character', 'GET'],
       ['/app/v1/customer/sessions', 'GET'],
@@ -155,7 +169,7 @@ describe('Home customer journey', () => {
     characterRead.resolve({ profile: { status: 'saved' } });
     sessionsRead.resolve({ items: [] });
     await flushPromises();
-    expect(wrapper.get('a[href="/me/conversation"]').text()).toBe('Pokračovat k rozhovoru');
+    expect(wrapper.get('a[href="/play"]').text()).toBe('Přejít do hry');
     wrapper.unmount();
   });
 
@@ -166,8 +180,9 @@ describe('Home customer journey', () => {
       : { items: [] });
     const saved = await mountHome();
     await flushPromises();
-    expect(saved.wrapper.get('a[href="/me/conversation"]').text()).toBe('Pokračovat k rozhovoru');
-    expect(saved.wrapper.text()).toContain('zvolíte souhlasy pro tento rozhovor');
+    expect(saved.wrapper.get('a[href="/play"]').text()).toBe('Přejít do hry');
+    expect(saved.wrapper.text()).toContain('Tvoje postava je připravená.');
+    expect(saved.wrapper.find('a[href="/me/conversation"]').exists()).toBe(false);
     saved.wrapper.unmount();
 
     api.request.mockImplementation(async (path: string) => path.endsWith('/character')
@@ -180,7 +195,7 @@ describe('Home customer journey', () => {
     active.wrapper.unmount();
   });
 
-  it('does not show readiness while loading and recovers a failed read automatically', async () => {
+  it('shows recovery guidance while loading and recovers a failed read automatically', async () => {
     vi.useFakeTimers();
     api.setAccount(customer);
     const characterRetry = deferred<{ profile: { status: string } }>();
@@ -202,7 +217,7 @@ describe('Home customer journey', () => {
     await vi.advanceTimersByTimeAsync(1000);
     characterRetry.resolve({ profile: { status: 'saved' } });
     await flushPromises();
-    expect(wrapper.get('a[href="/me/conversation"]').text()).toBe('Pokračovat k rozhovoru');
+    expect(wrapper.get('a[href="/play"]').text()).toBe('Přejít do hry');
     wrapper.unmount();
   });
 
@@ -240,7 +255,7 @@ describe('Home customer journey', () => {
     api.setAccount(null);
     await nextTick();
     expect(wrapper.text()).not.toContain('Upřesnit postavu');
-    expect(wrapper.text()).toContain('Přihlásit se');
+    expect(wrapper.findAll('a[href="/signin"]')).toHaveLength(1);
     wrapper.unmount();
   });
 
@@ -267,7 +282,7 @@ describe('Home customer journey', () => {
     batches[1].profile.resolve({ profile: { status: 'saved' } });
     batches[1].sessions.resolve({ items: [] });
     await flushPromises();
-    expect(wrapper.get('a[href="/me/conversation"]').text()).toBe('Pokračovat k rozhovoru');
+    expect(wrapper.get('a[href="/play"]').text()).toBe('Přejít do hry');
     wrapper.unmount();
   });
 

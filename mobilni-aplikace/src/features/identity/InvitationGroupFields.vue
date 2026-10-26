@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
+import AdminReauthentication from './AdminReauthentication.vue';
 import { account, accountRequest } from './session';
 interface LaunchGroup { id: string; name: string; launchAt: number | null; revision: number }
 const props = defineProps<{ modelValue: string; disabled?: boolean }>();
@@ -11,6 +12,7 @@ const name = ref('');
 const opening = ref('');
 const busy = ref(false);
 const error = ref('');
+const reauthenticationRequired = ref(false);
 const notice = ref('');
 const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const selected = computed(() => groups.value.find(group => group.id === props.modelValue));
@@ -36,6 +38,7 @@ async function load(): Promise<void> {
 async function save(): Promise<void> {
   if (busy.value || props.disabled) return;
   error.value = ''; notice.value = '';
+  reauthenticationRequired.value = false;
   if (!name.value.trim()) { error.value = 'Zadejte název skupiny.'; return; }
   const group = selected.value;
   const launchAt = group && opening.value === localInput(group.launchAt)
@@ -53,10 +56,15 @@ async function save(): Promise<void> {
     groups.value = [...groups.value.filter(value => value.id !== result.group.id), result.group];
     choose(result.group.id);
     notice.value = 'Skupina je uložená. Odpočet nastavíte a potvrdíte ve správě čekárny.';
-  } catch { if (expected === epoch) error.value = 'Skupinu se nepodařilo uložit. Před dalším pokusem obnovte její aktuální stav.'; }
+  } catch (cause) {
+    if (expected === epoch) {
+      reauthenticationRequired.value = (cause as { code?: string } | null)?.code === 'recent_passkey_required';
+      error.value = cause instanceof Error ? cause.message : 'Skupinu se nepodařilo uložit. Před dalším pokusem obnovte její aktuální stav.';
+    }
+  }
   finally { if (expected === epoch) busy.value = false; }
 }
-watch(() => account.value?.id, () => { epoch++; groups.value = []; emit('update:modelValue', ''); name.value = ''; opening.value = ''; error.value = ''; notice.value = ''; busy.value = false; });
+watch(() => account.value?.id, () => { epoch++; groups.value = []; emit('update:modelValue', ''); name.value = ''; opening.value = ''; error.value = ''; notice.value = ''; busy.value = false; reauthenticationRequired.value = false; });
 onMounted(load);
 onBeforeUnmount(() => { epoch++; });
 </script>
@@ -75,7 +83,9 @@ onBeforeUnmount(() => { epoch++; });
         <AwButton :busy="busy" @click="save">{{ selected ? 'Uložit termín skupiny' : 'Vytvořit skupinu' }}</AwButton>
       </div>
     </details>
-    <AwNotice v-if="error" role="alert" tone="danger">{{ error }}</AwNotice><p v-if="notice" role="status">{{ notice }}</p>
+    <AwNotice v-if="error" role="alert" tone="danger">{{ error }}</AwNotice>
+    <AdminReauthentication v-if="reauthenticationRequired" @verified="reauthenticationRequired = false; error = ''; notice = 'Totožnost byla ověřena. Skupinu nyní uložte znovu.'" />
+    <p v-if="notice" role="status">{{ notice }}</p>
   </fieldset>
 </template>
 <style scoped>

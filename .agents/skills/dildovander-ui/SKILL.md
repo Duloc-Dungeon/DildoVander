@@ -88,6 +88,11 @@ UI-only CI must retain viewer tests without selecting manufacturing work.
 
 ## Character and workflow
 
+For the mobile/web application, [PRODUCT.md](../../../PRODUCT.md) is authoritative
+for scope, Czech copy, comedy and the Responsive Table direction. Read it before
+older visual records. Hardware is on hold; engineering rules below do not define
+the customer navigation or consumer palette.
+
 For a specifically requested, approved Wand Night Stand smartphone screen,
 follow the focused [locked-screen skill](../wns-implement-locked-screen/SKILL.md)
 and [canonical consumer guide](../../../design-system/consumer-game-ui.md).

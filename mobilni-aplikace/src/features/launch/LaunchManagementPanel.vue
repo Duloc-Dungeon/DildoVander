@@ -6,6 +6,7 @@ import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import { accountRequest } from '../identity/session';
 import BetaAdmissionPanel from './BetaAdmissionPanel.vue';
+import AdminReauthentication from '../identity/AdminReauthentication.vue';
 
 interface LaunchConfig {
   revision: number;
@@ -30,6 +31,8 @@ const jobs = ref<ArtworkJob[]>([]);
 const audit = ref<AuditEntry[]>([]);
 const busy = ref(false);
 const error = ref('');
+const auxiliaryWarning = ref('');
+const reauthenticationRequired = ref(false);
 const message = ref('');
 const previewStage = ref('pending');
 const previewAudience = ref<'beta' | 'production'>('production');
@@ -84,14 +87,21 @@ watch(() => config.value?.timeZone, () => {
   productionDate.value = toPragueDate(config.value.productionLaunchAt);
 });
 async function load(): Promise<void> {
-  const [current, artwork, history] = await Promise.all([
+  const [current, artwork, history] = await Promise.allSettled([
     accountRequest<LaunchConfig>('/app/v1/admin/launch'),
     accountRequest<{ jobs: ArtworkJob[] }>('/app/v1/admin/launch/artwork'),
     accountRequest<{ entries: AuditEntry[] }>('/app/v1/admin/launch/audit'),
   ]);
-  hydrate(current);
-  jobs.value = artwork.jobs;
-  audit.value = history.entries;
+  if (current.status === 'rejected') throw current.reason;
+  hydrate(current.value);
+  jobs.value = artwork.status === 'fulfilled' ? artwork.value.jobs : [];
+  audit.value = history.status === 'fulfilled' ? history.value.entries : [];
+  auxiliaryWarning.value = artwork.status === 'rejected' || history.status === 'rejected'
+    ? 'Přehled portrétů nebo historie změn není dostupný. Nastavení přístupu můžete dál upravovat.' : '';
+}
+function showError(cause: unknown, fallback: string): void {
+  reauthenticationRequired.value = (cause as { code?: string } | null)?.code === 'recent_passkey_required';
+  error.value = cause instanceof Error ? cause.message : fallback;
 }
 async function save(): Promise<void> {
   if (!config.value || busy.value) return;
@@ -120,7 +130,7 @@ async function save(): Promise<void> {
     });
     hydrate(saved);
     message.value = 'Plán a krátké sdělení jsou uložené.';
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Plán se nepodařilo uložit.'; }
+  } catch (cause) { showError(cause, 'Plán se nepodařilo uložit.'); }
   finally { busy.value = false; }
 }
 async function resetPrompt(): Promise<void> { if (config.value) config.value.personalizedLoadingPrompt = defaultPrompt; }
@@ -130,7 +140,7 @@ async function previewPrompt(): Promise<void> {
   try {
       const result = await accountRequest<{ message: string }>('/app/v1/admin/launch/personalization-preview', 'POST', { name: 'Alžběta ze světa za zrcadlem', universe: 'Pohádka o říši za zrcadlem', prompt: config.value.personalizedLoadingPrompt });
     previewResult.value = result.message;
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Ukázkovou větu se nepodařilo připravit.'; }
+  } catch (cause) { showError(cause, 'Ukázkovou větu se nepodařilo připravit.'); }
   finally { previewBusy.value = false; }
 }
 async function retry(job: ArtworkJob): Promise<void> {
@@ -140,12 +150,12 @@ async function retry(job: ArtworkJob): Promise<void> {
     await accountRequest(`/app/v1/admin/launch/artwork/${encodeURIComponent(job.profileId)}/retry`, 'POST', { expectedRevision: job.revision });
     message.value = 'Nový pokus o přípravu portrétu byl zařazen.';
     await load();
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Nový pokus se nepodařilo zařadit.'; }
+  } catch (cause) { showError(cause, 'Nový pokus se nepodařilo zařadit.'); }
   finally { busy.value = false; }
 }
 let previewTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
-  void load().catch(cause => { error.value = cause instanceof Error ? cause.message : 'Nastavení se nepodařilo načíst.'; });
+  void load().catch(cause => showError(cause, 'Nastavení se nepodařilo načíst.'));
   previewTimer = setInterval(() => { previewNow.value = Date.now(); }, 1000);
 });
 onBeforeUnmount(() => { if (previewTimer) clearInterval(previewTimer); });
@@ -155,6 +165,8 @@ onBeforeUnmount(() => { if (previewTimer) clearInterval(previewTimer); });
   <section class="launch-admin page-stack" aria-labelledby="launch-admin-title">
     <header><h2 id="launch-admin-title">Spuštění aplikace</h2><p>Nastavte, kdy se otevře plný zážitek. Brány pro beta a produkční publikum platí společně pro web i iOS. Vydání jednotlivých distribucí se provádí samostatně.</p></header>
     <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
+    <AdminReauthentication v-if="reauthenticationRequired" @verified="reauthenticationRequired = false; error = ''; message = 'Totožnost byla ověřena. Původní změnu nyní odešlete znovu.'" />
+    <AwNotice v-if="auxiliaryWarning" tone="warning">{{ auxiliaryWarning }}</AwNotice>
     <AwNotice v-if="message" tone="info" role="status">{{ message }}</AwNotice>
     <BetaAdmissionPanel />
     <p v-if="!config && !error" role="status">Načítání nastavení…</p>

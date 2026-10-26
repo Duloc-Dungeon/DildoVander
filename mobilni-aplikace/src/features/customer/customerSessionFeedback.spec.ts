@@ -58,12 +58,12 @@ describe('projectCustomerSessionError', () => {
     });
   });
 
-  it('localizes allowlisted errors while keeping unknown raw diagnostics out of the message', () => {
+  it('keeps allowlisted errors in Czech after a legacy English choice and hides unknown raw diagnostics', () => {
     interfaceLanguagePreference.setLanguage('en');
     expect(projectCustomerSessionError(new Error('permission_denied')).message)
-      .toBe('Allow Bluetooth access for the app in iPhone Settings, then try connecting again.');
+      .toBe('Povolte aplikaci přístup k Bluetooth v Nastavení iPhonu a zkuste připojení znovu.');
     expect(projectCustomerSessionError('Bearer private-token-123').message)
-      .toBe('Could not load conversation status. Try refreshing it.');
+      .toBe('Stav rozhovoru se nepodařilo načíst. Zkuste obnovit stav.');
     interfaceLanguagePreference.setLanguage('cs');
   });
 });

@@ -44,10 +44,7 @@ const pendingBetaDraft = ref<{ name: string; universe: string } | null>(null);
 const aiConsent = ref(false);
 const busy = ref(false);
 const error = ref<CustomerCopyKey | ''>('');
-const language = computed({
-  get: () => interfaceLanguagePreference.language.value,
-  set: (value: string) => { interfaceLanguagePreference.setLanguage(value); },
-});
+const language = computed(() => interfaceLanguagePreference.language.value);
 watch(() => account.value?.id, id => interfaceLanguagePreference.setScope(id), { immediate: true });
 function errorKey(value: unknown): CustomerCopyKey {
   if (value instanceof DOMException && value.name === 'NotAllowedError') return 'signin.error-cancelled';
@@ -216,7 +213,7 @@ async function submit(): Promise<void> {
   <section class="signin-page" :class="{ 'signin-page--arrival': arrival, 'signin-page--paper': !arrival && enrollment }" aria-labelledby="sign-in-title">
     <header class="signin-masthead">
       <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><img :src="brandMark" alt="" width="40" height="40" /><span>Wand<br />Night Stand</span></RouterLink>
-      <label class="signin-language"><span class="sr-only">{{ language === 'en' ? 'Interface language' : 'Jazyk rozhraní' }}</span><select v-model="language"><option value="cs">Čeština</option><option value="en">English</option></select></label>
+      <span class="signin-language" aria-label="Jazyk rozhraní">Čeština</span>
     </header>
     <div v-if="arrival && !account" class="arrival-content">
       <img class="arrival-invitation" :src="invitationArt" alt="" width="740" height="450" fetchpriority="high" />
@@ -285,7 +282,7 @@ async function submit(): Promise<void> {
 .signin-wordmark { min-height: 44px; display: flex; align-items: center; gap: .65rem; color: var(--aw-ivory); text-decoration: none; font-family: var(--aw-font-display); font-size: 1.45rem; font-weight: 500; line-height: .9; letter-spacing: -.025em; }
 .signin-wordmark img { flex: 0 0 auto; width: 40px; height: 40px; }
 .signin-wordmark span { white-space: nowrap; }
-.signin-language select { max-width: 7rem; min-height: 44px; padding: .5rem; border: 1px solid var(--aw-border-subtle); border-radius: 8px; color: var(--aw-ivory); background: var(--aw-surface); font: inherit; font-size: .875rem; }
+.signin-language { display: inline-flex; align-items: center; min-height: 44px; padding: .5rem; border: 1px solid var(--aw-border-subtle); border-radius: 8px; color: var(--aw-ivory); background: var(--aw-surface); font-size: .875rem; }
 .signin-content { display: grid; gap: 24px; }
 .signin-intro h1 { margin: 0; font-family: var(--aw-font-display); font-size: 36px; font-weight: 500; line-height: 1.05; }
 .signin-intro p { margin: 8px 0 0; color: var(--aw-muted); }

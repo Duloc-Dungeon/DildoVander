@@ -24,7 +24,7 @@ import { isCustomerAccount } from '../../application/access';
 
 interface LaunchPolicy { allowed: boolean; audience: string; launchAt: number | null; serverNow: number }
 const router = useRouter();
-const language = computed({ get: () => interfaceLanguagePreference.language.value, set: (value: string) => { interfaceLanguagePreference.setLanguage(value); } });
+const language = computed(() => interfaceLanguagePreference.language.value);
 const policy = ref<LaunchPolicy | null>(null);
 const state = ref<PrelaunchState | null>(null);
 const characterVerified = ref(false);
@@ -386,7 +386,7 @@ onBeforeUnmount(() => {
   <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" labelled-by="launch-title">
     <header class="launch-masthead">
       <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><img :src="brandMark" alt="" width="48" height="48" /><span>Wand<br />Night Stand</span></RouterLink>
-      <label class="launch-language"><span class="sr-only">{{ language === 'en' ? 'Interface language' : 'Jazyk rozhraní' }}</span><select v-model="language"><option value="cs">Čeština</option><option value="en">English</option></select></label>
+      <span class="launch-language" aria-label="Jazyk rozhraní">Čeština</span>
     </header>
     <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">
       <PaperSurface class="launch-copy">
@@ -444,7 +444,7 @@ onBeforeUnmount(() => {
 .launch-wordmark { min-height: 44px; display: flex; align-items: center; gap: .8rem; color: var(--aw-ivory); text-decoration: none; font-family: var(--aw-font-display); font-size: 1.8rem; font-weight: 500; line-height: .9; letter-spacing: -.025em; }
 .launch-wordmark img { display: none; }
 .launch-wordmark span { white-space: nowrap; }
-.launch-language select { font: inherit; font-size: .875rem; color: var(--aw-game-paper, var(--aw-ivory)); background: rgb(3 24 22 / .72); border: 1px solid var(--aw-game-brass, var(--aw-border-subtle)); border-radius: 8px; min-height: 44px; max-width: 7rem; padding: .5rem; }
+.launch-language { display: inline-flex; align-items: center; font: inherit; font-size: .875rem; color: var(--aw-game-paper, var(--aw-ivory)); background: rgb(3 24 22 / .72); border: 1px solid var(--aw-game-brass, var(--aw-border-subtle)); border-radius: 8px; min-height: 44px; padding: .5rem; }
 .launch-card { width: min(100%, 42rem); margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
 .launch-art { order: 2; width: 100%; }
 .launch-copy { order: 1; min-width: 0; }
@@ -455,7 +455,7 @@ onBeforeUnmount(() => {
 .launch-text .launch-status { color: var(--aw-game-muted); }
 .launch-final { display: grid; gap: 1rem; }
 .launch-joke, .launch-generic { color: var(--aw-ivory); font-size: 1.125rem; line-height: 1.5; }
-.launch-joke { font-family: var(--aw-font-display); font-size: clamp(1.6rem, 6.5vw, 2rem); line-height: 1.15; font-weight: 500; }
+.launch-joke { font-family: var(--aw-font-display); font-size: clamp(1.6rem, 6.5vw, 2rem); line-height: 1.3; font-weight: 500; }
 .launch-identity { font-family: var(--aw-font-display); font-size: 1.2rem; line-height: 1.6; }
 .launch-teaser { color: var(--aw-muted); font-size: .875rem; line-height: 1.6; }
 .launch-form { display: grid; gap: 1rem; margin-block: 1rem 1.5rem; }

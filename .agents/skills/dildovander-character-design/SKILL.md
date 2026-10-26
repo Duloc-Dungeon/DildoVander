@@ -5,6 +5,8 @@ description: Design or change DildoVander DV01 persona, adult/chaos roast, drama
 
 # DildoVander character design
 
+The whole mobile application follows [PRODUCT.md](../../../PRODUCT.md) for Czech language and comedy. This skill covers retained DV01/physical voice contracts; hardware work is on hold and does not define current mobile copy or navigation.
+
 For Show Pack repertoire, mood, procedural finale and anonymous callbacks, read
 [the integrated contract](../../../docs/show-pack.md). Extend ShowRepertoire,
 ShowSceneLibrary and actual Live consumption while preserving the original

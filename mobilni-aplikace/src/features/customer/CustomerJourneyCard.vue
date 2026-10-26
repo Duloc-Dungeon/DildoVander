@@ -10,8 +10,9 @@ import {
   type CustomerJourneyMeaning,
 } from './customerJourney';
 
-const props = defineProps<{ journey: CustomerJourneyInput }>();
+const props = defineProps<{ journey: CustomerJourneyInput; preferGame?: boolean }>();
 const nextAction = computed(() => getCustomerJourneyAction(props.journey));
+const preferGame = computed(() => props.preferGame === true && nextAction.value.key === 'continue-conversation');
 const actionCopy: Record<CustomerJourneyKey, CustomerCopyKey> = {
   'sign-in': 'journey.sign-in',
   'staff-home': 'journey.staff-home',
@@ -38,8 +39,9 @@ const meaningCopy: Record<CustomerJourneyMeaning, CustomerCopyKey> = {
 };
 const title = computed(() => customerCopy.text('journey.title'));
 const eyebrow = computed(() => customerCopy.text('journey.eyebrow'));
-const actionLabel = computed(() => customerCopy.text(actionCopy[nextAction.value.key]));
-const actionGuidance = computed(() => customerCopy.text(meaningCopy[nextAction.value.meaning]));
+const actionLabel = computed(() => customerCopy.text(preferGame.value ? 'journey.play-game' : actionCopy[nextAction.value.key]));
+const actionGuidance = computed(() => customerCopy.text(preferGame.value ? 'journey.game-guidance' : meaningCopy[nextAction.value.meaning]));
+const actionRoute = computed(() => preferGame.value ? '/play' : nextAction.value.route);
 const accountHelp = computed(() => customerCopy.text('journey.account-help'));
 </script>
 
@@ -50,7 +52,7 @@ const accountHelp = computed(() => customerCopy.text('journey.account-help'));
     <AwNotice :tone="nextAction.meaning === 'verification-required' ? 'warning' : 'info'">
       {{ actionGuidance }}
     </AwNotice>
-    <RouterLink class="aw-button aw-button--primary" :to="nextAction.route">{{ actionLabel }}</RouterLink>
+    <RouterLink class="aw-button aw-button--primary" :to="actionRoute">{{ actionLabel }}</RouterLink>
     <RouterLink v-if="journey.account" :to="nextAction.meaning === 'staff-destination' ? '/settings' : '/me/account'">{{ accountHelp }}</RouterLink>
   </section>
 </template>

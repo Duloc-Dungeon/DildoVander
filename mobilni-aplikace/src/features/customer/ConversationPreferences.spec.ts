@@ -47,7 +47,7 @@ describe('conversation preferences', () => {
     expect(api.request).toHaveBeenCalledTimes(1);
     interfaceLanguagePreference.setLanguage('en');
     await flushPromises();
-    expect(wrapper.text()).toContain('conversation language is independent');
+    expect(wrapper.text()).toContain('Jazyk rozhovoru je nezávislý na jazyku aplikace.');
     expect(api.request).toHaveBeenCalledTimes(1);
     expect(wrapper.findAll('select')[0]!.element.value).toBe('cs-CZ');
     await wrapper.findAll('select')[0]!.setValue('en-US');
@@ -60,8 +60,9 @@ describe('conversation preferences', () => {
       schemaVersion: 1, profileId: 'profile-a', profileRevision: 3, expectedPreferenceRevision: 0,
       conversationLanguage: 'en-US', tone: 'gentle',
     }, expect.any(AbortSignal));
-    expect(wrapper.text()).toContain('Saved for the next new conversation.');
-    expect(interfaceLanguagePreference.language.value).toBe('en');
+    expect(wrapper.text()).toContain('Uloženo pro příští nový rozhovor.');
+    expect(wrapper.text()).toContain('Angličtina');
+    expect(interfaceLanguagePreference.language.value).toBe('cs');
   });
 
   it('clears stale settings after a conflict and requires an explicit reload before retrying', async () => {

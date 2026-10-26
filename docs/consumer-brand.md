@@ -86,13 +86,12 @@ prompt-scheduling guarantee, not proof of audible delivery.
 
 ## Visual source and touchpoints
 
-The approved smartphone opening direction is **The Midnight Table**. Its local
-reference, six screen records, shared composition recipe and current artwork
-locations are maintained in the [consumer game UI guide](../design-system/consumer-game-ui.md).
-[DESIGN.md](../DESIGN.md) summarizes the consumer boundary. The consumer CSS
-adapts existing `--aw-*` roles without changing the engineering design-system
-generator. Persisted theme IDs stay compatible; visible theme names remain
-Night salon and Velvet evening (Czech equivalents in Czech UI).
+The current mobile/web direction is **Responsive Table**, governed by
+[PRODUCT.md](../PRODUCT.md), [DESIGN.md](../DESIGN.md) and the
+[consumer UI guide](../design-system/consumer-game-ui.md). The shared shell uses
+forest green, warm brass, local Inter, readable cards and restrained motion.
+The consumer CSS adapts existing `--aw-*` roles without changing the engineering
+design-system generator. Persisted theme IDs remain compatible.
 
 The identity appears in the shared shell and route titles, prelaunch and
 invitation screens, character/account/keepsake surfaces, archive empty state,
@@ -102,10 +101,11 @@ iPhone installer. The configured GPT Live persona introduces the same public
 name. Firmware already receives server-authored speech/audio: no control, sound,
 LED, electrical or BLE change is needed for this naming change.
 
-The default language is Czech. Interface copy on the countdown is Czech/English and uses the existing account-
-scoped local language preference. Administrator-authored event messages and
-personalized job messages remain in their original language; English identifies
-them as host notes. Character names and universe strings are never translated.
+Interface copy is Czech only, including countdown and account screens. Legacy
+English UI preferences resolve to Czech. Host-authored messages, fictional names
+and universe strings retain their original content. Conversation-language data
+remains separate. Comedy follows PRODUCT.md and never obscures errors, consent,
+authorization or an action's outcome.
 
 ## Assets and generation
 
@@ -115,10 +115,10 @@ The exact prompts, origin, dimensions and checksums are in
 | Asset | Production use | Delivery |
 | --- | --- | --- |
 | Original curtain, crescent clasp and night flower | Prelaunch, onboarding/invitation and portrait waiting/error fallback | Responsive 960/480 px WebP, about 71/19 KB |
-| Original wand/paper/night-flower still life | Postlaunch home and unfiltered keepsake empty state | 960 px WebP, about 59 KB; lazy on empty archive |
+| Original wand/paper/night-flower still life | Retained keepsake empty state | 960 px WebP, about 59 KB; lazy on empty archive |
 | Full-name editorial logo with wand underline | Wordmark companion, favicon, app icon and splash | Opaque RGB 1024 PNG master, 256 WebP and 180 PNG derivatives |
-| Cormorant Garamond 500 | Display headings and wordmark | Self-hosted TTF, SIL OFL 1.1 included in bundle notices |
-| Existing Inter and IBM Plex Mono | Body, controls, numeric data and diagnostics | Existing local assets and licenses |
+| Cormorant Garamond 500 | Historical source retained; no current runtime font import | SIL OFL 1.1 retained with the source |
+| Existing Inter and IBM Plex Mono | Headings, body and controls; mono for technical data | Existing local assets and licenses |
 
 The ImageGen artwork is original to this rebrand, with no sourced franchise art.
 WebP derivatives preserve the artwork and have prompt provenance sidecars. Native
@@ -128,14 +128,15 @@ Native launch RGB is generated from the consumer background override, with the
 shared token fallback for engineering-only fixtures. The installer
 retains its standalone embedded fallback and an inline consumer palette subset.
 
-The original salon assets above remain in use on their existing surfaces. The
-Midnight Table's new opening assets and their source/runtime variants are listed
-in the canonical consumer UI guide and the opening asset manifest.
+Responsive Table uses four runtime WebP assets with a dedicated provenance
+manifest. The retained curtain and opening art preserve their existing loading
+and reveal behavior. Older Midnight Table boards document asset history; they
+are not an alternative current design direction. See the consumer UI guide.
 
 ## Acceptance and verification limits
 
 Relevant checks are the app unit/component suite, compiled application browser
-suite, launch browser suite (390, 820, 1440 and 320 px English), tester browser
+suite, launch browser suite (390, 820, 1440 and 320 px Czech with legacy English preference migration), tester browser
 suite, native preparation/installer tests, site packaging with the real dist,
 design-token drift check, and backend `--launch-policy`, `--prelaunch-http`,
 `--character-portraits`, `--persona-lab`, `--case-voice-asides`, `--duel` and

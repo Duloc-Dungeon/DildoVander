@@ -1,56 +1,48 @@
 /* Consumer identity only. Engineering viewers and firmware contracts keep their
    existing design-system tokens and technical names. */
-@font-face {
-  font-family: 'Wand Editorial';
-  src: url('../assets/brand/cormorant-garamond-500.ttf') format('truetype');
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-}
-
 :root[data-theme], :root {
-  --aw-void: #211a22;
-  --aw-surface: #2b222d;
-  --aw-elevated: #382d39;
-  --aw-ivory: #f4ecd9;
-  --aw-muted: #c4b8c1;
-  --aw-accent: #e0bc7e;
-  --aw-on-accent: #211a22;
-  --aw-accent-soft: #483a37;
-  --aw-link: #edcc96;
-  --aw-border: #89747e;
-  --aw-border-subtle: #55434f;
+  --aw-void: #041b18;
+  --aw-surface: #0c2823;
+  --aw-elevated: #183b32;
+  --aw-ivory: #f5e7ca;
+  --aw-muted: #c8cdbb;
+  --aw-accent: #d9ad67;
+  --aw-on-accent: #10251d;
+  --aw-accent-soft: #253c2e;
+  --aw-link: #f1cf94;
+  --aw-border: #7e8972;
+  --aw-border-subtle: #365046;
   --aw-success: #a9d6b4;
   --aw-warning: #f4c58e;
   --aw-danger: #ffb7b4;
   --aw-info: #cac5ef;
-  --aw-font-display: 'Wand Editorial', Georgia, serif;
-  --aw-radius-card: 14px;
-  --aw-radius-control: 8px;
+  --aw-font-display: var(--aw-font-ui);
+  --aw-radius-card: 20px;
+  --aw-radius-control: 12px;
   --aw-touch: 44px;
 }
 
 /* Keep persisted theme IDs as compatibility keys, with consumer-facing names. */
 :root[data-theme='olivander'] {
-  --aw-void: #302327;
-  --aw-surface: #3a2b30;
-  --aw-elevated: #48363b;
-  --aw-accent-soft: #57403b;
-  --aw-border-subtle: #69505a;
+  --aw-void: #102d29;
+  --aw-surface: #183830;
+  --aw-elevated: #25483b;
+  --aw-accent-soft: #394b31;
+  --aw-border-subtle: #4d6758;
 }
 
 ::selection { background: #e0bc7e; color: #211a22; }
 html { scrollbar-color: var(--aw-border) var(--aw-void); }
 input, textarea { caret-color: var(--aw-accent); }
-.application-main h1 { font-family: var(--aw-font-display); font-weight: 500; font-size: clamp(2.5rem, 4.5vw, 4.5rem); }
-:root[data-theme] .application-main .identity-page h1 { font-family: var(--aw-font-display); font-weight: 500; font-size: clamp(2.5rem, 5vw, 4rem); }
+.application-main h1 { font-family: var(--aw-font-display); font-weight: 600; font-size: clamp(1.9rem, 4vw, 3.25rem); letter-spacing: -.04em; }
+:root[data-theme] .application-main .identity-page h1 { font-family: var(--aw-font-display); font-weight: 600; font-size: clamp(1.9rem, 4vw, 3rem); }
 .application-shell.launch-mode .application-main { padding: 0; max-width: none; }
 .application-shell.launch-mode .application-main > .page-stack { padding: clamp(1.25rem, 4vw, 3rem); margin-inline: auto; }
 .aw-root .skip-link { color: var(--aw-on-accent); }
 .skip-link:not(:focus) { clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; padding: 0; }
 .signin-help { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; }
 .signin-help a { display: inline-flex; align-items: center; min-height: 44px; }
-.application-brand { align-items: start; font-family: var(--aw-font-display); font-size: 1.55rem; line-height: .98; font-weight: 500; letter-spacing: -.025em; }
+.application-brand { align-items: center; font-family: var(--aw-font-ui); font-size: 1.15rem; line-height: 1.2; font-weight: 600; letter-spacing: -.025em; }
 .application-brand small { font-family: var(--aw-font-ui); line-height: 1.5; margin-top: .6rem; }
 :root[data-theme] .application-brand .brand-mark { width: 2.75rem; height: 2.75rem; flex-shrink: 0; background: none; border: 0; }
 .application-sidebar { padding-top: 2.5rem; gap: 2.5rem; }
@@ -74,3 +66,76 @@ input, textarea { caret-color: var(--aw-accent); }
 .scene-shell { --aw-void: var(--aw-game-felt); --aw-ivory: #f4ecd9; --aw-muted: var(--aw-game-muted); --aw-accent: var(--aw-game-brass); --aw-on-accent: var(--aw-game-ink); --aw-link: #efca8e; --aw-surface: #103c36; --aw-elevated: #18473f; --aw-border: #a78a5d; --aw-border-subtle: #526c5f; }
 .scene-shell .aw-button.aw-button--primary { color: var(--aw-game-ink); border: 1px solid #efc884; background: linear-gradient(180deg, #f0ca8b, var(--aw-game-brass)); box-shadow: 0 3px 8px #0004, inset 0 1px #fff5; font-family: var(--aw-font-display); font-size: 1.2rem; font-weight: 600; }
 .scene-shell a:focus-visible, .scene-shell button:focus-visible, .scene-shell input:focus-visible, .scene-shell summary:focus-visible { outline: 3px solid var(--aw-game-brass); outline-offset: 3px; }
+
+/* Shared application rhythm: feature views retain ownership of state and actions. */
+.application-shell:not(.launch-mode):not(.game-mode) .application-main { width: 100%; }
+.application-main :is(.aw-card, .home-readiness) { border-radius: var(--aw-radius-card); }
+.application-main .page-stack > header { padding-block: .25rem .75rem; }
+.application-main .page-stack > header > p { max-width: 65ch; color: var(--aw-muted); }
+.application-main :is(input, textarea, select):not([type='checkbox']):not([type='radio']):not([type='range']) { border-radius: var(--aw-radius-control); }
+.application-main :is(.aw-input, .aw-select, .aw-textarea):focus-visible { outline-offset: 3px; }
+.application-main details.aw-card > summary { min-height: var(--aw-touch); cursor: pointer; font-weight: 600; }
+.application-main details.aw-card[open] > summary { margin-bottom: 1rem; }
+.application-main :is(h2, h3, section[id]) { scroll-margin-top: 9rem; }
+.application-main .aw-button { min-height: var(--aw-touch); overflow-wrap: anywhere; }
+.application-main .workspace-link { border-radius: var(--aw-radius-control); }
+.application-main .workspace-action::after { content: ' ↗'; }
+.application-main .home-workspaces { gap: 1rem; border-top: 0; }
+.application-main .workspace-link,
+.application-main .workspace-link + .workspace-link { padding: 1.5rem; border: 1px solid var(--aw-border-subtle); background: var(--aw-surface); }
+.application-main .workspace-link:hover { border-color: var(--aw-accent); }
+.primary-navigation a.selected { color: var(--aw-link); background: var(--aw-accent-soft); }
+.aw-button[aria-busy='true']::before { content: ''; display: inline-block; width: .9em; height: .9em; flex: 0 0 auto; margin-inline-end: .4em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .application-shell:not(.launch-mode):not(.game-mode) .application-main > :is(.page-stack, .home-layout) { animation: application-arrive 240ms ease-out; }
+  .application-shell :is(.aw-button, .primary-navigation a, .workspace-link, .evening-setup-steps a) { transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease; }
+  .application-shell .aw-button:not(:disabled):not(.aw-button--danger):active { transform: translateY(1px); }
+  .application-shell .aw-button[aria-busy='true']::before { animation: application-working 800ms linear infinite; }
+  .application-shell .aw-dialog[open] { animation: application-arrive 180ms ease-out; }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .application-main :is(.workspace-link, .evening-setup-steps a):hover { transform: translateY(-2px); }
+}
+@keyframes application-arrive { from { opacity: .55; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes application-working { to { transform: rotate(360deg); } }
+
+/* Responsive Table: the same quiet green, ivory and tactile brass in every mobile flow. */
+.application-header { background: var(--aw-void); }
+.application-sidebar { background: var(--aw-void); }
+.application-main .aw-card { background: var(--aw-surface); border-color: var(--aw-border-subtle); }
+.application-shell .aw-button { border-radius: var(--aw-radius-control); font-weight: 550; letter-spacing: -.01em; }
+.application-shell .aw-button.aw-button--primary,
+.scene-shell .aw-button.aw-button--primary { min-height: 50px; border-radius: 999px; border: 1px solid #efcc91; background: linear-gradient(180deg, #f2d69f, #d9ad67); color: #10251d; box-shadow: inset 0 1px 0 #fff5, 0 3px 0 #9b733c; font-family: var(--aw-font-ui); font-size: 1rem; font-weight: 650; }
+.application-shell .aw-button.aw-button--primary:disabled { box-shadow: none; }
+.application-shell .aw-button--secondary { background: transparent; }
+.application-shell .aw-notice { border-radius: var(--aw-radius-control); }
+.application-main .home-workspaces { gap: .8rem; }
+.application-main .workspace-link { box-shadow: none; }
+.application-main .workspace-number { color: var(--aw-link); }
+.application-main .workspace-link h2 { font-weight: 600; }
+.application-main .home-brand-art { overflow: hidden; border-radius: 24px; }
+.application-main .home-brand-art img { aspect-ratio: 1; object-fit: cover; border-radius: 24px; }
+.customer-page > header { max-width: 44rem; }
+.customer-page > header p { font-size: .95rem; }
+.customer-page .character-enrichment { border-radius: 0 var(--aw-radius-control) var(--aw-radius-control) 0; }
+.customer-page .private-character-avatar { padding: 1.25rem; border: 1px solid var(--aw-border-subtle); border-radius: var(--aw-radius-card); background: var(--aw-surface); }
+.customer-page .private-character-avatar > img { border: 1px solid var(--aw-border); }
+.customer-page .customer-actions { gap: .75rem; }
+.application-main .aw-field-description { line-height: 1.55; }
+.application-main .aw-input:focus { border-color: var(--aw-accent); }
+.application-main .aw-input::placeholder { opacity: .8; }
+@media (max-width: 720px) {
+  :root[data-theme] .primary-navigation { inset-inline: max(8px, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) max(8px, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))); bottom: max(8px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))); border: 1px solid var(--aw-border-subtle); border-radius: 20px; background: var(--aw-surface); padding: 5px; gap: 3px; box-shadow: 0 8px 24px #0005; }
+  :root[data-theme] .primary-navigation a { flex: 1 1 0; min-width: 44px; padding: .5rem .15rem; border-radius: 14px; font-size: .65rem; gap: .25rem; }
+  :root[data-theme] .primary-navigation a.selected { background: var(--aw-accent-soft); color: var(--aw-link); box-shadow: inset 0 0 0 1px var(--aw-border-subtle); }
+  :root[data-theme] .application-main { padding: 1.5rem max(1rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) 2rem max(1rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))); }
+  .application-main .home-brand-art img { aspect-ratio: 16 / 9; object-position: center; }
+  .application-shell { padding-bottom: calc(var(--application-navigation-height, 5rem) + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 16px); }
+  .application-shell:is(.launch-mode, .game-mode) { padding-bottom: 0; }
+  .customer-page .private-character-avatar { grid-template-columns: minmax(5rem, .5fr) minmax(0, 1fr); gap: 1rem; }
+  .customer-page .private-character-avatar > img { width: 100%; border-radius: 16px; }
+  .customer-page .private-character-avatar h2 { font-size: 1.1rem; }
+  .customer-page .private-character-avatar figcaption { font-size: .85rem; line-height: 1.55; }
+}
+@media (max-width: 360px) { .customer-page .private-character-avatar { grid-template-columns: minmax(0, 1fr); } }

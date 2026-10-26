@@ -165,7 +165,7 @@ acceptance steps.
 
 The public `/demo` route provides a repeatable, synthetic walkthrough without
 sign-in, an invitation, microphone permission, AI calls, saved guest data, or a
-suitcase connection. Select Czech or English in the application header, advance
+suitcase connection. The interface is Czech; advance
 through character, conversation, wand result, and keepsake, then reset the demo
 to repeat it. The fictional data stays in the page. This is an explanation of the
 experience; it does not prove account, accessory, or signed-device operation.

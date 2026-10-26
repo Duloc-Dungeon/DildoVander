@@ -94,15 +94,15 @@ afterEach(() => {
 });
 
 describe('customer data exports UI', () => {
-  it('reacts to English while preserving the export scope and technical-job-only deletion meaning', async () => {
+  it('keeps Czech copy while preserving the export scope and technical-job-only deletion meaning', async () => {
     const transport = vi.fn().mockResolvedValue(new Response(JSON.stringify(job()), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     const wrapper = await render({ transport, storage: storageWithJob() });
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.text()).toContain('Download account data');
-    expect(wrapper.text()).toContain('It includes the account identifier');
-    expect(wrapper.text()).toContain('other people’s data');
-    expect(wrapper.findAll('button').some(button => button.text() === 'Delete export job only')).toBe(true);
+    expect(wrapper.text()).toContain('Stažení údajů účtu');
+    expect(wrapper.text()).toContain('Zahrne identifikátor účtu');
+    expect(wrapper.text()).toContain('údaje jiných lidí');
+    expect(wrapper.findAll('button').some(button => button.text() === 'Smazat pouze úlohu exportu')).toBe(true);
   });
   it('offers explicit native sharing without downloading on page load', async () => {
     const transport = vi.fn().mockResolvedValue(new Response(JSON.stringify(job()), { status: 200, headers: { 'Content-Type': 'application/json' } }));

@@ -1,0 +1,31 @@
+{
+  "source": "User-supplied Wand Night Stand — The Responsive Table prototype, Selected Preview 2, 2026-10-26",
+  "sourceFiles": "public/art/*.webp; original provenance in public/art/manifest.json",
+  "usage": "Decorative duel environment and spell tokens only. No prototype portraits, fabricated players, scores or opponent logic imported.",
+  "assets": [
+    {
+      "file": "table-scene.webp",
+      "bytes": 233148,
+      "sha256": "43c3728a3844d6319c7d0ade3c3426b309ff610ca4ce7c33a6adf0a657330c4c",
+      "synthetic": true
+    },
+    {
+      "file": "token-strike.webp",
+      "bytes": 53592,
+      "sha256": "e9b65025502200e0a32a910c69244b86033dd8158681150c305ed37586e70be2",
+      "synthetic": true
+    },
+    {
+      "file": "token-trick.webp",
+      "bytes": 67076,
+      "sha256": "3b3f82a70bfa01995cf2378518b04db6cc7c271a8d0f0553121fc4378043528a",
+      "synthetic": true
+    },
+    {
+      "file": "token-shield.webp",
+      "bytes": 56616,
+      "sha256": "003b5c4d8fdc025de5d3fa69201455a5fbec73421e0be47ddcc85b176e0319c5",
+      "synthetic": true
+    }
+  ]
+}

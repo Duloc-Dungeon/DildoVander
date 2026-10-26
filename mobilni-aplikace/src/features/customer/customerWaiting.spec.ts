@@ -318,9 +318,9 @@ describe('CustomerWaiting', () => {
     const initialCalls = sessionMocks.transport.mock.calls.length;
     interfaceLanguagePreference.setLanguage('en');
     await flushPromises();
-    expect(wrapper.text()).toContain('Waiting list');
-    expect(wrapper.text()).toContain('You are number 1 in line out of 1.');
-    expect(wrapper.findAll('button').some(button => button.text() === 'Reserve your place')).toBe(true);
+    expect(wrapper.text()).toContain('Čekací seznam');
+    expect(wrapper.text()).toContain('Ve frontě jste na 1. místě z 1.');
+    expect(wrapper.findAll('button').some(button => button.text() === 'Rezervovat své místo')).toBe(true);
     expect(sessionMocks.transport).toHaveBeenCalledTimes(initialCalls);
     expect(sessionMocks.transport.mock.calls.every(call => call[1]?.method === 'GET')).toBe(true);
     wrapper.unmount();
@@ -339,8 +339,8 @@ describe('CustomerWaiting', () => {
     const calls = sessionMocks.transport.mock.calls.length;
     interfaceLanguagePreference.setLanguage('en');
     await flushPromises();
-    expect(wrapper.text()).toContain('Your place is reserved until');
-    expect(wrapper.findAll('button').some(button => button.text() === 'Use reserved place')).toBe(true);
+    expect(wrapper.text()).toContain('Místo je rezervováno do');
+    expect(wrapper.findAll('button').some(button => button.text() === 'Použít rezervované místo')).toBe(true);
     expect(wrapper.emitted('claim')).toBeUndefined();
     expect(sessionMocks.transport).toHaveBeenCalledTimes(calls);
     expect(sessionMocks.transport.mock.calls.every(call => call[1]?.method === 'GET')).toBe(true);

@@ -145,12 +145,14 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label} must not overflow`);
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('combobox', { name: 'Jazyk rozhraní' }).selectOption('en');
+  await page.evaluate(() => localStorage.setItem('dildovander.interface-language.v1.account.launch-guest', 'en'));
+  await page.reload();
   await page.getByRole('heading', { name: /Matylda/ }).waitFor();
   await page.setViewportSize({ width: 320, height: 740 });
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'English narrow mobile must not overflow');
-  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-english.png'), fullPage: true });
-  await page.getByRole('combobox', { name: 'Interface language' }).selectOption('cs');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Czech narrow mobile must not overflow after loading a legacy English preference');
+  assert.equal(await page.getByRole('combobox', { name: /Jazyk rozhraní|Interface language/ }).count(), 0);
+  assert.equal(await page.locator('html').getAttribute('lang'), 'cs');
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-czech-migrated.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   character.status = 'ready';
   artwork = { status: 'running', loadingMessage: null, finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
