@@ -47,6 +47,9 @@ class PublicWorkflowTests(unittest.TestCase):
         self.assertNotIn('FIREBASE', source)
         self.assertNotIn('appdistribution:distribute', source)
         self.assertIn('android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407', source)
+        for name in ('kufr-android.yml', 'kufr-android-release.yml'):
+            android = (WORKFLOWS / name).read_text()
+            self.assertRegex(android, r'android-actions/setup-android@[^\n]+\n\s+with:\n\s+packages: platform-tools')
 
     def test_app_store_signing_has_isolated_main_only_credentials_and_no_upload(self):
         source = (WORKFLOWS / 'kufr-ios-app-store.yml').read_text()
