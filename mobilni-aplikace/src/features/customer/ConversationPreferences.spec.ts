@@ -41,27 +41,28 @@ describe('conversation preferences', () => {
     ]) expect(parseConversationPreferences({ ...view, ...changed }, 'profile-a', 3)).toBeNull();
   });
 
-  it('keeps UI language separate and writes only an explicit profile-bound next-session choice', async () => {
+  it('offers no language choice and saves Czech even after a legacy English preference', async () => {
+    api.request.mockResolvedValueOnce({ ...view, conversationLanguage: 'en-US' });
     const wrapper = render();
     await flushPromises();
     expect(api.request).toHaveBeenCalledTimes(1);
     interfaceLanguagePreference.setLanguage('en');
     await flushPromises();
-    expect(wrapper.text()).toContain('Jazyk rozhovoru je nezávislý na jazyku aplikace.');
+    expect(wrapper.text()).not.toContain('Angličtina');
+    expect(wrapper.text()).toContain('Rozhovor podle tebe');
+    expect(wrapper.findAll('select')).toHaveLength(1);
     expect(api.request).toHaveBeenCalledTimes(1);
-    expect(wrapper.findAll('select')[0]!.element.value).toBe('cs-CZ');
-    await wrapper.findAll('select')[0]!.setValue('en-US');
-    await wrapper.findAll('select')[1]!.setValue('gentle');
+    await wrapper.findAll('select')[0]!.setValue('gentle');
     expect(api.request).toHaveBeenCalledTimes(1);
-    api.request.mockResolvedValue({ ...view, conversationLanguage: 'en-US', tone: 'gentle', preferenceRevision: 1, persisted: true });
+    api.request.mockResolvedValue({ ...view, conversationLanguage: 'cs-CZ', tone: 'gentle', preferenceRevision: 1, persisted: true });
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(api.request).toHaveBeenLastCalledWith('/app/v1/customer/conversation-preferences', 'PUT', {
       schemaVersion: 1, profileId: 'profile-a', profileRevision: 3, expectedPreferenceRevision: 0,
-      conversationLanguage: 'en-US', tone: 'gentle',
+      conversationLanguage: 'cs-CZ', tone: 'gentle',
     }, expect.any(AbortSignal));
     expect(wrapper.text()).toContain('Uloženo pro příští nový rozhovor.');
-    expect(wrapper.text()).toContain('Angličtina');
+    expect(wrapper.text()).not.toContain('Jazyk rozhovoru je nezávislý');
     expect(interfaceLanguagePreference.language.value).toBe('cs');
   });
 

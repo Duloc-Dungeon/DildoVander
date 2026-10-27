@@ -5,6 +5,7 @@ import InterfaceLanguageSelect from './InterfaceLanguageSelect.vue';
 import { interfaceLanguagePreference } from './interfaceLanguage';
 import { customerCopy } from './customerCopy';
 import { usePreferences } from './preferences';
+import { wnsSound } from './wnsSound';
 
 const props = defineProps<{ accountId?: string | null }>();
 const preferences = usePreferences();
@@ -36,6 +37,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOutside))
           <option v-for="theme in preferences.themes" :key="theme.id" :value="theme.id">{{ theme.id === 'lord-voldemort' ? customerCopy.text('settings.theme-voldemort') : theme.id === 'olivander' ? customerCopy.text('settings.theme-olivander') : theme.label }}</option>
         </select>
       </label>
+      <button type="button" class="aw-button" :aria-pressed="wnsSound.enabled.value" @click="wnsSound.enable(!wnsSound.enabled.value)">{{ wnsSound.enabled.value ? 'Vypnout zvuky' : 'Zapnout zvuky' }}</button>
     </div>
   </details>
 </template>

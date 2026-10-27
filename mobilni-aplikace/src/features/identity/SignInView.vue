@@ -6,11 +6,10 @@ import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AwField from '../../components/AwField.vue';
 import LostAccessHelp from './LostAccessHelp.vue';
-import brandMark from '../../assets/brand/emblem-small.webp';
+import amberWand from '../../assets/wns-v2/art/wand-amber.png';
+import accessKey from '../../assets/brand/midnight/access-key.webp';
 import SceneShell from '../../components/scene/SceneShell.vue';
 import PaperSurface from '../../components/scene/PaperSurface.vue';
-import invitationArt from '../../assets/brand/midnight/invitation.webp';
-import accessKeyArt from '../../assets/brand/midnight/access-key.webp';
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { customerCopy, type CustomerCopyKey } from '../../application/customerCopy';
 import { launchAllowed } from '../../application/launchAccess';
@@ -212,11 +211,11 @@ async function submit(): Promise<void> {
   <SceneShell class="signin-scene">
   <section class="signin-page" :class="{ 'signin-page--arrival': arrival, 'signin-page--paper': !arrival && enrollment }" aria-labelledby="sign-in-title">
     <header class="signin-masthead">
-      <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><img :src="brandMark" alt="" width="40" height="40" /><span>Wand<br />Night Stand</span></RouterLink>
+      <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><span>Wand<br />Night Stand</span></RouterLink>
       <span class="signin-language" aria-label="Jazyk rozhraní">Čeština</span>
     </header>
     <div v-if="arrival && !account" class="arrival-content">
-      <img class="arrival-invitation" :src="invitationArt" alt="" width="740" height="450" fetchpriority="high" />
+      <div class="arrival-art" aria-hidden="true"><img :src="amberWand" alt="" width="1254" height="1254" fetchpriority="high" /></div>
       <h1 id="sign-in-title">{{ language === 'en' ? 'Enter on your own reputation.' : 'Vstup na vlastní pověst.' }}</h1>
       <p>{{ language === 'en' ? 'Your reputation arrived before you. We have already discussed it.' : 'Tvá pověst dorazila před tebou. Už jsme se o ní omluvili.' }}</p>
       <AwButton variant="primary" @click="beginFromArrival">{{ language === 'en' ? 'Begin' : 'Začít' }}</AwButton>
@@ -224,7 +223,7 @@ async function submit(): Promise<void> {
       <nav class="signin-help" aria-label="Nápověda"><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></nav>
     </div>
     <component :is="enrollment ? PaperSurface : 'div'" v-else class="signin-content">
-      <img v-if="!enrollment && !account" class="signin-access-key" :src="accessKeyArt" alt="" width="696" height="430" />
+      <div v-if="!enrollment && !account" class="signin-access-key" aria-hidden="true"><img :src="accessKey" alt="" width="696" height="430" /></div>
       <header class="signin-intro"><h1 id="sign-in-title">{{ account ? customerCopy.text('signin.title') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : (language === 'en' ? 'What shall we call you?' : 'Jak ti budou říkat?') : (language === 'en' ? 'Back on the scene.' : 'Zpátky na scénu.') }}</h1></header>
       <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
       <AwNotice v-if="recoveryHint" tone="warning" role="status">{{ language === 'en' ? 'We could not confirm whether account creation finished. Sign in with your existing passkey to continue; your name and universe are kept on this screen.' : 'Nepodařilo se ověřit, zda se vytvoření účtu dokončilo. Pokračuj přihlášením svým přístupovým klíčem; jméno a univerzum zůstávají na této obrazovce.' }}</AwNotice>
@@ -302,7 +301,7 @@ async function submit(): Promise<void> {
 .signin-content :deep(.lost-access-help summary) { min-height: 44px; padding-block: .65rem; }
 .signin-help { display: flex; gap: 1rem; flex-wrap: wrap; }
 .signin-content :deep(.lost-access-help) { padding: 0; border: 0; background: transparent; box-shadow: none; }
-.signin-page { max-width: 29rem; min-height: 100dvh; }
+.signin-page { max-width: 34rem; min-height: 100dvh; }
 .signin-masthead { margin-bottom: 1.25rem; }
 .signin-wordmark img { display: none; }
 .signin-wordmark { font-size: 1.35rem; }
@@ -323,4 +322,32 @@ async function submit(): Promise<void> {
 .signin-back { justify-self: start; min-height: 44px; }
 @media (max-height: 550px) { .signin-page { padding-top: .5rem; } .signin-masthead { margin-bottom: .5rem; } .signin-access-key { max-height: 10rem; object-fit: contain; } }
 @media (min-width: 600px) { .signin-page { padding-block: 32px; } }
+.signin-scene { --wns-display: var(--wns-font-family); }
+.signin-page { max-width: 38rem; color: var(--wns-text, #f5f5f0); }
+.signin-masthead { margin-bottom: clamp(2rem, 8vh, 5rem); }
+.signin-wordmark { font-family: var(--wns-display); font-weight: 800; font-size: 1.15rem; letter-spacing: -.055em; line-height: .98; }
+.signin-language { color: var(--wns-muted, #b2b9b6); background: transparent; border: 0; }
+.arrival-content { gap: 1.25rem; padding-top: 0; }
+.arrival-art { height: clamp(14rem, 32vh, 21rem); display: grid; place-items: center; border-radius: var(--wns-radius-hero); background: var(--wns-amber); }
+.arrival-art img { display: block; width: 100%; height: 100%; object-fit: contain; padding: 12%; }
+.arrival-content h1 { font: 800 clamp(2.7rem, 11vw, 4rem)/.98 var(--wns-display); letter-spacing: -.07em; }
+.arrival-content p { max-width: 32rem; color: var(--wns-muted, #b2b9b6); font: 500 1rem/1.55 var(--wns-display); }
+.arrival-content > .aw-button:first-of-type, .identity-form > .aw-button--primary { min-height: 56px; border-radius: 999px; background: var(--wns-mint, #b8f3d4); color: #111513; font-weight: 750; }
+.signin-content { gap: 1.25rem; padding: clamp(1.25rem, 5vw, 2rem); border-radius: 28px !important; background: var(--wns-surface, #191b1b); border-color: var(--wns-line, #343939); }
+.signin-intro h1 { font: 800 clamp(2.3rem, 9vw, 3.4rem)/1 var(--wns-display); letter-spacing: -.065em; }
+.signin-access-key { height: clamp(8rem, 28vh, 15rem); display: grid; place-items: center; margin: 0; border-radius: 22px; background: var(--wns-violet, #c8b9fc); color: #15121d; }
+.signin-access-key img { display: block; width: 100%; height: 100%; object-fit: contain; padding: 12%; }
+.identity-hint, .signin-help { color: var(--wns-muted, #b2b9b6); }
+.identity-form :deep(.aw-input) { color: var(--wns-text, #f5f5f0); background: var(--wns-surface-raised, #222626); border-color: var(--wns-line, #343939); border-radius: 14px; }
+.fixed-universe { color: var(--wns-text, #f5f5f0); }
+.fixed-universe p { font-family: var(--wns-display); }
+.consent-fieldset { padding: 1rem; border: 1px solid var(--wns-line, #343939); border-radius: 18px; background: #111313; }
+.consent-fieldset label { line-height: 1.45; }
+.consent-fieldset input { accent-color: var(--wns-mint, #b8f3d4); }
+.signin-options { gap: .25rem .75rem; }
+.signin-options .aw-button { min-height: 44px; padding-inline: .5rem; color: var(--wns-muted, #b2b9b6); }
+.signin-back { color: var(--wns-muted, #b2b9b6); }
+.signin-content :deep(.lost-access-help) { color: var(--wns-text, #f5f5f0); }
+.signin-page :deep(.aw-button--secondary) { color: var(--wns-text, #f5f5f0); border-color: var(--wns-line, #343939); border-radius: 999px; background: transparent; }
+.signin-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
 </style>

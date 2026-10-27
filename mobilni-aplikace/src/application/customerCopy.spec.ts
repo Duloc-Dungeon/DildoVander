@@ -21,7 +21,7 @@ function createMemoryStorage(): InterfaceLanguageStorage & { values: Map<string,
 describe('customer copy catalog', () => {
   it('provides the conversation preference copy in Czech', () => {
     expect(customerCopyCs['preferences.intro']).toContain('rozběhnutý rozhovor se nemění');
-    expect(customerCopyCs['preferences.limits']).toContain('Souhlas s AI se uděluje zvlášť');
+    expect(customerCopyCs['preferences.limits']).toContain('Souhlas s AI uděluješ zvlášť');
   });
 
   it('keeps the synthetic demo privacy and device boundaries explicit in Czech', () => {

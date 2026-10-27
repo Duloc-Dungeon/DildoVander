@@ -18,7 +18,9 @@ class FastBuildTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.cache, self.output = self.root / "cache", self.root / "output"
-        self.identity = {"schema": 1, "sources": {"geometry": "one"}, "runtime": {"python": "test"}}
+        # The injected mesher needs its own synthetic identity, not a hash of
+        # the optional CAD renderer that these data-only tests never execute.
+        self.identity = {"schema": 1, "sources": {"geometry": "one", "preview.py": "synthetic-mesher-v1"}, "runtime": {"python": "test"}}
         self.factory = lambda mesh: {**fixture_payload(), "twinManifest": None}
         self.patch = patch.object(fast_build, "identity", return_value=self.identity)
         self.patch.start()
@@ -73,7 +75,7 @@ class FastBuildTests(unittest.TestCase):
     def test_mesh_reuses_identical_shape_and_rebuilds_corruption(self):
         generator = lambda shape: ([[1, 2, 3]], [[0, 0, 0]])
         with patch.dict(sys.modules, {"preview": SimpleNamespace(mesh=generator)}):
-            cache = fast_build.MeshCache(self.cache, {"cad": "test"})
+            cache = fast_build.MeshCache(self.cache, {"cad": "test"}, mesher=self.identity["sources"]["preview.py"])
             self.addCleanup(cache.discard)
             cache.mesh(ShapeStub())
             cache.publish()
@@ -83,6 +85,17 @@ class FastBuildTests(unittest.TestCase):
             cache.mesh(ShapeStub())
             cache.mesh(ShapeStub(b"different geometry"))
             self.assertEqual(cache.misses, 3)
+
+    def test_changed_mesher_does_not_reuse_the_previous_mesh(self):
+        with patch.dict(sys.modules, {"preview": SimpleNamespace(mesh=lambda shape: ([[1, 2, 3]], [[0, 0, 0]]))}):
+            first = fast_build.MeshCache(self.cache, {"cad": "test"}, mesher="synthetic-mesher-v1")
+            self.addCleanup(first.discard)
+            first.mesh(ShapeStub())
+            first.publish()
+            second = fast_build.MeshCache(self.cache, {"cad": "test"}, mesher="synthetic-mesher-v2")
+            self.addCleanup(second.discard)
+            second.mesh(ShapeStub())
+            self.assertEqual((second.hits, second.misses), (0, 1))
 
     def test_failed_build_does_not_publish_partial_mesh_cache(self):
         with patch.dict(sys.modules, {"preview": SimpleNamespace(mesh=lambda shape: ([[1, 2, 3]], [[0, 0, 0]]))}):

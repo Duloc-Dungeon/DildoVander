@@ -195,7 +195,7 @@ internal static partial class AccountIdentityTests
     {
         using var response = await client.PutAsJsonAsync("/app/v1/customer/character",
             new CharacterWriteRequest(expectedRevision, new CharacterUserInput(name, "Conversation preferences"),
-                expectedProfileId, newCharacter, OpenAiConsent: false));
+                expectedProfileId, newCharacter, OpenAiConsent: true));
         var envelope = await JsonAsync(response);
         return JsonSerializer.Deserialize<CharacterProfile>(envelope.GetProperty("profile").GetRawText(),
             new JsonSerializerOptions(JsonSerializerDefaults.Web))!;

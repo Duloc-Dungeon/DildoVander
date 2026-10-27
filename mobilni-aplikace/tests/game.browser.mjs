@@ -18,6 +18,7 @@ try {
       await page.goto(`${origin}/__game/${state}`); await page.locator('.game-content').waitFor();
       await page.locator('h1, [role="alert"]').first().waitFor();
       await page.evaluate(() => document.fonts.ready);
+      assert.ok(await page.locator('.game-content').evaluate(element => getComputedStyle(element).fontFamily.includes('Manrope')), `${state}: Manrope font`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${state} ${width}: horizontal overflow`);
       if (state === 'incoming') assert.equal(await page.getByLabel('Chci po prohře krátký úkol').isChecked(), false);
       if (state === 'choice') {
@@ -28,7 +29,7 @@ try {
         await page.keyboard.press('Tab');
         await confirm.focus();
         assert.equal(await confirm.evaluate(button => button.matches(':focus-visible')), true);
-        assert.equal(await confirm.evaluate(button => getComputedStyle(button).outlineColor), 'rgb(247, 215, 140)', 'confirmation focus remains visible on the dark table');
+        assert.equal(await confirm.evaluate(button => getComputedStyle(button).outlineColor), 'rgb(184, 243, 212)', 'WNS v2 mint confirmation focus remains visible');
         if (width === 390) await page.screenshot({ path: path.join(output, 'confirmation-focus-390.png'), fullPage: true });
         await page.getByRole('button', { name: 'Potvrdit tah' }).click();
         await page.getByText('Tvůj tah je uzamčený.', { exact: false }).first().waitFor();

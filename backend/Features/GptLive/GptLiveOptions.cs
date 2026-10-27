@@ -121,10 +121,12 @@ internal sealed record LivePromptSnapshot(string PersonalityId, string Version, 
     internal LivePromptSnapshot WithConversationPreferences(
         Kufr.Backend.Features.Customers.CustomerConversationPreferenceSnapshot? preferences, string language)
     {
-        if (preferences is null && language == "cs-CZ") { return this; }
+        // Persisted English snapshots are compatibility input only. Runtime
+        // guest-facing output always remains Czech; never rewrite stored data.
+        language = "cs-CZ";
         var policy = preferences is null ? Options.Character
             : Kufr.Backend.Features.Customers.CustomerConversationPreferencePolicy.Restrict(Options.Character, preferences);
-        var suffix = preferences is null ? "Conduct this conversation in English."
+        var suffix = preferences is null ? "Conduct this conversation in Czech."
             : new ConversationGuestToneState(Options.Character, preferences).Read().Instructions;
         var instructions = Instructions + "\nTrusted application guest policy: " + suffix;
         if (LiveTextBudget.UpperBound(instructions) > 16_384)

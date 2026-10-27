@@ -16,8 +16,7 @@ import PaperSurface from '../../components/scene/PaperSurface.vue';
 import CharacterCountdown from '../../components/scene/CharacterCountdown.vue';
 import { invitationVisibleMs, invitationIntroDuration, presentationForeground, selectInvitationPresentation, finishInvitationPresentation } from './launchPresentation';
 import type { PrelaunchCharacterResponse as PrelaunchState } from './generatedPrelaunchCharacter';
-import brandMark from '../../assets/brand/emblem-small.webp';
-import openingArtwork from '../../assets/brand/midnight/opening.webp';
+
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { customerFixedUniverse, customerMembershipState, refreshCustomerMembership } from '../../application/launchAccess';
 import { isCustomerAccount } from '../../application/access';
@@ -374,7 +373,7 @@ onBeforeUnmount(() => {
 
 <template>
   <SceneShell v-if="groupOpening" class="launch-page group-opening" labelled-by="group-opening-title" :active="presentationForeground">
-    <img class="group-opening-art" data-scene-enter :src="openingArtwork" alt="" fetchpriority="high" />
+    <div class="group-opening-art" data-scene-enter aria-hidden="true"><span>W</span></div>
       <section class="group-opening-copy" aria-live="polite">
       <h1 id="group-opening-title">{{ language === 'en' ? 'The evening begins.' : 'Večer začíná.' }}</h1>
       <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup">{{ copy.retry }}</button></AwNotice>
@@ -385,7 +384,7 @@ onBeforeUnmount(() => {
   </SceneShell>
   <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" labelled-by="launch-title">
     <header class="launch-masthead">
-      <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><img :src="brandMark" alt="" width="48" height="48" /><span>Wand<br />Night Stand</span></RouterLink>
+      <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><span>Wand<br />Night Stand</span></RouterLink>
       <span class="launch-language" aria-label="Jazyk rozhraní">Čeština</span>
     </header>
     <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">
@@ -500,4 +499,31 @@ onBeforeUnmount(() => {
   .launch-footer { flex-wrap: wrap; }
 }
 @media (max-width: 340px) { .launch-page { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); } }
+.launch-page { --wns-display: var(--wns-font-family); background: var(--wns-bg, #080909); color: var(--wns-text, #f5f5f0); }
+.launch-masthead { width: min(100%, 62rem); margin-inline: auto; padding-block: .5rem clamp(1.25rem, 5vh, 3rem); }
+.launch-wordmark { font: 800 1.2rem/.95 var(--wns-display); letter-spacing: -.06em; }
+.launch-language { border: 0; border-radius: 999px; background: transparent; color: var(--wns-muted, #b2b9b6); }
+.launch-card { max-width: 62rem; gap: 1.25rem; }
+.launch-copy { color: var(--wns-text, #f5f5f0); }
+.launch-copy :deep(h1) { color: var(--wns-text, #f5f5f0); font: 800 clamp(2.25rem, 8vw, 3.5rem)/1 var(--wns-display); letter-spacing: -.065em; }
+.launch-status, .launch-text .launch-status { color: var(--wns-muted, #b2b9b6); }
+.launch-final { text-align: left; }
+.launch-joke { color: var(--wns-text, #f5f5f0); font: 700 clamp(1.5rem, 6vw, 2.5rem)/1.2 var(--wns-display); letter-spacing: -.035em; }
+.launch-identity { color: var(--wns-muted, #b2b9b6); font: 500 1rem/1.55 var(--wns-display); }
+.launch-teaser, .launch-generic { color: var(--wns-muted, #b2b9b6); }
+.launch-art { overflow: visible; border-radius: 30px; background: var(--wns-violet, #c8b9fc); }
+.launch-form { gap: 1.25rem; }
+.launch-form .aw-input { border-radius: 14px; color: var(--wns-text, #f5f5f0); background: var(--wns-surface-raised, #222626); border-color: var(--wns-line, #343939); }
+.fixed-universe, .launch-consent, .launch-data-details { color: var(--wns-text, #f5f5f0); }
+.fixed-universe p, .launch-data-details { color: var(--wns-muted, #b2b9b6); }
+.launch-consent input { accent-color: var(--wns-mint, #b8f3d4); }
+.launch-form :deep(.aw-button--primary), .beta-admission-request :deep(.aw-button--primary) { min-height: 56px; border-radius: 999px; color: #111513; background: var(--wns-mint, #b8f3d4); font-weight: 750; }
+.launch-footer { max-width: 62rem; margin-inline: auto; color: var(--wns-muted, #b2b9b6); }
+.launch-footer a { color: var(--wns-muted, #b2b9b6); }
+.group-opening-art { display: grid; place-items: center; flex: 1; min-height: 36vh; width: min(100%, 36rem); max-height: 58dvh; border-radius: 32px; background: var(--wns-amber, #ffc662); color: #111513; }
+.group-opening-art span { font: 800 clamp(14rem, 60vw, 28rem)/.8 var(--wns-display); letter-spacing: -.1em; }
+.group-opening-copy h1 { color: var(--wns-text, #f5f5f0); text-shadow: none; font-family: var(--wns-display); font-weight: 800; letter-spacing: -.06em; }
+.launch-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
+@media (min-width: 760px) { .launch-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, .85fr); align-items: center; gap: 2rem; } .launch-copy { order: 1; } .launch-art { order: 2; } .launch-text { grid-column: 1 / -1; } }
+@media (max-width: 759px) { .launch-copy { border-radius: 24px; } .launch-art { max-height: 56vh; } }
 </style>

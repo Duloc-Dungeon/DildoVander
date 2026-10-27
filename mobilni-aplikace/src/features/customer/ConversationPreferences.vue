@@ -7,13 +7,13 @@ import { customerCopy, type CustomerCopyKey } from '../../application/customerCo
 import { account, accountRequest } from '../identity/session';
 import {
   conversationPreferencePath, parseConversationPreferences,
-  type ConversationLanguage, type ConversationPreferenceView, type ConversationTone,
+  type ConversationPreferenceView, type ConversationTone,
 } from './conversationPreferences';
 
 const props = defineProps<{ profileId: string; profileRevision: number }>();
 const instanceId = `conversation-preferences-${useId()}`;
 const current = ref<ConversationPreferenceView | null>(null);
-const language = ref<ConversationLanguage>('cs-CZ');
+
 const tone = ref<ConversationTone>('roast');
 const busy = ref(false);
 const saved = ref(false);
@@ -35,7 +35,7 @@ async function loadOrSave(save = false) {
   const body = save ? {
     schemaVersion: 1, profileId, profileRevision,
     expectedPreferenceRevision: current.value!.preferenceRevision,
-    conversationLanguage: language.value, tone: tone.value,
+    conversationLanguage: 'cs-CZ', tone: tone.value,
   } : undefined;
   try {
     const response = await accountRequest<unknown>(conversationPreferencePath, save ? 'PUT' : 'GET', body, controller.signal);
@@ -43,7 +43,7 @@ async function loadOrSave(save = false) {
     const value = parseConversationPreferences(response, profileId, profileRevision);
     if (!value) throw new Error('Invalid conversation preferences');
     current.value = value;
-    language.value = value.conversationLanguage;
+
     tone.value = value.tone;
     saved.value = save && value.persisted;
   } catch (failure) {
@@ -61,7 +61,7 @@ watch(() => [account.value?.id, props.profileId, props.profileRevision] as const
   request?.abort();
   request = undefined;
   current.value = null;
-  language.value = 'cs-CZ';
+
   tone.value = 'roast';
   saved.value = false;
   error.value = null;
@@ -80,12 +80,7 @@ onBeforeUnmount(() => { ++generation; request?.abort(); });
     <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
     <AwNotice v-if="saved" tone="success" role="status">{{ customerCopy.text('preferences.saved') }}</AwNotice>
     <form v-if="current" class="preference-form" @submit.prevent="loadOrSave(true)">
-      <AwField :id="`${instanceId}-language`" :label="customerCopy.text('preferences.language')">
-        <select :id="`${instanceId}-language`" v-model="language" class="aw-select" :disabled="busy">
-          <option value="cs-CZ" lang="cs">Čeština</option>
-          <option value="en-US" lang="en">Angličtina</option>
-        </select>
-      </AwField>
+
       <AwField :id="`${instanceId}-tone`" :label="customerCopy.text('preferences.tone')" :hint="customerCopy.text('preferences.limits')" v-slot="field">
         <select :id="field.id" v-model="tone" class="aw-select" :aria-describedby="field.describedby" :disabled="busy">
           <option value="gentle">{{ customerCopy.text('preferences.gentle') }}</option>

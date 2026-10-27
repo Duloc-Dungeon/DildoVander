@@ -1,0 +1,109 @@
+@import '../assets/wns-v2/design/tokens.css';
+
+/* App-only adapter. The retained engineering/offline consumers do not import it. */
+:root, :root[data-theme], .scene-shell, .scene-shell.game-scene.responsive-table {
+  --aw-void: var(--wns-bg);
+  --aw-surface: var(--wns-surface);
+  --aw-elevated: var(--wns-surface-raised);
+  --aw-ivory: var(--wns-text);
+  --aw-muted: var(--wns-muted);
+  --aw-accent: var(--wns-mint);
+  --aw-on-accent: var(--wns-on-mint);
+  --aw-accent-soft: #17271e;
+  --aw-link: var(--wns-mint);
+  --aw-border: var(--wns-input-border);
+  --aw-border-subtle: var(--wns-line);
+  --aw-success: var(--wns-mint);
+  --aw-warning: var(--wns-amber);
+  --aw-danger: var(--wns-danger);
+  --aw-info: var(--wns-blue);
+  --aw-font-ui: var(--wns-font-family);
+  --aw-font-display: var(--wns-font-family);
+  --aw-font-mono: ui-monospace, monospace;
+  --aw-game-felt: var(--wns-bg);
+  --aw-game-paper: var(--wns-text);
+  --aw-game-ink: var(--wns-on-mint);
+  --aw-game-muted: var(--wns-muted);
+  --aw-game-brass: var(--wns-mint);
+  --aw-radius-card: var(--wns-radius-card);
+  --aw-radius-control: var(--wns-radius-field);
+  --game-title-font: var(--wns-font-family);
+  color-scheme: dark;
+  font-family: var(--wns-font-family);
+}
+body { background: var(--wns-bg); color: var(--wns-text); }
+.application-main .page-stack { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.application-main .page-stack > *, .application-main :is(h1, h2, h3, label, select) { min-width: 0; overflow-wrap: anywhere; }
+:is(button, input, select, textarea) { font-family: inherit; }
+:is(button, a, input, select, textarea, summary):focus-visible { outline-color: var(--wns-focus-ring); }
+.application-main h1, :root[data-theme] .application-main .identity-page h1, .game-content h1 { font-family: var(--wns-font-family); font-size: clamp(1.9rem, 8.5vw, 2.5rem); font-weight: var(--wns-weight-heading); line-height: var(--wns-leading-heading); letter-spacing: -.045em; }
+.application-main h2, .game-content h2 { font-family: var(--wns-font-family); font-weight: 760; }
+.application-sidebar, .application-header, .application-footer { background: var(--wns-bg); }
+.primary-navigation a { border-radius: var(--wns-radius-icon); }
+.primary-navigation a.selected { background: var(--wns-surface); color: var(--wns-mint); box-shadow: none; }
+.application-main .aw-card, .aw-dialog { border-radius: var(--wns-radius-card); background: var(--wns-surface); border-color: var(--wns-line); box-shadow: none; }
+.application-main :is(.aw-button, a.aw-button), .game-content .aw-button, .scene-shell .aw-button.aw-button--primary {
+  min-height: var(--wns-button-height); border-radius: var(--wns-radius-button); font-family: var(--wns-font-family); font-weight: 800; font-size: .95rem; line-height: 1.45; box-shadow: none; text-shadow: none; white-space: normal;
+}
+.application-main .aw-button.aw-button--primary, .scene-shell .aw-button.aw-button--primary { background: var(--wns-mint); color: var(--wns-on-mint); border-color: transparent; }
+.application-main .aw-button--secondary { background: var(--wns-surface-raised); color: var(--wns-text); border-color: var(--wns-line); }
+.application-main .aw-button--danger { background: var(--wns-peach); color: var(--wns-on-peach); }
+.application-main :is(.aw-input, .aw-select, .aw-textarea, .game-field select) { background: var(--wns-input-bg); color: var(--wns-text); border: 1px solid var(--wns-input-border); border-radius: var(--wns-radius-field); min-height: var(--wns-field-height); font-size: 1rem; }
+.application-main :is(input, textarea)::placeholder { color: var(--wns-placeholder); }
+.application-main .aw-notice { border-radius: var(--wns-radius-field); box-shadow: none; }
+.application-main p { line-height: var(--wns-leading-body); }
+.application-main .eyebrow, .game-eyebrow { font-family: var(--wns-font-family); letter-spacing: .12em; font-weight: 800; }
+.wns-hero { position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .8fr); align-items: center; gap: 12px; min-height: 240px; padding: 24px; margin-block: 24px; border-radius: var(--wns-radius-hero); background: var(--wns-amber); color: var(--wns-on-amber); }
+.wns-hero h2 { font-size: 1.6rem; margin: 0 0 12px; }
+.wns-hero p { font-size: .85rem; margin: 0; }
+.wns-hero img { display: block; width: 100%; height: 230px; object-fit: contain; padding: 12%; pointer-events: none; }
+.wns-hero--violet { background: var(--wns-violet); color: var(--wns-on-violet); }
+.wns-hero--mint { background: var(--wns-mint); color: var(--wns-on-mint); }
+.scene-shell.game-scene.responsive-table { background-image: none; background-color: var(--wns-bg); font-family: var(--wns-font-family); }
+.game-content { padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
+.game-content h1 em { color: var(--wns-mint); }
+.game-content .game-paper { background: var(--wns-surface); background-image: none; color: var(--wns-text); border: 1px solid var(--wns-line); box-shadow: none; border-radius: var(--wns-radius-card); }
+.game-content .game-paper a, .game-content .game-paper .aw-button--secondary { color: var(--wns-mint); }
+.game-content .game-field select { color: var(--wns-text); }
+.game-content .game-header a, .game-side-links a { color: var(--wns-muted); }
+.responsive-table .game-rules > div { background: var(--wns-surface); border-color: var(--wns-line); box-shadow: none; }
+.responsive-table .game-spells { gap: 8px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.responsive-table .game-spells label { background: var(--wns-surface); border: 1px solid var(--wns-line); border-radius: var(--wns-radius-card); padding: 16px 4px; }
+.responsive-table .game-spells label.selected { background: var(--wns-mint); color: var(--wns-on-mint); }
+.responsive-table .game-spells label.selected strong, .responsive-table .game-spells label.selected > span { color: var(--wns-on-mint); }
+.responsive-table .game-spells label > span { color: var(--wns-muted); }
+.responsive-table .game-spells label:focus-within { outline-color: var(--wns-focus-ring); }
+.responsive-table .game-content .game-controls .aw-button.aw-button--primary { background: var(--wns-mint); color: var(--wns-on-mint); border: 0; border-radius: var(--wns-radius-button); box-shadow: none; font-family: var(--wns-font-family); }
+.responsive-table .game-spells label.selected .game-spell-token { transform: none; filter: none; }
+.responsive-table .game-clash-stage::after { display: none; }
+.responsive-table .game-clash-stage { min-height: 70px; }
+.responsive-table .game-clash-stage > span { position: static; border: 0; background: var(--wns-surface); color: var(--wns-text); box-shadow: none; padding: 16px; }
+.responsive-table .game-paper.game-reveal, .responsive-table .game-history { background: var(--wns-surface); color: var(--wns-text); border: 1px solid var(--wns-line); box-shadow: none; }
+.responsive-table .game-table-stage .game-reveal { position: static; margin-block: 16px; }
+.responsive-table .game-player-avatar { background: var(--wns-violet); border: 0; border-radius: 12px; color: var(--wns-on-violet); box-shadow: none; }
+.responsive-table .game-score strong { font-family: var(--wns-font-family); }
+.scene-shell.game-scene .game-content, .scene-shell.game-scene .game-content .aw-button, .scene-shell.game-scene.responsive-table .game-score strong { font-family: var(--wns-font-family); }
+.scene-shell.game-scene.responsive-table .game-content .game-paper.game-controls .aw-button:focus-visible { outline-color: var(--wns-focus-ring); }
+.game-commentator-invite { background: var(--wns-violet); color: var(--wns-on-violet); padding: 20px; border-radius: var(--wns-radius-hero); }
+.game-content .game-commentator-invite a { color: var(--wns-on-violet); }
+.game-side-links { background: var(--wns-surface); border-radius: var(--wns-radius-card); padding: 8px 20px; }
+.game-side-links a { border-bottom: 1px solid var(--wns-line); text-decoration: none; }
+.game-side-links a:last-child { border-bottom: 0; }
+.responsive-table .game-round-dots span { border-color: var(--wns-line); }
+.responsive-table .game-round-dots .done, .responsive-table .game-round-dots .current { background: var(--wns-mint); border-color: var(--wns-mint); box-shadow: none; }
+.game-content input[type='checkbox'], .game-content input[type='radio'] { accent-color: var(--wns-mint); }
+.game-progress-track span { background: var(--wns-mint); }
+.wns-game-navigation { position: sticky; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 10px 12px max(10px, env(safe-area-inset-bottom, 0px)); background: var(--wns-navigation-bg); border-top: 1px solid var(--wns-line); }
+.wns-game-navigation a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; text-align: center; text-decoration: none; color: var(--wns-navigation-muted); font-size: .7rem; min-height: 48px; }
+.wns-game-navigation a.router-link-active { color: var(--wns-mint); }
+.wns-game-navigation svg { width: 23px; height: 23px; }
+@media (max-width: 720px) {
+  .application-main { padding-inline: 24px; }
+  .application-sidebar { background: var(--wns-navigation-bg); }
+  .primary-navigation a { font-size: .7rem; }
+  .application-header { padding-inline: 24px; }
+  .wns-hero { padding: 20px; gap: 0; }
+  .wns-hero img { height: 200px; }
+}
+@media (max-width: 360px) { .application-main { padding-inline: 16px; } .wns-hero { padding: 16px; } }
+@media (prefers-reduced-motion: reduce) { .application-shell *, .application-shell *::before, .application-shell *::after { animation: none !important; transition-duration: 0s !important; scroll-behavior: auto !important; } }

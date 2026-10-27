@@ -610,9 +610,19 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.customer-page { max-width: 54rem; }
+.customer-page { --wns-display: var(--wns-font-family); max-width: 62rem; color: var(--wns-text, #f5f5f0); }
+.customer-page > header { margin-bottom: 1.25rem; }
+.customer-page > header h1 { max-width: 16ch; margin: 0; font: 800 clamp(2.5rem, 9vw, 3.5rem)/1 var(--wns-display); letter-spacing: -.065em; }
+.customer-page > header p:not(.eyebrow) { max-width: 44rem; color: var(--wns-muted, #b2b9b6); }
+.customer-page .eyebrow { color: var(--wns-mint, #b8f3d4); font: 700 .75rem/1.3 var(--wns-display); text-transform: uppercase; letter-spacing: .12em; }
+.customer-page :deep(.aw-card) { color: var(--wns-text, #f5f5f0); background: var(--wns-surface, #191b1b); border: 1px solid var(--wns-line, #343939); border-radius: 24px; box-shadow: none; }
+.customer-page :deep(.aw-input) { color: var(--wns-text, #f5f5f0); background: var(--wns-surface-raised, #222626); border-color: var(--wns-line, #343939); border-radius: 14px; }
+.customer-page :deep(a) { color: var(--wns-text, #f5f5f0); }
+.customer-page :deep(.aw-muted), .customer-page :deep(small) { color: var(--wns-muted, #b2b9b6); }
+.customer-page :deep(.aw-button--primary) { min-height: 54px; color: #111513; background: var(--wns-mint, #b8f3d4); border-radius: 999px; font-weight: 750; }
+.customer-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
 .customer-form { display: grid; gap: 1rem; }
 .customer-actions { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
-.character-enrichment { white-space: pre-line; padding: 1rem; border-left: 2px solid var(--aw-accent); background: var(--aw-surface); }
+.character-enrichment { white-space: pre-line; padding: 1rem; border-left: 2px solid var(--wns-violet, #c8b9fc); background: var(--wns-surface-raised, #222626); }
 @media (max-width: 720px) { .customer-actions { display: grid; grid-template-columns: minmax(0, 1fr); } }
 </style>

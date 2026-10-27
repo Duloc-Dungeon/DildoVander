@@ -1,62 +1,48 @@
----
-name: Wand Night Stand — Responsive Table
-description: Clean mobile-first character, invitation and duel experience.
-colors:
-  primary: "#d9ad67"
-  on-primary: "#10251d"
-  background: "#041b18"
-  surface: "#0c2823"
-  surface-raised: "#183b32"
-  foreground: "#f5e7ca"
-  muted: "#c8cdbb"
-  accent-soft: "#253c2e"
-  link: "#f1cf94"
-  border: "#7e8972"
-  border-subtle: "#365046"
-typography:
-  display:
-    fontFamily: "Inter, system-ui, sans-serif"
-    fontSize: "clamp(1.9rem, 4vw, 3.25rem)"
-    fontWeight: 600
-  body:
-    fontFamily: "Inter, system-ui, sans-serif"
-    fontSize: "1rem"
-    lineHeight: 1.55
----
+# Wand Night Stand — schválený design v2
 
-# Vzhled aplikace
+Zdroj návrhu: `WNS-kompletni-balik-v2.zip`, edice 2.0, 26. 10. 2026.
+SHA-256 archivu: `cc4a584aead44719589b54740670b3745095c15d99132b0aead9fd047abc5672`.
+Inventura návrhu vychází z `8c202e50ab4a86bf702203a49b79d4943c0e3fc1`.
+Implementace začala na `c5a7ffb54121f3aa974cf0fa5b1e18addc37b19f` větve cleanup;
+její odstraněné podklady se neobnovují hromadně.
 
-[Závazný profil produktu](PRODUCT.md) určuje aktuální zaměření, češtinu,
-humor a přednost pravidel. Vizuální předlohou celé mobilní zkušenosti je
-[The Responsive Table](design-system/reference/responsive-table.png),
-Preview 2, schválený vlastníkem 26. října 2026.
+## Vizuální směr
 
-Tmavě zelený podklad, slonová kost, mosazné akce a čistá bezpatková typografie.
-Používej lokální Inter, sémantické tokeny, skutečná data a společné Vue prvky.
-Velikost a rozestupy vytvářejí hierarchii; omezený počet karet odděluje úkoly.
-Primární akce má hmatově působící mosazný povrch, vedlejší zůstává klidná.
-Animace potvrzují výběr a výsledek. Nezdržují akci a mají statickou alternativu.
+Téměř černé pozadí `#080909`, místní Manrope s českou diakritikou, velké
+samostatné objekty a ploché jantarové, mintové a fialové karty. Jedna dominantní
+scéna, čitelná hlavní akce; žádný trvalý ambient ani povinné dekorativní částice.
+Manrope OFL a Phosphor MIT se distribuují s výsledným webovým balíkem.
 
-Runtime je [consumer-brand.css](mobilni-aplikace/src/application/consumer-brand.css).
-Herní skladbu a aktiva popisuje [mapa spotřebitelského UI](design-system/consumer-game-ui.md).
-Kompatibilní identifikátory `lord-voldemort` a `olivander` zůstávají; obě témata
-patří ke stejnému zelenému vizuálnímu směru. Původní patkové fonty a obrazové
-materiály nejsou výchozím stylem nových obrazovek.
+- Převzaté tokeny: `mobilni-aplikace/src/assets/wns-v2/design/tokens.json` a CSS.
+- Aplikační adaptér: `mobilni-aplikace/src/application/wns-v2.css`.
+- Původní manifest: `mobilni-aplikace/src/assets/wns-v2/source-manifest.json`.
+  Jde o inventář zdrojového archivu, nikoli seznam všeho distribuovaného klientem.
+- Demo Matylda a audio sampler se do nové aplikační sady nekopírují.
+  Žádný skutečný soukromý portrét se nestává veřejným assetem.
+- Existující `--aw-*` názvy zůstávají kompatibilní. Obnovené runtime soubory
+  `design-system/` a pět JS modulů `mechanika/final/` jsou stále importované
+  aplikací/offline viewerem; nejsou obnovením vývoje fyzického kufru.
 
-## Mobil a přístupnost
+## Závazné hranice
 
-- Primární zákaznické cesty: postava, hra, památky a účet; hostitel má večer
-  a pozvánky. Hardwarové nástroje se v běžné navigaci nenabízejí.
-- Dotykové cíle nejméně 44 × 44 px, jasný focus, čitelný kontrast, safe areas,
-  320px šířka a 200% text bez vodorovného přetékání celé stránky.
-- Jedna hlavní akce v logické skupině. Funkční stavy jsou doslovné, vtip zvlášť.
-- Žetony a stůl jsou dekorace; neověřené skóre, podoba nebo průběh nejsou dekorace.
-- Výběr, čekání a výsledek rozlišuje i text. Omezený pohyb vypíná animace.
-- Opona má vlastní dvě křídla a pevný rám; její existující stavový kontrakt platí.
+Vue/TypeScript/Pinia/Capacitor zůstávají produkční stack. React showroom je pouze
+reference. Oprávnění, passkeys, souhlasy, revize, příkazy, historie, Stop a herní
+výsledky vlastní původní doména/server, nikoli animace nebo lokální čas.
+Hůlky se neničí. Neexistují fyzické ceny. Převzetí památky je operace přístupu.
+Rozhraní i generované texty jsou pouze česky; humor je možný kdekoli, ne povinný.
 
-## Hranice
+Událost pro efekt smí pocházet jen z autorizované projekce. Zvuk je výchozí
+vypnutý; soukromé signály jsou tiché. Ztracený, skrytý nebo opakovaný event se
+nesmí přehrát jako nová událost. Změna skóre nesmí čekat na animaci.
+`presentationEffects.ts` testuje tuto hranici. `wnsSound.ts` zatím připojuje
+pouze explicitní uživatelský výběr; eventový adapter není důkaz serverového streamu.
 
-Tento vzhled se aplikuje pouze v mobilní/webové aplikaci. Samostatný simulátor,
-CAD a sdílené engineering výstupy zachovávají [Vapour Chrome](design-system/README.md).
-Názvy `aw-*`, témata, zařízení a protokoly jsou kompatibilní API.
-Vizuální změna nemění oprávnění, souhlas, serverové rozhodnutí ani fyzický stav.
+Pod pečetí je samostatná doména, nikoli nový duelový GameMode. Jediná WORLD_TRUTH
+se nesmí poslat klientovi a následně skrýt CSS. EXPERIENCE, PRESENTATION a
+COVERT_ACTION jsou perspektivy. Odeslaná věta není provedená akce a nepozorovaný
+výsledek zůstává neznámý. FEIGN_SLEEP zachovává bdělou obranu; REST skutečně uspává.
+
+## Evidence a rozpracovanost
+
+Viz `docs/wns-v2-implementation.md`. Úspěšný build ani syntetický browser server
+neprokazují živou AI, skutečný multiplayer, nativní export nebo bezpečnost hardwaru.

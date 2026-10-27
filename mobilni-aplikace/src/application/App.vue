@@ -14,6 +14,8 @@ import { servoBench } from '../features/suitcase/servoBench';
 import { accessDenial, canEnterStaffArea, isCustomerAccount } from './access';
 import { accessRedirect } from './accessGuard';
 import ShellPreferences from './ShellPreferences.vue';
+import WnsNavigation from './WnsNavigation.vue';
+import { wnsSound } from './wnsSound';
 import { customerCopy } from './customerCopy';
 import { customerMembershipState, launchAllowed, refreshCustomerMembership, refreshLaunchAccess } from './launchAccess';
 
@@ -33,10 +35,10 @@ let navigationObserver: ResizeObserver | undefined;
 const viewError = ref('');
 const customerAccount = computed(() => isCustomerAccount(account.value));
 const navigation = computed(() => customerAccount.value ? [
+  { to: '/play', label: 'Večer', symbol: '◇' },
   { to: '/me/character', label: customerCopy.text('shell.nav-character'), symbol: '✦' },
-  { to: '/play', label: 'Hra', symbol: '◇' },
   { to: '/me/keepsakes', label: customerCopy.text('shell.nav-keepsakes'), symbol: '▤' },
-  { to: '/me/account', label: customerCopy.text('shell.nav-account'), symbol: '⚙' },
+  { to: '/me/account', label: 'Já', symbol: '⚙' },
 ] : canEnterStaffArea(account.value) || account.value?.roles.includes('Tester') ? [
   { to: '/', label: 'Domů', symbol: '⌂' },
   { to: '/play', label: 'Hra', symbol: '◇' },
@@ -122,6 +124,7 @@ watch(() => route.path, () => {
 });
 const removeRouterError = router.onError(() => { viewError.value = customerCopy.text('shell.page-error'); });
 function refreshSession(): void {
+  wnsSound.visible(!document.hidden);
   if (!document.hidden) {
     void refreshIdentity().catch(() => { /* Offline local operation remains available. */ }).then(() => {
       if (document.hidden) return;
@@ -146,6 +149,7 @@ onMounted(() => {
   window.addEventListener('online', refreshSession);
 });
 onBeforeUnmount(() => {
+  wnsSound.visible(false);
   removeRouterError();
   navigationObserver?.disconnect();
   document.removeEventListener('visibilitychange', refreshSession);
@@ -184,6 +188,7 @@ onBeforeUnmount(() => {
           <component :is="Component" v-if="!renderedRoute.meta.keepAlive" :key="renderedViewKey(renderedRoute)" />
         </RouterView>
       </main>
+      <WnsNavigation v-if="customerAccount && !launchExperience && gameExperience && !/^\/play\/(?:match|team)\//.test(route.path) && !route.path.startsWith('/play/boss/') && route.path !== '/play/practice'" />
       <footer v-if="!launchExperience && !gameExperience" class="application-footer"><span>Wand Night Stand</span><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink><a v-if="browserMode" class="application-install-link" href="/ios/">{{ customerCopy.text('shell.iphone') }}</a><span>{{ customerCopy.text('shell.verification') }}</span></footer>
     </div>
   </div>

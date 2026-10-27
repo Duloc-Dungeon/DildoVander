@@ -77,12 +77,12 @@ onBeforeUnmount(() => { cancel(); observer?.disconnect(); media?.removeEventList
 </template>
 
 <style scoped>
-.portrait-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: hidden; isolation: isolate; background: transparent; }
-.portrait-stage-image, .portrait-stage-placeholder { position: absolute; left: 15.5%; top: 21%; width: 69%; height: 69%; object-fit: cover; object-position: 50% 30%; }
+.portrait-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: visible; isolation: isolate; background: var(--wns-violet, #c8b9fc); border-radius: 30px; }
+.portrait-stage-image, .portrait-stage-placeholder { position: absolute; left: 9%; top: 7%; width: 82%; height: 89%; object-fit: cover; object-position: 50% 30%; border-radius: 24px; }
 .portrait-stage-placeholder { object-position: center; }
-.curtain-wings { position: absolute; inset: 21% 15.5% 10%; overflow: hidden; }
+.curtain-wings { position: absolute; inset: 7% 9% 4%; overflow: hidden; border-radius: 24px; }
 .curtain-wing, .curtain-frame { position: absolute; display: block; }
-.curtain-frame { inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.curtain-frame { display: none; }
 .curtain-wing { top: 0; width: 50%; height: 100%; transition: none; will-change: transform; }
 .curtain-wing-left { left: 0; }
 .curtain-wing-right { right: 0; }
@@ -91,5 +91,6 @@ onBeforeUnmount(() => { cancel(); observer?.disconnect(); media?.removeEventList
 .is-open .curtain-wing-right { transform: translateX(100%); }
 .is-preparing:not(.is-open) .curtain-wings { filter: brightness(1.08); }
 .reduced-motion .curtain-wing { transition: none; }
+.curtain-wing { filter: saturate(.75); }
 @media (prefers-reduced-motion: reduce) { .curtain-wing { transition: none; } }
 </style>
