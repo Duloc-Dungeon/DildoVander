@@ -4,12 +4,14 @@ import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AdminReauthentication from './AdminReauthentication.vue';
 import { account, accountRequest } from './session';
-interface LaunchGroup { id: string; name: string; launchAt: number | null; revision: number }
+interface LaunchGroup { id: string; name: string; launchAt: number | null; revision: number; adultContentEnabled?: boolean; flirtEnabled?: boolean }
 const props = defineProps<{ modelValue: string; disabled?: boolean }>();
 const emit = defineEmits<{ 'update:modelValue': [id: string] }>();
 const groups = ref<LaunchGroup[]>([]);
 const name = ref('');
 const opening = ref('');
+const adultContentEnabled = ref(true);
+const flirtEnabled = ref(true);
 const busy = ref(false);
 const error = ref('');
 const reauthenticationRequired = ref(false);
@@ -27,12 +29,17 @@ function choose(id: string): void {
   emit('update:modelValue', id);
   const group = groups.value.find(value => value.id === id);
   name.value = group?.name ?? ''; opening.value = localInput(group?.launchAt ?? null); notice.value = '';
+  adultContentEnabled.value = group?.adultContentEnabled ?? true;
+  flirtEnabled.value = group?.flirtEnabled ?? true;
 }
 async function load(): Promise<void> {
   const expected = epoch;
   try {
     const result = await accountRequest<{ groups: LaunchGroup[] }>('/app/v1/admin/launch/groups');
-    if (expected === epoch) groups.value = Array.isArray(result?.groups) ? result.groups : [];
+    if (expected === epoch) {
+      groups.value = Array.isArray(result?.groups) ? result.groups : [];
+      choose(props.modelValue);
+    }
   } catch { if (expected === epoch) error.value = 'Skupiny se nepodařilo načíst. Obnovte stránku před vytvořením pozvánky.'; }
 }
 async function save(): Promise<void> {
@@ -49,7 +56,8 @@ async function save(): Promise<void> {
   busy.value = true;
   try {
     const result = await accountRequest<{ group: LaunchGroup }>(group ? `/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}` : '/app/v1/admin/launch/groups', group ? 'PUT' : 'POST', {
-      name: name.value.trim(), launchAt, ...(group ? { expectedRevision: group.revision } : {}),
+      name: name.value.trim(), launchAt, adultContentEnabled: adultContentEnabled.value,
+      flirtEnabled: flirtEnabled.value, ...(group ? { expectedRevision: group.revision } : {}),
     });
     if (expected !== epoch) return;
     if (!result?.group?.id) throw new Error('group_unconfirmed');
@@ -64,23 +72,29 @@ async function save(): Promise<void> {
   }
   finally { if (expected === epoch) busy.value = false; }
 }
-watch(() => account.value?.id, () => { epoch++; groups.value = []; emit('update:modelValue', ''); name.value = ''; opening.value = ''; error.value = ''; notice.value = ''; busy.value = false; reauthenticationRequired.value = false; });
+watch(() => account.value?.id, () => { epoch++; groups.value = []; choose(''); error.value = ''; notice.value = ''; busy.value = false; reauthenticationRequired.value = false; });
 onMounted(load);
 onBeforeUnmount(() => { epoch++; });
 </script>
 <template>
   <fieldset class="invitation-group" :disabled="disabled || busy">
-    <legend>Skupina pozvaných a čas otevření</legend>
+    <legend>Skupina pozvaných a pravidla večera</legend>
     <label for="invitation-group">Skupina pozvánky</label>
     <select id="invitation-group" class="aw-select" :value="modelValue" required @change="choose(($event.target as HTMLSelectElement).value)"><option value="">Vyberte nebo vytvořte skupinu</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select>
     <p>Termín platí jen pro účty vytvořené z pozvánek této skupiny. Ostatní skupiny ani globální plán se nezmění.</p>
-    <details><summary>{{ selected ? 'Upravit termín nebo vytvořit další skupinu' : 'Vytvořit skupinu' }}</summary>
+    <details><summary>{{ selected ? 'Upravit skupinu nebo vytvořit další' : 'Vytvořit skupinu' }}</summary>
       <div class="group-edit">
         <AwButton v-if="selected" :disabled="busy" @click="choose('')">Nová skupina</AwButton>
         <label for="invitation-group-name">Název skupiny</label><input id="invitation-group-name" v-model="name" class="aw-input" maxlength="80" />
         <label for="invitation-group-opening">Čas otevření ({{ zone }})</label><input id="invitation-group-opening" v-model="opening" class="aw-input" type="datetime-local" />
         <p>Bez termínu zůstane skupina uzavřená. Změna data uloží jen návrh; odpočet pro všechny členy začne až po potvrzení ve správě čekárny.</p>
-        <AwButton :busy="busy" @click="save">{{ selected ? 'Uložit termín skupiny' : 'Vytvořit skupinu' }}</AwButton>
+        <fieldset class="group-game-settings">
+          <legend>Herní úkoly pro celou skupinu</legend>
+          <label><input v-model="adultContentEnabled" type="checkbox" /> Dvojsmysly 18+</label>
+          <label><input v-model="flirtEnabled" type="checkbox" /> Flirt</label>
+          <p>Obě volby jsou u nové skupiny zapnuté. Úkol se po prohře zobrazí vždy; hráč potvrdí, zda ho splnil.</p>
+        </fieldset>
+        <AwButton :busy="busy" @click="save">{{ selected ? 'Uložit skupinu' : 'Vytvořit skupinu' }}</AwButton>
       </div>
     </details>
     <AwNotice v-if="error" role="alert" tone="danger">{{ error }}</AwNotice>
@@ -94,4 +108,7 @@ onBeforeUnmount(() => { epoch++; });
 .invitation-group p { color: var(--aw-muted); font-size: .875rem; margin: 0; }
 .invitation-group summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
 .group-edit { display: grid; gap: .75rem; }
+.group-game-settings { display: grid; gap: .5rem; border: 0; padding: 0; margin: .5rem 0; min-width: 0; }
+.group-game-settings label { display: flex; align-items: center; gap: .75rem; min-height: 44px; cursor: pointer; }
+.group-game-settings input { width: 20px; height: 20px; flex-shrink: 0; }
 </style>

@@ -6,20 +6,20 @@ import { fileURLToPath } from 'node:url';
 const dist = path.resolve(fileURLToPath(new URL('../../dist/', import.meta.url)));
 const id = 'a'.repeat(32);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png', '.ttf': 'font/ttf' };
-export const gameStates = ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'adult', 'yolo', 'error', 'empty', 'long', 'tactical', 'loadout', 'boss', 'boss-setup', 'captured', 'rescue', 'teams', 'team-choice', 'team-half', 'messages', 'ranking'];
+export const gameStates = ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'yolo', 'error', 'empty', 'long', 'tactical', 'loadout', 'boss', 'boss-setup', 'captured', 'rescue', 'teams', 'team-choice', 'team-half', 'messages', 'ranking'];
 function match(state) {
-  return { id, mode: state === 'yolo' ? 'yolo' : ['tactical','loadout'].includes(state) ? 'tactical' : state === 'boss' ? 'boss' : 'quick', status: ['result', 'adult', 'yolo'].includes(state) ? 'complete' : state === 'incoming' ? 'incoming' : 'active',
+  return { id, mode: state === 'yolo' ? 'yolo' : ['tactical','loadout'].includes(state) ? 'tactical' : state === 'boss' ? 'boss' : 'quick', status: ['result', 'early-result', 'adult', 'yolo'].includes(state) ? 'complete' : state === 'incoming' ? 'incoming' : 'active',
     revision: 3, canAccept: state === 'incoming', canCancel: false,
     opponent: { id: 'two', displayName: state === 'long' ? 'Eliška z NeuvěřitelněDlouhéhoKouzelnickéhoRodu' : 'Eliška', xp: 24, matchesPlayed: 3 },
     rounds: ['result', 'adult'].includes(state) ? [{ index: 1, playerChoice: 'trick', opponentChoice: 'shield', winner: 'player', playerPoints: 2, opponentPoints: 0 }] : [],
-    completedRounds: ['result', 'adult'].includes(state) ? 7 : 0, totalRounds: ['tactical','loadout'].includes(state) ? 8 : state === 'boss' ? 12 : 7, block: 1,
-    playerScore: ['result', 'adult'].includes(state) ? 5 : 0, opponentScore: ['result', 'adult'].includes(state) ? 3 : 0,
+    completedRounds: state === 'early-result' ? 4 : ['result', 'adult'].includes(state) ? 7 : 0, totalRounds: ['tactical','loadout'].includes(state) ? 8 : state === 'boss' ? 12 : 7, block: 1,
+    playerScore: state === 'early-result' ? 4 : state === 'adult' ? 3 : state === 'result' ? 5 : 0, opponentScore: state === 'adult' ? 5 : state === 'result' ? 3 : 0,
     playerSparks: 2, opponentSparks: 2, sparksEnabled: true, ownChoiceLocked: state === 'waiting', opponentChoiceLocked: false,
     playerInventory: {strike:2,trick:1,shield:0}, opponentInventory: {strike:1,trick:2,shield:1}, needsLoadout: state === 'loadout',
     playerEnergy: 4, opponentEnergy: 2, strength: 1.2, phase: 2, hint: 'Baron upřednostňuje Úder (2/3). Štít si šetři na výměnu s jiskrou.', bossSpark: true,
-    tasksEnabled: state === 'adult', adultConsent: state === 'adult', flirtConsent: false, createdAt: 1,
-    result: state === 'adult' ? 'loss' : ['result','yolo'].includes(state) ? 'win' : undefined, xpAwarded: state === 'adult' ? 6 : state === 'result' ? 10 : 0,
-    partyTask: state === 'adult' ? { title: 'Reklama po půlnoci', text: 'Předveď dvacetisekundovou reklamu na svou hůlku. Dvojsmysly vítány, publikum nic nemusí.', category: 'Adult 18+', status: 'pending', exchangeCount: 0 } : undefined,
+    tasksEnabled: true, adultConsent: true, flirtConsent: true, createdAt: 1,
+    result: state === 'adult' ? 'loss' : ['result','early-result','yolo'].includes(state) ? 'win' : undefined, xpAwarded: state === 'adult' ? 6 : ['result','early-result'].includes(state) ? 10 : 0,
+    partyTask: state === 'adult' ? { title: 'Reklama po půlnoci', text: 'Předveď dvacetisekundovou reklamu na svou hůlku. Dvojsmysly vítány, publikum nic nemusí.', category: 'adult', status: 'pending', exchangeCount: 0 } : undefined,
     yolo: state === 'yolo' ? { status: 'complete', beats: ['Eliška vstupuje do arény s Děrovačkou osudu. Naproti stojí Mira s diplomatickým štítem.', 'Mira podává protest. Eliška jej děruje ještě před přečtením. Křivopísk se tváří, že to měl v pravidlech.', 'Mira získává cenu za elegantní stížnost. Eliška vítězí administrativním knockoutem.'].map(text => ({text,detailRefs:[]})), verdict: 'Eliška vítězí díky Děrovačce osudu.' } : undefined };
 }
 function teamMatch(state) {
@@ -31,12 +31,19 @@ function teamMatch(state) {
 }
 export async function createGameFixtureServer(port = 0) {
   const requests = [];
+  const taskOutcomes = new Map();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     const state = /(?:^|; )game-fixture=([^;]+)/.exec(request.headers.cookie ?? '')?.[1] ?? 'lobby';
+    const matchSnapshot = () => {
+      const snapshot = match(state);
+      if (snapshot.partyTask && taskOutcomes.has(state)) snapshot.partyTask.status = taskOutcomes.get(state);
+      return snapshot;
+    };
     const json = (value, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(value)); };
     if (url.pathname.startsWith('/__game/')) {
       const selected = url.pathname.split('/').at(-1); if (!gameStates.includes(selected)) return json({}, 404);
+      taskOutcomes.delete(selected);
       const destinations = {challenge:'/play/challenge',lobby:'/play',empty:'/play','boss-setup':'/play/boss',boss:`/play/boss/${id}`,captured:'/play/keeper',rescue:'/play/keeper',teams:'/play/teams','team-choice':`/play/team/${id}`,'team-half':`/play/team/${id}`,messages:'/play/messages',ranking:'/play/ranking'};
       const destination = destinations[selected] ?? `/play/match/${id}`;
       response.writeHead(302, { Location: destination, 'Set-Cookie': `game-fixture=${selected}; Path=/; SameSite=Strict` }); response.end(); return;
@@ -57,10 +64,15 @@ export async function createGameFixtureServer(port = 0) {
       if (state === 'error') return json({ code: 'unavailable' }, 503);
       if (request.method === 'POST') {
         const chunks = []; for await (const chunk of request) chunks.push(chunk);
-        requests.push({ path: url.pathname, body: JSON.parse(Buffer.concat(chunks).toString()) });
-        return json({ ...match(state), ownChoiceLocked: true, revision: 4 });
+        const body = JSON.parse(Buffer.concat(chunks).toString());
+        requests.push({ path: url.pathname, body });
+        if (url.pathname.endsWith('/task')) {
+          taskOutcomes.set(state, body.taskAction === 'done' ? 'done' : 'skipped');
+          return json({ ...matchSnapshot(), revision: 4 });
+        }
+        return json({ ...matchSnapshot(), ownChoiceLocked: true, revision: 4 });
       }
-      return json(match(state));
+      return json(matchSnapshot());
     }
     if (/^\/(app\/v1|v1|guest)\//.test(url.pathname)) return json({});
     let file = path.resolve(dist, decodeURIComponent(url.pathname).replace(/^\//, '') || 'index.html');

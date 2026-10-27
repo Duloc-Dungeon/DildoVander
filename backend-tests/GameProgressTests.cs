@@ -54,7 +54,7 @@ internal static class GameProgressTests
         var challenge = store.Challenge("group-a", "alice", "Alice", "bob", "Bob",
             new("bob", "quick", $"{prefix}-challenge"), now);
         var state = store.Mutate(challenge.Id, "group-a", "bob", "accept", new($"{prefix}-accept", challenge.Revision), now + 1);
-        for (var round = 0; round < 7; round++)
+        for (var round = 0; round < 7 && state.Status == "active"; round++)
         {
             var first = store.Mutate(challenge.Id, "group-a", "alice", "choose",
                 new($"{prefix}-alice-{round}", state.Revision, Choice: aliceWins ? "strike" : "shield"), now + 2 + round);

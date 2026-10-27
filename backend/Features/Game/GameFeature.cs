@@ -180,7 +180,8 @@ internal sealed partial class GameStore
         if (command.ExecuteScalar() is not null) throw new GameFault(403, "game_account_erased");
     }
 
-    internal GameMatchView Challenge(string groupId, string userId, string challengerName, string opponentId, string opponentName, GameChallenge request, long now)
+    internal GameMatchView Challenge(string groupId, string userId, string challengerName, string opponentId, string opponentName, GameChallenge request, long now,
+        bool adultContentEnabled = true, bool flirtEnabled = true)
     {
         if (request.Mode is not ("quick" or "tactical" or "yolo")) throw new GameFault(400, "game_mode_invalid");
         if (request.OperationId.Length is < 8 or > 80) throw new GameFault(400, "operation_id_invalid");
@@ -213,9 +214,12 @@ internal sealed partial class GameStore
                 Status = "incoming",
                 Revision = 1,
                 CreatedAt = now,
-                ChallengerTasks = request.TasksEnabled,
-                ChallengerAdultConsent = request.TasksEnabled && request.AdultConsent,
-                ChallengerFlirtConsent = request.TasksEnabled && request.AdultConsent && request.FlirtConsent,
+                ChallengerTasks = true,
+                ChallengerAdultConsent = adultContentEnabled,
+                ChallengerFlirtConsent = flirtEnabled,
+                TasksEnabled = true,
+                AdultConsent = adultContentEnabled,
+                FlirtConsent = flirtEnabled,
                 TotalRounds = request.Mode == "quick" ? 7 : request.Mode == "tactical" ? 8 : 0,
                 YoloStatus = request.Mode == "yolo" ? "awaiting_acceptance" : null,
                 GroupId = groupId,
@@ -236,7 +240,8 @@ internal sealed partial class GameStore
         }
     }
 
-    internal GameMatchView Mutate(string id, string groupId, string userId, string action, GameCommand request, long now)
+    internal GameMatchView Mutate(string id, string groupId, string userId, string action, GameCommand request, long now,
+        bool adultContentEnabled = true, bool flirtEnabled = true)
     {
         if (request.OperationId.Length is < 8 or > 80) throw new GameFault(400, "operation_id_invalid");
         lock (_writeGate)
@@ -260,12 +265,12 @@ internal sealed partial class GameStore
                 case "accept":
                     if (userId != state.OpponentId || state.Status != "incoming") throw new GameFault(409, "game_action_unavailable");
                     if (ActiveCount(connection, tx, groupId, userId, id) >= 1) throw new GameFault(409, "match_already_active");
-                    state.OpponentTasks = request.TasksEnabled ?? false;
-                    state.OpponentAdultConsent = (request.TasksEnabled ?? false) && (request.AdultConsent ?? false);
-                    state.OpponentFlirtConsent = (request.TasksEnabled ?? false) && (request.AdultConsent ?? false) && (request.FlirtConsent ?? false);
-                    state.TasksEnabled = state.ChallengerTasks && state.OpponentTasks;
-                    state.AdultConsent = state.TasksEnabled && state.ChallengerAdultConsent && state.OpponentAdultConsent;
-                    state.FlirtConsent = state.AdultConsent && state.ChallengerFlirtConsent && state.OpponentFlirtConsent;
+                    state.OpponentTasks = true;
+                    state.OpponentAdultConsent = adultContentEnabled;
+                    state.OpponentFlirtConsent = flirtEnabled;
+                    state.TasksEnabled = true;
+                    state.AdultConsent = adultContentEnabled;
+                    state.FlirtConsent = flirtEnabled;
                     state.LoadoutsEnabled = state.Mode == "tactical" && state.LoadoutsUnlocked && state.ChallengerWantsLoadouts && (request.UseLoadouts ?? false);
                     state.NeedsLoadout = state.LoadoutsEnabled;
                     if (state.Mode == "yolo")
@@ -294,7 +299,14 @@ internal sealed partial class GameStore
                     break;
                 case "choose": Choose(state, userId, request, now); break;
                 case "loadout": SelectLoadout(state, userId, request); break;
-                case "task": ApplyTask(state, userId, request); break;
+                case "task":
+                    if (!ApplyTask(state, userId, request))
+                    {
+                        RecordOperation(connection, tx, request.OperationId, id, payloadHash);
+                        tx.Commit();
+                        return View(connection, id, groupId, row.Value.Challenger, row.Value.Opponent, state, userId);
+                    }
+                    break;
                 case "retry":
                     if (state.Mode != "yolo" || state.YoloStatus != "failed") throw new GameFault(409, "game_retry_unavailable");
                     if (ActiveCount(connection, tx, groupId, state.ChallengerId, id) >= 1
@@ -371,10 +383,19 @@ internal sealed partial class GameStore
                 if (s.LoadoutsEnabled) { s.NeedsLoadout = true; s.ChallengerNextLoadout = null; s.OpponentNextLoadout = null; }
                 else { s.ChallengerInventory = NewInventory(); s.OpponentInventory = NewInventory(); }
             }
-            if (s.CompletedRounds == s.TotalRounds)
+            var challengerLeads = s.ChallengerScore > s.OpponentScore;
+            var lead = Math.Abs(s.ChallengerScore - s.OpponentScore);
+            var remainingRounds = s.TotalRounds - s.CompletedRounds;
+            var maxCatchUp = remainingRounds;
+            if (s.SparksEnabled)
+            {
+                maxCatchUp += Math.Min(remainingRounds, 2 - s.ChallengerSparks)
+                    + Math.Min(remainingRounds, 2 - s.OpponentSparks);
+            }
+            if (s.CompletedRounds == s.TotalRounds || s.Mode == "quick" && lead > maxCatchUp)
             {
                 s.Status = "complete"; s.CompletedAt = now;
-                s.Result = s.ChallengerScore == s.OpponentScore ? "draw" : s.ChallengerScore > s.OpponentScore ? "challenger" : "opponent";
+                s.Result = s.ChallengerScore == s.OpponentScore ? "draw" : challengerLeads ? "challenger" : "opponent";
                 AssignLoserTask(s);
             }
         }
@@ -402,60 +423,42 @@ internal sealed partial class GameStore
         return (a, b) switch { ("strike", "trick") or ("trick", "shield") or ("shield", "strike") => "challenger", ("trick", "strike") or ("shield", "trick") or ("strike", "shield") => "opponent", _ => throw new GameFault(400, "game_choice_invalid") };
     }
 
-    private static void ApplyTask(State state, string userId, GameCommand request)
+    private static bool ApplyTask(State state, string userId, GameCommand request)
     {
         switch (request.TaskAction)
         {
-            case "revoke":
-                if (state.Status is not ("incoming" or "active" or "generating" or "complete"))
-                    throw new GameFault(409, "game_task_unavailable");
-                if (userId == state.ChallengerId) { state.ChallengerAdultConsent = false; state.ChallengerFlirtConsent = false; }
-                else { state.OpponentAdultConsent = false; state.OpponentFlirtConsent = false; }
-                state.AdultConsent = state.TasksEnabled && state.ChallengerAdultConsent && state.OpponentAdultConsent;
-                state.FlirtConsent = state.AdultConsent && state.ChallengerFlirtConsent && state.OpponentFlirtConsent;
-                if (state.PartyTask?.Status == "pending"
-                    && (state.PartyTask.Category == "adult" && !state.AdultConsent
-                        || state.PartyTask.Category == "flirt" && !state.FlirtConsent))
-                {
-                    state.TaskSwapCount++;
-                    state.PartyTask = GameTaskCatalog.Next("classic", state.TaskSwapCount, state.PartyTask.Text);
-                }
-                return;
             case "skip":
             case "done":
-            case "swap":
-                if (state.Status != "complete" || !state.TasksEnabled || state.PartyTask is null
+                if (state.Status != "complete" || state.PartyTask is null
                     || state.Result is null or "draw") throw new GameFault(409, "game_task_unavailable");
                 var loserId = state.Result == "challenger" ? state.OpponentId : state.ChallengerId;
                 if (userId != loserId) throw new GameFault(403, "game_task_loser_only");
-                if (state.PartyTask.Status != "pending") throw new GameFault(409, "game_task_already_resolved");
+                if (state.PartyTask.Status != "pending")
+                {
+                    var requestedStatus = request.TaskAction == "done" ? "done" : "skipped";
+                    if (state.PartyTask.Status == requestedStatus) return false;
+                    throw new GameFault(409, "game_task_already_resolved");
+                }
                 if (request.TaskAction == "skip")
                 {
                     state.PartyTask = state.PartyTask with { Status = "skipped" };
-                    return;
+                    return true;
                 }
                 if (request.TaskAction == "done")
                 {
                     state.TaskExchangeCount++;
                     state.PartyTask = state.PartyTask with { Status = "done", ExchangeCount = state.TaskExchangeCount };
-                    return;
+                    return true;
                 }
-                var category = (request.TaskCategory ?? state.PartyTask.Category).Trim().ToLowerInvariant();
-                if (category is not ("classic" or "adult" or "flirt")) throw new GameFault(400, "game_task_category_invalid");
-                if (category == "adult" && !state.AdultConsent || category == "flirt" && (!state.AdultConsent || !state.FlirtConsent))
-                    throw new GameFault(403, "game_task_consent_required");
-                state.TaskSwapCount++;
-                state.PartyTask = GameTaskCatalog.Next(category, state.TaskSwapCount, state.PartyTask.Text);
-                return;
+                throw new GameFault(400, "game_task_action_invalid");
             default: throw new GameFault(400, "game_task_action_invalid");
         }
     }
 
     private static void AssignLoserTask(State state)
     {
-        if (!state.TasksEnabled || state.Result is null or "draw") return;
-        var category = state.AdultConsent ? "adult" : "classic";
-        state.PartyTask = GameTaskCatalog.Next(category, state.TaskSwapCount, null);
+        if (state.Result is null or "draw") return;
+        state.PartyTask = GameTaskCatalog.NextEligible(state.AdultConsent, state.FlirtConsent, state.OperationId);
     }
 
     private static void AwardXp(SqliteConnection c, SqliteTransaction tx, State s)
@@ -618,20 +621,27 @@ internal static class GameEndpoints
             };
             h.Response.Headers.CacheControl = "no-store"; return Results.Ok(safeLobby);
         });
-        group.MapPost("/matches", async (GameChallenge r, HttpContext h, AccountDatabase db, GameStore store) =>
+        group.MapPost("/matches", async (GameChallenge r, HttpContext h, AccountDatabase db, GameStore store,
+            LaunchPolicyStore launch) =>
         {
             var id = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!; var groupId = (string)h.Items["dv-game-group"]!;
             var opponent = await (from u in db.Users join m in db.UserRoles on u.Id equals m.UserId join role in db.Roles on m.RoleId equals role.Id where u.Id == r.OpponentId && u.LaunchGroupId == groupId && u.LaunchGroupRevokedAt == null && !u.Disabled && role.Name == AccountRoles.Customer && !db.DeletionRequests.Any(deletion => deletion.UserId == u.Id) select new { u.Id, u.DisplayName }).SingleOrDefaultAsync(h.RequestAborted);
             if (opponent is null) return ApiProblem.Create(h, 404, "game_opponent_unavailable");
             var challenger = await db.Users.AsNoTracking().Where(u => u.Id == id).Select(u => u.DisplayName).SingleAsync(h.RequestAborted);
-            var result = store.Challenge(groupId, id, challenger, opponent.Id, opponent.DisplayName, r, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            var groupSettings = launch.ReadGroup(groupId)!;
+            var result = store.Challenge(groupId, id, challenger, opponent.Id, opponent.DisplayName, r,
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds(), groupSettings.AdultContentEnabled, groupSettings.FlirtEnabled);
             return Results.Created($"/app/v1/game/matches/{result.Id}", result);
         });
         group.MapGet("/matches/{id}", (string id, HttpContext h, GameStore store) => Results.Ok(store.Read(id, (string)h.Items["dv-game-group"]!, h.User.FindFirstValue(ClaimTypes.NameIdentifier)!)));
         foreach (var action in new[] { "accept", "decline", "cancel", "choose", "loadout", "task", "retry" })
-            group.MapPost($"/matches/{{id}}/{action}", (string id, GameCommand request, HttpContext h, GameStore store, GameYoloWorker yolo) =>
+            group.MapPost($"/matches/{{id}}/{action}", (string id, GameCommand request, HttpContext h, GameStore store,
+                GameYoloWorker yolo, LaunchPolicyStore launch) =>
             {
-                var result = store.Mutate(id, (string)h.Items["dv-game-group"]!, h.User.FindFirstValue(ClaimTypes.NameIdentifier)!, action, request, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                var groupId = (string)h.Items["dv-game-group"]!;
+                var settings = launch.ReadGroup(groupId)!;
+                var result = store.Mutate(id, groupId, h.User.FindFirstValue(ClaimTypes.NameIdentifier)!, action,
+                    request, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), settings.AdultContentEnabled, settings.FlirtEnabled);
                 if (result.Yolo?.Status == "generating") yolo.Enqueue(id, result.Revision);
                 return Results.Ok(result);
             });

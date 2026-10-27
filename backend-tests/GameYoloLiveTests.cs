@@ -59,7 +59,7 @@ internal static class GameYoloLiveTests
                 new("synthetic-bob", "quick", $"{prefix}-challenge"), now);
             var state = store.Mutate(challenge.Id, "synthetic-group", "synthetic-bob", "accept",
                 new($"{prefix}-accept", challenge.Revision), now + 1);
-            for (var round = 0; round < 7; round++)
+            for (var round = 0; round < 7 && state.Status == "active"; round++)
             {
                 var first = store.Mutate(challenge.Id, "synthetic-group", "synthetic-alice", "choose",
                     new($"{prefix}-alice-{round}", state.Revision, Choice: "strike"), now + 2 + round);
