@@ -20,7 +20,7 @@ const server=createServer(async(req,res)=>{
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const origin=`http://127.0.0.1:${server.address().port}`;
 const portrait=await readFile(new URL('./fixtures/characters/matylda.webp',import.meta.url));
-const account={id:'visual-guest',displayName:'Darth Vader',roles:['Customer']};
+const account={id:'visual-guest',displayName:'Darth Vader',roles:['Customer'],openAiConsent:true};
 let signedIn=true,ready=false,revision=1,long=false,requests=0;
 const character=()=>({profileId:'visual-profile',revision,name:long?'Velmi dlouhé jméno postavy '.repeat(4).slice(0,80):'Darth Vader',universe:long?'Velmi rozsáhlé fiktivní univerzum '.repeat(6).slice(0,160):'Star Wars',status:'ready'});
 const welcome=()=>long?{joke:'J'.repeat(120),identity:'I'.repeat(28),teaser:'T'.repeat(100)}:{joke:'Tolik temné moci. A dovolenou ti stejně musí podepsat císař.',identity:'Anakin Skywalker, někdejší rytíř Jedi, který přešel na temnou stranu a sloužil císaři.',teaser:'Možná tě čeká nesouhlas, který se nevyřídí rozkazem.'};

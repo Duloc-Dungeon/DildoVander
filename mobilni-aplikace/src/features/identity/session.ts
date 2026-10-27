@@ -7,7 +7,7 @@ import { customerCopy } from '../../application/customerCopy';
 import { beginRequestDiagnostic, clearRequestDiagnostics, diagnosticRequestId } from '../../application/requestDiagnostics';
 import { correlationHeaders } from '../../application/requestCorrelation.mjs';
 
-export interface Account { id: string; displayName: string; roles: string[] }
+export interface Account { id: string; displayName: string; roles: string[]; openAiConsent?: boolean }
 export interface ResourceGrant { id: string; userId: string; resourceType: string; resourceId: string; permission: string }
 export interface AccountSession { id: string; expiresAt: number; installationName: string; trusted: boolean; current: boolean }
 export interface AccountDeviceAssociation { id: string; deviceId: string; alias: string; installationId: string; createdAt: number }
@@ -15,7 +15,7 @@ export interface AccountDetails { devices?: {deviceId: string; canOperate: boole
 export interface NativeAccountFileContext { signal?: AbortSignal; check?: () => void }
 interface IdentityBridge {
   request(options: { requestId: string; path: string; method: string; body?: string; confirmed?: boolean }): Promise<{ status: number; body: string }>;
-  passkey(options: { mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth'; token?: string; displayName?: string }): Promise<void>;
+  passkey(options: { mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth'; token?: string; displayName?: string; openAiConsent?: boolean }): Promise<void>;
   accountTransport(options: { requestId: string; path: string; method: string; headers: Record<string, string>; bodyBase64?: string }): Promise<{ status: number; headers: Record<string, string>; bodyBase64: string }>;
   shareAccountDataFile(options: { requestId: string; filename: string; mediaType: 'application/json'; bodyBase64: string }): Promise<{ completed: boolean }>;
   cancelAccountRequest(options: { requestId: string }): Promise<{ cancelled: boolean }>;
@@ -468,14 +468,14 @@ function credentialJson(credential: PublicKeyCredential): object {
     signature: encode(assertion.signature), userHandle: assertion.userHandle ? encode(assertion.userHandle) : null } };
 }
 
-export function authenticatePasskey(mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth', token = '', displayName = ''): Promise<void> {
+export function authenticatePasskey(mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth', token = '', displayName = '', openAiConsent = false): Promise<void> {
   if (authenticationPending) return Promise.reject(new Error('Ověření přístupovým klíčem už probíhá.'));
   const operation = (async () => {
     // Epochs protect Vue state; waiting also protects browser/native cookie ordering.
     if (logoutPending) await logoutPending.catch(() => {});
     const diagnostic = beginRequestDiagnostic('/app/v1/passkeys/' + (mode === 'signin' ? 'sign-in' : mode === 'reauth' ? 'reauthenticate' : 'complete'), 'POST');
     try {
-      await performPasskeyAuthentication(mode, token, displayName);
+      await performPasskeyAuthentication(mode, token, displayName, openAiConsent);
       diagnostic.complete(200);
     } catch (cause) {
       diagnostic.fail(cause);
@@ -487,10 +487,10 @@ export function authenticatePasskey(mode: 'signin' | 'enroll' | 'customer-enroll
   return pending;
 }
 
-async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth', token: string, displayName: string): Promise<void> {
+async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth', token: string, displayName: string, openAiConsent: boolean): Promise<void> {
   const generation = advanceAuthentication();
   if (native) {
-    await nativeIdentity.passkey({ mode, token, displayName });
+    await nativeIdentity.passkey({ mode, token, displayName, openAiConsent });
     requireCurrentAuthentication(generation);
     advanceAuthentication();
     try { await refreshIdentity(); }
@@ -504,7 +504,7 @@ async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'custome
   await refreshIdentity();
   requireCurrentAuthentication(generation);
   const optionsPath = mode === 'reauth' ? '/passkeys/reauthentication-options' : mode === 'signin' ? '/passkeys/request-options' : mode === 'add' ? '/passkeys/options' : mode === 'customer-enroll' ? '/customer/enrollment/options' : '/enrollment/options';
-  const raw = await accountRequest<Record<string, unknown>>('/app/v1' + optionsPath, 'POST', mode === 'enroll' ? { token, displayName } : mode === 'customer-enroll' ? { displayName } : undefined);
+  const raw = await accountRequest<Record<string, unknown>>('/app/v1' + optionsPath, 'POST', mode === 'enroll' ? { token, displayName, openAiConsent } : mode === 'customer-enroll' ? { displayName, openAiConsent } : undefined);
   requireCurrentAuthentication(generation);
   const options = { ...raw, challenge: decode(raw.challenge as string) };
   let credential: PublicKeyCredential | null;

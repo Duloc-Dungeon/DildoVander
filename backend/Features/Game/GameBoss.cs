@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Kufr.Backend.Features.Wands;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -410,6 +411,9 @@ internal static class GameBossEndpoints
         { throw new GameFault(403, "game_group_inactive"); }
         var access = await context.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(context.User);
         if (!access.Allowed) { throw new GameFault(403, "game_group_inactive"); }
+        if (context.Request.Method != "GET" && !context.Request.Path.Value!.EndsWith("/cancel", StringComparison.Ordinal)
+            && !context.Request.Path.Value.EndsWith("/decline", StringComparison.Ordinal))
+            await MobileWandSessions.RequireForGame(context, id);
         return user.LaunchGroupId;
     }
     private static async Task<IResult> RevealAsync(string id, GameBossCommand request, HttpContext context,

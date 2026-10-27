@@ -148,7 +148,7 @@ internal sealed partial class CharacterProfileStore
     }
 
     internal Task<CharacterProfile> SaveAsync(string accountId, CharacterWriteRequest request,
-        CancellationToken token = default) => SaveRevisionAsync(accountId, request, false, token);
+        CancellationToken token = default, bool canEditExisting = true) => SaveRevisionAsync(accountId, request, false, token, canEditExisting);
 
     internal async Task<CharacterProfile> CorrectAsync(string accountId, CharacterCorrectionRequest request,
         CancellationToken token = default)
@@ -156,11 +156,11 @@ internal sealed partial class CharacterProfileStore
         if (!request.OpenAiConsent) { throw new CharacterException("openai_consent_required", 409); }
         var current = await ReadAsync(accountId, token) ?? throw new CharacterException("character_not_found", 404);
         return await SaveRevisionAsync(accountId,
-            new(request.ExpectedRevision, current.UserInput, request.ExpectedProfileId, OpenAiConsent: true), true, token);
+            new(request.ExpectedRevision, current.UserInput, request.ExpectedProfileId, OpenAiConsent: true, PortraitConsent: true), true, token);
     }
 
     private Task<CharacterProfile> SaveRevisionAsync(string accountId, CharacterWriteRequest request,
-        bool correction, CancellationToken token)
+        bool correction, CancellationToken token, bool canEditExisting = true)
     {
         using var activity = BackendTelemetry.StartOperation("character.save");
         token.ThrowIfCancellationRequested();
@@ -179,7 +179,11 @@ internal sealed partial class CharacterProfileStore
         {
             throw new CharacterException("character_revision_conflict", 409);
         }
-        if (!correction && !request.NewCharacter && current is not null && current.UserInput == request.UserInput
+        if (current is not null && request.NewCharacter)
+        {
+            throw new CharacterException("character_already_exists", 409);
+        }
+        if (!correction && current is not null && current.UserInput == request.UserInput
             && (request.OpenAiConsent ? current.Status != "saved" : current.Status is not ("queued" or "running")))
         {
             if (request.PortraitConsent || !request.OpenAiConsent)
@@ -189,13 +193,16 @@ internal sealed partial class CharacterProfileStore
             }
             return Task.FromResult(current);
         }
+        if (current is not null && !canEditExisting)
+        {
+            throw new CharacterException("account_admin_required", 403);
+        }
         if (request.OpenAiConsent && Scalar(connection, transaction, "SELECT COUNT(*) FROM character_jobs WHERE status IN ('queued','running')", accountId) >= 1000)
         {
             throw new CharacterException("character_queue_full", 429);
         }
-        var profile = new CharacterProfile(request.NewCharacter ? Guid.NewGuid().ToString("N")
-                : current?.ProfileId ?? Guid.NewGuid().ToString("N"),
-            request.NewCharacter ? 1 : (current?.Revision ?? 0) + 1,
+        var profile = new CharacterProfile(current?.ProfileId ?? Guid.NewGuid().ToString("N"),
+            (current?.Revision ?? 0) + 1,
             request.UserInput, request.OpenAiConsent ? "queued" : "saved", null, null, Now());
         using (var command = connection.CreateCommand())
         {
@@ -428,6 +435,41 @@ internal sealed partial class CharacterProfileStore
         transaction.Commit();
         return Task.FromResult(changed);
     }
+
+    // Call only after verifying persisted account consent. Recovery retains the character revision.
+    internal Task<bool> RequestEnrichmentAsync(string accountId, CancellationToken token = default,
+        string? expectedProfileId = null, long? expectedRevision = null)
+    {
+        token.ThrowIfCancellationRequested();
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        var current = Read(connection, transaction, accountId);
+        if (current is null || current.Status is not ("saved" or "failed")
+            || (expectedProfileId is not null && current.ProfileId != expectedProfileId)
+            || (expectedRevision is not null && current.Revision != expectedRevision)
+            || Scalar(connection, transaction, "SELECT COUNT(*) FROM character_account_fences WHERE account_id=$account", accountId) != 0)
+        { return Task.FromResult(false); }
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            DELETE FROM character_jobs WHERE account_id=$account;
+            INSERT INTO character_jobs(id,account_id,profile_id,revision,input_json,rejected,status,created_at,openai_consent)
+                VALUES($id,$account,$profile,$revision,$input,NULL,'queued',$now,1);
+            UPDATE character_profiles SET status='queued',error_code=NULL WHERE account_id=$account;
+            """;
+        command.Parameters.AddWithValue("$account", accountId);
+        command.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("N"));
+        command.Parameters.AddWithValue("$profile", current.ProfileId);
+        command.Parameters.AddWithValue("$revision", current.Revision);
+        command.Parameters.AddWithValue("$input", JsonSerializer.Serialize(current.UserInput, Json));
+        command.Parameters.AddWithValue("$now", Now());
+        command.ExecuteNonQuery();
+        transaction.Commit();
+        return Task.FromResult(true);
+    }
+
+    internal Task<bool> RetryEnrichmentAsync(string accountId, CancellationToken token = default) =>
+        RequestEnrichmentAsync(accountId, token);
 
     internal Task<bool> RetryAsync(CharacterJob job, CancellationToken token = default)
     {

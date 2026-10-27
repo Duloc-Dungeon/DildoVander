@@ -484,9 +484,9 @@ public final class KufrIdentityPlugin extends Plugin {
                 case "reauth": optionsPath = "/app/v1/passkeys/reauthentication-options"; completionPath = "/app/v1/passkeys/reauthenticate"; break;
                 case "add": optionsPath = "/app/v1/passkeys/options"; completionPath = "/app/v1/passkeys/complete"; break;
                 case "customer-enroll": optionsPath = "/app/v1/customer/enrollment/options"; completionPath = "/app/v1/customer/enrollment/complete";
-                    body.put("displayName", call.getString("displayName", "")); break;
+                    body.put("displayName", call.getString("displayName", "")); body.put("openAiConsent", call.getBoolean("openAiConsent", false)); break;
                 case "enroll": optionsPath = "/app/v1/enrollment/options"; completionPath = "/app/v1/enrollment/complete";
-                    body.put("token", call.getString("token", "")); body.put("displayName", call.getString("displayName", "")); break;
+                    body.put("token", call.getString("token", "")); body.put("displayName", call.getString("displayName", "")); body.put("openAiConsent", call.getBoolean("openAiConsent", false)); break;
                 default: throw new IOException("Unsupported credential flow");
             }
             String csrf = fetchCsrf();

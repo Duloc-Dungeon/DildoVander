@@ -71,6 +71,12 @@ internal static class AccountOwnedArchives
                 {
                     return ApiProblem.Create(context, 404, "archive_association_unavailable");
                 }
+                if (context.Request.Method == "POST"
+                    && normalizedPath.Split('/').LastOrDefault() is "generation" or "portrait-uploads" or "portraits")
+                {
+                    var consentError = await AccountAiConsent.RequireAsync(context);
+                    if (consentError is not null) return consentError;
+                }
                 return await next(invocation);
             }
             catch (KeepsakeException error)

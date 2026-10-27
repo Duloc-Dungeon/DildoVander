@@ -1266,3 +1266,15 @@ require(AccountTransportPolicy.customer(path: wandArtworkRetry, method: "POST"),
 require(!AccountTransportPolicy.customer(path: wandArtworkRetry, method: "GET"), "artwork recovery became a read")
 require(!AccountTransportPolicy.guest(path: wandArtworkRetry, method: "POST"), "artwork recovery crossed guest boundary")
 require(!AccountTransportPolicy.customer(path: wandArtworkRetry + "/extra", method: "POST"), "artwork recovery admitted an arbitrary path")
+
+// Account processing choice and mobile wand workshop never open arbitrary account paths.
+require(AccountTransportPolicy.account(path: "/app/v1/account/ai-consent", method: "POST"), "consent route unavailable")
+require(!AccountTransportPolicy.account(path: "/app/v1/account/ai-consent", method: "GET"), "consent method broadened")
+require(AccountTransportPolicy.account(path: "/app/v1/customer/wand", method: "GET"), "wand snapshot unavailable")
+require(AccountTransportPolicy.account(path: "/app/v1/customer/wand/sessions", method: "POST"), "wand session unavailable")
+let wandTicket = "/app/v1/customer/wand/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/ticket"
+require(AccountTransportPolicy.account(path: wandTicket, method: "POST"), "wand ticket unavailable")
+for malformed in [wandTicket + "?extra=1", wandTicket + "/extra", wandTicket + "\n", wandTicket.replacingOccurrences(of: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", with: "bad")] {
+    require(!AccountTransportPolicy.account(path: malformed, method: "POST"), "wand ticket path broadened")
+}
+require(!AccountTransportPolicy.account(path: wandTicket, method: "GET"), "wand ticket method broadened")

@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createRouter, createMemoryHistory } from 'vue-router';
-const api = vi.hoisted(() => ({ transport: vi.fn(), setAccount: (_value: unknown) => {} }));
+const api = vi.hoisted(() => ({ transport: vi.fn(), request: vi.fn(), setAccount: (_value: unknown) => {} }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue'); const account = ref<unknown>({ id: 'one' });
   api.setAccount = value => { account.value = value; };
-  return { account, accountTransport: api.transport };
+  return { account, accountOrigin: ref('https://app.invalid'), accountTransport: api.transport, accountRequest: api.request };
 });
 import PlayView from './PlayView.vue';
+import WandWorkshop from './WandWorkshop.vue';
 import { practiceRound, type Match } from './game';
 const id = 'a'.repeat(32);
 const snapshot = (patch: Partial<Match> = {}): Match => ({ id, mode: 'quick', status: 'active', revision: 2,
@@ -20,7 +21,7 @@ async function render(path = `/play/match/${id}`) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/play/match/:id', component: PlayView }, { path: '/:pathMatch(.*)*', component: PlayView }] });
   await router.push(path); wrapper = mount(PlayView, { global: { plugins: [router] } }); await flushPromises(); return wrapper;
 }
-beforeEach(() => { api.transport.mockReset(); api.setAccount({ id: 'one' }); });
+beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
   it('presents real server scores, identities, round count and stock using the responsive table art', async () => {
@@ -99,6 +100,18 @@ describe('mobile game interaction', () => {
     expect(view.text()).not.toContain('Je mi 18+');
     await view.get('input[type="checkbox"]').setValue(true);
     const adult = view.findAll('input[type="checkbox"]')[1]; expect(adult.element).toHaveProperty('checked', false);
+  });
+  it('keeps the active first-wand voice mounted when polling discovers its saved wand', async () => {
+    api.request.mockResolvedValue({hasCharacter:true,wand:null,tier:0});
+    api.transport.mockResolvedValue(Response.json({player:{id:'one',displayName:'Mira',xp:0,matchesPlayed:0},opponents:[],active:[],incoming:[],history:[]}));
+    const view = await render('/play');
+    const workshop = view.findComponent(WandWorkshop);
+    const workshopElement = workshop.element;
+    expect(workshop.exists()).toBe(true); expect(view.find('input[type="radio"]').exists()).toBe(false);
+    workshop.vm.$emit('active-change', true); await flushPromises();
+    api.request.mockResolvedValue({hasCharacter:true,wand:{wandId:'saved'},tier:1});
+    window.dispatchEvent(new Event('online')); await flushPromises();
+    expect(view.findComponent(WandWorkshop).element).toBe(workshopElement);
   });
   it('offers practice without making game requests or awarding XP', async () => {
     const view = await render('/play/practice');

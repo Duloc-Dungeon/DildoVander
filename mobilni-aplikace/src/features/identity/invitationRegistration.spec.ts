@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => ({ request: vi.fn(), begin: vi.fn(), activeAccount: null as any }));
 vi.mock('./session', async () => {
   const { ref } = await import('vue');
-  const currentAccount = ref({ id: 'account-a' });
+  const currentAccount = ref({ id: 'account-a', openAiConsent: true });
   api.activeAccount = currentAccount;
   return { account: currentAccount, accountDeletionRequested: ref(false), accountRequest: api.request };
 });
@@ -20,7 +20,7 @@ import {
 beforeEach(() => {
   localStorage.clear();
   invitationRegistration.value = null;
-  api.activeAccount.value = { id: 'account-a' };
+  api.activeAccount.value = { id: 'account-a', openAiConsent: true };
   api.request.mockReset();
   api.begin.mockReset();
 });
@@ -81,7 +81,7 @@ describe('invitation registration persistence', () => {
     api.activeAccount.value = { id: 'account-b' };
     expect(invitationRegistration.value).toBeNull();
     expect(getInvitationRegistration('account-a')?.creationId).toBe(draft.creationId);
-    api.activeAccount.value = { id: 'account-a' };
+    api.activeAccount.value = { id: 'account-a', openAiConsent: true };
     expect(invitationRegistration.value?.name).toBe('Luna');
   });
 

@@ -32,7 +32,7 @@ internal static partial class AccountIdentityTests
             && !(await JsonAsync(closedStatus)).GetProperty("available").GetBoolean(),
             "default enrollment reports closed until owner explicitly opens it");
         Check((int)(await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
-            new { displayName = "Guest" })).StatusCode == 423,
+            new { displayName = "Guest", openAiConsent = true })).StatusCode == 423,
             "closed recruitment rejects public customer enrollment");
 
         var group = launch.ReadGroup(selected.Group.Id)!;
@@ -40,7 +40,7 @@ internal static partial class AccountIdentityTests
         var opened = launch.UpdateBetaAdmission("fixture-owner",
             new(selected.Admission.Revision, group.Id, true, "The Shire"), now);
         var optionsResponse = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
-            new { displayName = "Guest" });
+            new { displayName = "Guest", openAiConsent = true });
         var options = await JsonAsync(optionsResponse);
         var closedBeforeFinish = launch.UpdateBetaAdmission("fixture-owner",
             new(opened.Revision, group.Id, false, "The Shire"), now + 1);
@@ -54,7 +54,7 @@ internal static partial class AccountIdentityTests
         var reopened = launch.UpdateBetaAdmission("fixture-owner",
             new(closedBeforeFinish.Revision, group.Id, true, "The Shire"), now + 3);
         var changedOptions = await JsonAsync(await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
-            new { displayName = "Changed target" }));
+            new { displayName = "Changed target", openAiConsent = true }));
         var retargeted = launch.UpdateBetaAdmission("fixture-owner",
             new(reopened.Revision, other.Id, true, null), now + 4);
         using var rejectedAfterRetarget = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/complete",
@@ -65,7 +65,7 @@ internal static partial class AccountIdentityTests
         var finalConfig = launch.UpdateBetaAdmission("fixture-owner",
             new(retargeted.Revision, group.Id, true, "The Shire"), now + 5);
         var finalOptions = await JsonAsync(await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
-            new { displayName = "Guest" }));
+            new { displayName = "Guest", openAiConsent = true }));
         using var completed = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/complete",
             new { credential = guestKey.Create(finalOptions) });
         Check(completed.IsSuccessStatusCode, "open recruitment accepts new customer through the selected group");

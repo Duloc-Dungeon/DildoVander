@@ -51,6 +51,7 @@ function errorKey(value: unknown): CustomerCopyKey {
   if (value instanceof Error && value.message === 'Ověření přístupovým klíčem už probíhá.') return 'signin.error-pending';
   if (value instanceof Error && 'code' in value) {
     switch (value.code) {
+      case 'ai_consent_required': return 'signin.ai-consent-required';
       case 'accounts_not_configured': return 'signin.accounts-disabled';
       case 'invitation_expired_or_used': return 'signin.error-invitation';
       case 'ceremony_expired_or_used': return 'signin.error-ceremony';
@@ -138,13 +139,14 @@ async function submit(): Promise<void> {
     const invitationRegistration = !account.value && enrollment.value && enrollmentKind.value === 'invite' && !betaEntry.value;
     const accountName = invitationRegistration ? invitationName.value.trim() : customerEnrollment.value ? customerDisplayName.value : '';
     const enrollmentName = betaRegistration ? invitationName.value.trim() : accountName;
+    if (!account.value && (customerEnrollment.value || enrollment.value && enrollmentKind.value === 'invite') && !aiConsent.value) { error.value = 'signin.ai-consent-required'; return; }
     if ((invitationRegistration || betaRegistration) && (!enrollmentName || !invitationUniverse.value.trim())) return;
     if (betaRegistration && !defaultEnrollment.value?.available) {
       await refreshDefaultEnrollment();
       if (!defaultEnrollment.value?.available) return;
     }
     if (betaRegistration) pendingBetaDraft.value = { name: enrollmentName, universe: invitationUniverse.value };
-    await authenticatePasskey(account.value ? 'reauth' : betaRegistration || customerEnrollment.value ? 'customer-enroll' : enrollment.value ? 'enroll' : 'signin', token.value, enrollmentName);
+    await authenticatePasskey(account.value ? 'reauth' : betaRegistration || customerEnrollment.value ? 'customer-enroll' : enrollment.value ? 'enroll' : 'signin', token.value, enrollmentName, aiConsent.value);
     token.value = '';
     if ((invitationRegistration || betaRegistration) && account.value) {
       const draft = pendingBetaDraft.value ?? { name: enrollmentName, universe: invitationUniverse.value };
@@ -249,14 +251,15 @@ async function submit(): Promise<void> {
             <AwField v-else id="account-universe" :label="customerCopy.text('signin.invite-universe')"><input id="account-universe" v-model="invitationUniverse" class="aw-input" maxlength="160" autocomplete="off" required :disabled="busy" /></AwField>
           </template>
           <AwField v-if="(!betaEntry || enrollmentKind === 'recovery') && !linkedInvitation" id="account-invite" :label="customerCopy.text(enrollmentKind === 'recovery' ? 'signin.recovery-code-label' : 'signin.invite-code-label')" :hint="customerCopy.text('signin.token-hint')"><input id="account-invite" aria-describedby="account-invite-hint" ref="invitationCodeInput" v-model="token" class="aw-input" type="password" autocomplete="off" maxlength="256" required :disabled="busy" /></AwField>
-          <fieldset v-if="enrollmentKind === 'invite'" class="consent-fieldset">
-            <label><input v-model="aiConsent" type="checkbox" :disabled="busy" /> <span>{{ language === 'en' ? 'I agree to use OpenAI to create my character and personal experience.' : 'Souhlasím s použitím OpenAI pro vytvoření své postavy a osobního zážitku.' }}</span></label>
-            <p v-if="betaEntry" class="identity-hint">{{ language === 'en' ? 'Without this consent, we will not create your character.' : 'Bez tohoto souhlasu postavu nevytvoříme.' }}</p>
-            <details><summary>{{ customerCopy.text('signin.ai-consent-details') }}</summary><p>{{ customerCopy.text('signin.ai-consent-copy') }} <RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></p></details>
-          </fieldset>
+
           <p v-if="enrollmentKind === 'invite'" class="identity-hint">{{ customerCopy.text('signin.passkey-before-dialog') }}</p>
         </template>
-        <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || (betaEntry && (enrollmentLoading || !defaultEnrollment?.available)) || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment ? customerCopy.text('signin.customer-create') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : betaEntry ? (language === 'en' ? 'Accept invitation' : 'Přijmout pozvánku') : customerCopy.text('signin.invite-create-key') : customerCopy.text('signin.submit-signin') }}</AwButton>
+          <fieldset v-if="customerEnrollment || enrollment && enrollmentKind === 'invite'" class="consent-fieldset">
+            <label><input v-model="aiConsent" type="checkbox" required :disabled="busy" /> <span>{{ language === 'en' ? 'I agree to use OpenAI to create my character and personal experience.' : 'Souhlasím se zpracováním údajů postavy a zvuku rozhovoru službou OpenAI pro vytvoření osobního zážitku.' }}</span></label>
+            <p class="identity-hint">{{ language === 'en' ? 'Without this consent, we will not create your character.' : 'Bez tohoto souhlasu registraci nelze dokončit.' }}</p>
+            <details><summary>{{ customerCopy.text('signin.ai-consent-details') }}</summary><p>{{ customerCopy.text('signin.ai-consent-copy') }} <RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></p></details>
+          </fieldset>
+        <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || ((customerEnrollment || enrollment && enrollmentKind === 'invite') && !aiConsent) || (betaEntry && (enrollmentLoading || !defaultEnrollment?.available)) || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment ? customerCopy.text('signin.customer-create') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : betaEntry ? (language === 'en' ? 'Accept invitation' : 'Přijmout pozvánku') : customerCopy.text('signin.invite-create-key') : customerCopy.text('signin.submit-signin') }}</AwButton>
         <p v-if="!enrollment && !customerEnrollment" class="identity-hint">{{ language === 'en' ? 'This opens system verification. Confirm with your device; no account password is needed.' : 'Otevře se systémové ověření. Potvrď ho na svém zařízení; heslo k účtu nepotřebuješ.' }}</p>
         <div v-if="!customerEnrollment" class="signin-options">
           <AwButton v-if="enrollment" @click="showPasskeySignIn">{{ customerCopy.text('signin.have-passkey') }}</AwButton>

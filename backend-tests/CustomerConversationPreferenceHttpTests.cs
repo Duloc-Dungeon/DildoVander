@@ -65,14 +65,24 @@ internal static partial class AccountIdentityTests
             && afterSignIn.GetProperty("tone").GetString() == "gentle",
             "saved preferences survive a fresh authenticated session");
 
-        var editedProfile = await SaveProfileAsync(customerA, profileA.Revision, profileA.ProfileId, "Corrected character");
+        await ExpectProblemAsync(await customerA.PutAsJsonAsync("/app/v1/customer/character",
+            new CharacterWriteRequest(profileA.Revision,
+                new CharacterUserInput("Forbidden customer edit", "Conversation preferences"),
+                profileA.ProfileId, OpenAiConsent: true)), HttpStatusCode.Forbidden,
+            "account_admin_required", "customer cannot edit its saved character through the profile API");
+        var profiles = fixture.App.Services.GetRequiredService<CharacterProfileStore>();
+        // Trusted fixture models the administrator's same-identity correction, never a customer permission.
+        var editedProfile = await profiles.SaveAsync(accountA,
+            new CharacterWriteRequest(profileA.Revision,
+                new CharacterUserInput("Corrected character", "Conversation preferences"),
+                profileA.ProfileId, OpenAiConsent: true), canEditExisting: true);
         var afterProfileEdit = await JsonAsync(await customerA.GetAsync(route));
         Check(editedProfile.ProfileId == profileA.ProfileId && editedProfile.Revision == profileA.Revision + 1
             && afterProfileEdit.GetProperty("profileRevision").GetInt64() == editedProfile.Revision
             && afterProfileEdit.GetProperty("preferenceRevision").GetInt64() == 1
             && afterProfileEdit.GetProperty("conversationLanguage").GetString() == "en-US"
             && afterProfileEdit.GetProperty("tone").GetString() == "gentle",
-            "editing the same character preserves its conversation preferences");
+            "administrator correction of the same character preserves its conversation preferences");
         await ExpectProblemAsync(await customerA.PutAsJsonAsync(route,
             PreferenceBody(editedProfile, 0, "cs-CZ", "roast")), HttpStatusCode.Conflict,
             "conversation_preferences_revision_conflict", "stale preference compare-and-swap is rejected");
@@ -105,17 +115,26 @@ internal static partial class AccountIdentityTests
             PreferenceBody(profileA, 0, "en-US", "cheeky")), HttpStatusCode.Conflict,
             "character_revision_mismatch", "another account cannot attach preferences to a foreign profile");
 
-        var replacement = await SaveProfileAsync(customerA, editedProfile.Revision, editedProfile.ProfileId,
-            "Replacement character", newCharacter: true);
+        await ExpectProblemAsync(await customerA.PutAsJsonAsync("/app/v1/customer/character",
+            new CharacterWriteRequest(editedProfile.Revision,
+                new CharacterUserInput("Forbidden second character", "Conversation preferences"),
+                editedProfile.ProfileId, NewCharacter: true, OpenAiConsent: true)), HttpStatusCode.Conflict,
+            "character_already_exists", "a second character cannot replace an existing account character");
+        using (var deletion = await customerA.DeleteAsync("/app/v1/customer/character?expectedRevision="
+            + editedProfile.Revision + "&expectedProfileId=" + editedProfile.ProfileId))
+        {
+            Check(deletion.IsSuccessStatusCode, "owner explicitly deletes the old character before creating another");
+        }
+        var replacement = await SaveProfileAsync(customerA, 0, null, "Replacement character");
         Check(replacement.ProfileId != editedProfile.ProfileId && replacement.Revision == 1,
-            "explicit new-character save creates a distinct profile identity");
+            "fresh creation after explicit owned deletion creates a distinct profile identity");
         var replacementDefaults = await JsonAsync(await customerA.GetAsync(route));
         Check(replacementDefaults.GetProperty("profileId").GetString() == replacement.ProfileId
             && replacementDefaults.GetProperty("preferenceRevision").GetInt64() == 0
             && replacementDefaults.GetProperty("conversationLanguage").GetString() == "cs-CZ"
             && replacementDefaults.GetProperty("tone").GetString() == "roast"
             && !replacementDefaults.GetProperty("persisted").GetBoolean(),
-            "replacement profile starts with defaults after old-profile preferences are cleared");
+            "fresh profile starts with defaults after explicit deletion clears old-profile preferences");
         await ExpectProblemAsync(await customerA.PutAsJsonAsync(route,
             PreferenceBody(editedProfile, long.MaxValue, "en-US", "gentle")), HttpStatusCode.Conflict,
             "character_revision_mismatch", "preferences cannot be restored through a replaced profile identity");
@@ -182,7 +201,7 @@ internal static partial class AccountIdentityTests
     {
         await CsrfAsync(client);
         var options = await JsonAsync(await client.PostAsJsonAsync(
-            "/app/v1/customer/enrollment/options", new { displayName }));
+            "/app/v1/customer/enrollment/options", new { displayName, openAiConsent = true }));
         using var completion = await client.PostAsJsonAsync(
             "/app/v1/customer/enrollment/complete", new { credential = key.Create(options) });
         Check(completion.IsSuccessStatusCode, "customer preference fixture enrolls using a real passkey");
@@ -191,11 +210,11 @@ internal static partial class AccountIdentityTests
     }
 
     private static async Task<CharacterProfile> SaveProfileAsync(HttpClient client, long expectedRevision,
-        string? expectedProfileId, string name, bool newCharacter = false)
+        string? expectedProfileId, string name)
     {
         using var response = await client.PutAsJsonAsync("/app/v1/customer/character",
             new CharacterWriteRequest(expectedRevision, new CharacterUserInput(name, "Conversation preferences"),
-                expectedProfileId, newCharacter, OpenAiConsent: true));
+                expectedProfileId, OpenAiConsent: true));
         var envelope = await JsonAsync(response);
         return JsonSerializer.Deserialize<CharacterProfile>(envelope.GetProperty("profile").GetRawText(),
             new JsonSerializerOptions(JsonSerializerDefaults.Web))!;

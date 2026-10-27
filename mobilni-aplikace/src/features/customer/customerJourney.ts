@@ -90,7 +90,7 @@ export function getCustomerJourneyAction(input: CustomerJourneyInput): CustomerJ
   }
 
   if (input.profile.status === 'needs_clarification') {
-    return action('review-character', 'Upřesnit postavu', '/me/character', 'profile-review');
+    return action('review-character', 'Zkontrolovat postavu', '/me/character', 'profile-review');
   }
 
   if (input.profile.status === 'queued' || input.profile.status === 'running') {

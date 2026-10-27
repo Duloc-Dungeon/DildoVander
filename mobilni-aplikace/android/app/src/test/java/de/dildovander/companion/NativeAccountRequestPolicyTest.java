@@ -13,6 +13,18 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void consentAndWandWorkshopRoutesAreMethodBound() {
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/wand", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/wand/sessions", "POST"));
+        String path = "/app/v1/customer/wand/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/ticket";
+        assertTrue(NativeAccountRequestPolicy.allows(path, "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(path, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(path + "?extra=1", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(path + "/extra", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(path.replace("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bad"), "POST"));
+    }
     @Test public void mobileGameRoutesAreExplicitAndMethodBound() {
         String match = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game", "GET"));
