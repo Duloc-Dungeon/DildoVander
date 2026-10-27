@@ -93,13 +93,19 @@ describe('mobile game interaction', () => {
     expect(view.text()).toContain('Tvůj tah je uzamčený');
     expect(view.find('input[value="strike"]').exists()).toBe(false);
   });
-  it('keeps Adult and Flirt unselected before accepting a challenge', async () => {
+  it('accepts a challenge without asking for per-match task or content consent', async () => {
     api.transport.mockResolvedValue(Response.json(snapshot({ status: 'incoming', canAccept: true })));
     const view = await render();
-    expect(view.find('input[type="checkbox"]').element).toHaveProperty('checked', false);
+    expect(view.find('input[type="checkbox"]').exists()).toBe(false);
     expect(view.text()).not.toContain('Je mi 18+');
-    await view.get('input[type="checkbox"]').setValue(true);
-    const adult = view.findAll('input[type="checkbox"]')[1]; expect(adult.element).toHaveProperty('checked', false);
+    expect(view.text()).toContain('Po prohře se zobrazí úkol');
+    await view.findAll('button').find(button => button.text() === 'Přijmout výzvu')!.trigger('click');
+    await flushPromises();
+    const body = JSON.parse(api.transport.mock.calls[1][1].body);
+    expect(body).toMatchObject({ expectedRevision: 2, useLoadouts: false });
+    expect(body).not.toHaveProperty('tasksEnabled');
+    expect(body).not.toHaveProperty('adultConsent');
+    expect(body).not.toHaveProperty('flirtConsent');
   });
   it('keeps the active first-wand voice mounted when polling discovers its saved wand', async () => {
     api.request.mockResolvedValue({hasCharacter:true,wand:null,tier:0});
@@ -114,6 +120,7 @@ describe('mobile game interaction', () => {
     expect(view.findComponent(WandWorkshop).element).toBe(workshopElement);
   });
   it('offers practice without making game requests or awarding XP', async () => {
+    vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => { (array as Uint32Array).fill(0); return array; });
     const view = await render('/play/practice');
     for (let index = 0; index < 7; index++) {
       await view.get('input[value="strike"]').setValue();
@@ -121,6 +128,105 @@ describe('mobile game interaction', () => {
     }
     expect(view.text()).toContain('Trénink dokončen'); expect(api.transport).not.toHaveBeenCalled();
     expect(view.text()).not.toMatch(/\+\d+ XP/);
+  });
+
+  it('allows confirmation of a saved task without granting gameplay to a player without a wand', async () => {
+    api.request.mockResolvedValue({ hasCharacter: true, wand: null, tier: 0 });
+    const saved = snapshot({ status: 'complete', result: 'loss', partyTask: {
+      title: 'Uložený úkol', text: 'Předveď reklamu.', category: 'classic', status: 'pending',
+    } });
+    api.transport.mockImplementation(async (_path: string, init: RequestInit) => Response.json(init.method === 'POST'
+      ? { ...saved, revision: 3, partyTask: { ...saved.partyTask!, status: 'done' } } : saved));
+    const view = await render();
+    expect(view.findComponent(WandWorkshop).exists()).toBe(false);
+    expect(view.get('.game-task').text()).toContain('Uložený úkol');
+    expect(view.find('input[value="strike"]').exists()).toBe(false);
+    await view.get('input[value="done"]').setValue();
+    await view.findAll('button').find(button => button.text() === 'Potvrdit výsledek úkolu')!.trigger('click');
+    await flushPromises();
+    expect(api.transport.mock.calls[1][0]).toContain(`/matches/${id}/task`);
+    expect(view.get('.game-task').text()).toContain('Uloženo: úkol splněn.');
+  });
+
+  it('shows pending saved tasks alongside the workshop without a wand', async () => {
+    api.request.mockResolvedValue({ hasCharacter: true, wand: null, tier: 0 });
+    api.transport.mockResolvedValue(Response.json({
+      player: { id: 'one', displayName: 'Mira', xp: 0, matchesPlayed: 1 }, opponents: [], incoming: [], active: [],
+      history: [snapshot({ status: 'complete', result: 'loss', partyTask: { title: 'Čekající úkol', text: 'Předveď reklamu.', category: 'classic', status: 'pending' } })],
+    }));
+    const view = await render('/play');
+    expect(view.findComponent(WandWorkshop).exists()).toBe(true);
+    expect(view.text()).toContain('Úkoly k potvrzení');
+    expect(view.findAll('a').find(link => link.text().includes('Potvrdit výsledek'))!.attributes('href')).toBe(`/play/match/${id}`);
+    expect(view.find('input[value="strike"]').exists()).toBe(false);
+  });
+
+  it.each(['player', 'opponent'])('ends practice once %s wins four exchanges', async winner => {
+    vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => { (array as Uint32Array).fill(winner === 'player' ? 1 : 2); return array; });
+    const view = await render('/play/practice');
+    for (let index = 0; index < 4; index++) {
+      await view.get('input[value="strike"]').setValue();
+      await view.findAll('button').find(button => button.text() === 'Potvrdit tah')!.trigger('click');
+    }
+    expect(view.text()).toContain('Trénink dokončen');
+    expect(view.findAll('.game-round-dots > .done')).toHaveLength(4);
+    expect(view.find('input[value="strike"]').exists()).toBe(false);
+    expect(api.transport).not.toHaveBeenCalled();
+  });
+
+  it.each(['done', 'skip'] as const)('requires explicit confirmation and retains saved task outcome %s after reload', async outcome => {
+    let saved = snapshot({ status: 'complete', completedRounds: 4, playerScore: 0, opponentScore: 4,
+      result: 'loss', tasksEnabled: true, adultConsent: true, flirtConsent: true,
+      partyTask: { title: 'Reklama po půlnoci', text: 'Předveď reklamu na svou hůlku.', category: 'adult', status: 'pending' } });
+    api.transport.mockImplementation(async (_path: string, init: RequestInit) => {
+      if (init.method === 'POST') saved = { ...saved, revision: 3, partyTask: { ...saved.partyTask!, status: outcome === 'done' ? 'done' : 'skipped' } };
+      return Response.json(saved);
+    });
+    const view = await render();
+    expect(view.get('.game-task').text()).toContain('Reklama po půlnoci');
+    expect(view.text()).not.toContain('Odvolat souhlas');
+    expect(view.text()).not.toContain('Jiný úkol');
+    expect(view.findAll('a').some(link => link.text() === 'Odveta')).toBe(false);
+    const confirm = view.findAll('button').find(button => button.text() === 'Potvrdit výsledek úkolu')!;
+    expect(confirm.attributes('disabled')).toBeDefined();
+    await view.get(`input[value="${outcome}"]`).setValue();
+    expect(api.transport).toHaveBeenCalledTimes(1);
+    await confirm.trigger('click'); await flushPromises();
+    expect(JSON.parse(api.transport.mock.calls[1][1].body)).toMatchObject({ expectedRevision: 2, taskAction: outcome });
+    const expected = outcome === 'done' ? 'Uloženo: úkol splněn.' : 'Uloženo: úkol nesplněn.';
+    expect(view.get('.game-task').text()).toContain(expected);
+    expect(view.findAll('a').some(link => link.text() === 'Odveta')).toBe(true);
+    view.unmount();
+    const reloaded = await render();
+    expect(reloaded.get('.game-task').text()).toContain(expected);
+    expect(reloaded.find('.game-task-outcome').exists()).toBe(false);
+  });
+
+  it('clears a selected task outcome when navigating directly to another match', async () => {
+    const secondId = 'b'.repeat(32);
+    api.transport.mockImplementation(async (path: string) => Response.json(snapshot({
+      id: path.includes(secondId) ? secondId : id, status: 'complete', result: 'loss',
+      partyTask: { title: path.includes(secondId) ? 'Druhý úkol' : 'První úkol', text: 'Předveď reklamu.', category: 'classic', status: 'pending' },
+    })));
+    const view = await render();
+    await view.get('input[value="done"]').setValue();
+    await view.vm.$router.push(`/play/match/${secondId}`);
+    await flushPromises();
+    expect(view.get('.game-task').text()).toContain('Druhý úkol');
+    expect(view.get('input[value="done"]').element).toHaveProperty('checked', false);
+    expect(view.findAll('button').find(button => button.text() === 'Potvrdit výsledek úkolu')!.attributes('disabled')).toBeDefined();
+    expect(api.transport.mock.calls.every(([, init]) => init.method === 'GET')).toBe(true);
+  });
+
+  it('keeps an unacknowledged task discoverable after returning to the lobby', async () => {
+    api.transport.mockImplementation(async (path: string) => Response.json(path.endsWith('/progress') ? { pending: [] } : {
+      player: { id: 'one', displayName: 'Mira', xp: 0, matchesPlayed: 1 }, opponents: [], incoming: [], active: [],
+      history: [snapshot({ status: 'complete', result: 'loss', partyTask: { title: 'Čekající úkol', text: 'Předveď reklamu.', category: 'classic', status: 'pending' } })],
+    }));
+    const view = await render('/play');
+    expect(view.text()).toContain('Úkoly k potvrzení');
+    const taskLink = view.findAll('a').find(link => link.text().includes('Potvrdit výsledek'))!;
+    expect(taskLink.attributes('href')).toBe(`/play/match/${id}`);
   });
 });
 it('explains all nine cyclic practice outcomes including consumed ties', () => {

@@ -1,3 +1,7 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Kufr.Backend.Features.Game;
 
 internal static class GameTaskCatalog
@@ -34,5 +38,16 @@ internal static class GameTaskCatalog
         if (cards[index].Text == previous) { index = (index + 1) % cards.Length; }
         var card = cards[index];
         return new(card.Title, card.Text, category, "pending", swapCount);
+    }
+
+    internal static GamePartyTask NextEligible(bool adultEnabled, bool flirtEnabled, string stableSeed)
+    {
+        var categories = new List<string> { "classic" };
+        if (adultEnabled) { categories.Add("adult"); }
+        if (flirtEnabled) { categories.Add("flirt"); }
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(stableSeed));
+        var categoryIndex = (int)(BinaryPrimitives.ReadUInt32LittleEndian(hash) % (uint)categories.Count);
+        var cardIndex = (int)(BinaryPrimitives.ReadUInt32LittleEndian(hash.AsSpan(4)) % int.MaxValue);
+        return Next(categories[categoryIndex], cardIndex, null) with { ExchangeCount = 0 };
     }
 }

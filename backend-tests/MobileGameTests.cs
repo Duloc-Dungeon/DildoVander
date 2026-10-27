@@ -28,6 +28,8 @@ internal static class MobileGameTests
     internal static void Run()
     {
         VerifyYoloResponseValidation();
+        VerifyQuickClinchAndMandatoryTaskAcknowledgement();
+        VerifySparkAwareQuickClinch();
         var directory = Path.Combine(Path.GetTempPath(), "mobile-game-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
@@ -47,8 +49,9 @@ internal static class MobileGameTests
             var accepted = store.Mutate(challenge.Id, "group-a", "bob", "accept",
                 new("accept-00001", challenge.Revision, TasksEnabled: true, AdultConsent: true), 2);
             Check(accepted.Status == "active" && accepted.TasksEnabled && accepted.AdultConsent,
-                "tasks and adult content require both opt-ins");
-            for (var round = 0; round < 7; round++)
+                "server enables tasks and applies group adult settings despite client switches");
+            var finalChoiceOperation = "";
+            for (var round = 0; round < 7 && accepted.Status == "active"; round++)
             {
                 var bid = round is 2 or 3 ? 1 : 0;
                 var first = store.Mutate(challenge.Id, "group-a", "alice", "choose",
@@ -57,36 +60,36 @@ internal static class MobileGameTests
                     "unresolved choices remain hidden");
                 accepted = store.Mutate(challenge.Id, "group-a", "bob", "choose",
                     new($"bobby-{round:D5}", first.Revision, Choice: "trick"), 3 + round);
-                if (round < 6)
+                finalChoiceOperation = $"bobby-{round:D5}";
+                Check(accepted.Rounds[^1].Winner == "player",
+                    "completed round reveals the cyclic outcome");
+                if (round == 2)
                 {
-                    Check(accepted.Status == "active" && accepted.Rounds[^1].Winner == "player",
-                        "completed round reveals the cyclic outcome");
-                    if (round == 2)
-                    {
-                        var aliceSnapshot = store.Read(challenge.Id, "group-a", "alice");
-                        Check(aliceSnapshot.Rounds[^1].PlayerSparkBid == 1 && aliceSnapshot.Rounds[^1].OpponentSparkBid == 0
-                            && aliceSnapshot.PlayerSparks == 1, "revealed bids award points and consume common sparks");
-                    }
+                    var aliceSnapshot = store.Read(challenge.Id, "group-a", "alice");
+                    Check(aliceSnapshot.Rounds[^1].PlayerSparkBid == 1 && aliceSnapshot.Rounds[^1].OpponentSparkBid == 0
+                        && aliceSnapshot.PlayerSparks == 1, "revealed bids award points and consume common sparks");
                 }
             }
 
             accepted = store.Read(challenge.Id, "group-a", "alice");
-            Check(accepted.Status == "complete" && accepted.Result == "loss" && accepted.CompletedRounds == 7,
-                "seven completed exchanges produce a durable result");
-            Check(accepted.PartyTask?.Category == "adult" && accepted.PartyTask.Status == "pending",
-                "server assigns an adult task to the loser after a non-draw result");
+            Check(accepted.Status == "complete" && accepted.Result == "loss" && accepted.CompletedRounds <= 7,
+                "maximum-seven quick match finishes when its result is mathematically certain");
+            Check(accepted.PartyTask?.Status == "pending" && accepted.PartyTask.ExchangeCount == 0
+                && accepted.PartyTask.Category is "classic" or "adult" or "flirt",
+                "server assigns one eligible task to the loser with a clean outcome count");
             Check(store.Read(challenge.Id, "group-a", "bob").PartyTask is null,
                 "winner cannot see the loser's private task");
             var done = store.Mutate(challenge.Id, "group-a", "alice", "task",
                 new("task-done-0001", accepted.Revision, TaskAction: "done"), 11);
-            Check(done.PartyTask?.Status == "done", "only the loser can mark a pending task done");
+            Check(done.PartyTask?.Status == "done" && done.PartyTask.ExchangeCount == 1,
+                "only the loser can mark a pending task done and outcome count advances once");
             try
             {
-                _ = store.Mutate(challenge.Id, "group-a", "alice", "task",
+                var repeated = store.Mutate(challenge.Id, "group-a", "alice", "task",
                     new("task-done-0002", done.Revision, TaskAction: "done"), 12);
-                throw new InvalidOperationException("Mobile game test failed: a task was completed more than once");
+                Check(repeated.PartyTask?.Status == "done", "repeated same task acknowledgement is idempotent");
             }
-            catch (GameFault fault) when (fault.Code == "game_task_already_resolved") { }
+            catch (GameFault fault) { throw new InvalidOperationException("Mobile game test failed: repeated same acknowledgement was rejected", fault); }
             try
             {
                 _ = store.Mutate(challenge.Id, "group-a", "bob", "task",
@@ -103,13 +106,16 @@ internal static class MobileGameTests
                 new("bob", "quick", "consent-cancel-01", true, true, true), 200);
             var consentAccepted = store.Mutate(consent.Id, "group-a", "bob", "accept",
                 new("consent-cancel-accept", consent.Revision, TasksEnabled: true, AdultConsent: true, FlirtConsent: true), 201);
-            var revoked = store.Mutate(consent.Id, "group-a", "bob", "task",
-                new("consent-revoke-001", consentAccepted.Revision, TaskAction: "revoke"), 202);
-            Check(revoked.TasksEnabled && !revoked.AdultConsent && !revoked.FlirtConsent,
-                "adult consent can be revoked without disabling classic tasks");
+            try
+            {
+                _ = store.Mutate(consent.Id, "group-a", "bob", "task",
+                    new("consent-revoke-001", consentAccepted.Revision, TaskAction: "revoke"), 202);
+                throw new InvalidOperationException("Mobile game test failed: per-match consent mutation remained available");
+            }
+            catch (GameFault fault) when (fault.Code == "game_task_action_invalid") { }
             var xpBeforeCancel = store.Lobby("group-a", "alice", "Alice", []).Player.Xp;
             var cancelled = store.Mutate(consent.Id, "group-a", "alice", "cancel",
-                new("active-cancel-001", revoked.Revision), 203);
+                new("active-cancel-001", consentAccepted.Revision), 203);
             Check(cancelled.Status == "cancelled" && store.Lobby("group-a", "alice", "Alice", []).Player.Xp == xpBeforeCancel,
                 "either participant can abandon an active match without XP");
             var replacement = store.Challenge("group-a", "alice", "Alice", "bob", "Bob",
@@ -117,14 +123,14 @@ internal static class MobileGameTests
             Check(replacement.Status == "incoming", "cancelling an active match releases both participants");
             var forged = store.Mutate(replacement.Id, "group-a", "bob", "accept",
                 new("forged-flirt-accept", replacement.Revision, TasksEnabled: true, AdultConsent: false, FlirtConsent: true), 205);
-            Check(!forged.AdultConsent && !forged.FlirtConsent,
-                "flirt consent cannot bypass the adult-consent gate");
+            Check(forged.AdultConsent && forged.FlirtConsent,
+                "client consent flags cannot override the adult and flirt group settings");
             var forgedCancelled = store.Mutate(replacement.Id, "group-a", "alice", "cancel",
                 new("forged-flirt-cancel", forged.Revision), 206);
             Check(forgedCancelled.Status == "cancelled", "uncancelled test match is released");
             var reopened = new GameStore(directory);
             var replay = reopened.Mutate(challenge.Id, "group-a", "bob", "choose",
-                new("bobby-00006", accepted.Revision - 1, Choice: "trick"), 9);
+                new(finalChoiceOperation, accepted.Revision - 1, Choice: "trick"), 9);
             Check(replay.Status == "complete" && reopened.Lobby("group-a", "alice", "Alice", []).Player.Xp == xpBeforeFinal + 6,
                 "idempotent replay after restart does not award XP again");
             var tactical = reopened.Challenge("group-a", "alice", "Alice", "bob", "Bob",
@@ -217,6 +223,97 @@ internal static class MobileGameTests
         }
     }
 
+    private static void VerifyQuickClinchAndMandatoryTaskAcknowledgement()
+    {
+        var allEnabledCategories = Enumerable.Range(0, 128)
+            .Select(index => GameTaskCatalog.NextEligible(true, true, $"category-seed-{index}").Category)
+            .ToHashSet(StringComparer.Ordinal);
+        var flirtOnlyCategories = Enumerable.Range(0, 128)
+            .Select(index => GameTaskCatalog.NextEligible(false, true, $"flirt-seed-{index}").Category)
+            .ToHashSet(StringComparer.Ordinal);
+        Check(allEnabledCategories.SetEquals(["classic", "adult", "flirt"])
+            && flirtOnlyCategories.SetEquals(["classic", "flirt"]),
+            "seeded task selection uses all and only the categories enabled by group settings");
+        var directory = Path.Combine(Path.GetTempPath(), "mobile-game-clinch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var store = new GameStore(directory);
+            var challenge = store.Challenge("clinch-group", "alice", "Alice", "bob", "Bob",
+                new("bob", "quick", "clinch-challenge-001", false, false, false), 1);
+            var active = store.Mutate(challenge.Id, "clinch-group", "bob", "accept",
+                new("clinch-accept-001", challenge.Revision, TasksEnabled: false, AdultConsent: false, FlirtConsent: false), 2);
+            Check(active.TasksEnabled && active.AdultConsent && active.FlirtConsent,
+                "tasks are mandatory and client switches cannot override default group settings");
+            for (var round = 0; round < 4; round++)
+            {
+                var first = store.Mutate(challenge.Id, "clinch-group", "alice", "choose",
+                    new($"clinch-a-{round:D5}", active.Revision, Choice: "trick"), 3 + round);
+                active = store.Mutate(challenge.Id, "clinch-group", "bob", "choose",
+                    new($"clinch-b-{round:D5}", first.Revision, Choice: "shield"), 3 + round);
+            }
+            Check(active.Status == "complete" && active.CompletedRounds == 4 && active.Result == "loss",
+                "quick match clinches at a four-round lead with three exchanges remaining");
+            Check(active.PartyTask?.Status == "pending"
+                && active.PartyTask.Category is "classic" or "adult" or "flirt",
+                "eligible loser task is assigned and visible without per-match task opt-in");
+            var skipped = store.Mutate(challenge.Id, "clinch-group", "bob", "task",
+                new("clinch-task-skip-01", active.Revision, TaskAction: "skip"), 8);
+            var reopened = new GameStore(directory).Read(challenge.Id, "clinch-group", "bob");
+            Check(skipped.PartyTask?.Status == "skipped" && reopened.PartyTask?.Status == "skipped",
+                "voluntary task decline is durably acknowledged");
+            try
+            {
+                _ = store.Mutate(challenge.Id, "clinch-group", "bob", "task",
+                    new("clinch-task-conflict", skipped.Revision, TaskAction: "done"), 9);
+                throw new InvalidOperationException("Mobile game test failed: resolved task outcome was overwritten");
+            }
+            catch (GameFault fault) when (fault.Code == "game_task_already_resolved") { }
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(directory, true);
+        }
+    }
+
+    private static void VerifySparkAwareQuickClinch()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "mobile-game-sparks-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var store = new GameStore(directory);
+            PlayQuickMatch(store, "spark-pre-one", 20, true);
+            PlayQuickMatch(store, "spark-pre-two", 40, false);
+            var challenge = store.Challenge("group-a", "alice", "Alice", "bob", "Bob",
+                new("bob", "quick", "spark-clinch-challenge-01"), 60);
+            Check(challenge.SparksEnabled, "quick match grants its established sparks after prior matches");
+            var active = store.Mutate(challenge.Id, "group-a", "bob", "accept",
+                new("spark-clinch-accept-01", challenge.Revision), 61);
+            for (var round = 0; round < 4; round++)
+            {
+                var first = store.Mutate(challenge.Id, "group-a", "alice", "choose",
+                    new($"spark-clinch-a-{round}", active.Revision, Choice: "trick"), 62 + round);
+                active = store.Mutate(challenge.Id, "group-a", "bob", "choose",
+                    new($"spark-clinch-b-{round}", first.Revision, Choice: "shield"), 62 + round);
+            }
+            Check(active.Status == "active" && active.CompletedRounds == 4 && active.OpponentScore == 4,
+                "four-round lead stays active while unspent sparks can still change the result");
+            var tiedFirst = store.Mutate(challenge.Id, "group-a", "alice", "choose",
+                new("spark-clinch-tie-a", active.Revision, Choice: "strike", SparkBid: 1), 70);
+            active = store.Mutate(challenge.Id, "group-a", "bob", "choose",
+                new("spark-clinch-tie-b", tiedFirst.Revision, Choice: "strike", SparkBid: 1), 70);
+            Check(active.Status == "active" && active.CompletedRounds == 5 && active.OpponentScore == 4,
+                "quick match continues when its lead equals the maximum remaining spark catch-up");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(directory, true);
+        }
+    }
+
     private static void VerifyYoloResponseValidation()
     {
         var sparse = new GameYoloProfile("sparse", "Alena", "", "", []);
@@ -297,7 +394,7 @@ internal static class MobileGameTests
         Check(challenge.SparksEnabled == (priorMatches >= 2) && (!challenge.SparksEnabled || challenge.PlayerSparks == 2),
             "sparks unlock after each participant has two completed matches");
         var match = store.Mutate(challenge.Id, "group-a", "bob", "accept", new($"{prefix}-accept", challenge.Revision), now + 1);
-        for (var round = 0; round < 7; round++)
+        for (var round = 0; round < 7 && match.Status == "active"; round++)
         {
             var first = store.Mutate(challenge.Id, "group-a", "alice", "choose",
                 new($"{prefix}-alice-{round}", match.Revision, Choice: aliceWins ? "strike" : "shield"), now + 2 + round);
@@ -347,7 +444,9 @@ internal static class MobileGameTests
             new("bob", "Boris wins the fictional bout.", [new("A fictional exchange.", ["alice:name", "bob:name"]), new("A second fictional exchange.", ["alice:universe", "bob:universe"]), new("The closing fictional exchange.", ["alice:wandName", "bob:wandName"])]));
         var completed = store.Read(challenge.Id, "group-a", "alice");
         Check(completed.Status == "complete" && completed.Yolo?.WinnerId == "bob" && completed.XpAwarded == 0
-            && completed.PartyTask?.Category == "adult", "YOLO result is durable, assigns loser task, and grants no XP");
+            && completed.PartyTask?.Status == "pending"
+            && completed.PartyTask.Category is "classic" or "adult" or "flirt",
+            "YOLO result is durable, assigns an eligible loser task, and grants no XP");
         var taskDone = store.Mutate(challenge.Id, "group-a", "alice", "task",
             new("yolo-task-done-01", completed.Revision, TaskAction: "done"), 902);
         Check(taskDone.PartyTask?.Status == "done", "YOLO loser can resolve the assigned task");
@@ -430,7 +529,11 @@ internal static class MobileGameTests
         Check(import.StatusCode == HttpStatusCode.Conflict && (await import.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "wand_operation_conflict", "unrelated selected operation cannot grant an upgrade");
         alice.DefaultRequestHeaders.Remove("X-DV-CSRF");
 
-        var challengeBody = new { opponentId = fixture.BobId, mode = "quick", operationId = "http-challenge-0001" };
+        var challengeBody = new
+        {
+            opponentId = fixture.BobId, mode = "quick", operationId = "http-challenge-0001",
+            tasksEnabled = false, adultConsent = true, flirtConsent = false
+        };
         var withoutCsrf = await alice.PostAsJsonAsync("/app/v1/game/matches", challengeBody);
         Check(withoutCsrf.StatusCode == HttpStatusCode.BadRequest, "account mutation rejects missing CSRF");
         var csrf = await fixture.CsrfAsync(alice);
@@ -441,6 +544,10 @@ internal static class MobileGameTests
         var matchId = challengeJson.GetProperty("id").GetString()!;
         Check(challengeJson.GetProperty("canCancel").GetBoolean(), "challenger receives correct action authority");
         Check(!challengeJson.GetProperty("sparksEnabled").GetBoolean(), "sparks stay disabled until both participants have two completed matches");
+        Check(challengeJson.GetProperty("tasksEnabled").GetBoolean()
+            && !challengeJson.GetProperty("adultConsent").GetBoolean()
+            && challengeJson.GetProperty("flirtConsent").GetBoolean(),
+            "challenge ignores client task preferences and applies independent group category settings");
         Check((await foreign.GetAsync($"/app/v1/game/matches/{matchId}")).StatusCode == HttpStatusCode.NotFound,
             "foreign launch group cannot read a match");
 
@@ -461,9 +568,21 @@ internal static class MobileGameTests
                 Check(response.StatusCode == HttpStatusCode.OK, "venue guests have independent authenticated polling allowances");
             }
         }
-        var declined = await bob.PostAsJsonAsync($"/app/v1/game/matches/{matchId}/decline",
-            new { operationId = "http-decline-after-polling", expectedRevision = incomingSnapshot.GetProperty("revision").GetInt64() });
-        Check(declined.StatusCode == HttpStatusCode.OK, "polling does not consume the mutation allowance");
+        var acceptedResponse = await bob.PostAsJsonAsync($"/app/v1/game/matches/{matchId}/accept",
+            new
+            {
+                operationId = "http-accept-after-polling", expectedRevision = incomingSnapshot.GetProperty("revision").GetInt64(),
+                tasksEnabled = false, adultConsent = true, flirtConsent = false
+            });
+        Check(acceptedResponse.StatusCode == HttpStatusCode.OK, "polling does not consume the mutation allowance");
+        var acceptedSnapshot = await acceptedResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Check(acceptedSnapshot.GetProperty("tasksEnabled").GetBoolean()
+            && !acceptedSnapshot.GetProperty("adultConsent").GetBoolean()
+            && acceptedSnapshot.GetProperty("flirtConsent").GetBoolean(),
+            "acceptance also ignores client task preferences and uses current group settings");
+        var cancelled = await alice.PostAsJsonAsync($"/app/v1/game/matches/{matchId}/cancel",
+            new { operationId = "http-cancel-after-accept", expectedRevision = acceptedSnapshot.GetProperty("revision").GetInt64() });
+        Check(cancelled.StatusCode == HttpStatusCode.OK, "accepted match can be cancelled before the next challenge");
         challengeResponse = await alice.PostAsJsonAsync("/app/v1/game/matches",
             new { opponentId = fixture.BobId, mode = "quick", operationId = "http-second-challenge-01" });
         Check(challengeResponse.StatusCode == HttpStatusCode.Created, "a new challenge remains available after polling");
@@ -594,7 +713,7 @@ internal static class MobileGameTests
                 configuration.TimeZone, configuration.Teaser, configuration.InitialLoadingMessage,
                 configuration.PersonalizedLoadingEnabled, configuration.PersonalizedLoadingPrompt), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var active = launch.CreateGroup("fixture", new("Mobile Game HTTP", null), now);
+            var active = launch.CreateGroup("fixture", new("Mobile Game HTTP", null, false, true), now);
             ActiveGroupId = active.Id;
             var countdown = launch.SaveCountdown("fixture", active.Id, new(active.Revision, 1, true), now - 2000);
             launch.ConfirmCountdown("fixture", active.Id, new(countdown.Revision), now - 2000);
@@ -659,7 +778,7 @@ internal static class MobileGameTests
             var challenge = store.Challenge(ActiveGroupId, AliceId, "Alice", BobId, "Bob",
                 new(BobId, "quick", "http-boss-game-01"), 100);
             var current = store.Mutate(challenge.Id, ActiveGroupId, BobId, "accept", new("http-boss-accept", challenge.Revision), 101);
-            for (var round = 0; round < 7; round++)
+            for (var round = 0; round < 7 && current.Status == "active"; round++)
             {
                 var first = store.Mutate(challenge.Id, ActiveGroupId, AliceId, "choose",
                     new($"http-boss-a-{round}", current.Revision, Choice: "strike"), 102 + round);

@@ -7,6 +7,15 @@ The group game at `/play` includes quick/tactical duels, sparks, loadouts, teams
 YOLO stories, voluntary tasks and a shared boss. See [mobile game](../docs/mobile-game.md)
 for rules, API boundaries, local preview and verification.
 
+Quick duels and practice use at most seven exchanges and finish when the trailing
+player can no longer catch up. Without sparks, four wins decide the duel; with
+sparks, the server includes remaining bonus points before declaring a winner.
+Group creation saves independent `adultContentEnabled` and `flirtEnabled`
+settings, both enabled by default. Players do not grant these settings per duel.
+The losing player always receives a fixed task and explicitly confirms whether
+it was done or skipped. The server saves that outcome; pending tasks remain
+available from the game lobby after returning to the app.
+
 Vue 3 SFC s Composition API, TypeScriptem a Vue Routerem sdílejí stejné
 obrazovky na webu a v Capacitor WKWebView. Spotřebitelská značka **Wand Night Stand**
 používá `src/application/consumer-brand.css` nad společnými sémantickými tokeny;
