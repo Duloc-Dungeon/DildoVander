@@ -70,9 +70,11 @@ try {
       await page.screenshot({ path: path.join(output, `${state}-${width}.png`), fullPage: true }); captures++;
     }
     await page.goto(`${origin}/play/practice`);
+    await page.getByRole('button', { name: 'Potvrdit tah' }).waitFor();
     for (let round = 0; round < 7 && await page.getByRole('button', { name: 'Potvrdit tah' }).count(); round++) {
       await page.getByRole('radio', { name: /Úder/ }).check();
       await page.getByRole('button', { name: 'Potvrdit tah' }).click();
+      await page.waitForFunction(count => document.querySelectorAll('.game-round-dots > .done').length === count, round + 1);
     }
     await page.getByText('Trénink dokončen', { exact: true }).waitFor();
     await page.goto(`${origin}/__game/challenge`); await page.getByRole('heading', { name: 'Koho vyzveš?' }).waitFor();
