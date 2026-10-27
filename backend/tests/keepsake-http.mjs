@@ -9,6 +9,7 @@ import { createServer } from 'node:net';
 import { request as httpRequest } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { stopChildProcess } from './child-process-lifecycle.mjs';
+import { readSqliteStartupDiagnostic } from './sqlite-startup-diagnostic.mjs';
 
 const port = await new Promise(resolvePort => {
   const socket = createServer(); socket.listen(0, '127.0.0.1', () => {
@@ -316,4 +317,11 @@ try {
   await b.request('GET', `/v1/admin/keepsake-deletions/receipts/${resumedBatch.deletionReceiptIds[0]}`, undefined,
     { headers: adminHeaders, expected: 200 });
   console.log('DV10 HTTP integration passed: public evening gallery/streaming/paging/switch/deletion, private isolation, claim replay, CSRF/origin, share scope, consent/upload, fake jobs, exports, restart/recovery, deletion receipts, disabled-portal startup cleanup/admin, and secret-free logs.');
+} catch (error) {
+  await stop();
+  // Inspect only the isolated synthetic fixture after the listener stops and
+  // before cleanup. Do not issue SQL on the failing worker's connection, retry
+  // startup, dump records, or turn an intermittent failure into a passing test.
+  console.error('Synthetic SQLite startup metadata:', JSON.stringify(readSqliteStartupDiagnostic(env.Backend__DatabasePath)));
+  throw error;
 } finally { await stop(); await rm(root, { recursive: true, force: true }); }
