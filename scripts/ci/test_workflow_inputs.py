@@ -15,6 +15,12 @@ BOOTSTRAP_INPUTS = (
     "design-system/theme-runtime.js",
     "design-system/theme-controls.js",
     "design-system/package.json",
+    "devtools/workspace/Sync-Workspace.ps1",
+    "devtools/workspace/templates/extensions.template.json",
+    "devtools/workspace/templates/launch.workspace.template.json",
+    "devtools/workspace/templates/settings.template.json",
+    "devtools/workspace/templates/tasks.template.json",
+    "devtools/workspace/templates/workspace.template.json",
 )
 
 
