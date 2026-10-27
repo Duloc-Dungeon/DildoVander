@@ -10,6 +10,8 @@ SCRIPT_REFERENCE = re.compile(r"\bscripts/ci/[A-Za-z0-9_-]+\.(?:py|cjs)\b")
 BOOTSTRAP_INPUTS = (
     "scripts/generate_design_tokens.py",
     "scripts/check_design_system.py",
+    "scripts/provision_dv01_voice.py",
+    "scripts/test_provision_dv01_voice.py",
     "mechanika/final/source_inputs.py",
     "design-system/tokens.json",
     "design-system/theme-runtime.js",
