@@ -24,6 +24,7 @@ using Kufr.Backend.Features.TestingSessions;
 using Kufr.Backend.Features.Observability;
 using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.Game;
+using Kufr.Backend.Features.SealedCase;
 
 var provisioning = args.Contains("--memory-provision");
 var accountProvisioning = AccountProvisioning.IsCommand(args);
@@ -40,6 +41,7 @@ builder.Services.AddBackendTelemetry(builder.Configuration, builder.Environment)
 builder.Services.AddAccountIdentity(builder.Configuration);
 builder.Services.AddLaunchManagement(builder.Configuration);
 builder.Services.AddMobileGame(builder.Configuration);
+builder.Services.AddSealedCase(builder.Configuration);
 if (accountProvisioning)
 {
     await using var accountApp = builder.Build();
@@ -183,6 +185,7 @@ app.Lifetime.ApplicationStopping.Register(() => logs.Write("info", "server_stopp
 app.Use((context, next) => ServerLogEvents.RequestAsync(context, next, logs));
 if (keepsakeArchiveConfigured || builder.Configuration.GetValue<bool>("ApplicationIdentity:Enabled")) { app.UseForwardedHeaders(); }
 app.UseMobileGameAuthentication();
+app.UseSealedCaseAuthentication();
 app.UseRateLimiter();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
 await app.InitializeAccountsAsync();
@@ -191,6 +194,7 @@ app.UseLaunchAccessPolicy();
 app.MapAccountEndpoints();
 app.MapLaunchEndpoints();
 app.MapMobileGame();
+app.MapSealedCase();
 app.MapMobileGameBoss();
 app.MapMobileGameProgress();
 app.MapMobileGameTeams();

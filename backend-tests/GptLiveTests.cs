@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Kufr.Backend.Features.Character;
@@ -51,6 +52,20 @@ internal static class GptLiveTests
 
     private static void VerifyCustomerPreferences(GptLiveOptions options, RealtimeTurnRequest request)
     {
+        const string oldInstructions = "Conduct this conversation in English.";
+        var oldHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(oldInstructions)));
+        var legacy = LivePromptSnapshot.Create(PersonalityCatalog.DefaultId, options) with
+        {
+            ConversationLanguage = "en-US", Instructions = oldInstructions, Sha256 = oldHash
+        };
+        var normalized = legacy.WithConversationPreferences(null, "cs-CZ");
+        Check(normalized.ConversationLanguage == "cs-CZ"
+            && normalized.Instructions.EndsWith("Conduct this conversation in Czech.", StringComparison.Ordinal),
+            "an existing English snapshot cannot bypass Czech runtime policy when no guest preference is supplied");
+        Check(legacy.ConversationLanguage == "en-US" && legacy.Instructions == oldInstructions && legacy.Sha256 == oldHash,
+            "normalizing the runtime never mutates the immutable legacy snapshot");
+        Check(normalized.Sha256 != oldHash && normalized.Sha256 == Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized.Instructions))),
+            "the new runtime hash covers the appended Czech policy rather than reusing the historical hash");
         foreach (var (tone, expectedTone) in new[]
         {
             ("gentle", CharacterTone.Reserved),
@@ -61,9 +76,10 @@ internal static class GptLiveTests
             var preferences = new CustomerConversationPreferenceSnapshot(1, 1, "en-US", tone);
             var prompt = LivePromptSnapshot.Create(PersonalityCatalog.DefaultId, options)
                 .WithConversationPreferences(preferences, "en-US");
-            Check(prompt.ConversationLanguage == "en-US" && prompt.Options.Character.HostTone == expectedTone
-                && prompt.Instructions.Contains("Conduct this conversation in English.", StringComparison.Ordinal),
-                $"Live freezes {tone} ceiling and English instructions into its prompt snapshot");
+            Check(prompt.ConversationLanguage == "cs-CZ" && prompt.Options.Character.HostTone == expectedTone
+                && prompt.Instructions.Contains("Conduct this conversation in Czech.", StringComparison.Ordinal)
+                && !prompt.Instructions.Contains("English", StringComparison.Ordinal),
+                $"Live normalizes legacy English preference to Czech while preserving {tone} tone ceiling");
 
             var toneState = new ConversationGuestToneState(options.Character, preferences);
             var binding = new GuestToneBinding(toneState.Read, toneState.Apply, toneState.SetOperatorTone);

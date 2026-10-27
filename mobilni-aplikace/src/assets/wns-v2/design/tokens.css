@@ -1,0 +1,143 @@
+/* Wand Night Stand / v2. Values traced to prototype CSS and motion.json. */
+/* This portable file does not modify or replace the prototype runtime. */
+@import url('../fonts/manrope.css');
+
+:root {
+  /* color */
+  --wns-bg: #080909;
+  --wns-surface: #191b1b;
+  --wns-surface-raised: #222626;
+  --wns-line: #343939;
+  --wns-text: #f5f5f0;
+  --wns-muted: #b2b9b6;
+  --wns-mint: #b8f3d4;
+  --wns-amber: #ffc662;
+  --wns-violet: #c8b9fc;
+  --wns-peach: #f8b5a5;
+  --wns-blue: #b6ddf5;
+  --wns-danger: #f3a59b;
+  --wns-on-primary: #0d1510;
+  --wns-on-mint: #102419;
+  --wns-on-amber: #211607;
+  --wns-on-violet: #241a37;
+  --wns-on-peach: #301814;
+  --wns-input-bg: #202523;
+  --wns-input-border: #38403b;
+  --wns-placeholder: #9ba69e;
+  --wns-navigation-bg: #111413;
+  --wns-navigation-muted: #9ca7a0;
+  --wns-sheet-bg: #191d1b;
+  --wns-note-bg: #202421;
+  --wns-toggle-off: #39413c;
+  --wns-focus-ring: #b8f3d4;
+
+  /* typography */
+  --wns-font-family: 'Manrope Variable', sans-serif;
+  --wns-type-eyebrow: 10px;
+  --wns-type-caption: 11px;
+  --wns-type-body: 14px;
+  --wns-type-input: 16px;
+  --wns-type-section: 17px;
+  --wns-type-sheet: 22px;
+  --wns-type-heading: 36px;
+  --wns-leading-body: 1.65;
+  --wns-leading-input: 1.5;
+  --wns-leading-heading: 1.12;
+  --wns-leading-button: 1.45;
+  --wns-weight-regular: 400;
+  --wns-weight-body: 500;
+  --wns-weight-medium: 650;
+  --wns-weight-label: 700;
+  --wns-weight-heading: 760;
+  --wns-weight-strong: 800;
+  --wns-tracking-heading: -1.6px;
+  --wns-tracking-eyebrow: 1.8px;
+
+  /* spacing */
+  --wns-space-4: 4px;
+  --wns-space-8: 8px;
+  --wns-space-10: 10px;
+  --wns-space-12: 12px;
+  --wns-space-14: 14px;
+  --wns-space-16: 16px;
+  --wns-space-18: 18px;
+  --wns-space-20: 20px;
+  --wns-space-24: 24px;
+  --wns-space-28: 28px;
+  --wns-space-32: 32px;
+  --wns-space-40: 40px;
+  --wns-space-48: 48px;
+  --wns-space-56: 56px;
+
+  /* radius */
+  --wns-radius-pill: 9px;
+  --wns-radius-avatar: 12px;
+  --wns-radius-icon: 13px;
+  --wns-radius-field: 14px;
+  --wns-radius-button: 16px;
+  --wns-radius-evidence: 20px;
+  --wns-radius-card: 22px;
+  --wns-radius-sheet: 24px;
+  --wns-radius-hero: 28px;
+  --wns-radius: 22px;
+
+  /* layout */
+  --wns-touch-target: 44px;
+  --wns-button-height: 56px;
+  --wns-field-height: 54px;
+  --wns-header-height: 54px;
+  --wns-tabbar-height: 88px;
+  --wns-screen-gutter: 24px;
+  --wns-screen-bottom-with-tabs: 122px;
+  --wns-screen-bottom-no-tabs: 58px;
+  --wns-focus-width: 2px;
+  --wns-focus-offset: 4px;
+  --wns-icon-control: 22px;
+  --wns-icon-navigation: 23px;
+  --wns-icon-row: 20px;
+  --wns-reference-width: 393px;
+  --wns-reference-height: 852px;
+
+  /* art */
+  --wns-art-safe-padding: 12%;
+  --wns-art-fit: contain;
+
+  /* motion */
+  --wns-motion-press: 80ms;
+  --wns-motion-micro: 120ms;
+  --wns-motion-selection: 180ms;
+  --wns-motion-back: 240ms;
+  --wns-motion-sheet: 260ms;
+  --wns-motion-route: 300ms;
+  --wns-motion-focus: 320ms;
+  --wns-motion-action: 420ms;
+  --wns-motion-chapter: 440ms;
+  --wns-motion-reconstruction: 480ms;
+  --wns-motion-result: 620ms;
+  --wns-motion-reveal: 640ms;
+  --wns-motion-boss: 760ms;
+  --wns-ease-enter: cubic-bezier(0.22,1,0.36,1);
+  --wns-ease-exit: cubic-bezier(0.4,0,1,1);
+  --wns-ease-change: cubic-bezier(0.2,0,0,1);
+  --wns-motion-reduced: 100ms;
+
+}
+
+/* Consumers also apply the no-translation/no-scale rules from motion.css. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --wns-motion-press: 0ms;
+    --wns-motion-micro: 100ms;
+    --wns-motion-selection: 100ms;
+    --wns-motion-back: 100ms;
+    --wns-motion-sheet: 100ms;
+    --wns-motion-route: 100ms;
+    --wns-motion-focus: 100ms;
+    --wns-motion-action: 100ms;
+    --wns-motion-chapter: 100ms;
+    --wns-motion-reconstruction: 100ms;
+    --wns-motion-result: 100ms;
+    --wns-motion-reveal: 100ms;
+    --wns-motion-boss: 100ms;
+  }
+}

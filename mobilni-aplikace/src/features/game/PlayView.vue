@@ -5,7 +5,8 @@ import SceneShell from '../../components/scene/SceneShell.vue';
 import PaperSurface from '../../components/scene/PaperSurface.vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
-import tableScene from '../../assets/brand/responsive-table/table-scene.webp';
+
+import amberWand from '../../assets/wns-v2/art/wand-amber.png';
 import strikeToken from '../../assets/brand/responsive-table/token-strike.webp';
 import trickToken from '../../assets/brand/responsive-table/token-trick.webp';
 import shieldToken from '../../assets/brand/responsive-table/token-shield.webp';
@@ -16,6 +17,7 @@ import { account } from '../identity/session';
 import { actions, actionName, modeName, gameRequest, gameErrorText, GameError, operation, practiceRound,
   type Choice, type GameMode, type Lobby, type Match, type Round, type BossProfile, type Progress, type Milestone } from './game';
 import './game.css';
+import { wnsSound } from '../../application/wnsSound';
 
 const route = useRoute();
 const router = useRouter();
@@ -240,9 +242,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SceneShell class="game-scene" :class="{ 'responsive-table': tableDuel }" :background="tableDuel ? tableScene : undefined" labelled-by="game-title">
+  <SceneShell class="game-scene" :class="{ 'responsive-table': tableDuel }" labelled-by="game-title">
     <div class="game-content">
       <header class="game-header">
+        <button type="button" class="aw-button aw-button--secondary" :aria-pressed="wnsSound.enabled.value" @click="wnsSound.enable(!wnsSound.enabled.value)">{{ wnsSound.enabled.value ? 'Ztišit' : 'Zvuk' }}</button>
         <RouterLink :to="route.path === '/play' ? '/me/character' : { path: '/play', query: { browse: '1' } }">← {{ route.path === '/play' ? 'Moje postava' : 'Ke hře' }}</RouterLink>
         <span class="game-eyebrow">{{ tableDuel ? practice ? 'Trénink · bez XP' : modeName(match!.mode) : 'Wand Night Stand' }}</span>
         <details v-if="tableDuel" class="game-rules"><summary aria-label="Pravidla duelu">?</summary><div><strong>Tři kouzla. Jedna volba.</strong><p>Úder přeruší lest. Lest obejde štít. Štít zastaví úder.</p><p>Vyber kouzlo a potvrď tah. Volby zůstanou tajné až do společného odhalení.</p><p v-if="!practice">Jiskru přisadíš před potvrzením. Když prohraješ, její bod získá soupeř. Při shodě se přisazené jiskry spotřebují bez bodu.</p></div></details>
@@ -326,7 +329,7 @@ onBeforeUnmount(() => {
               <template v-else>
                 <fieldset class="game-spells"><legend>Vyber kouzlo</legend>
                   <label v-for="action in actions" :key="action.id" :class="{ selected: selected === action.id, exhausted: !available(action.id) }">
-                    <input v-model="selected" type="radio" name="spell" :value="action.id" :disabled="busy || uncertain || !available(action.id)" />
+                    <input v-model="selected" type="radio" name="spell" :value="action.id" :disabled="busy || uncertain || !available(action.id)" @change="wnsSound.local('select')" />
                     <img class="game-spell-token" :src="spellTokens[action.id]" alt="" width="110" height="110" /><strong>{{ action.name }}</strong><small>{{ action.beats }}</small>
                     <span v-if="match?.mode === 'tactical' || match?.mode === 'boss'">{{ match.exhibition ? 'Neomezeně' : available(action.id) ? `${match.playerInventory?.[action.id] ?? 2} použití` : 'Vyčerpáno' }}</span>
                   </label>
@@ -404,7 +407,7 @@ onBeforeUnmount(() => {
         <template v-else>
           <p class="game-eyebrow">Večer má tvůj rukopis.</p><h1 id="game-title">Tvůj tah,<br /><em>{{ lobby.player.displayName }}.</em></h1>
           <PaperSurface v-if="!milestoneDismissed && progress?.pending?.length" class="game-paper game-milestone"><p class="game-eyebrow">Nová kapitola</p><h2>{{ progress.pending[0].title }}</h2><p>{{ progress.pending[0].text }}</p><AwButton variant="primary" :busy="busy" @click="acknowledge(progress.pending[0], true)">{{ progress.pending[0].action }}</AwButton><AwButton @click="milestoneDismissed = true">Pokračovat později</AwButton></PaperSurface>
-          <div class="game-lobby-stage game-lobby-stage--table"><img :src="tableScene" alt="" width="853" height="1844" /><p>Hůlka {{ lobby.player.tacticalUnlocked ? 'II' : 'I' }}<span>O osudu rozhodují tři kouzla.<br />O historkách lidé u stolu.</span></p></div>
+          <section class="wns-hero"><div><h2>Hůlka {{ lobby.player.tacticalUnlocked ? 'II' : 'I' }}</h2><p>O osudu rozhodují tři kouzla. O historkách lidé u stolu.</p></div><img :src="amberWand" alt="" width="1254" height="1254" /></section>
           <PaperSurface class="game-paper game-progress"><p class="game-eyebrow">{{ nextMilestone }}</p><div class="game-progress-track" role="progressbar" :aria-valuenow="Math.min(lobby.player.xp, 30)" :aria-valuemax="30" :aria-valuemin="0" aria-label="Postup k hůlce II"><span :style="{ width: `${Math.min(lobby.player.xp / 30, 1) * 100}%` }" /></div>
             <p>{{ lobby.player.matchesPlayed }} dokončených zápasů · {{ lobby.player.xp }} XP</p>
             <RouterLink class="aw-button aw-button--primary" to="/play/challenge">{{ lobby.opponents.length ? 'Vybrat soupeře' : 'Zatím není koho vyzvat' }}</RouterLink><RouterLink class="game-secondary-link" to="/play/practice">Krátký trénink bez XP</RouterLink>

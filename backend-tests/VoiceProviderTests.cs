@@ -141,9 +141,20 @@ internal static class VoiceProviderTests
         try
         {
             using var fixture = new Fixture(directory, "english", runner, locale: "en-US");
+            var originalBody = fixture.CreationBody.ToArray();
+            var originalHash = fixture.ReadCreateHash();
             var accepted = fixture.Store.SubmitTranscription("device-a", fixture.Id, Guid.NewGuid(), fixture.Upload());
             await PollAsync(fixture.Store, accepted.OperationId!, "completed");
-            Require(receivedLanguage == "en-US", "uploaded WAV transcription receives the conversation language snapshot");
+            Require(receivedLanguage == "cs-CZ", "uploaded WAV transcription normalizes a legacy English locale to Czech without changing its saved request");
+            Require(fixture.CreationRequest.Locale == "en-US" && fixture.CreationBody.SequenceEqual(originalBody),
+                "the accepted legacy request locale and original body remain unchanged");
+            Require(fixture.ReadCreateHash() == originalHash && originalHash == Convert.ToHexString(SHA256.HashData(originalBody)),
+                "the durable creation journal retains the hash of the original English request bytes");
+            var replay = fixture.Store.Create("device-a", fixture.CreationKey, fixture.CreationBody, fixture.CreationRequest);
+            Require(replay.Status == 201 && replay.Response!.ConversationId == fixture.Id, "the original English request still replays the same durable creation");
+            var changed = fixture.CreationRequest with { Locale = "cs-CZ" };
+            Require(fixture.Store.Create("device-a", fixture.CreationKey, JsonSerializer.SerializeToUtf8Bytes(changed), changed).Status == 409,
+                "runtime normalization does not permit a different Czech payload to reuse the English creation key");
         }
         finally
         {
@@ -514,12 +525,15 @@ internal static class VoiceProviderTests
             }).Build();
             journal = new OperationJournal(configuration, Clock);
             Store = new ConversationStore(Clock, journal, voiceRunner: runner);
-            Id = Store.Create("device-a", Guid.NewGuid(), "create"u8,
-                new CreateConversationRequest("device-a", Boot, 0, "catalog-1", locale,
-                    new ConversationConsent(consent, false))).Response!.ConversationId;
+            CreationRequest = new CreateConversationRequest("device-a", Boot, 0, "catalog-1", locale, new ConversationConsent(consent, false));
+            CreationBody = JsonSerializer.SerializeToUtf8Bytes(CreationRequest);
+            Id = Store.Create("device-a", CreationKey, CreationBody, CreationRequest).Response!.ConversationId;
         }
 
         public string Path { get; }
+        public Guid CreationKey { get; } = Guid.NewGuid();
+        public CreateConversationRequest CreationRequest { get; }
+        public byte[] CreationBody { get; }
         public Clock Clock { get; } = new();
         public ConversationStore Store { get; }
         public Guid Boot { get; } = Guid.NewGuid();
@@ -527,6 +541,14 @@ internal static class VoiceProviderTests
         public TextTurnRequest Turn() => new(Guid.NewGuid(), Boot, 0, "synthetic", 63, 7, "catalog-1");
         public TranscriptionUpload Upload() => new(Guid.NewGuid(), Boot, 0, 7, DeviceWav());
         public void Dispose() => journal.Dispose();
+        public string ReadCreateHash()
+        {
+            using var connection = new SqliteConnection($"Data Source={Path}"); connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT body_hash FROM conversation_creates WHERE device_id='device-a' AND key=$key";
+            command.Parameters.AddWithValue("$key", CreationKey.ToString("D"));
+            return (string)command.ExecuteScalar()!;
+        }
         public void RequireReservation(string id, long amount, bool settled = false)
         {
             using var connection = new SqliteConnection($"Data Source={Path}");

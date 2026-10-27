@@ -69,14 +69,14 @@ internal static class RealtimeTests
     private static void VerifyTranscriptionLanguage()
     {
         var request = Request() with { Opening = false, Wav = "uploaded-audio" };
-        foreach (var (language, providerLanguage) in new[] { ("cs-CZ", "cs"), ("en-US", "en") })
+        foreach (var language in new[] { "cs-CZ", "en-US" })
         {
             var turn = new RealtimeTurnContext(request, false, "", []) { ConversationLanguage = language };
             using var options = JsonDocument.Parse(ModelReaderWriter.Write(RealtimeProtocol.SessionOptions(turn)).ToMemory());
             var json = options.RootElement.GetRawText();
             Require(json.Contains("gpt-4o-transcribe", StringComparison.Ordinal)
-                && json.Contains($"\"language\":\"{providerLanguage}\"", StringComparison.Ordinal),
-                "Realtime audio transcription sends the frozen conversation language");
+                && json.Contains("\"language\":\"cs\"", StringComparison.Ordinal),
+                "Realtime transcription remains Czech even for a legacy English snapshot");
         }
     }
 

@@ -142,7 +142,7 @@ internal sealed partial class ConversationStore(
                     personalityId,
                     response.ExpiresAt,
                     labHardware?.ExpiresAt ?? now.AddMinutes(30), request.OperationEpoch)
-                { ImageConsented = request.Consent.Image, LivePrompt = frozenPrompt, GuestTone = guestTone, ConversationLanguage = request.Locale,
+                { ImageConsented = request.Consent.Image, LivePrompt = frozenPrompt, GuestTone = guestTone, ConversationLanguage = CustomerConversationPreferencePolicy.DefaultLanguage,
                     LabHardware = labHardware, CustomerKeepsakes = customerSessionId is not null,
                     ExpiresAt = labHardware?.ExpiresAt ?? response.ExpiresAt });
             return new CreateResult(201, response);

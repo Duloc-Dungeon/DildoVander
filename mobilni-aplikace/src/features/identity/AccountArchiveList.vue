@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import keepsakeArtwork from '../../assets/brand/keepsake-still-life.webp';
+import keepsakeArtwork from '../../assets/wns-v2/art/memory-orb.png';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
@@ -451,7 +451,7 @@ onBeforeUnmount(() => {
 .collection-card__actions a { display: inline-flex; align-items: center; min-height: 44px; }
 .collection-empty, .collection-status { margin: 0; }
 .collection-empty { display: grid; gap: 1rem; max-width: 38rem; }
-.collection-empty img { display: block; width: 100%; height: auto; max-height: 18rem; object-fit: cover; border-radius: 12px; }
+.collection-empty img { display: block; width: 100%; height: 16rem; object-fit: contain; padding: 12%; background: var(--wns-violet); border-radius: var(--wns-radius-hero); }
 .collection-field input:focus-visible, .collection-field select:focus-visible, .collection-card__actions a:focus-visible { outline: 3px solid var(--aw-accent); outline-offset: 3px; }
 @media (max-width: 680px) {
   .collection-search { grid-template-columns: minmax(0, 1fr); }

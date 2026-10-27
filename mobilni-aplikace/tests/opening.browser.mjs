@@ -14,6 +14,8 @@ const records = [];
 const errors = [];
 async function inspect(page, name, details) {
   await page.evaluate(() => document.fonts.ready);
+  await page.waitForFunction(() => { const heading = document.querySelector('h1'); return heading && getComputedStyle(heading).fontFamily.includes('Manrope'); });
+  assert.ok(await page.locator('h1').first().evaluate(element => getComputedStyle(element).fontFamily.includes('Manrope')), `${name}: approved Manrope heading`);
   await page.locator('img').evaluateAll(images => Promise.all(images.map(image => image.decode().catch(() => {}))));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${name}: horizontal overflow`);
   assert.deepEqual(await page.locator('button,input,select,a').evaluateAll(elements => elements.filter(element => {

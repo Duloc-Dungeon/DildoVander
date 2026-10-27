@@ -126,7 +126,7 @@ internal static class RealtimeProtocol
             AudioFormat = new RealtimePcmAudioFormat { Rate = 24000 },
             AudioTranscriptionOptions = turn.Request.Wav is null && !turn.LiveAudio
                 ? null
-                : new RealtimeAudioTranscriptionOptions { Model = "gpt-4o-transcribe", Language = turn.ConversationLanguage == "en-US" ? "en" : "cs" }
+                : new RealtimeAudioTranscriptionOptions { Model = "gpt-4o-transcribe", Language = "cs" }
         };
         if (turn.LiveAudio)
         {
@@ -199,7 +199,7 @@ internal static class RealtimeProtocol
     internal static string TrustedPolicySuffix(RealtimeTurnContext turn)
     {
         var instructions = turn.GuestTone?.Read().Instructions
-            ?? (turn.ConversationLanguage == "en-US" ? "Conduct this conversation in English." : "");
+            ?? "Conduct this conversation in Czech.";
         return instructions.Length == 0 ? "" : "\nTrusted application guest policy: " + instructions;
     }
 

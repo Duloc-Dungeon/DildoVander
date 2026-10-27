@@ -1,0 +1,1059 @@
+{
+  "version": "2.0",
+  "items": [
+    {
+      "id": "matylda-cutout-demo",
+      "path": "assets/art/matylda-cutout-demo.png",
+      "bytes": 2508099,
+      "sha256": "89cad4cdab1cb62629e3bd87dea03c54f1891706cac77788e22dbd831b7f72da",
+      "width": 1024,
+      "height": 1536,
+      "mode": "RGBA",
+      "use": "demo-only portrait fixture",
+      "source": "generated for this kit"
+    },
+    {
+      "id": "memory-orb",
+      "path": "assets/art/memory-orb.png",
+      "bytes": 1722180,
+      "sha256": "fe04a3869e7505a6a6b3f38c16c809b364af89fb768a32e82fe8ef66ea94c381",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "generated for this kit"
+    },
+    {
+      "id": "seal-core",
+      "path": "assets/art/seal-core.png",
+      "bytes": 2641969,
+      "sha256": "516fe960de148c064c03416aa211c22d6606c2c0e974498cbed541b3ba5b6332",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "generated for this kit"
+    },
+    {
+      "id": "wand-amber",
+      "path": "assets/art/wand-amber.png",
+      "bytes": 509253,
+      "sha256": "a8c158bc993a35cb0bb724d37e26502eaa92bc54465f895ddd0ba9e9314bcbe0",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "generated for this kit"
+    },
+    {
+      "id": "wand-mint",
+      "path": "assets/art/wand-mint.png",
+      "bytes": 394293,
+      "sha256": "b6885af006b25f0bb19e0448bfbb932d7368f7a98efb7df496e7deb65e4cf844",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "generated for this kit"
+    },
+    {
+      "id": "wand-violet",
+      "path": "assets/art/wand-violet.png",
+      "bytes": 454804,
+      "sha256": "d8f478e63bb98edf1b8bccb7356a85bbe2d57d8818bfe1a6f7412d6ff23cc231",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "generated for this kit"
+    },
+    {
+      "id": "access-key",
+      "path": "assets/existing/access-key.webp",
+      "bytes": 60910,
+      "sha256": "82d22cc1209208574104ef2ee7350f19b6eb0104a8a77a27e8082838ab75ec9b",
+      "width": 696,
+      "height": 430,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "boss",
+      "path": "assets/existing/boss.webp",
+      "bytes": 226964,
+      "sha256": "0633ea2848c41766f797c880acbe2d4a0994575992332f79ed3c45372cd7e9ff",
+      "width": 1152,
+      "height": 768,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "commentator",
+      "path": "assets/existing/commentator.webp",
+      "bytes": 191708,
+      "sha256": "9b09048c2ba5760ceae1a86e4b4552d2798211a7cad0397f8a5b4d93482868da",
+      "width": 1152,
+      "height": 768,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "emblem-small",
+      "path": "assets/existing/emblem-small.webp",
+      "bytes": 9096,
+      "sha256": "0b954d6a24a19ef56aff567189d6775921cfc50492576061abce0b744b4bdf58",
+      "width": 256,
+      "height": 256,
+      "mode": "RGB",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "frame",
+      "path": "assets/existing/frame.webp",
+      "bytes": 122232,
+      "sha256": "dcd500796eb057308d7c0ffb94fa5a12694702cf92e8f69f38c00fbe812b0cdc",
+      "width": 800,
+      "height": 1000,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "invitation",
+      "path": "assets/existing/invitation.webp",
+      "bytes": 57866,
+      "sha256": "f90996e41c899de30adb9c3fc9c29e1a6f0f16c75ebdd3ad66143a76e303deac",
+      "width": 740,
+      "height": 450,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "matylda",
+      "path": "assets/existing/matylda.webp",
+      "bytes": 103594,
+      "sha256": "4f03f4e9336170c3e8beb3d68ee6f8d7375a56c48851255e4a874a6865f700d3",
+      "width": 512,
+      "height": 768,
+      "mode": "RGB",
+      "use": "demo-only portrait fixture",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "placeholder",
+      "path": "assets/existing/placeholder.webp",
+      "bytes": 30468,
+      "sha256": "588c02aaa52788273009e4708e6ca74fa6dab680688ebb49cdab0691f913168f",
+      "width": 400,
+      "height": 500,
+      "mode": "RGB",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "token-shield",
+      "path": "assets/existing/token-shield.webp",
+      "bytes": 56616,
+      "sha256": "003b5c4d8fdc025de5d3fa69201455a5fbec73421e0be47ddcc85b176e0319c5",
+      "width": 480,
+      "height": 480,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "token-strike",
+      "path": "assets/existing/token-strike.webp",
+      "bytes": 53592,
+      "sha256": "e9b65025502200e0a32a910c69244b86033dd8158681150c305ed37586e70be2",
+      "width": 480,
+      "height": 480,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "token-trick",
+      "path": "assets/existing/token-trick.webp",
+      "bytes": 67076,
+      "sha256": "3b3f82a70bfa01995cf2378518b04db6cc7c271a8d0f0553121fc4378043528a",
+      "width": 480,
+      "height": 480,
+      "mode": "RGBA",
+      "use": "production candidate",
+      "source": "existing repository asset"
+    },
+    {
+      "id": "arrow-down",
+      "path": "assets/icons/regular/arrow-down.svg",
+      "bytes": 239,
+      "sha256": "cc6416ae83e20660f14b11f5525c6d05ee679c3f26cee41b696cb37aa905d4f5",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "arrow-left",
+      "path": "assets/icons/regular/arrow-left.svg",
+      "bytes": 248,
+      "sha256": "3c2001cf957d182fc54927e4b286cc8cf66dd97830f441ca2650d42a63a9006a",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "arrow-right",
+      "path": "assets/icons/regular/arrow-right.svg",
+      "bytes": 245,
+      "sha256": "e45bc4a12592b8723110db42c6deffdf177e4fe7704cf50324963fa0a59b2d74",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "arrow-up-right",
+      "path": "assets/icons/regular/arrow-up-right.svg",
+      "bytes": 217,
+      "sha256": "44db5257b360ec04863eb6daaa41f220c8b714d23fb81403517d0a30acfda9f4",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "book-open-text",
+      "path": "assets/icons/regular/book-open-text.svg",
+      "bytes": 562,
+      "sha256": "5eb0c8daceb5a6ffa004118720ea712a3eb8b7d2b6ab5bae750c3efca9d35450",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "book-open",
+      "path": "assets/icons/regular/book-open.svg",
+      "bytes": 396,
+      "sha256": "b38cdb3a15dcf00cfa4811e318b021e25c6a87b47acbb11888e16d107a5642da",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "caret-down",
+      "path": "assets/icons/regular/caret-down.svg",
+      "bytes": 214,
+      "sha256": "53f0cf2d0b144ac3cb07e353e0cd0853ffb3ed432d741460ce288edfcb0924b1",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "caret-right",
+      "path": "assets/icons/regular/caret-right.svg",
+      "bytes": 219,
+      "sha256": "e6dec01e074807965b7f3146b976a9b5e82c31d9c2c88aeb52e77cc2ab16c1d7",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "chat-circle-dots",
+      "path": "assets/icons/regular/chat-circle-dots.svg",
+      "bytes": 473,
+      "sha256": "2af44e36757c90c999e070065ae61c495c66c8e88f43c5f07964dc3367cad60d",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "check",
+      "path": "assets/icons/regular/check.svg",
+      "bytes": 215,
+      "sha256": "cbb89a8c42f283d4f846eb935e05d88c1be04462f16480e068c0f82b9ce40b12",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "checks",
+      "path": "assets/icons/regular/checks.svg",
+      "bytes": 346,
+      "sha256": "363e96ad74949b3240c42edcac7e63dc889c5ca6387f306aca5511faed537d22",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "clock",
+      "path": "assets/icons/regular/clock.svg",
+      "bytes": 287,
+      "sha256": "b8c6c2899d2b9af48a55ba02ba6d7faf89b757915772dd24f5397f7b0d02aa5c",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "download-simple",
+      "path": "assets/icons/regular/download-simple.svg",
+      "bytes": 317,
+      "sha256": "c48678aa09b44ba4974954690ee6cc846379c448a7214f8c802604c2a1562014",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "eye-slash",
+      "path": "assets/icons/regular/eye-slash.svg",
+      "bytes": 1000,
+      "sha256": "070b0296a7df89ebf4cec12436e323b5531d458aa9aed3608924085889e1fd17",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "eye",
+      "path": "assets/icons/regular/eye.svg",
+      "bytes": 701,
+      "sha256": "91d39f20bf95e0f36c07bd79b83a85fe6ff4ca20e2759c4afee7419ef80403fe",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "fingerprint",
+      "path": "assets/icons/regular/fingerprint.svg",
+      "bytes": 1297,
+      "sha256": "7a558c7ca003e2e00f66f4367bcad817ddd5afdbb79e917e7203f25557022e4f",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "flask",
+      "path": "assets/icons/regular/flask.svg",
+      "bytes": 504,
+      "sha256": "6fe1929c860962cadddc917a3d119145444537ccaee6a9d618e7d856c16f8501",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "grid-four",
+      "path": "assets/icons/regular/grid-four.svg",
+      "bytes": 267,
+      "sha256": "9e48ec8047eb0f26a0a59ffa2dbd6cb33d972390d52197ddc37e3a56859e879c",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "hourglass",
+      "path": "assets/icons/regular/hourglass.svg",
+      "bytes": 421,
+      "sha256": "fed8236215f226df32aa16a675d0875497242cb8e6b65418fadb0ba5c904124d",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "house",
+      "path": "assets/icons/regular/house.svg",
+      "bytes": 356,
+      "sha256": "180e9259e99e23da197b59b19394d006d6a5d33e384cc2b9c8381cb0214a5716",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "identification-card",
+      "path": "assets/icons/regular/identification-card.svg",
+      "bytes": 544,
+      "sha256": "be9c729c7a8d0de193c513a0524fdccc8b16716f35531c2b28235307d7e7e8bf",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "info",
+      "path": "assets/icons/regular/info.svg",
+      "bytes": 348,
+      "sha256": "438a1f319d53d86e840af73fb7b1d224c9224a437b9fa449a4e2cb45a82a3552",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "key",
+      "path": "assets/icons/regular/key.svg",
+      "bytes": 640,
+      "sha256": "61694102f24a2eb4ce68f337fb6bf81090aef219328cb10dc2bd3f3c9e2ea266",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "lightning",
+      "path": "assets/icons/regular/lightning.svg",
+      "bytes": 376,
+      "sha256": "3a50c776266b21812f8ec5b5a841a81f54aa942569a31eb03a36fb0a5bfbe66e",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "lock-key",
+      "path": "assets/icons/regular/lock-key.svg",
+      "bytes": 393,
+      "sha256": "a8177687fb7b376afa1cf3bc0b16599c91b96a323687e2145f772b93ed0f2c95",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "magic-wand",
+      "path": "assets/icons/regular/magic-wand.svg",
+      "bytes": 605,
+      "sha256": "91081dfdad19006625f8a40a64ea967bb77ecf3d11cebda06c25b217b228dc12",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "magnifying-glass",
+      "path": "assets/icons/regular/magnifying-glass.svg",
+      "bytes": 243,
+      "sha256": "f9fa2561978a9a3291e8ae0ebfcb651104f5069fade8f84871627bca68889cde",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "minus",
+      "path": "assets/icons/regular/minus.svg",
+      "bytes": 163,
+      "sha256": "5a068d1cfd707fde5ddb0ce0623958123b6a5afba98401318983aeb0fdad6382",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "moon-stars",
+      "path": "assets/icons/regular/moon-stars.svg",
+      "bytes": 535,
+      "sha256": "a87d9314c9313a719a3297985a9d8cd1c4aa4602490b9286d8caf5bec82c466d",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "pause",
+      "path": "assets/icons/regular/pause.svg",
+      "bytes": 320,
+      "sha256": "7a9a8fe311234262b85c6e332f77db4ba9a59b6ca4292c41d327977cf61a2fc9",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "play",
+      "path": "assets/icons/regular/play.svg",
+      "bytes": 293,
+      "sha256": "885b3ed2095889c4ff063dac35dc424cb9f6c00273ab44e2f90dc9dadbee661a",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "plus",
+      "path": "assets/icons/regular/plus.svg",
+      "bytes": 212,
+      "sha256": "d688feb9dd2e41c1721d6906a05a2a42e18cd774762fe706d72b2bdfd91cddc4",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "seal-check",
+      "path": "assets/icons/regular/seal-check.svg",
+      "bytes": 1966,
+      "sha256": "462ca0e3c6be8be9b834e3c5a3eff2b4600ccaa9341dab9a13caf71ce6190788",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "shield",
+      "path": "assets/icons/regular/shield.svg",
+      "bytes": 430,
+      "sha256": "ac5af74bb9729d9ba0e3a8796e300e016e2f07997f2d4b67071defce18503f1f",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "sliders-horizontal",
+      "path": "assets/icons/regular/sliders-horizontal.svg",
+      "bytes": 360,
+      "sha256": "1d937baa3bc51ec4052364edf30cf8991d550920534f5d413eb9f60535cc1916",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "sparkle",
+      "path": "assets/icons/regular/sparkle.svg",
+      "bytes": 666,
+      "sha256": "9e2c17a26564098cb48dd95737a83c742156f755f13cedaa30f9d864d0e3eb76",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "speaker-high",
+      "path": "assets/icons/regular/speaker-high.svg",
+      "bytes": 514,
+      "sha256": "caca5fc1ee8489ac19232301d2c96f6d4048802491d75d761bbb89d5c98e459d",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "speaker-slash",
+      "path": "assets/icons/regular/speaker-slash.svg",
+      "bytes": 647,
+      "sha256": "66b75267ea8ba8759a70e4c8312bfe06b834fc8fcf0dd1710d9819877f0c8013",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "sword",
+      "path": "assets/icons/regular/sword.svg",
+      "bytes": 573,
+      "sha256": "faca62b2129859d504c06f2be8d42be04a8d790819d53418e30329806b522e43",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "trash",
+      "path": "assets/icons/regular/trash.svg",
+      "bytes": 391,
+      "sha256": "e6a830c0409f9e101e3695c981eef98427d39fd01f502b9cbd6900930b01f19c",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "user",
+      "path": "assets/icons/regular/user.svg",
+      "bytes": 340,
+      "sha256": "787434f7fef95f20e137d309d3c6b8b471548c55c9dfc137ae10625d70959d11",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "users-three",
+      "path": "assets/icons/regular/users-three.svg",
+      "bytes": 689,
+      "sha256": "0e326e4ef7d1ae16f9988791f68fde7bae513bdc8c06db437cfd55bf13670bcf",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "users",
+      "path": "assets/icons/regular/users.svg",
+      "bytes": 506,
+      "sha256": "b3385e4c6aa03f7e16d1b03887c2cdff9900f5a7edbd5ea5176055938ccfb908",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "warning",
+      "path": "assets/icons/regular/warning.svg",
+      "bytes": 543,
+      "sha256": "047c8edbdfddb9f1692bbf56acc85b7e4649b567c60eb39470e98e4f9ddc6a2e",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "waveform",
+      "path": "assets/icons/regular/waveform.svg",
+      "bytes": 380,
+      "sha256": "8f6a47cff9b0fb3a8f25fe411b9cc1b24d063d6577c8d07cc53b0e9b080afaa0",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "wifi-high",
+      "path": "assets/icons/regular/wifi-high.svg",
+      "bytes": 467,
+      "sha256": "d11ce9b83f063b6d12d3c8ff93cce7d601fe19ee1d6e5ba828b4a764b100519f",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "wifi-slash",
+      "path": "assets/icons/regular/wifi-slash.svg",
+      "bytes": 786,
+      "sha256": "39ed62ae822a3917ac70239bbaa2144152049783451f4687456aae8f044152fc",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "x",
+      "path": "assets/icons/regular/x.svg",
+      "bytes": 284,
+      "sha256": "7397b15e1fa66eaf6ff9b59fe91d483cb5c3bcf75b2fe052097ab6f0593b513a",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "arrow-down-fill",
+      "path": "assets/icons/fill/arrow-down-fill.svg",
+      "bytes": 212,
+      "sha256": "e01cabbc9d683e45fbfd8bde2403a213df64e3d4a3893e806b5e14656bad9767",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "arrow-left-fill",
+      "path": "assets/icons/fill/arrow-left-fill.svg",
+      "bytes": 223,
+      "sha256": "cc845017409d1e731d3b7bffca192cc276074002c585e8930032a5858074b8f6",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "arrow-right-fill",
+      "path": "assets/icons/fill/arrow-right-fill.svg",
+      "bytes": 219,
+      "sha256": "b2b6dd337492218b781ec35371c648d9cbca5f81e169249bfe75f37466cb5119",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "arrow-up-right-fill",
+      "path": "assets/icons/fill/arrow-up-right-fill.svg",
+      "bytes": 239,
+      "sha256": "dd24c87b3fc52a5b8bb0712901f9f4d2422c4c06a28c1a422eac5a6cc3cdf243",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "book-open-fill",
+      "path": "assets/icons/fill/book-open-fill.svg",
+      "bytes": 356,
+      "sha256": "869e2b75ba601a2915731ac86a52b72110da309b048173ff45400e75e37799ce",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "book-open-text-fill",
+      "path": "assets/icons/fill/book-open-text-fill.svg",
+      "bytes": 677,
+      "sha256": "20292921edbf5fb50f4f60c8d16d40f7c6a99275ed6eed363e564126310e80fc",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "caret-down-fill",
+      "path": "assets/icons/fill/caret-down-fill.svg",
+      "bytes": 188,
+      "sha256": "33550432966b277d6cf891f4db186357f4a83b1f8a5c7770c6ad6f5dee9b0b34",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "caret-right-fill",
+      "path": "assets/icons/fill/caret-right-fill.svg",
+      "bytes": 193,
+      "sha256": "c62278a701f1e4c08f424ce4b5cac69c8adb23b496dae489d5545ea7e6c019ef",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "chat-circle-dots-fill",
+      "path": "assets/icons/fill/chat-circle-dots-fill.svg",
+      "bytes": 338,
+      "sha256": "57656525f418bd300665d866ccf23ea1770aad53f154dc1dbd40074c66f97e66",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "check-fill",
+      "path": "assets/icons/fill/check-fill.svg",
+      "bytes": 308,
+      "sha256": "d114007dc371976dc3e8f4ebc59c5aef429fae59ae58d56acdf231a52b4700be",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "checks-fill",
+      "path": "assets/icons/fill/checks-fill.svg",
+      "bytes": 432,
+      "sha256": "8fd6f646b8869edbea2bf9ec0f9e68b77e5c215ae11e954f81dc24c95a9113e9",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "clock-fill",
+      "path": "assets/icons/fill/clock-fill.svg",
+      "bytes": 222,
+      "sha256": "4abe98cfc61350de60baf70ce93e85b3a9acbb80e34f9cf19688661aaddbc140",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "download-simple-fill",
+      "path": "assets/icons/fill/download-simple-fill.svg",
+      "bytes": 292,
+      "sha256": "dee151da85ad71e90a882a556481e2069a154b8892063c9f91b621a0e06ad479",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "eye-fill",
+      "path": "assets/icons/fill/eye-fill.svg",
+      "bytes": 437,
+      "sha256": "86381b51cb6f305019503b4c5d4b02fe8df5941bab3f1475ee873006a8708420",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "eye-slash-fill",
+      "path": "assets/icons/fill/eye-slash-fill.svg",
+      "bytes": 603,
+      "sha256": "fc34ad807da63ae5f99a235618cddc1b2bef8d98d7c95004d38b61312540b90d",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "fingerprint-fill",
+      "path": "assets/icons/fill/fingerprint-fill.svg",
+      "bytes": 1289,
+      "sha256": "802bd3f3b8e6406f7939fb3df1cb3d1cd26291bbdaa17bf28b932f0770703c37",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "flask-fill",
+      "path": "assets/icons/fill/flask-fill.svg",
+      "bytes": 408,
+      "sha256": "83ff8134febb17c6190bc46e3516d8c5fa7940d8b20f627ca3e45581ca29fece",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "grid-four-fill",
+      "path": "assets/icons/fill/grid-four-fill.svg",
+      "bytes": 378,
+      "sha256": "2c172ce4c7a9838fe7bfbd3d23ccf418a414392728f93a226cda1c60f3313312",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "hourglass-fill",
+      "path": "assets/icons/fill/hourglass-fill.svg",
+      "bytes": 355,
+      "sha256": "ad0f3d9f99de1618389ba9c153b4d6b0dab3e619ca2ff0113177aac63f035c32",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "house-fill",
+      "path": "assets/icons/fill/house-fill.svg",
+      "bytes": 293,
+      "sha256": "4783cdf0ae5f5ec363df6f77167a41642aac42fe8d73251b9a61232ab43f355d",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "identification-card-fill",
+      "path": "assets/icons/fill/identification-card-fill.svg",
+      "bytes": 538,
+      "sha256": "1ab3b4b94b739bdfb871cdae5455be56e0ad59639d3f3b23f908858a5e0c7b69",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "info-fill",
+      "path": "assets/icons/fill/info-fill.svg",
+      "bytes": 282,
+      "sha256": "8240b810f7a3b076271a829dff61c7dd64257a781c30f29c938f88835f11136a",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "key-fill",
+      "path": "assets/icons/fill/key-fill.svg",
+      "bytes": 373,
+      "sha256": "25be8ade7785508b97dc19ed87ae952351d7cfe20a5fbdbe9655df2fe6af4e4a",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "lightning-fill",
+      "path": "assets/icons/fill/lightning-fill.svg",
+      "bytes": 250,
+      "sha256": "024d190cc1ce86eb59184eb7a598604ad28946248243fbc0cf07b9887babf88d",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "lock-key-fill",
+      "path": "assets/icons/fill/lock-key-fill.svg",
+      "bytes": 307,
+      "sha256": "0a12a30d74b447649cd0e3855b9a5131629e8c2cd499f58106c7a398d8dff0ca",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "magic-wand-fill",
+      "path": "assets/icons/fill/magic-wand-fill.svg",
+      "bytes": 571,
+      "sha256": "ead6a6b83fbae0f8c3bec56a5200c5a3b5cc7f568d19e1b7d44c0c792388ef85",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "magnifying-glass-fill",
+      "path": "assets/icons/fill/magnifying-glass-fill.svg",
+      "bytes": 305,
+      "sha256": "e7cf953bb787af2a4b11f8a248f35b56aab2f2b44f535d03593f490a4a633244",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "minus-fill",
+      "path": "assets/icons/fill/minus-fill.svg",
+      "bytes": 241,
+      "sha256": "fc5b1fa0d71db88886b70da6a675f7de3e7d4007444e87ba68f174a9ecef037e",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "moon-stars-fill",
+      "path": "assets/icons/fill/moon-stars-fill.svg",
+      "bytes": 408,
+      "sha256": "563b9bf40751cc1749790d32f28499501fa6432cefce38648d7ba6d86f1cef14",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "pause-fill",
+      "path": "assets/icons/fill/pause-fill.svg",
+      "bytes": 287,
+      "sha256": "156d3cdfa5cea803caec50b35f49bc635070c8bd84e7fe78df94b025017ccee1",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "play-fill",
+      "path": "assets/icons/fill/play-fill.svg",
+      "bytes": 290,
+      "sha256": "6d2a75bc5700a68dec50516ebae121c307807e4e6fcca5c863e5b4af006df880",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "plus-fill",
+      "path": "assets/icons/fill/plus-fill.svg",
+      "bytes": 290,
+      "sha256": "64ef1a2c9f693a531ddb970a6c6e7c9dcd9bf36a58afec66ecb57355449ce3d2",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "seal-check-fill",
+      "path": "assets/icons/fill/seal-check-fill.svg",
+      "bytes": 1114,
+      "sha256": "27702a62622ac4156d2a18b10fc7c526b3b2b9f782741e2cb07aea6964d71132",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "shield-fill",
+      "path": "assets/icons/fill/shield-fill.svg",
+      "bytes": 291,
+      "sha256": "799e2b0224cb1bdcd2b228609c0494e2e4e4e74a59df92612499803bd7090f9d",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "sliders-horizontal-fill",
+      "path": "assets/icons/fill/sliders-horizontal-fill.svg",
+      "bytes": 311,
+      "sha256": "59fdf39771e7939dd315912702f3c8241a9dfeb1f5b6512a074525884765a76c",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "sparkle-fill",
+      "path": "assets/icons/fill/sparkle-fill.svg",
+      "bytes": 492,
+      "sha256": "9872a9255717f4ecc0f01b028b9436042e0f49391e4ce7a57f61aa466684fad1",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "speaker-high-fill",
+      "path": "assets/icons/fill/speaker-high-fill.svg",
+      "bytes": 567,
+      "sha256": "c266c407915382db3866570f816934b804c1b84bd47d971fad0e95ac5107dd6b",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "speaker-slash-fill",
+      "path": "assets/icons/fill/speaker-slash-fill.svg",
+      "bytes": 671,
+      "sha256": "029fae09171e356142aef7db03006e84e6bd1534960e2f9cc4a2b73e8325004c",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "sword-fill",
+      "path": "assets/icons/fill/sword-fill.svg",
+      "bytes": 488,
+      "sha256": "39d95d1eec8ba2fb846298015c330a7d10dd85fd39b6e400774646788afc3fb2",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "trash-fill",
+      "path": "assets/icons/fill/trash-fill.svg",
+      "bytes": 368,
+      "sha256": "f78767cc15e1a7d6eea49c4efb515cf6fceaf07fbc421e8ce18373d07c14b673",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "user-fill",
+      "path": "assets/icons/fill/user-fill.svg",
+      "bytes": 261,
+      "sha256": "9e011a83732426181c4e18ebfe0322635ed7a222ccd572072b1233a91f88fd0b",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "users-fill",
+      "path": "assets/icons/fill/users-fill.svg",
+      "bytes": 509,
+      "sha256": "6104c0634ed5b574e261acc05a3575db8abfb4ccbcb3bf12f5359a431303783b",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "users-three-fill",
+      "path": "assets/icons/fill/users-three-fill.svg",
+      "bytes": 646,
+      "sha256": "aca109558096eca83a60ded74a65b5ab9d341857f0c76f7b89bf93e3bd6df971",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "warning-fill",
+      "path": "assets/icons/fill/warning-fill.svg",
+      "bytes": 373,
+      "sha256": "90595f8a478ac1f156871ac8d8a35c7c4e372b8d101dad9aeb1bceadf9a2c7f0",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "waveform-fill",
+      "path": "assets/icons/fill/waveform-fill.svg",
+      "bytes": 397,
+      "sha256": "fbbca82dbcc988184e314a671ac08517b4099540ab97605ae186998d9c0d3187",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "wifi-high-fill",
+      "path": "assets/icons/fill/wifi-high-fill.svg",
+      "bytes": 369,
+      "sha256": "d966516341d6e973e7dac9b0885cc905dcbf97f86290b0b6c65791d1206669e0",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "wifi-slash-fill",
+      "path": "assets/icons/fill/wifi-slash-fill.svg",
+      "bytes": 550,
+      "sha256": "be4b6689164a166851945ec0b89629bbfe197293108629a66e1955ae0912d6c0",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "x-fill",
+      "path": "assets/icons/fill/x-fill.svg",
+      "bytes": 379,
+      "sha256": "6ec0689770c1fb1dc7018039bef101079d2d20931c4661c3981cbe956f20c872",
+      "source": "Phosphor 2.1.1, MIT; unchanged library icon"
+    },
+    {
+      "id": "manrope-latin-ext-wght-normal",
+      "path": "assets/fonts/manrope-latin-ext-wght-normal.woff2",
+      "bytes": 15120,
+      "sha256": "3911b66d9f2e005a4b989223405d0e5032619c668597ba467cc76a23c8fffcfb",
+      "source": "Manrope via Fontsource, SIL Open Font License"
+    },
+    {
+      "id": "manrope-latin-wght-normal",
+      "path": "assets/fonts/manrope-latin-wght-normal.woff2",
+      "bytes": 24836,
+      "sha256": "a30ddcd349703aff7464c34bef3fffdff405ee50c113440d7c8693c02d210972",
+      "source": "Manrope via Fontsource, SIL Open Font License"
+    },
+    {
+      "id": "manrope",
+      "path": "assets/fonts/manrope.css",
+      "bytes": 825,
+      "sha256": "200684df825c1cb82d045cb0a5980cef98fe11a464fa858f488ab0b2429e86a1"
+    },
+    {
+      "id": "attention",
+      "path": "assets/audio/attention.wav",
+      "bytes": 63404,
+      "sha256": "4258829c841132d0b217ba8fcefebe7cdf54c2f4620156435d7c21fe4e9d5f95",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "boss-arrival",
+      "path": "assets/audio/boss-arrival.wav",
+      "bytes": 407084,
+      "sha256": "2d0346cc57b7b5074b05fabe735db3a4ec6dd8a6379f923dc5512cca1fcdb5af",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "boss-defeated",
+      "path": "assets/audio/boss-defeated.wav",
+      "bytes": 387884,
+      "sha256": "19a1d710074a37e8b19d7cd9a9267fbbdd9fc8e8bb0a55758e1006f98ccc3ae0",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "cast",
+      "path": "assets/audio/cast.wav",
+      "bytes": 92204,
+      "sha256": "989b1ccac48067283a61bdc5c989e458b9720489a9696c0b5d7cefa5c62a7101",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "chapter-open",
+      "path": "assets/audio/chapter-open.wav",
+      "bytes": 165164,
+      "sha256": "0c86441237c32840d25f0d9062be69bdf0b6a87a3f58ecdf0eb87a68132fc00b",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "character-reveal",
+      "path": "assets/audio/character-reveal.wav",
+      "bytes": 330284,
+      "sha256": "cab61b54ca64499e677748a13d7313c2f2855f85c99da717e901562d7bacb8ed",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "consciousness-fade",
+      "path": "assets/audio/consciousness-fade.wav",
+      "bytes": 207404,
+      "sha256": "18416ec83a2103e9b0dd1195cc78f633cb52f18c4debae2b5c582afa097e1301",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "duel-loss",
+      "path": "assets/audio/duel-loss.wav",
+      "bytes": 159404,
+      "sha256": "0e2414104c8275300b40984fdddf0290a4abafac38ae70d66c8bd361a01269a5",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "duel-win",
+      "path": "assets/audio/duel-win.wav",
+      "bytes": 215084,
+      "sha256": "0b372dcfda7591527a5cb621ce64647d774464403d2da41b05e00793b7421b97",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "echo-transition",
+      "path": "assets/audio/echo-transition.wav",
+      "bytes": 274604,
+      "sha256": "812c137375bd4baa0ab33b32e7b2090161f5c7b997208f5ae7ec56e78a3da0fb",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "impact",
+      "path": "assets/audio/impact.wav",
+      "bytes": 73004,
+      "sha256": "68d38c63011f6993d169519d8598510eeba804709e1758cd0a73c081ebbab61d",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "invite-accepted",
+      "path": "assets/audio/invite-accepted.wav",
+      "bytes": 107564,
+      "sha256": "1cf02888ca91d2aa8bf569e0e705ec3ff55f2b8185df7f991dc8ae1cc997c467",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "keepsake-earned",
+      "path": "assets/audio/keepsake-earned.wav",
+      "bytes": 174764,
+      "sha256": "6586a7f1ea98c3ce1855e4580358d606fe7de792ec64e0aafd04f5eb880509c9",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "match-found",
+      "path": "assets/audio/match-found.wav",
+      "bytes": 126764,
+      "sha256": "de21745631eb93872a5f50863fc97e736241ed4b47c685d85aec169c49561f45",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "plan-locked",
+      "path": "assets/audio/plan-locked.wav",
+      "bytes": 74924,
+      "sha256": "03e02baf65bf3f07cfc15279ee00438d3746ab9f2955f879a0f29ad9036db36c",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "private-clue",
+      "path": "assets/audio/private-clue.wav",
+      "bytes": 69164,
+      "sha256": "bf52c510e9156a68b88dd5e9210f3d9e3069a4bec457abe354fc7d9274b47e2d",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "sampler-24",
+      "path": "assets/audio/sampler-24.wav",
+      "bytes": 6209324,
+      "sha256": "496d721ae9132cc4866b612c9a6c180fc8b4367af00caef0e58dc076e2bbce4a",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "shield",
+      "path": "assets/audio/shield.wav",
+      "bytes": 119084,
+      "sha256": "e03558da2fb28ac71abfb3dd6945da5b974ef3bfb402470d20add13fa1d8a300",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "truth-reveal",
+      "path": "assets/audio/truth-reveal.wav",
+      "bytes": 322604,
+      "sha256": "d1cd0e12d90b36827fd42ea4e2e7d1e0ffac1f99123fb2ce31cf15802e27b74a",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "turn-open",
+      "path": "assets/audio/turn-open.wav",
+      "bytes": 59564,
+      "sha256": "92c7552310baccbf28a59c74c2a9fb89f6a4400fcdd0db3f745fb37dc655a551",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "ui-back",
+      "path": "assets/audio/ui-back.wav",
+      "bytes": 25004,
+      "sha256": "1e3ad5b38f304ccf8ecc4a0bc557496b7e1035c520fc52fd166235fc99702f33",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "ui-confirm",
+      "path": "assets/audio/ui-confirm.wav",
+      "bytes": 46124,
+      "sha256": "081954adf856eabce03703a6de516d437d056e644fb94e21042e96ad64fcffca",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "ui-select",
+      "path": "assets/audio/ui-select.wav",
+      "bytes": 19244,
+      "sha256": "5850dc80fccd8b558b589a259d05c64b610378af851fb4a4e2aa0533fc70babd",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "wand-bond",
+      "path": "assets/audio/wand-bond.wav",
+      "bytes": 280364,
+      "sha256": "19734e13e007a390cde55e1c19fc725fd23a6de6ba9766dfa427e41b6b5067dc",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    },
+    {
+      "id": "wand-select",
+      "path": "assets/audio/wand-select.wav",
+      "bytes": 82604,
+      "sha256": "817c6d2331579eb9508cf870e011fbf5f2b9889db7ada97bbe35113228f455ae",
+      "source": "original procedural sound synthesis, source/generate_audio.py"
+    }
+  ]
+}

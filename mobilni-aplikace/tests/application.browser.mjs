@@ -271,7 +271,7 @@ try {
   await page.goto(origin + '/me/character'); await hasHeading('Moje postava');
   const customerNavigation = page.getByRole('navigation', { name: 'Sekce aplikace' });
   assert.equal(await customerNavigation.getByRole('link').count(), 4);
-  assert.equal(await customerNavigation.getByRole('link', { name: /Hra/ }).getAttribute('href'), '/play');
+  assert.equal(await customerNavigation.getByRole('link', { name: /Večer/ }).getAttribute('href'), '/play');
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
   await page.getByRole('heading', { name: 'Luna', exact: true }).waitFor();
   assert.equal(await page.getByText('A prepared character summary.', { exact: true }).isVisible(), false, 'preparation detail starts collapsed');
@@ -367,7 +367,7 @@ try {
   assert.equal(characterWrites[1].openAiConsent, false);
   await fallbackPage.close();
   const customerNav = page.getByRole('navigation', { name: 'Sekce aplikace' });
-  assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/me/character', '/play', '/me/keepsakes', '/me/account']);
+  assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/play', '/me/character', '/me/keepsakes', '/me/account']);
   for (const removedEntry of ['Rozhovor', 'Kufr', 'Dílna', 'Připojení', 'Zařízení']) {
     assert.equal(await customerNav.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not part of customer navigation`);
   }
@@ -432,39 +432,51 @@ try {
   assert.equal(customerEndRequests.length, 1, 'result polling never repeats the conversation end');
   assert.equal(requests.filter(request => request.path.includes('customerBle') || request.path.includes('start-tickets')).length, 0, 'recovery never issues a replacement start or controls BLE');
   customerSessions = [];
+  savedPreferences.conversationLanguage = 'en-US'; // legacy stored preference, not a supported choice
   await page.goto(origin + '/me/conversation'); await hasHeading('Rozhovor s kufrem');
-  await page.getByLabel('Jazyk rozhovoru', { exact: true }).waitFor();
+  await page.getByLabel('Styl rozhovoru', { exact: true }).waitFor();
   await page.evaluate(() => localStorage.setItem('dildovander.interface-language.v1.account.browser-customer', 'en'));
   await page.reload();
-  await page.getByRole('heading', { name: 'Rozhovor podle vás', exact: true }).waitFor();
-  assert.equal(await page.getByLabel('Jazyk rozhovoru', { exact: true }).inputValue(), 'cs-CZ');
+  await page.getByRole('heading', { name: 'Rozhovor podle tebe', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Jazyk rozhovoru', { exact: true }).count(), 0, 'conversation has no language selector');
   assert(await page.getByRole('heading', { name: 'Rozhovor s kufrem', exact: true }).isVisible(), 'a saved English interface value cannot switch the customer UI away from Czech');
   assert.equal(preferenceWrites.length, 0, 'interface localization never mutates conversation preferences');
-  await page.getByLabel('Jazyk rozhovoru', { exact: true }).selectOption('en-US');
+
   await page.getByLabel('Styl rozhovoru', { exact: true }).selectOption('gentle');
   assert.equal(preferenceWrites.length, 0, 'editing a draft never mutates the server');
   await page.getByRole('button', { name: 'Uložit pro příští rozhovor', exact: true }).click();
   await page.getByText('Uloženo pro příští nový rozhovor.', { exact: true }).waitFor();
   assert.equal(preferenceWrites.length, 1, 'one explicit save sends one profile-bound mutation');
+  assert.equal(preferenceWrites[0].conversationLanguage, 'cs-CZ', 'legacy English preference cannot be submitted as a new conversation choice');
   await page.reload();
-  await page.getByRole('heading', { name: 'Rozhovor podle vás', exact: true }).waitFor();
-  assert.equal(await page.getByLabel('Jazyk rozhovoru', { exact: true }).inputValue(), 'en-US');
+  await page.getByRole('heading', { name: 'Rozhovor podle tebe', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Jazyk rozhovoru', { exact: true }).count(), 0);
   assert.equal(await page.getByLabel('Styl rozhovoru', { exact: true }).inputValue(), 'gentle');
   for (const theme of ['lord-voldemort', 'olivander']) {
     await selectShellPreference('Vzhled aplikace', theme);
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
       await fits();
-      await page.screenshot({ path: path.join(screenshots, `customer-preferences-en-${theme}-${width}.png`), fullPage: true });
+      await page.screenshot({ path: path.join(screenshots, `customer-preferences-cs-${theme}-${width}.png`), fullPage: true });
+      if (width !== 1440) {
+        const save = page.getByRole('button', { name: 'Uložit pro příští rozhovor', exact: true });
+        await save.scrollIntoViewIfNeeded();
+        assert(await save.evaluate(element => {
+          const rect = element.getBoundingClientRect();
+          const target = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+          return target !== null && element.contains(target);
+        }), 'fixed navigation must not cover the reachable preference save action');
+        await page.screenshot({ path: path.join(screenshots, `customer-preferences-cs-${theme}-${width}-viewport.png`), fullPage: false });
+      }
     }
   }
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
   await fits();
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize), '32px', 'enlarged preference text is actually 200%');
-  await page.screenshot({ path: path.join(screenshots, 'customer-preferences-en-320-large-text.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshots, 'customer-preferences-cs-320-large-text.png'), fullPage: true });
   await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
   await selectShellPreference('Vzhled aplikace', 'lord-voldemort');
-  await customerNav.getByRole('link', { name: 'Účet', exact: true }).click();
+  await customerNav.getByRole('link', { name: 'Já', exact: true }).click();
   await page.getByRole('heading', { name: 'Přístupové klíče' }).waitFor();
   assert.equal(await page.getByLabel('Název přístupového klíče 1').count(), 1);
   assert.equal(await page.getByRole('heading', { name: 'Verze aplikace' }).count(), 0);

@@ -47,9 +47,9 @@ internal static class CustomerConversationPreferencePolicy
     internal static string TrustedInstructions(CustomerConversationPreferenceSnapshot snapshot)
     {
         Validate(snapshot);
-        var language = snapshot.ConversationLanguage == "en-US"
-            ? "Conduct this conversation in English."
-            : "Conduct this conversation in Czech.";
+        // English may exist in immutable legacy snapshots, but never selects
+        // the language of newly generated guest-facing content.
+        const string language = "Conduct this conversation in Czech.";
         var tone = snapshot.Tone switch
         {
             "gentle" => "Use a gentle, reserved style without personal insults or swearing.",
