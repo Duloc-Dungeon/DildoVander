@@ -12,7 +12,15 @@ const output=path.join(tmpdir(),'dildovander-director-vue-browser');await mkdir(
 const evening='legacy evening',duelId='7dbf2b4b-49c6-4ab3-bb46-fcd299bb9a97';
 let revision=1,duel,holdOrdinary=false,releaseOrdinary,dropStop=false;
 let state={deviceId:'fixture-device',eveningId:evening,revision,phase:'idle',sessionId:'fixture-session',sessionGeneration:'g1',mood:{dominant:'amused',locked:false},tone:'dry',tempo:'standard',quiet:false,ambientEnabled:true,readyMask:63,selectionLocked:false,updatedAt:new Date().toISOString(),publicOrigin:origin};
-const calls=[],errors=[],external=[];
+const calls=[],errors=[],external=[],wandReads=[],liveRequests=[];
+// The practice scene requires a previously saved wand. This fixture supplies
+// stored public fiction only; it never starts the voice workshop to obtain one.
+const storedWand={wandId:'synthetic-practice-wand',physicalSlot:1,name:'Syntetická cvičná hůlka',
+ material:'Jasan',core:'Syntetické vlákno',temperament:'Trpělivá',lore:'Pouze testovací příběh.',
+ designDescription:'Syntetická kresba pro browser fixture.',affinity:'Rozvaha',weakness:'Spěch',
+ spells:[{action:'strike',name:'Cvičný úder',description:'Syntetický úder.'},
+  {action:'trick',name:'Cvičná lest',description:'Syntetická lest.'},
+  {action:'shield',name:'Cvičný štít',description:'Syntetický štít.'}]};
 const details={devices:[{deviceId:'fixture-device',canOperate:true}],grants:[],sessions:[],associations:[],passkeys:[],passkeyCount:1};
 const json=(route,value,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(value)});
 async function until(predicate,label){const deadline=Date.now()+10000;while(!predicate()){if(Date.now()>deadline)throw new Error(`Timed out: ${label}`);await new Promise(resolve=>setTimeout(resolve,10));}}
@@ -23,9 +31,16 @@ try{
  await context.route('**/*',async route=>{
   const request=route.request(),url=new URL(request.url());
   if(url.origin!==origin){external.push(request.url());await route.abort();return;}
-  if(url.pathname==='/app/v1/session'){await json(route,{enabled:true,account:{id:'synthetic-owner',displayName:'Obsluha fixture',roles:['Owner']},csrfToken:'synthetic-csrf',origin});return;}
+  if(url.pathname==='/app/v1/session'){await json(route,{enabled:true,account:{id:'synthetic-owner',displayName:'Obsluha fixture',roles:['Owner'],openAiConsent:true},csrfToken:'synthetic-csrf',origin});return;}
   if(url.pathname==='/app/v1/launch'){await json(route,{allowed:true,audience:'privileged',launchAt:null,serverNow:Date.now(),teaser:'',initialLoadingMessage:'',personalizedLoadingEnabled:false});return;}
   if(url.pathname==='/app/v1/account'){await json(route,details);return;}
+  if(url.pathname==='/app/v1/customer/wand'){
+   assert.equal(request.method(),'GET','practice only reads its stored wand');
+   wandReads.push(url.pathname);await json(route,{hasCharacter:true,wand:storedWand,tier:1});return;
+  }
+  if(url.pathname.startsWith('/app/v1/customer/wand/sessions')){
+   liveRequests.push(url.pathname);await json(route,{code:'synthetic_live_disabled'},409);return;
+  }
   if(!url.pathname.startsWith('/v1/show/devices/fixture-device')){await route.continue();return;}
   const suffix=url.pathname.slice('/v1/show/devices/fixture-device'.length);
   assert.equal(request.headers()['x-dv-device-id'],'fixture-device');
@@ -73,6 +88,8 @@ try{
  await first.getByRole('heading',{name:'Zkus kouzlo.',exact:true}).waitFor();
  assert.equal(await first.locator('.launch-emergency-stop').isVisible(),true,'game scene retains the active operation Stop');
  await first.getByRole('button',{name:'Stop',exact:true}).click();await until(()=>calls.filter(call=>call.body?.kind==='stop').length===4,'game scene Stop request');
+ assert(wandReads.length>0,'practice verifies its stored account wand');
+ assert.deepEqual(liveRequests,[],'practice never creates a live voice workshop');
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
- console.log(JSON.stringify({result:'PASS',source:'compiled Vue + synthetic account/show API',screenshots:output,checks:['two-operator conflict','revisions+TTL','duel consent+grant confirmation','private prophecy','priority Stop+lost response','global Stop after navigation','desktop/mobile overflow'],errors:errors.length,externalRequests:external.length}));
+ console.log(JSON.stringify({result:'PASS',source:'compiled Vue + synthetic account/show API',screenshots:output,checks:['two-operator conflict','revisions+TTL','duel consent+grant confirmation','private prophecy','priority Stop+lost response','global Stop after navigation','practice with stored wand and no Live session','desktop/mobile overflow'],errors:errors.length,externalRequests:external.length}));
 }finally{releaseOrdinary?.();await browser?.close();await new Promise(resolve=>server.httpServer.close(resolve));}

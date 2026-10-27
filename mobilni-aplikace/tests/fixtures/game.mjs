@@ -6,8 +6,9 @@ import { fileURLToPath } from 'node:url';
 const dist = path.resolve(fileURLToPath(new URL('../../dist/', import.meta.url)));
 const id = 'a'.repeat(32);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png', '.ttf': 'font/ttf' };
-export const gameStates = ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'yolo', 'error', 'empty', 'long', 'tactical', 'loadout', 'boss', 'boss-setup', 'captured', 'rescue', 'teams', 'team-choice', 'team-half', 'messages', 'ranking'];
+export const gameStates = ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'task-without-wand', 'yolo', 'error', 'empty', 'long', 'tactical', 'loadout', 'boss', 'boss-setup', 'captured', 'rescue', 'teams', 'team-choice', 'team-half', 'messages', 'ranking', 'first-wand', 'upgrade-wand'];
 function match(state) {
+  if (state === 'task-without-wand') state = 'adult';
   return { id, mode: state === 'yolo' ? 'yolo' : ['tactical','loadout'].includes(state) ? 'tactical' : state === 'boss' ? 'boss' : 'quick', status: ['result', 'early-result', 'adult', 'yolo'].includes(state) ? 'complete' : state === 'incoming' ? 'incoming' : 'active',
     revision: 3, canAccept: state === 'incoming', canCancel: false,
     opponent: { id: 'two', displayName: state === 'long' ? 'Eliška z NeuvěřitelněDlouhéhoKouzelnickéhoRodu' : 'Eliška', xp: 24, matchesPlayed: 3 },
@@ -44,14 +45,15 @@ export async function createGameFixtureServer(port = 0) {
     if (url.pathname.startsWith('/__game/')) {
       const selected = url.pathname.split('/').at(-1); if (!gameStates.includes(selected)) return json({}, 404);
       taskOutcomes.delete(selected);
-      const destinations = {challenge:'/play/challenge',lobby:'/play',empty:'/play','boss-setup':'/play/boss',boss:`/play/boss/${id}`,captured:'/play/keeper',rescue:'/play/keeper',teams:'/play/teams','team-choice':`/play/team/${id}`,'team-half':`/play/team/${id}`,messages:'/play/messages',ranking:'/play/ranking'};
+      const destinations = {challenge:'/play/challenge',lobby:'/play',empty:'/play','boss-setup':'/play/boss',boss:`/play/boss/${id}`,captured:'/play/keeper',rescue:'/play/keeper',teams:'/play/teams','team-choice':`/play/team/${id}`,'team-half':`/play/team/${id}`,messages:'/play/messages',ranking:'/play/ranking','first-wand':'/play','upgrade-wand':'/play/keeper'};
       const destination = destinations[selected] ?? `/play/match/${id}`;
       response.writeHead(302, { Location: destination, 'Set-Cookie': `game-fixture=${selected}; Path=/; SameSite=Strict` }); response.end(); return;
     }
-    if (url.pathname === '/app/v1/session') return json({ enabled: true, account: { id: 'one', displayName: 'Mira', roles: ['Customer'] }, csrfToken: 'synthetic' });
+    if (url.pathname === '/app/v1/session') return json({ enabled: true, account: { id: 'one', displayName: 'Mira', roles: ['Customer'], openAiConsent: true }, csrfToken: 'synthetic' });
+    if (url.pathname === '/app/v1/customer/wand') return json({hasCharacter: true, wand: ['first-wand', 'task-without-wand'].includes(state) ? null : {wandId:'synthetic-saved-wand'}, tier: ['first-wand', 'task-without-wand'].includes(state) ? 0 : state === 'upgrade-wand' ? 1 : 2});
     if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'synthetic', accessRevision: 1 });
     if (url.pathname === '/app/v1/launch') return json({ allowed: true });
-    if (url.pathname === '/app/v1/game') return json({ player: { id: 'one', displayName: 'Mira', xp: 40, matchesPlayed: 5, tacticalUnlocked: true, yoloUnlocked: true },
+    if (url.pathname === '/app/v1/game') return json({ player: { id: 'one', displayName: 'Mira', xp: 40, matchesPlayed: 5, tacticalUnlocked: true, yoloUnlocked: true, hasWand: state !== 'first-wand', wandTier: state === 'upgrade-wand' ? 1 : 2 },
       opponents: state === 'empty' ? [] : [{ id: 'two', displayName: 'Eliška', xp: 40, matchesPlayed: 5 },{id:'three',displayName:'Jáchym',xp:40,matchesPlayed:5},{id:'four',displayName:'Barbora',xp:40,matchesPlayed:5}], incoming: [], active: [], history: [],boss:{revealed:state.includes('boss') || ['captured','rescue'].includes(state),rescued:state === 'rescue',referenceXp:40,revision:1} });
     if (url.pathname === '/app/v1/game/progress') return json({ revision:1,tacticalMatches:3,keeperState:state === 'captured' ? 'captured' : state === 'rescue' ? 'rescued' : 'available',pending:[],titles:['Soupeř s pamětí'],messages:[{id:'sparks',title:'Malá jiskra. Velká drzost.',text:'Když prohraješ výměnu, její bod získá soupeř.',action:'Vyzkoušet jiskry',destination:'/play/challenge'}],combatRanking:[{id:'one',displayName:'Mira',xp:40,wins:0,rank:1},{id:'two',displayName:'Eliška',xp:30,wins:0,rank:2}],yoloRanking:[{id:'one',displayName:'Mira',xp:0,wins:2,rank:1}] });
     if (url.pathname === '/app/v1/game/boss') return json({revealed:true,rescued:false,referenceXp:40,revision:1});

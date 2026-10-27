@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Kufr.Backend.Features.Wands;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -395,6 +396,9 @@ internal static class GameTeamEndpoints
             && db.UserRoles.Any(m => m.UserId == u.Id && db.Roles.Any(r => r.Id == m.RoleId && r.Name == AccountRoles.Customer)))
             .Select(u => u.Id).ToListAsync(context.RequestAborted);
         if (live.Count != 4) { throw new GameFault(403, "team_participant_unavailable"); }
+        if (context.Request.Method != "GET" && !context.Request.Path.Value!.EndsWith("/cancel", StringComparison.Ordinal)
+            && !context.Request.Path.Value.EndsWith("/decline", StringComparison.Ordinal))
+            foreach (var participant in ids) await MobileWandSessions.RequireForGame(context, participant, tactical: true);
     }
     private static async Task<string> ParticipantGroupAsync(HttpContext context)
     {
@@ -406,6 +410,9 @@ internal static class GameTeamEndpoints
         if (context.RequestServices.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId)?.OpenedAt is null)
         { throw new GameFault(403, "game_group_inactive"); }
         if (!(await context.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(context.User)).Allowed) { throw new GameFault(403, "game_group_inactive"); }
+        if (context.Request.Method != "GET" && !context.Request.Path.Value!.EndsWith("/cancel", StringComparison.Ordinal)
+            && !context.Request.Path.Value.EndsWith("/decline", StringComparison.Ordinal))
+            await MobileWandSessions.RequireForGame(context, id);
         return user.LaunchGroupId;
     }
 }

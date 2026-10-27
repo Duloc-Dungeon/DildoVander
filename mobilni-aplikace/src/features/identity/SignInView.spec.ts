@@ -124,10 +124,11 @@ describe('single-group beta enrollment', () => {
     expect(wrapper.find('#account-invite').exists()).toBe(false);
     await wrapper.get('#account-name').setValue('Hermione Granger');
     await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
 
-    expect(api.authenticate).toHaveBeenCalledWith('customer-enroll', '', 'Hermione Granger');
+    expect(api.authenticate).toHaveBeenCalledWith('customer-enroll', '', 'Hermione Granger', true);
     expect(router.currentRoute.value.path).toBe('/launch');
     wrapper.unmount();
   });
@@ -150,6 +151,8 @@ describe('single-group beta enrollment', () => {
     api.request.mockResolvedValue({ available: true, fixedUniverse: null });
     await wrapper.findAll('button').find(button => button.text() === 'Zkusit znovu')!.trigger('click');
     await flushPromises();
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined();
+    await wrapper.get('input[type="checkbox"]').setValue(true);
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined();
     expect(api.authenticate).not.toHaveBeenCalled();
     wrapper.unmount();
@@ -164,9 +167,10 @@ describe('single-group beta enrollment', () => {
     try {
       expect(api.request).not.toHaveBeenCalledWith('/app/v1/enrollment/default');
       expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined();
-      await wrapper.get('form').trigger('submit');
+      if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
+    await wrapper.get('form').trigger('submit');
       await flushPromises();
-      expect(api.authenticate).toHaveBeenCalledWith('signin', '', '');
+      expect(api.authenticate).toHaveBeenCalledWith('signin', '', '', false);
       expect(router.currentRoute.value.path).toBe('/settings');
     } finally { wrapper.unmount(); }
   });
@@ -206,6 +210,7 @@ it('reconciles a dropped enrollment response and saves the draft to the committe
     });
     await wrapper.get('#account-name').setValue('Hermione Granger');
     await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(api.refreshIdentity).toHaveBeenCalledTimes(2);
@@ -226,6 +231,7 @@ it('requires passkey sign-in after an unconfirmed enrollment without repeating a
   try {
     await wrapper.get('#account-name').setValue('Hermione Granger');
     await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(wrapper.text()).toContain('Pokračuj přihlášením svým přístupovým klíčem');
@@ -233,9 +239,10 @@ it('requires passkey sign-in after an unconfirmed enrollment without repeating a
     api.authenticate.mockImplementationOnce(async () => {
       account.value = { id: 'beta-signed-in', displayName: 'Hermione Granger', roles: ['Customer'] };
     });
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(api.authenticate).toHaveBeenLastCalledWith('signin', '', '');
+    expect(api.authenticate).toHaveBeenLastCalledWith('signin', '', '', true);
     expect(api.authenticate).toHaveBeenCalledTimes(2);
     expect(getInvitationRegistration('beta-signed-in')).toMatchObject({ name: 'Hermione Granger', universe: 'Kouzelnický svět' });
     expect(router.currentRoute.value.path).toBe('/launch');
@@ -252,6 +259,7 @@ it('keeps the beta form in place when passkey creation is cancelled', async () =
   try {
     await wrapper.get('#account-name').setValue('Hermione Granger');
     await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(wrapper.find('#account-name').exists()).toBe(true);
@@ -267,6 +275,7 @@ it('keeps the beta form in place when the passkey options request fails', async 
   try {
     await wrapper.get('#account-name').setValue('Hermione Granger');
     await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(wrapper.find('#account-name').exists()).toBe(true);
@@ -283,6 +292,7 @@ it('keeps the beta form and refreshes its state after a known closed response', 
   try {
     await wrapper.get('#account-name').setValue('Hermione Granger');
     await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(wrapper.find('#account-name').exists()).toBe(true);
@@ -313,6 +323,7 @@ describe('sign-in destinations', () => {
   ])('preserves safe Czech guidance for %s without displaying server details after a legacy English choice', async (code, czech) => {
     api.authenticate.mockRejectedValueOnce(Object.assign(new Error('private-server-detail-token'), { code }));
     const { wrapper } = await mountSignIn();
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(wrapper.get('[role="alert"]').text()).toContain(czech);
@@ -331,6 +342,7 @@ describe('sign-in destinations', () => {
     await nextTick();
     expect(wrapper.get('h1').text()).toBe('Zpátky na scénu.');
     expect(wrapper.get('button[type="submit"]').text()).toBe('Přihlásit přístupovým klíčem');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(wrapper.text()).toContain('Přihlášení nebo změnu účtu se nepodařilo dokončit.');
@@ -388,15 +400,16 @@ describe('sign-in destinations', () => {
     expect(wrapper.text()).toContain('nahradí všechny původní klíče');
     expect(wrapper.text()).toContain('oprávnění zůstanou zachovány');
     expect(wrapper.find('.consent-fieldset details').exists()).toBe(false);
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
 
-    expect(api.authenticate).toHaveBeenCalledWith('enroll', 'private-recovery-code', '');
+    expect(api.authenticate).toHaveBeenCalledWith('enroll', 'private-recovery-code', '', false);
     expect(router.currentRoute.value.path).toBe('/settings');
     wrapper.unmount();
   });
 
-  it('collects one shared name and universe, keeps AI consent optional, and preserves recovery separation', async () => {
+  it('collects one shared name and universe, requires AI consent, and preserves recovery separation', async () => {
     api.enrollment = { kind: 'invite', token: 'private-invitation-code' };
     api.authenticate.mockImplementation(async () => {
       account.value = { id: 'new-invitee', displayName: 'Luna Lovegood', roles: ['Customer'] };
@@ -409,13 +422,14 @@ describe('sign-in destinations', () => {
     expect(wrapper.find('#account-invite').exists()).toBe(false);
     expect(wrapper.get('#account-name').attributes('maxlength')).toBe('80');
     expect(wrapper.get('#account-universe').attributes('maxlength')).toBe('160');
-    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).required).toBe(false);
+    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).required).toBe(true);
     await wrapper.get('#account-name').setValue('  Luna Lovegood  ');
     await wrapper.get('#account-universe').setValue('  Kouzelnický svět  ');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(api.authenticate).toHaveBeenCalledWith('enroll', 'private-invitation-code', 'Luna Lovegood');
-    expect(getInvitationRegistration('new-invitee')).toMatchObject({ name: 'Luna Lovegood', universe: 'Kouzelnický svět', status: 'draft' });
+    expect(api.authenticate).toHaveBeenCalledWith('enroll', 'private-invitation-code', 'Luna Lovegood', true);
+    expect(getInvitationRegistration('new-invitee')).toMatchObject({ name: 'Luna Lovegood', universe: 'Kouzelnický svět' });
     expect(router.currentRoute.value.path).toBe('/launch');
     wrapper.unmount();
   });
@@ -426,6 +440,7 @@ describe('sign-in destinations', () => {
     const { router, wrapper } = await mountSignIn();
     await wrapper.get('#account-name').setValue('Luna');
     await wrapper.get('#account-universe').setValue('Kouzelnický svět');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect((wrapper.get('#account-name').element as HTMLInputElement).value).toBe('Luna');
@@ -454,10 +469,11 @@ describe('sign-in destinations', () => {
     });
     const { router, wrapper } = await mountSignIn();
 
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
 
-    expect(api.authenticate).toHaveBeenCalledWith('signin', '', '');
+    expect(api.authenticate).toHaveBeenCalledWith('signin', '', '', false);
     expect(router.currentRoute.value.path).toBe('/me/character');
     wrapper.unmount();
   });
@@ -469,6 +485,7 @@ describe('sign-in destinations', () => {
     });
     const { router, wrapper } = await mountSignIn(keepsake);
 
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
 
@@ -506,12 +523,13 @@ describe('sign-in destinations', () => {
     expect(wrapper.find('details').exists()).toBe(true);
     await wrapper.findAll('button').find(button => button.text() === 'Vytvořit zákaznický účet')!.trigger('click');
     await flushPromises();
-    expect(wrapper.find('.consent-fieldset details').exists()).toBe(false);
+    expect(wrapper.find('.consent-fieldset details').exists()).toBe(true);
     await wrapper.get('#customer-account-name').setValue('Nový zákazník');
+    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
 
-    expect(api.authenticate).toHaveBeenCalledWith('customer-enroll', '', 'Nový zákazník');
+    expect(api.authenticate).toHaveBeenCalledWith('customer-enroll', '', 'Nový zákazník', true);
     expect(router.currentRoute.value.path).toBe('/me/character');
     wrapper.unmount();
   });
@@ -523,6 +541,18 @@ it('reauthenticates an existing account from the default invitation screen witho
   try {
     await wrapper.get('button').trigger('click');
     await flushPromises();
-    expect(api.authenticate).toHaveBeenCalledWith('reauth', '', '');
+    expect(api.authenticate).toHaveBeenCalledWith('reauth', '', '', false);
   } finally { wrapper.unmount(); }
+});
+
+
+it('rejects registration submit without processing consent even when the form is submitted directly', async () => {
+  const { wrapper } = await mountSignIn(undefined, true);
+  await wrapper.get('#account-name').setValue('Luna');
+  await wrapper.get('#account-universe').setValue('Hogwarts');
+  expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined();
+  await wrapper.get('form').trigger('submit');
+  expect(api.authenticate).not.toHaveBeenCalled();
+  expect(wrapper.get('[role="alert"]').text()).toContain('potvrď souhlas');
+  wrapper.unmount();
 });

@@ -86,7 +86,7 @@ function matchesDraft(character: NonNullable<PrelaunchState['character']>, snaps
   return character.name === snapshot.name && character.universe === snapshot.universe;
 }
 
-/** Save only after explicit consent. Reconcile uncertain writes before issuing another PUT. */
+/** Use registration consent; reconcile uncertain writes before issuing another PUT. */
 export function reconcileInvitationCharacter(owner: string, character: NonNullable<PrelaunchState['character']> | null): InvitationRegistrationSnapshot | null {
   const snapshot = getInvitationRegistration(owner);
   if (!snapshot || !character) return snapshot;
@@ -99,7 +99,7 @@ export function reconcileInvitationCharacter(owner: string, character: NonNullab
 
 export async function saveInvitationCharacter(owner: string, consented: boolean): Promise<InvitationRegistrationSnapshot | null> {
   let snapshot = getInvitationRegistration(owner);
-  if (!snapshot || account.value?.id !== owner || !consented || !snapshot.name || !snapshot.universe || snapshot.status === 'confirmed') return snapshot;
+  if (!snapshot || account.value?.id !== owner || account.value.openAiConsent !== true || !consented || !snapshot.name || !snapshot.universe || snapshot.status === 'confirmed') return snapshot;
   if (snapshot.status === 'saving') return snapshot;
 
   if (snapshot.status === 'uncertain' || snapshot.status === 'error') {
@@ -154,7 +154,7 @@ export async function saveInvitationCharacter(owner: string, consented: boolean)
       expectedRevision: 0,
       name: snapshot.name,
       universe: snapshot.universe,
-      openAiConsent: true,
+      openAiConsent: account.value.openAiConsent === true,
     });
     if (account.value?.id !== owner || invitationRegistration.value?.owner !== owner
       || invitationRegistration.value.creationId !== snapshot.creationId) return null;

@@ -45,7 +45,8 @@ describe('guest information pages', () => {
   it('localizes privacy disclosures without changing their consent, retention, or deletion boundaries', async () => {
     const wrapper = mount(PrivacyView, { global });
     expect(wrapper.get('h1').text()).toBe('Ochrana soukromí');
-    expect(wrapper.text()).toContain('samostatný výslovný souhlas');
+    expect(wrapper.text()).not.toContain('OpenAI');
+    expect(wrapper.text()).toContain('potvrzuješ při registraci');
     expect(wrapper.text()).toContain('nesmaže cizí památku');
     expect(wrapper.text()).toContain('24 hodin nebo 5 000 záznamů');
     expect(wrapper.get('a[href^="mailto:"]').attributes('href')).toBe('mailto:support@dildovander.de?subject=Wand%20Night%20Stand%20%E2%80%93%20privacy');
@@ -54,7 +55,8 @@ describe('guest information pages', () => {
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
     expect(wrapper.get('h1').text()).toBe('Ochrana soukromí');
-    expect(wrapper.text()).toContain('samostatný výslovný souhlas');
+    expect(wrapper.text()).not.toContain('OpenAI');
+    expect(wrapper.text()).toContain('potvrzuješ při registraci');
     expect(wrapper.text()).toContain('nesmaže cizí památku');
     expect(wrapper.text()).toContain('24 hodin nebo 5 000 záznamů');
     expect(wrapper.text()).toContain('potvrzení místního dokončení není potvrzením jejich odstranění');

@@ -15,7 +15,7 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: width < 500, hasTouch: width < 500, reducedMotion: 'reduce' });
     await context.addInitScript(theme => localStorage.setItem('dildovander.theme', theme), width < 390 ? 'lord-voldemort' : 'olivander');
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
-    for (const state of ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'yolo', 'error', 'empty', 'long','tactical','loadout','boss','boss-setup','captured','rescue','teams','team-choice','team-half','messages','ranking']) {
+    for (const state of ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'task-without-wand', 'yolo', 'error', 'empty', 'long','tactical','loadout','boss','boss-setup','captured','rescue','teams','team-choice','team-half','messages','ranking','first-wand','upgrade-wand']) {
       await page.goto(`${origin}/__game/${state}`); await page.locator('.game-content').waitFor();
       await page.locator('h1, [role="alert"]').first().waitFor();
       await page.evaluate(() => document.fonts.ready);
@@ -31,8 +31,8 @@ try {
         assert.equal(await page.getByRole('button', { name: 'Potvrdit tah' }).count(), 0);
         await page.getByRole('heading', { name: 'Tohle bylo tvoje.' }).waitFor();
       }
-      if (state === 'adult') {
-        await page.screenshot({ path: path.join(output, `task-pending-${width}.png`), fullPage: true }); captures++;
+      if (state === 'adult' || state === 'task-without-wand') {
+        await page.screenshot({ path: path.join(output, `${state}-pending-${width}.png`), fullPage: true }); captures++;
         const confirm = page.getByRole('button', { name: 'Potvrdit výsledek úkolu' });
         assert.equal(await confirm.isDisabled(), true);
         assert.equal(await page.getByRole('link', { name: 'Odveta', exact: true }).count(), 0);
@@ -48,6 +48,8 @@ try {
         await page.getByText(saved, { exact: true }).waitFor();
         assert.equal(await page.getByRole('link', { name: 'Odveta', exact: true }).count(), 1);
       }
+      if (state === 'first-wand') { assert.equal(await page.getByRole('button', {name:'Mluvit s Olivanderem'}).count(), 1); assert.equal(await page.getByRole('radio').count(), 0); }
+      if (state === 'upgrade-wand') assert.equal(await page.getByRole('heading', {name:'Vylepšit hůlku s Olivanderem'}).count(), 1);
       if (state === 'choice') {
         const count = requests.length;
         await page.getByRole('radio', { name: /Lest/ }).check();

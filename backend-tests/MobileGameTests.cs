@@ -1,4 +1,7 @@
 using Kufr.Backend.Features.Game;
+using Kufr.Backend.Features.Customers;
+using Kufr.Backend.Features.Wands;
+using Kufr.Backend.Features.GptLive;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
 using Microsoft.AspNetCore.Authentication;
@@ -505,6 +508,27 @@ internal static class MobileGameTests
             "paused group is denied (" + (int)pausedResponse.StatusCode + ")");
         Check((await foreign.GetAsync("/app/v1/game")).StatusCode == HttpStatusCode.OK, "separate active group has its own game scope");
 
+        foreign.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(foreign));
+        var wandDenied = await foreign.PostAsJsonAsync("/app/v1/game/matches", new { opponentId = fixture.BobId, mode = "quick", operationId = "no-wand-bypass-0001" });
+        Check(wandDenied.StatusCode == HttpStatusCode.Conflict
+            && (await wandDenied.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "game_wand_required",
+            "direct API requests cannot start gameplay without a persisted wand");
+
+        var canonicalStart = await foreign.PostAsJsonAsync("/app/v1/customer/wand/sessions", new { operationId = Guid.NewGuid().ToString("N") });
+        Check(canonicalStart.StatusCode == HttpStatusCode.OK, "first wand reservation is available for authenticated owner");
+        var canonicalId = (await canonicalStart.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!;
+        var resumed = await foreign.PostAsJsonAsync("/app/v1/customer/wand/sessions", new { operationId = Guid.NewGuid().ToString("N") });
+        Check((await resumed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString() == canonicalId, "refresh resumes canonical pending operation without another generation");
+        var ticket = await foreign.PostAsJsonAsync($"/app/v1/customer/wand/sessions/{canonicalId}/ticket", new { socketOrigin = "https://localhost" });
+        Check(ticket.StatusCode == HttpStatusCode.OK, "Android WebView socket origin gets a bounded account ticket");
+        var unrelated = await fixture.UnrelatedOperationAsync();
+        var import = await alice.PostAsJsonAsync("/app/v1/customer/wand/sessions", new { operationId = unrelated, upgrade = true });
+        // Alice receives CSRF below; use the same independently retrieved token here.
+        alice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(alice));
+        import = await alice.PostAsJsonAsync("/app/v1/customer/wand/sessions", new { operationId = unrelated, upgrade = true });
+        Check(import.StatusCode == HttpStatusCode.Conflict && (await import.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "wand_operation_conflict", "unrelated selected operation cannot grant an upgrade");
+        alice.DefaultRequestHeaders.Remove("X-DV-CSRF");
+
         var challengeBody = new
         {
             opponentId = fixture.BobId, mode = "quick", operationId = "http-challenge-0001",
@@ -580,6 +604,12 @@ internal static class MobileGameTests
             "active participant can read their own boss attempt");
         Check((await foreign.GetAsync($"/app/v1/game/boss/attempts/{bossAttempt}")).StatusCode == HttpStatusCode.NotFound,
             "foreign launch group cannot read a boss attempt");
+        await fixture.RemoveWandAsync();
+        var bossState = await (await alice.GetAsync($"/app/v1/game/boss/attempts/{bossAttempt}")).Content.ReadFromJsonAsync<JsonElement>();
+        Check((await alice.PostAsJsonAsync($"/app/v1/game/boss/attempts/{bossAttempt}/choose", new {operationId=Guid.NewGuid().ToString("D"),expectedRevision=bossState.GetProperty("revision").GetInt64(),choice="strike"})).StatusCode == HttpStatusCode.Conflict,
+            "deleted wand blocks actual gameplay");
+        Check((await alice.PostAsJsonAsync($"/app/v1/game/boss/attempts/{bossAttempt}/cancel", new {operationId=Guid.NewGuid().ToString("D"),expectedRevision=bossState.GetProperty("revision").GetInt64()})).StatusCode == HttpStatusCode.OK,
+            "deleted wand never blocks cancelling an existing session");
         var limited = false;
         for (var command = 0; command < 41; command++)
         {
@@ -642,10 +672,18 @@ internal static class MobileGameTests
             builder.Services.AddAccountIdentity(builder.Configuration);
             builder.Services.AddLaunchManagement(builder.Configuration);
             builder.Services.AddMobileGame(builder.Configuration);
+            builder.Services.AddSingleton(new CharacterProfileStore(Path.Combine(root, "profiles")));
+            builder.Services.AddSingleton<WandGenerationStore>();
+            builder.Services.AddSingleton<IWandGenerationProvider>(new MobileWandTests.Provider());
+            builder.Services.AddSingleton<WandGenerationService>();
+            builder.Services.AddSingleton<GptLiveClient>();
+            builder.Services.AddSingleton<WandDecisionService>();
+            builder.Services.AddSingleton(new GptLiveOptions());
+            builder.Services.AddSingleton<MobileWandRuntime>();
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
-            app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams();
+            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
             app.MapGet("/test/csrf", (HttpContext context, IAntiforgery antiforgery) => Results.Json(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
             app.MapPost("/test/login/{id}", async (string id, HttpContext context, AccountDatabase db, SignInManager<AccountUser> signIn) =>
@@ -685,9 +723,11 @@ internal static class MobileGameTests
             var other = launch.CreateGroup("fixture", new("Mobile Game Paused", null), now);
             foreach (var (id, name, groupId) in new[] { (AliceId, "Alice", active.Id), (BobId, "Bob", active.Id), (ForeignId, "Foreign", foreign.Id), (PausedId, "Paused", other.Id) })
             {
-                var user = new AccountUser { Id = id, UserName = id + "@example.invalid", Email = id + "@example.invalid", EmailConfirmed = true, DisplayName = name, LaunchGroupId = groupId, LaunchGroupJoinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), LaunchGroupAccessRevision = 1, CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+                var user = new AccountUser { Id = id, UserName = id + "@example.invalid", Email = id + "@example.invalid", EmailConfirmed = true, DisplayName = name, OpenAiConsentAt = 1, OpenAiConsentVersion = AccountAiConsent.CurrentVersion, LaunchGroupId = groupId, LaunchGroupJoinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), LaunchGroupAccessRevision = 1, CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
                 var created = await users.CreateAsync(user); if (!created.Succeeded) throw new InvalidOperationException("Cannot seed game account");
                 await users.AddToRoleAsync(user, AccountRoles.Customer);
+                if (id != ForeignId) await MobileWandTests.Seed(app.Services.GetRequiredService<CharacterProfileStore>(), app.Services.GetRequiredService<WandGenerationStore>(), id);
+                else await app.Services.GetRequiredService<CharacterProfileStore>().SaveAsync(id, new(0, new("Foreign", "Original"), OpenAiConsent: true));
             }
             await db.SaveChangesAsync();
         }
@@ -714,6 +754,23 @@ internal static class MobileGameTests
             var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
             var user = await db.Users.SingleAsync(x => x.Id == id); user.LaunchGroupRevokedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             user.LaunchGroupAccessRevision++; await db.SaveChangesAsync();
+        }
+        internal async Task<string> UnrelatedOperationAsync()
+        {
+            var profiles = app.Services.GetRequiredService<CharacterProfileStore>();
+            var profile = (await profiles.ReadAsync(AliceId))!;
+            var snapshot = (await profiles.CaptureAsync(AliceId, profile.ProfileId, profile.Revision))!;
+            var store = app.Services.GetRequiredService<WandGenerationStore>();
+            var operation = Guid.NewGuid().ToString("N");
+            store.Begin(AliceId, operation, snapshot, 63, true);
+            store.Complete(store.Claim(AliceId, operation, false)!, MobileWandTests.Candidates());
+            store.Select(AliceId, operation, profile.ProfileId, profile.Revision, 1);
+            return operation;
+        }
+        internal async Task RemoveWandAsync()
+        {
+            var profile = (await app.Services.GetRequiredService<CharacterProfileStore>().ReadAsync(AliceId))!;
+            app.Services.GetRequiredService<WandGenerationStore>().DeleteProfile(AliceId, profile.ProfileId);
         }
         internal async Task<string> CreateBossAttemptAsync()
         {

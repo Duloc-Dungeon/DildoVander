@@ -146,6 +146,10 @@ final class NativeAccountRequestPolicy {
         if ("/app/v1/session".equals(path)) return "GET".equals(method) || "DELETE".equals(method);
         if ("/app/v1/account".equals(path)) return "GET".equals(method) || "DELETE".equals(method);
         if ("/app/v1/account/deletion".equals(path)) return "GET".equals(method);
+        if ("/app/v1/account/ai-consent".equals(path)) return "POST".equals(method);
+        if ("/app/v1/customer/wand".equals(path)) return "GET".equals(method);
+        if ("/app/v1/customer/wand/sessions".equals(path)) return "POST".equals(method);
+        if (path.matches("^/app/v1/customer/wand/sessions/[0-9a-f]{32}/ticket$")) return "POST".equals(method);
         if ("/app/v1/passkeys/request-options".equals(path) || "/app/v1/passkeys/sign-in".equals(path) ||
             "/app/v1/passkeys/reauthentication-options".equals(path) || "/app/v1/passkeys/reauthenticate".equals(path) ||
             "/app/v1/passkeys/options".equals(path) || "/app/v1/passkeys/complete".equals(path) ||

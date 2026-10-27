@@ -38,7 +38,7 @@ export interface Progress {
   combatRanking: Ranking[]; yoloRanking: Ranking[];
 }
 export interface Lobby {
-  player: Opponent & { tacticalUnlocked: boolean; yoloUnlocked: boolean };
+  player: Opponent & { tacticalUnlocked: boolean; yoloUnlocked: boolean; hasWand?: boolean; wandTier?: number };
   opponents: Opponent[]; incoming: Match[]; active: Match[]; history: Match[];
   boss?: BossProfile;
 }
@@ -60,6 +60,8 @@ export async function gameRequest<T>(path = '', body?: unknown, signal?: AbortSi
 export const operation = () => secureUuid();
 export function gameErrorText(error: unknown): string {
   if (!(error instanceof GameError)) return 'Spojení se přerušilo. Obnov stav, než budeš pokračovat.';
+  if (error.code === 'game_wand_required') return 'Nejdřív si s Olivanderem vyrob vlastní hůlku.';
+  if (error.code === 'game_wand_upgrade_required') return 'Nejdřív si v dílně vylepši hůlku pro taktickou hru.';
   if (error.status === 401 || error.status === 403) return 'Přístup ke hře není dostupný. Vrať se přes platnou pozvánku.';
   if (error.status === 409) return 'Hra se mezitím změnila. Obnovujeme její skutečný stav.';
   if (error.status === 429) return 'Chvilku vyčkej a potom obnov stav.';

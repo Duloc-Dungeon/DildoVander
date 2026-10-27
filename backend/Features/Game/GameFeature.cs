@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Kufr.Backend.Features.Wands;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,7 +21,7 @@ internal sealed record GameChallenge(string OpponentId, string Mode, string Oper
 internal sealed record GameRoundView(int Index, string? PlayerChoice, string? OpponentChoice, string? Winner,
     int PlayerSparkBid, int OpponentSparkBid, int PlayerPoints, int OpponentPoints, string? Reason);
 internal sealed record GamePlayerView(string Id, string DisplayName, int Xp, int MatchesPlayed,
-    bool TacticalUnlocked, bool YoloUnlocked);
+    bool TacticalUnlocked, bool YoloUnlocked, bool HasWand = false, int WandTier = 0);
 internal sealed record GameOpponentView(string Id, string DisplayName, int Xp, int MatchesPlayed);
 internal sealed record GamePartyTask(string Title, string Text, string Category, string Status, int ExchangeCount);
 internal sealed record GameYoloBeat(string Text, string[] DetailRefs);
@@ -593,7 +594,13 @@ internal static class GameEndpoints
                                       select participant.Id).Distinct().CountAsync(h.RequestAborted);
                 if (eligible != 2) return ApiProblem.Create(h, 404, "game_match_unavailable");
             }
-            try { return await next(invocation); } catch (GameFault e) { return ApiProblem.Create(h, e.Status, e.Code); }
+            try
+            {
+                if (h.Request.Method != "GET" && !h.Request.Path.Value!.EndsWith("/cancel", StringComparison.Ordinal)
+                    && !h.Request.Path.Value.EndsWith("/decline", StringComparison.Ordinal) && !h.Request.Path.Value.EndsWith("/task", StringComparison.Ordinal))
+                    await MobileWandSessions.RequireForGame(h, id);
+                return await next(invocation);
+            } catch (GameFault e) { return ApiProblem.Create(h, e.Status, e.Code); }
         });
         group.MapGet("", async (HttpContext h, AccountDatabase db, GameStore store) =>
         {
@@ -610,11 +617,16 @@ internal static class GameEndpoints
                 .OrderByDescending(peer => activeOpponentIds.Contains(peer.Id)).ThenBy(peer => peer.DisplayName)
                 .Take(100).ToListAsync(h.RequestAborted);
             var name = await db.Users.AsNoTracking().Where(u => u.Id == id).Select(u => u.DisplayName).SingleAsync(h.RequestAborted);
-            var opponents = peers.Select(peer => store.Stats(groupId, peer.Id, peer.DisplayName)).ToArray();
+            var opponents = new List<GameOpponentView>();
+            foreach (var peer in peers)
+                if (await MobileWandSessions.Tier(h.RequestServices, peer.Id, h.RequestAborted) > 0)
+                    opponents.Add(store.Stats(groupId, peer.Id, peer.DisplayName));
             store.RetireIneligibleMatches(groupId, eligibleIds, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             var lobby = store.Lobby(groupId, id, name, opponents);
+            var tier = await MobileWandSessions.Tier(h.RequestServices, id, h.RequestAborted);
             var safeLobby = lobby with
             {
+                Player = lobby.Player with { HasWand = tier > 0, WandTier = tier, TacticalUnlocked = lobby.Player.TacticalUnlocked && tier >= 2 },
                 Incoming = lobby.Incoming.Where(match => eligibleIds.Contains(match.Opponent.Id)).ToArray(),
                 Active = lobby.Active.Where(match => eligibleIds.Contains(match.Opponent.Id)).ToArray(),
                 History = lobby.History.Where(match => eligibleIds.Contains(match.Opponent.Id)).ToArray()
@@ -625,8 +637,10 @@ internal static class GameEndpoints
             LaunchPolicyStore launch) =>
         {
             var id = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!; var groupId = (string)h.Items["dv-game-group"]!;
+            await MobileWandSessions.RequireForGame(h, id, r.Mode == "tactical");
             var opponent = await (from u in db.Users join m in db.UserRoles on u.Id equals m.UserId join role in db.Roles on m.RoleId equals role.Id where u.Id == r.OpponentId && u.LaunchGroupId == groupId && u.LaunchGroupRevokedAt == null && !u.Disabled && role.Name == AccountRoles.Customer && !db.DeletionRequests.Any(deletion => deletion.UserId == u.Id) select new { u.Id, u.DisplayName }).SingleOrDefaultAsync(h.RequestAborted);
             if (opponent is null) return ApiProblem.Create(h, 404, "game_opponent_unavailable");
+            await MobileWandSessions.RequireForGame(h, opponent.Id, r.Mode == "tactical");
             var challenger = await db.Users.AsNoTracking().Where(u => u.Id == id).Select(u => u.DisplayName).SingleAsync(h.RequestAborted);
             var groupSettings = launch.ReadGroup(groupId)!;
             var result = store.Challenge(groupId, id, challenger, opponent.Id, opponent.DisplayName, r,
@@ -635,12 +649,19 @@ internal static class GameEndpoints
         });
         group.MapGet("/matches/{id}", (string id, HttpContext h, GameStore store) => Results.Ok(store.Read(id, (string)h.Items["dv-game-group"]!, h.User.FindFirstValue(ClaimTypes.NameIdentifier)!)));
         foreach (var action in new[] { "accept", "decline", "cancel", "choose", "loadout", "task", "retry" })
-            group.MapPost($"/matches/{{id}}/{action}", (string id, GameCommand request, HttpContext h, GameStore store,
-                GameYoloWorker yolo, LaunchPolicyStore launch) =>
+            group.MapPost($"/matches/{{id}}/{action}", async (string id, GameCommand request, HttpContext h,
+                GameStore store, GameYoloWorker yolo, LaunchPolicyStore launch) =>
             {
                 var groupId = (string)h.Items["dv-game-group"]!;
+                var userId = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+                var snapshot = store.Read(id, groupId, userId);
+                if (action is not ("decline" or "cancel" or "task"))
+                {
+                    await MobileWandSessions.RequireForGame(h, userId, snapshot.Mode == "tactical");
+                    await MobileWandSessions.RequireForGame(h, snapshot.Opponent.Id, snapshot.Mode == "tactical");
+                }
                 var settings = launch.ReadGroup(groupId)!;
-                var result = store.Mutate(id, groupId, h.User.FindFirstValue(ClaimTypes.NameIdentifier)!, action,
+                var result = store.Mutate(id, groupId, userId, action,
                     request, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), settings.AdultContentEnabled, settings.FlirtEnabled);
                 if (result.Yolo?.Status == "generating") yolo.Enqueue(id, result.Revision);
                 return Results.Ok(result);
