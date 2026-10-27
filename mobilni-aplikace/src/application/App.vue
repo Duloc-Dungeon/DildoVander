@@ -7,6 +7,7 @@ import AwButton from '../components/AwButton.vue';
 import AwNotice from '../components/AwNotice.vue';
 import { notifications, dismissNotice, notify } from './notifications';
 import { account, accountDeletionRequested, offlineSession, refreshIdentity } from '../features/identity/session';
+import AccountAiConsent from '../features/identity/AccountAiConsent.vue';
 import { deviceSession } from '../features/suitcase/deviceSession';
 import { nativeDebug } from '../features/suitcase/nativeDebug';
 import { directorStop, clearDirectorStop } from '../features/director/directorStop';
@@ -183,6 +184,7 @@ onBeforeUnmount(() => {
       <main id="main-content" ref="main" class="application-main" tabindex="-1">
         <AwNotice v-if="offlineSession && !launchExperience" tone="warning">{{ customerCopy.text('shell.offline') }}</AwNotice>
         <AwNotice v-if="viewError" tone="danger"><p>{{ viewError }}</p><AwButton @click="router.go(0)">{{ customerCopy.text('shell.reload') }}</AwButton></AwNotice>
+        <AccountAiConsent v-else-if="account?.openAiConsent === false && !['/privacy', '/support', '/account-deletion'].includes(route.path)" />
         <RouterView v-else-if="routeAccessible" v-slot="{ Component, route: renderedRoute }">
           <KeepAlive :key="identityKey"><component :is="Component" v-if="renderedRoute.meta.keepAlive" :key="renderedRoute.name" /></KeepAlive>
           <component :is="Component" v-if="!renderedRoute.meta.keepAlive" :key="renderedViewKey(renderedRoute)" />

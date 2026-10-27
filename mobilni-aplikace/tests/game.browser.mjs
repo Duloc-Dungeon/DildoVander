@@ -14,12 +14,14 @@ try {
   for (const width of [320, 375, 390, 430]) {
     const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
-    for (const state of ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'adult', 'yolo', 'error', 'empty', 'long','tactical','loadout','boss','boss-setup','captured','rescue','teams','team-choice','team-half','messages','ranking']) {
+    for (const state of ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'adult', 'yolo', 'error', 'empty', 'long','tactical','loadout','boss','boss-setup','captured','rescue','teams','team-choice','team-half','messages','ranking','first-wand','upgrade-wand']) {
       await page.goto(`${origin}/__game/${state}`); await page.locator('.game-content').waitFor();
       await page.locator('h1, [role="alert"]').first().waitFor();
       await page.evaluate(() => document.fonts.ready);
       assert.ok(await page.locator('.game-content').evaluate(element => getComputedStyle(element).fontFamily.includes('Manrope')), `${state}: Manrope font`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${state} ${width}: horizontal overflow`);
+      if (state === 'first-wand') { assert.equal(await page.getByRole('button', {name:'Mluvit s Olivanderem'}).count(), 1); assert.equal(await page.getByRole('radio').count(), 0); }
+      if (state === 'upgrade-wand') assert.equal(await page.getByRole('heading', {name:'Vylepšit hůlku s Olivanderem'}).count(), 1);
       if (state === 'incoming') assert.equal(await page.getByLabel('Chci po prohře krátký úkol').isChecked(), false);
       if (state === 'choice') {
         const count = requests.length;

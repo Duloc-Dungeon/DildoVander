@@ -103,14 +103,14 @@ describe('NewCharacterDialog', () => {
     wrapper.unmount();
   });
 
-  it('localizes the new identity choice and keeps optional OpenAI consent unchecked', async () => {
+  it('localizes the new identity choice and keeps optional processing consent unchecked', async () => {
     const wrapper = mountDialog();
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
     expect(wrapper.get('dialog').attributes('aria-label')).toBe('Vytvořit novou postavu');
     expect(wrapper.text()).toContain('Nová postava vytvoří samostatnou identitu. Historie rozhovorů a památky předchozí postavy zůstanou uložené.');
     expect(wrapper.text()).toContain('Neuložené úpravy aktuální postavy se do nové nepřenesou. Volbou Zrušit se k nim vrátíte.');
-    expect(wrapper.text()).toContain('Souhlasím s odesláním údajů této nové postavy společnosti OpenAI');
+    expect(wrapper.text()).toContain('Souhlasím s odesláním údajů této nové postavy službě AI');
     expect((wrapper.get('#new-character-openai-consent').element as HTMLInputElement).checked).toBe(false);
     await wrapper.get('form').trigger('submit');
     expect(wrapper.emitted('confirm')?.[0]?.[0]).toMatchObject({ openAiConsent: false });

@@ -127,14 +127,37 @@ internal static class CustomerProfileTests
         var original = await store.SaveAsync("new-character-test", new(0, input, OpenAiConsent: true));
         var originalJob = (await store.ClaimAsync())!;
         var originalSnapshot = (await store.CaptureAsync("new-character-test", original.ProfileId, original.Revision))!;
-        var newCharacter = await store.SaveAsync("new-character-test",
-            new(original.Revision, input, original.ProfileId, NewCharacter: true, OpenAiConsent: true));
-        Check(newCharacter.ProfileId != original.ProfileId && newCharacter.Revision == 1,
-            "explicit new character creates a new identity even with identical input");
-        Check(!await store.CompleteAsync(originalJob, Result(originalJob), null),
-            "replaced character job cannot publish onto new identity");
+        await ExpectAsync("character_already_exists", () => store.SaveAsync("new-character-test",
+            new(original.Revision, input, original.ProfileId, NewCharacter: true, OpenAiConsent: true)));
+        Check((await store.ReadAsync("new-character-test"))?.ProfileId == original.ProfileId,
+            "a second character cannot replace the account's one identity");
+        Check(await store.CompleteAsync(originalJob, Result(originalJob), null),
+            "rejected replacement preserves the existing job");
         Check(originalSnapshot.ProfileId == original.ProfileId && originalSnapshot.UserInput == input,
-            "explicit new character preserves already captured historical snapshot");
+            "rejected replacement preserves captured historical snapshot");
+        await ExpectAsync("account_admin_required", () => store.SaveAsync("new-character-test",
+            new(original.Revision, input with { Name = "Unauthorized edit" }, original.ProfileId, OpenAiConsent: true),
+            canEditExisting: false));
+        var unchanged = await store.SaveAsync("new-character-test", new(original.Revision, input,
+            original.ProfileId, OpenAiConsent: true), canEditExisting: false);
+        Check(unchanged.ProfileId == original.ProfileId && unchanged.Revision == original.Revision,
+            "idempotent request retains the single identity without permitting edits");
+        var failedProfile = await store.SaveAsync("failed-retry", new(0, input, OpenAiConsent: true));
+        var retryFailureJob = (await store.ClaimAsync())!;
+        await store.CompleteAsync(retryFailureJob, null, "temporary_failure");
+        Check(await store.RetryEnrichmentAsync("failed-retry"), "failed enrichment can be retried");
+        Check((await store.ReadAsync("failed-retry")) is { } retriedProfile
+            && retriedProfile.ProfileId == failedProfile.ProfileId && retriedProfile.Revision == failedProfile.Revision,
+            "retry does not refine or replace the character");
+        Check(!await store.CompleteAsync(retryFailureJob, Result(retryFailureJob), null), "old failed lease cannot publish after retry");
+        store.SuspendAccountWork("failed-retry");
+        Check(!await store.RequestEnrichmentAsync("failed-retry", expectedProfileId: "stale-profile", expectedRevision: failedProfile.Revision),
+            "recovery checks the captured profile identity before queueing");
+        Check(await store.RequestEnrichmentAsync("failed-retry", expectedProfileId: failedProfile.ProfileId, expectedRevision: failedProfile.Revision),
+            "saved legacy profile can start enrichment after consent without an edit");
+        Check((await store.ReadAsync("failed-retry")) is { } savedRetry && savedRetry.Revision == failedProfile.Revision
+            && savedRetry.ProfileId == failedProfile.ProfileId && savedRetry.Status == "queued",
+            "legacy recovery retains the saved profile and revision");
     }
 
     private static async Task OpenAiConsentAsync(string root)

@@ -85,9 +85,9 @@ describe('customer copy catalog', () => {
     stop();
   });
 
-  it('keeps mandatory conversation consent, deletion effects, export scope, and ownership distinctions explicit', () => {
+  it('keeps processing consent, deletion effects, export scope, and ownership distinctions explicit', () => {
     expect(customerCopyCs['conversation.mandatory-consent']).toContain('odesíláním zvuku mého hlasu');
-    expect(customerCopyCs['conversation.mandatory-consent']).toContain('společnosti OpenAI');
+    expect(customerCopyCs['conversation.mandatory-consent']).toContain('službě AI');
     expect(customerCopyCs['conversation.mandatory-consent']).toContain('připravené informace');
     expect(customerCopyCs['conversation.mandatory-consent-required']).toContain('rozhovor nespustíme');
     expect(customerCopyCs['conversation.private-memory-optional']).toContain('volitelné');
@@ -102,7 +102,7 @@ describe('customer copy catalog', () => {
     expect(customerCopyCs['signin.recovery-effects']).toContain('původní klíče odebrány');
     expect(customerCopyCs['signin.recovery-code-target']).toContain('soukromý kód');
     expect(customerCopyCs['new-character.intro']).toContain('Historie rozhovorů a památky předchozí postavy zůstanou uložené.');
-    expect(customerCopyCs['new-character.consent']).toContain('společnosti OpenAI');
+    expect(customerCopyCs['new-character.consent']).toContain('službě AI');
     expect(customerCopyCs['new-character.consent']).toContain('Bez zaškrtnutí uložíš profil bez AI přípravy.');
     expect(customerCopyCs['memories.available-only']).toContain('není automaticky časově omezené');
     expect(customerCopyCs['archive.linked-readonly']).toContain('pouze ke čtení');

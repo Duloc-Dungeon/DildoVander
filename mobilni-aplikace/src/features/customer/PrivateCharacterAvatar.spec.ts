@@ -5,7 +5,7 @@ import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
 const api = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
-  return { account: ref({ id: 'owner' }), accountRequest: api.request };
+  return { account: ref({ id: 'owner', openAiConsent: true }), accountRequest: api.request };
 });
 vi.mock('./privateCharacterPortrait', async () => {
   const { computed, ref } = await import('vue');
@@ -25,7 +25,7 @@ it('reuses the existing private portrait with reads only and keeps it separate f
   const view = render();
   await flushPromises();
   expect(view.get('img').attributes('src')).toBe('blob:profile-a-1');
-  expect(view.text()).toContain('Alžběta, tvoje podobizna.');
+  expect(view.text()).toContain('Hotovo pro profile-a.');
   expect(view.text()).toContain('nikam nezveřejňuje automaticky');
   expect(api.request.mock.calls).toHaveLength(1);
   expect(api.request.mock.calls[0].slice(0, 2)).toEqual(['/app/v1/prelaunch/character', 'GET']);
@@ -44,10 +44,37 @@ it('does not show another profile’s ready image when an older metadata respons
   expect(view.text()).not.toContain('Hotovo pro profile-a.');
 });
 
-it('never creates an image merely because an existing character has no portrait', async () => {
+it('offers explicit preparation without creating an image when an existing character has no portrait', async () => {
   api.request.mockResolvedValue({ character: { profileId: 'profile-a', revision: 1 }, artwork: null });
   const view = render();
   await flushPromises();
-  expect(view.find('figure').exists()).toBe(false);
+  expect(view.find('figure').exists()).toBe(true);
+  expect(view.get('button').text()).toBe('Připravit portrét');
   expect(api.request.mock.calls.every(([, method]) => method === 'GET')).toBe(true);
+});
+
+it('actually retries generation for a failed portrait and preserves its generated joke', async () => {
+  api.request.mockResolvedValueOnce({ character: { profileId: 'profile-a', revision: 1 }, artwork: {
+    status: 'failed', welcome: { joke: 'Sebevědomí máš na světovládu. Pro dnešek ti svěříme židli.', identity: '', teaser: '' },
+  } }).mockResolvedValueOnce({}).mockResolvedValueOnce(state());
+  const view = render();
+  await flushPromises();
+  expect(view.text()).toContain('Pro dnešek ti svěříme židli.');
+  await view.get('button').trigger('click');
+  await flushPromises();
+  expect(api.request.mock.calls[1].slice(0, 3)).toEqual(['/app/v1/prelaunch/character/retry', 'POST', {
+    expectedProfileId: 'profile-a', expectedRevision: 1,
+  }]);
+  expect(view.get('img').attributes('src')).toBe('blob:profile-a-1');
+});
+
+it('does not display a previous revision’s joke after changing character', async () => {
+  api.request.mockResolvedValueOnce({ ...state(), artwork: { status: 'failed', welcome: { joke: 'Vtip staré postavy.', identity: '', teaser: '' } } })
+    .mockResolvedValueOnce(state('profile-b'));
+  const view = render();
+  await flushPromises();
+  expect(view.text()).toContain('Vtip staré postavy.');
+  await view.setProps({ profileId: 'profile-b', name: 'Beáta' });
+  await flushPromises();
+  expect(view.text()).not.toContain('Vtip staré postavy.');
 });

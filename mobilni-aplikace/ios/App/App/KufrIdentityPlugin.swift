@@ -676,10 +676,10 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                 case "signin": optionsPath = "/app/v1/passkeys/request-options"; completionPath = "/app/v1/passkeys/sign-in"
                 case "customer-enroll":
                     optionsPath = "/app/v1/customer/enrollment/options"; completionPath = "/app/v1/customer/enrollment/complete"
-                    body = try encode(["displayName": call.getString("displayName") ?? ""])
+                    body = try encode(["displayName": call.getString("displayName") ?? "", "openAiConsent": call.getBool("openAiConsent") ?? false])
                 case "enroll":
                     optionsPath = "/app/v1/enrollment/options"; completionPath = "/app/v1/enrollment/complete"
-                    body = try encode(["token": call.getString("token") ?? "", "displayName": call.getString("displayName") ?? ""])
+                    body = try encode(["token": call.getString("token") ?? "", "displayName": call.getString("displayName") ?? "", "openAiConsent": call.getBool("openAiConsent") ?? false])
                 case "add": optionsPath = "/app/v1/passkeys/options"; completionPath = "/app/v1/passkeys/complete"
                 default: throw AccountError.invalidPath
                 }

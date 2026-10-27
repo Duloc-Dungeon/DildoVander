@@ -543,6 +543,9 @@ enum AccountTransportPolicy {
     }
 
     static func account(path: String, method: String) -> Bool {
+        if path == "/app/v1/customer/wand" { return method == "GET" }
+        if path == "/app/v1/customer/wand/sessions" { return method == "POST" }
+        if path.range(of: "^/app/v1/customer/wand/sessions/[0-9a-f]{32}/ticket\\z", options: .regularExpression) != nil { return method == "POST" }
         if path == "/app/v1/game" { return method == "GET" }
         if path == "/app/v1/game/matches" { return method == "POST" }
         if path == "/app/v1/game/progress" { return method == "GET" }
@@ -601,6 +604,7 @@ enum AccountTransportPolicy {
         let exact: [String: Set<String>] = [
             "/app/v1/session": ["GET", "DELETE"], "/app/v1/account": ["GET", "DELETE"],
             "/app/v1/account/deletion": ["GET"],
+            "/app/v1/account/ai-consent": ["POST"],
             "/app/v1/passkeys/request-options": ["POST"], "/app/v1/passkeys/sign-in": ["POST"],
             "/app/v1/passkeys/reauthentication-options": ["POST"], "/app/v1/passkeys/reauthenticate": ["POST"],
             "/app/v1/enrollment/options": ["POST"], "/app/v1/enrollment/complete": ["POST"],

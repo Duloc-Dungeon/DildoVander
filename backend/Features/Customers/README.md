@@ -6,14 +6,15 @@ an owner exists. Customer ownership always comes from the authenticated account,
 never an account identifier supplied in a body or a character's name.
 
 `/app/v1/customer/character` stores exact `userInput` separately from enrichment.
-Writes require the current revision and profile identity. `openAiConsent` defaults
-false: saving without it stores a local `saved` profile and cancels pending
-preparation. Explicit true queues enrichment; correction also requires true.
-The unchecked UI names OpenAI and the submitted name, world, version, description,
-language, prior interpretation on correction, and public-source lookup purpose.
-Existing pending jobs without durable affirmative consent become local-only on
-startup. No enrichment request is sent for them. Correction creates a
-new revision; explicit `newCharacter` creates a new identity. Queued/running
+Writes require the current revision and profile identity. An account has one
+active character; `newCharacter` cannot replace an existing identity. Customers
+create their first character; only an administrator can edit or refine it.
+Registration requires affirmative processing consent, stored with a timestamp
+and version on the account. Existing accounts confirm once before further AI
+work; the migration never infers consent. Endpoints derive processing permission
+from this record rather than a later client checkbox. Personal memory and photo
+use keep their separate optional confirmations. Correction creates a new
+revision of the same identity. Queued/running
 enrichment does not block conversation start: the captured input is sufficient.
 The worker uses leased, revision-fenced jobs, a 45-second provider deadline and
 at most three attempts with durable backoff. It records token usage without
@@ -21,7 +22,8 @@ keeping fictional text in the usage ledger. Only actual provider citation URLs
 can support web facts. No cross-account enrichment cache is implemented.
 
 `ApplicationIdentity:DataRoot/customer-characters.sqlite` is an additive feature
-store; existing Identity migrations, users, roles and grants are unchanged.
+store; the additive Identity migration stores account and ceremony consent
+without changing existing roles or grants.
 Tables are created idempotently. The operation journal adds customer tickets,
 immutable session snapshots, revocation tombstones and a shared device lease.
 The archive adds a private customer ownership table outside public story data.
@@ -53,10 +55,10 @@ the macOS native test script and the production firmware build. The contract
 contains the real iPhone/ESP32 acceptance procedure; offline tests do not prove
 physical BLE, autonomous audio or actual provider behavior.
 
-Customer start tickets separately require explicit `openAiConsent: true` for
-voice audio, transcript and character context sent to OpenAI for speech
-understanding and spoken replies. Personal memory remains a separate optional
-consent. Issuance, redemption and provider context reject missing/legacy consent;
+Customer start tickets require the recorded registration consent for voice
+audio, transcript and character context. The server records that proof as
+`openAiConsent: true` on the immutable ticket. Personal memory remains a separate
+optional consent. Issuance, redemption and provider context reject missing consent;
 old clients must update and legacy unaccepted tickets must be issued again after
 consent. The BLE redemption shape is unchanged.
 
@@ -67,5 +69,15 @@ phone's interface language. Provider retries retain the conversation's current
 opt-outs. See [guest preferences](../../../docs/customer-preferences.md) for
 revision checks, export behavior, native route bounds and focused validation.
 
-Personalized candidate generation, immutable bonds, private edition approval and
-account battle history are documented in [personalized wands](../../../docs/personalized-wands.md).
+Portrait generation and welcome text are independent results: failed research
+can use the saved fictional brief with no verified facts, and image failure
+retains an already generated joke. The owner-scoped retry endpoint accepts
+`expectedProfileId` and `expectedRevision`, queues a missing/failed portrait and
+never changes the character identity or regenerates a ready image.
+
+The phone's `/app/v1/customer/wand` flow provides a short live voice conversation
+for the first digital wand and its upgrade. It uses account-bound, short-lived
+socket tickets and persisted selections; it cannot operate a physical device or
+fabricate a physical keepsake. A stored wand is required for gameplay, and the
+upgrade is required for tactical play. Offline checks include `--mobile-wands`;
+the character browser suite exercises portrait recovery and the first-wand gate.
