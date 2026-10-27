@@ -98,12 +98,11 @@ internal static class CharacterEndpoints
     {
         var journal = services.GetService<OperationJournal>();
         var conversations = journal is null ? null : services.GetService<ConversationStore>();
-        var sealedCases = services.GetService<Kufr.Backend.Features.SealedCase.SealedCaseStore>();
         return store.ReplayDeletionsAsync((accountId, profileId) =>
         {
             // Case cleanup is mandatory and independent of the optional operation journal.
             // ReplayDeletionsAsync marks the tombstone complete only after this callback returns.
-            sealedCases?.EraseAccount(accountId);
+            Kufr.Backend.Features.SealedCase.SealedCaseErasure.EraseAccount(services, accountId);
             var wands = services.GetService<Kufr.Backend.Features.Wands.WandGenerationStore>();
             if (profileId is null) { wands?.DeleteAccount(accountId); }
             else { wands?.DeleteProfile(accountId, profileId); }

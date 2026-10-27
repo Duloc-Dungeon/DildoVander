@@ -23,7 +23,9 @@ internal sealed partial class SealedCaseStore
 
     private static void InitializeWorldSchema(SqliteConnection c)
     {
+        using var transaction = c.BeginTransaction(deferred: false);
         using var cmd = c.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS sealed_case_world(
               case_id TEXT PRIMARY KEY REFERENCES sealed_cases(id),
@@ -56,9 +58,17 @@ internal sealed partial class SealedCaseStore
         foreach (var table in new[] { "sealed_case_events", "sealed_case_world", "sealed_case_resolutions" })
         foreach (var operation in new[] { "UPDATE", "DELETE" })
         {
-            cmd.CommandText = $"CREATE TRIGGER IF NOT EXISTS {table}_no_{operation.ToLowerInvariant()} BEFORE {operation} ON {table} BEGIN SELECT RAISE(ABORT,'sealed case history is append-only'); END";
+            if (operation == "DELETE")
+            {
+                cmd.CommandText = $"DROP TRIGGER IF EXISTS {table}_no_delete";
+                cmd.ExecuteNonQuery();
+            }
+            var condition = operation == "DELETE"
+                ? "WHEN NOT EXISTS(SELECT 1 FROM sealed_cases WHERE id=OLD.case_id AND status='privacy_terminated') " : "";
+            cmd.CommandText = $"CREATE TRIGGER IF NOT EXISTS {table}_no_{operation.ToLowerInvariant()} BEFORE {operation} ON {table} {condition}BEGIN SELECT RAISE(ABORT,'sealed case history is append-only'); END";
             cmd.ExecuteNonQuery();
         }
+        transaction.Commit();
     }
 
     internal SealedStoredWorld InitializeWorld(string caseId, string groupId, long expectedRevision, long now,
@@ -66,7 +76,7 @@ internal sealed partial class SealedCaseStore
     {
         var checkpoint = game.Checkpoint();
         using var c = Open(); using var tx = c.BeginTransaction(deferred: false);
-        using var admission = authorizeWrite?.Invoke();
+        using var admission = AcquireCaseAccess(c, tx, caseId, authorizeWrite);
         var revision = ReadCaseRevision(c, tx, caseId, groupId);
         using var exists = c.CreateCommand(); exists.Transaction = tx;
         exists.CommandText = "SELECT initial_checkpoint_json,revision,content_version_json FROM sealed_case_world WHERE case_id=$id";
@@ -96,20 +106,55 @@ internal sealed partial class SealedCaseStore
     internal SealedStoredWorld ReadWorld(string caseId, string groupId)
     {
         using var c = Open(); using var tx = c.BeginTransaction(deferred: true);
+        using var admission = AcquireCaseAccess(c, tx, caseId);
         var revision = ReadCaseRevision(c, tx, caseId, groupId);
         var world = ReadWorld(c, tx, caseId, revision);
         tx.Commit(); return world;
     }
 
     internal SealedWorldResolution ResolveWorldChapter(string caseId, string groupId, int chapter,
-        long expectedRevision, long now, IReadOnlyList<SealedAction> orders, Func<IDisposable>? authorizeWrite = null)
+        long expectedRevision, long now, IReadOnlyList<SealedAction> orders, Func<IDisposable>? authorizeWrite = null,
+        bool useConfirmedPlans = false)
     {
         if (chapter is < 1 or > 6) throw new SealedCasePersistenceException("wrong_chapter", 409);
-        var canonical = orders.OrderBy(x => x.ActorId, StringComparer.Ordinal).ToArray();
-        var ordersJson = JsonSerializer.Serialize(canonical, Json);
         using var c = Open(); using var tx = c.BeginTransaction(deferred: false);
-        using var admission = authorizeWrite?.Invoke();
+        IDisposable? callerAdmission = null;
+        using var admission = AcquireCaseAccess(c, tx, caseId, authorizeWrite is null ? null : () => callerAdmission = authorizeWrite());
         var revision = ReadCaseRevision(c, tx, caseId, groupId);
+        if (!useConfirmedPlans)
+        {
+            using var managed = c.CreateCommand(); managed.Transaction = tx;
+            managed.CommandText = "SELECT 1 FROM sealed_case_timing WHERE case_id=$case";
+            managed.Parameters.AddWithValue("$case", caseId);
+            if (managed.ExecuteScalar() is not null)
+            {
+                throw new SealedCasePersistenceException("sealed_case_plan_authority_required", 409);
+            }
+        }
+        var selectedPlans = useConfirmedPlans ? ReadConfirmedPlans(c, tx, caseId, chapter) : null;
+        if (selectedPlans is not null)
+        {
+            var disconnected = Disconnected(c, tx, caseId);
+            if (callerAdmission is Kufr.Backend.Features.Identity.CustomerAdmissionGuard current)
+            {
+                using var active = current.AccountReservation.Command("""
+                    SELECT user.Id FROM AspNetUsers user WHERE user.LaunchGroupId=$group AND user.Disabled=0 AND user.LaunchGroupRevokedAt IS NULL
+                        AND EXISTS(SELECT 1 FROM AspNetUserRoles membership JOIN AspNetRoles role ON role.Id=membership.RoleId WHERE membership.UserId=user.Id AND role.Name='Customer')
+                    """);
+                active.Parameters.AddWithValue("$group", groupId); using var rows = active.ExecuteReader(); var eligible = new HashSet<string>(StringComparer.Ordinal);
+                while (rows.Read()) { eligible.Add(rows.GetString(0)); }
+                foreach (var member in RosterMembers(c, tx, caseId)) { if (!eligible.Contains(member.AccountId)) { disconnected.Add(member.PlayerId); } }
+            }
+            foreach (var member in RosterMembers(c, tx, caseId))
+            {
+                var hold = new SealedAction("hold-" + chapter + "-" + member.SeatId, member.PlayerId, chapter, SealedIntent.Hold);
+                if (disconnected.Contains(member.PlayerId)) { selectedPlans[member.PlayerId] = hold; }
+                else { selectedPlans.TryAdd(member.PlayerId, hold); }
+            }
+        }
+        var canonical = (selectedPlans is not null ? (IEnumerable<SealedAction>)selectedPlans.Values : orders)
+            .OrderBy(x => x.ActorId, StringComparer.Ordinal).ToArray();
+        var ordersJson = JsonSerializer.Serialize(canonical, Json);
         using (var prior = c.CreateCommand())
         {
             prior.Transaction = tx;
@@ -118,18 +163,31 @@ internal sealed partial class SealedCaseStore
             using var r = prior.ExecuteReader();
             if (r.Read())
             {
-                if (r.GetString(0) != ordersJson || r.GetInt64(1) != expectedRevision)
+                var storedOrders = JsonSerializer.Deserialize<SealedAction[]>(r.GetString(0), Json)!;
+                if (JsonSerializer.Serialize(storedOrders, Json) != ordersJson || r.GetInt64(1) != expectedRevision)
                     throw new SealedCasePersistenceException("resolved_chapter_conflict", 409);
                 var result = JsonSerializer.Deserialize<SealedWorldResolution>(r.GetString(2), Json)!;
                 r.Close(); tx.Commit(); return result with { Replayed = true };
             }
         }
         if (revision != expectedRevision) throw new SealedCasePersistenceException("revision_conflict", 409);
+        if (useConfirmedPlans)
+        {
+            now = clock.GetUtcNow().ToUnixTimeSeconds();
+            var timing = ReadTiming(c, tx, caseId, revision, now);
+            var schedule = SealedCaseRules.Schedule(timing.Variant, timing.OriginalPlayers);
+            var deadline = checked(timing.IntroductionEndsAt + (chapter - 1L) * (schedule.PlanningSeconds + schedule.QuietSeconds) + schedule.PlanningSeconds);
+            if (timing.PausedAt is not null || chapter > timing.Chapters || now < deadline)
+            {
+                throw new SealedCasePersistenceException("chapter_not_closed", 409);
+            }
+        }
         var world = ReadWorld(c, tx, caseId, revision);
         if (chapter != world.LastChapter + 1) throw new SealedCasePersistenceException("wrong_chapter", 409);
         if (world.ContentVersionJson != ContentVersionJson) throw new SealedCasePersistenceException("unsupported_content_version", 409);
         var game = SealedGame.Restore(world.Checkpoint);
         var results = game.Resolve(chapter, canonical).ToArray();
+        if (useConfirmedPlans) { ElectOversight(c, tx, caseId, chapter, SealedCaseRules.Schedule(game.Scenario?.Variant ?? "full", game.Players.Count).Chapters, game); }
         var checkpoint = game.Checkpoint();
         var next = checked(revision + 1);
         var envelope = new SealedWorldResolution(next, chapter, false, results,
@@ -148,6 +206,7 @@ internal sealed partial class SealedCaseStore
     internal IReadOnlyList<SealedWorldResolution> ReadWorldHistory(string caseId, string groupId)
     {
         using var c = Open(); using var tx = c.BeginTransaction(deferred: true);
+        using var admission = AcquireCaseAccess(c, tx, caseId);
         _ = ReadCaseRevision(c, tx, caseId, groupId);
         using var cmd = c.CreateCommand(); cmd.Transaction = tx;
         cmd.CommandText = "SELECT events_json FROM sealed_case_resolutions WHERE case_id=$id ORDER BY chapter";
@@ -160,7 +219,7 @@ internal sealed partial class SealedCaseStore
     private static long ReadCaseRevision(SqliteConnection c, SqliteTransaction tx, string caseId, string groupId)
     {
         using var cmd = c.CreateCommand(); cmd.Transaction = tx;
-        cmd.CommandText = "SELECT revision FROM sealed_cases WHERE id=$id AND group_id=$group";
+        cmd.CommandText = "SELECT revision FROM sealed_cases WHERE id=$id AND group_id=$group AND status!='privacy_terminated'";
         cmd.Parameters.AddWithValue("$id", caseId); cmd.Parameters.AddWithValue("$group", groupId);
         return cmd.ExecuteScalar() is long revision ? revision : throw new SealedCasePersistenceException("case_not_found", 404);
     }

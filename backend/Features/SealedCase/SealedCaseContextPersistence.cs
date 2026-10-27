@@ -13,6 +13,7 @@ internal sealed partial class SealedCaseStore
     internal SealedStoredRoster ReadRoster(string caseId, string groupId)
     {
         using var c = Open(); using var tx = c.BeginTransaction(deferred: true);
+        using var admission = AcquireCaseAccess(c, tx, caseId);
         _ = ReadCaseRevision(c, tx, caseId, groupId);
         using var cmd = c.CreateCommand(); cmd.Transaction = tx;
         cmd.CommandText = "SELECT server_seed,roster_json,frozen_at FROM sealed_case_rosters WHERE case_id=$id";
@@ -39,7 +40,7 @@ internal sealed partial class SealedCaseStore
     {
         var member = SealedContextService.DemandAccess(caseId, groupId, authenticatedAccountId, role, authority);
         using var c = Open(); using var tx = c.BeginTransaction(deferred: true);
-        using var admission = authorizeRead?.Invoke();
+        using var admission = AcquireCaseAccess(c, tx, caseId, authorizeRead);
         var revision = ReadCaseRevision(c, tx, caseId, groupId);
         SealedStoredWorld world;
         try { world = ReadWorld(c, tx, caseId, revision); }
@@ -68,6 +69,7 @@ internal sealed partial class SealedCaseStore
                 }
                 foreach (var a in actions)
                 {
+                    if (world.Checkpoint.Scenario is not null && a.Id.StartsWith("hold-", StringComparison.Ordinal)) { continue; }
                     var refs = resolution.Events.Where(e => e.GetProperty("actor").GetString() == a.ActorId)
                         .Select(e => e.GetProperty("id").GetString()!).ToArray();
                     // The command is the player's own input, not an outcome or an
@@ -81,7 +83,25 @@ internal sealed partial class SealedCaseStore
             }
         }
         var known = world.Checkpoint.Players.ToDictionary(x => x.Id, x => x.KnownPlayers, StringComparer.Ordinal);
-        var service = new SealedContextService(caseId, groupId, worldLog, [], [], orders, authority.Members,
+        if (world.Checkpoint.Scenario is not null)
+        {
+            for (var chapter = 1; chapter <= 6; chapter++)
+            {
+                foreach (var action in ReadConfirmedPlans(c, tx, caseId, chapter).Values)
+                {
+                    if (!orders.Any(order => order.Id == action.Id))
+                    {
+                        orders.Add(new(action.Id, action.ActorId, JsonSerializer.Serialize(action, Json), action.TargetId, true, []));
+                    }
+                }
+            }
+        }
+        var experience = world.Checkpoint.Scenario?.Experiences?.Values.SelectMany(values => values).ToArray() ?? [];
+        var presentations = Statements(c, tx, caseId, role is SealedContextRole.Player or SealedContextRole.PrivateNarrator or SealedContextRole.ChoiceGenerator ? authenticatedAccountId : null).Select(statement => new SealedPresentation(statement.Id, statement.Actor, statement.Body,
+            statement.Public ? SealedAudience.Public : SealedAudience.Players(statement.Recipients),
+            statement.Public ? authority.Members.Select(m => m.PlayerId!).Where(id => id is not null).ToArray() : statement.Recipients,
+            statement.Public)).ToArray();
+        var service = new SealedContextService(caseId, groupId, worldLog, experience, presentations, orders, authority.Members,
             known, authority.FinaleReleased, authority.ReleasedEventRefs);
         var frame = service.Project(caseId, groupId, authenticatedAccountId, role);
         tx.Commit(); return frame;

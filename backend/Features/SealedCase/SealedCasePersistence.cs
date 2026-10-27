@@ -24,12 +24,25 @@ internal sealed partial class SealedCaseStore
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly string _connectionString;
+    private readonly SealedCasePrivacyAuthority? privacy;
+    private readonly TimeProvider clock;
 
-    internal SealedCaseStore(string databasePath)
+    internal SealedCaseStore(string databasePath, SealedCasePrivacyAuthority? privacy = null, TimeProvider? clock = null)
     {
+        this.privacy = privacy;
+        this.clock = clock ?? TimeProvider.System;
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(databasePath))!);
         _connectionString = new SqliteConnectionStringBuilder { DataSource = Path.GetFullPath(databasePath), ForeignKeys = true }.ToString();
         using var connection = Open();
+        // Readers reserve privacy authorities after opening their case snapshot.
+        // WAL lets a writer commit while such a reader waits for that reservation;
+        // rollback journaling would deadlock the two databases until guard timeout.
+        using (var journal = connection.CreateCommand())
+        {
+            journal.CommandText = "PRAGMA journal_mode=WAL";
+            if (!string.Equals((string?)journal.ExecuteScalar(), "wal", StringComparison.OrdinalIgnoreCase))
+            { throw new InvalidOperationException("Sealed case storage requires WAL journaling."); }
+        }
         using var command = connection.CreateCommand();
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS sealed_cases(
@@ -58,6 +71,8 @@ internal sealed partial class SealedCaseStore
         }
         catch (SqliteException e) when (e.SqliteErrorCode == 1 && e.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) { }
         InitializeWorldSchema(connection);
+        InitializeTimingSchema(connection);
+        InvalidateLegacySelections();
     }
 
     internal SealedCaseSnapshot Create(string groupId, string actorId, long now, int expectedPlayers = 8, string variant = "full", string? operationId = null, Func<IDisposable>? authorizeWrite = null)
@@ -73,7 +88,7 @@ internal sealed partial class SealedCaseStore
         using var c = Open(); using var tx = c.BeginTransaction(deferred: false);
         // Lock order for this independent store: lobby -> identity. Reserve only
         // after the lobby wait, and exclude revocation through the actual commit.
-        using var admission = authorizeWrite?.Invoke();
+        using var admission = AcquireCaseAccess(c, tx, id, authorizeWrite, actorId);
         using (var existing = c.CreateCommand())
         {
             existing.Transaction = tx;
@@ -82,6 +97,10 @@ internal sealed partial class SealedCaseStore
             using var reader = existing.ExecuteReader();
             if (reader.Read())
             {
+                if (reader.GetString(1) == "privacy_terminated")
+                {
+                    throw new SealedCasePersistenceException("case_not_found", 404);
+                }
                 if (reader.GetString(0) != groupId || reader.GetString(6) != setupJson) throw new SealedCasePersistenceException("idempotency_key_reused", 409);
                 // Creation replay returns the original setup receipt. The HTTP
                 // view separately reads current state; an old operation never
@@ -102,6 +121,7 @@ internal sealed partial class SealedCaseStore
     internal SealedCaseRecord Read(string id)
     {
         using var c = Open(); using var tx = c.BeginTransaction(deferred: true); using var cmd = c.CreateCommand();
+        using var admission = AcquireCaseAccess(c, tx, id);
         cmd.Transaction = tx;
         cmd.CommandText = "SELECT id,group_id,status,revision,started_at,chapter,chapter_deadline,setup_json,lobby_json FROM sealed_cases WHERE id=$id";
         cmd.Parameters.AddWithValue("$id", id);
@@ -130,7 +150,7 @@ internal sealed partial class SealedCaseStore
             throw new SealedCasePersistenceException("invalid_command", 400);
         var payloadJson = JsonSerializer.Serialize(payload, Json);
         using var c = Open(); using var tx = c.BeginTransaction(deferred: false);
-        using var admission = authorizeWrite?.Invoke();
+        using var admission = AcquireCaseAccess(c, tx, caseId, authorizeWrite, actorId);
         using (var terminal = c.CreateCommand())
         {
             terminal.Transaction = tx; terminal.CommandText = "SELECT 1 FROM sealed_cases WHERE id=$id AND status='privacy_terminated'";
@@ -211,11 +231,30 @@ internal sealed partial class SealedCaseStore
             if (duration is < 60 or > 7200) throw new SealedCasePersistenceException("invalid_chapter_duration", 400);
             nextStatus = "running"; nextStarted = now; nextChapter = 1; deadline = checked(now + duration);
         }
+        else if (kind == "confirmed-plan")
+        {
+            if (status != "running" || payload is not SealedPlanConfirmation confirmation)
+            {
+                throw new SealedCasePersistenceException("case_not_running", 409);
+            }
+            now = clock.GetUtcNow().ToUnixTimeSeconds();
+            payloadJson = JsonSerializer.Serialize(PrepareConfirmedPlan(c, tx, caseId, actorId, revision, confirmation), Json);
+        }
         else if (kind == "confirmed-action")
         {
             if (status != "running") throw new SealedCasePersistenceException("case_not_running", 409);
-            if (chapterDeadline is null || now >= chapterDeadline) throw new SealedCasePersistenceException("chapter_locked", 409);
-            if (PayloadInt(payload, "chapter") != chapter) throw new SealedCasePersistenceException("wrong_chapter", 409);
+            using var managed = c.CreateCommand(); managed.Transaction = tx;
+            managed.CommandText = "SELECT 1 FROM sealed_case_timing WHERE case_id=$case";
+            managed.Parameters.AddWithValue("$case", caseId);
+            if (managed.ExecuteScalar() is not null)
+            {
+                throw new SealedCasePersistenceException("sealed_case_action_contract_required", 409);
+            }
+            else
+            {
+                if (chapterDeadline is null || now >= chapterDeadline) throw new SealedCasePersistenceException("chapter_locked", 409);
+                if (PayloadInt(payload, "chapter") != chapter) throw new SealedCasePersistenceException("wrong_chapter", 409);
+            }
         }
         else if (kind is "lobby" or "start") throw new SealedCasePersistenceException("invalid_transition", 409);
         else throw new SealedCasePersistenceException("unsupported_action", 422);
@@ -276,50 +315,30 @@ internal sealed partial class SealedCaseStore
               json_extract(ca.setup_json,'$.createdBy')=$account
               OR EXISTS(SELECT 1 FROM sealed_case_events e WHERE e.case_id=ca.id AND e.actor_id=$account)
               OR EXISTS(SELECT 1 FROM sealed_case_private_snapshots s WHERE s.case_id=ca.id AND s.subject_account=$account)
+              OR EXISTS(SELECT 1 FROM sealed_case_rosters r,json_each(r.roster_json) member
+                  WHERE r.case_id=ca.id AND json_extract(member.value,'$.accountId')=$account)
             """;
         find.Parameters.AddWithValue("$account", accountId);
         var ids = new List<string>(); using (var rows = find.ExecuteReader()) while (rows.Read()) ids.Add(rows.GetString(0));
-        // The append-only triggers stay enabled globally. Their only exception
-        // is this narrowly scoped transaction, serialized by the case writer.
-        foreach (var table in new[] { "sealed_case_events", "sealed_case_world", "sealed_case_resolutions" })
-        {
-            using var drop = c.CreateCommand(); drop.Transaction = tx;
-            drop.CommandText = $"DROP TRIGGER IF EXISTS {table}_no_delete"; drop.ExecuteNonQuery();
-        }
         foreach (var id in ids)
         {
-            foreach (var table in new[] { "sealed_case_resolutions", "sealed_case_world", "sealed_case_rosters", "sealed_case_events", "sealed_case_private_snapshots" })
+            using var terminal = c.CreateCommand(); terminal.Transaction = tx;
+            terminal.CommandText = "UPDATE sealed_cases SET status='privacy_terminated',revision=revision+1,started_at=NULL,chapter=0,chapter_deadline=NULL,setup_json='{}',lobby_json='{}' WHERE id=$id";
+            terminal.Parameters.AddWithValue("$id", id); terminal.ExecuteNonQuery();
+            foreach (var table in new[] { "sealed_case_resolutions", "sealed_case_world", "sealed_case_rosters", "sealed_case_events", "sealed_case_private_snapshots", "sealed_case_timing" })
             {
                 using var delete = c.CreateCommand(); delete.Transaction = tx;
                 delete.CommandText = $"DELETE FROM {table} WHERE case_id=$id"; delete.Parameters.AddWithValue("$id", id); delete.ExecuteNonQuery();
             }
-            using var terminal = c.CreateCommand(); terminal.Transaction = tx;
-            terminal.CommandText = "UPDATE sealed_cases SET status='privacy_terminated',revision=revision+1,started_at=NULL,chapter=0,chapter_deadline=NULL,setup_json='{}',lobby_json='{}' WHERE id=$id";
-            terminal.Parameters.AddWithValue("$id", id); terminal.ExecuteNonQuery();
-        }
-        foreach (var table in new[] { "sealed_case_events", "sealed_case_world", "sealed_case_resolutions" })
-        {
-            using var trigger = c.CreateCommand(); trigger.Transaction = tx;
-            trigger.CommandText = $"CREATE TRIGGER {table}_no_delete BEFORE DELETE ON {table} BEGIN SELECT RAISE(ABORT,'sealed case history is append-only'); END";
-            trigger.ExecuteNonQuery();
         }
         tx.Commit(); return ids.Count;
-    }
-
-    internal string[] ReadSnapshotOwners(string caseId)
-    {
-        using var c = Open(); using var command = c.CreateCommand();
-        command.CommandText = "SELECT DISTINCT subject_account FROM sealed_case_private_snapshots WHERE case_id=$case";
-        command.Parameters.AddWithValue("$case", caseId);
-        using var reader = command.ExecuteReader(); var owners = new List<string>();
-        while (reader.Read()) owners.Add(reader.GetString(0));
-        return owners.ToArray();
     }
 
     internal SealedCaseActionReceipt? ReadReplay(string caseId, string groupId, string actorId, string kind, string idempotencyKey,
         long expectedRevision, string clientFingerprint, Func<IDisposable>? authorizeWrite = null)
     {
-        using var c = Open(); using var tx = c.BeginTransaction(deferred: true); using var admission = authorizeWrite?.Invoke();
+        using var c = Open(); using var tx = c.BeginTransaction(deferred: true); using var admission = AcquireCaseAccess(c, tx, caseId, authorizeWrite, actorId);
+        _ = ReadCaseRevision(c, tx, caseId, groupId);
         using var cmd = c.CreateCommand(); cmd.Transaction = tx;
         cmd.CommandText = "SELECT e.event_id,e.revision,CASE e.kind WHEN 'lobby' THEN 'lobby' ELSE 'running' END,e.kind,e.expected_revision,e.client_fingerprint,ca.group_id FROM sealed_case_events e JOIN sealed_cases ca ON ca.id=e.case_id WHERE e.case_id=$case AND e.actor_id=$actor AND e.idempotency_key=$key";
         cmd.Parameters.AddWithValue("$case", caseId); cmd.Parameters.AddWithValue("$actor", actorId); cmd.Parameters.AddWithValue("$key", idempotencyKey);

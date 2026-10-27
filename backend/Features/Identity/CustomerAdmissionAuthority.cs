@@ -76,6 +76,8 @@ internal sealed class CustomerAdmissionAuthority(IServiceScopeFactory scopes, Ch
 // Acquire these before awaiting memory admission; dispose later scopes first.
 internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDisposable
 {
+    internal CustomerDataSqliteGuard AccountReservation => account;
+    internal CustomerDataSqliteGuard CharacterReservation => character;
     private readonly CustomerDataSqliteGuard account;
     private readonly CustomerDataSqliteGuard character;
     private readonly CharacterProfileStore profiles;
@@ -287,6 +289,7 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
 // account-scoped store without opening a second SQLite transaction.
 internal sealed class CustomerAccountAdmission : IDisposable
 {
+    internal CustomerDataSqliteGuard AccountReservation => account;
     private readonly CustomerDataSqliteGuard account;
 
     internal CustomerAdmissionProof Proof { get; }

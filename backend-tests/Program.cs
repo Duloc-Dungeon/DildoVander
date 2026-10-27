@@ -15,6 +15,23 @@ if (args is ["--sealed-case-restart-read", var readPath]) { SealedCasePersistenc
 if (args is ["--sealed-case-persistence"]) { SealedCasePersistenceTests.Run(); Console.WriteLine("SealedCase persistence checks passed."); return; }
 if (args is ["--sealed-case-rules"]) { SealedCaseRulesTests.Run(); return; }
 if (args is ["--sealed-case-http"]) { await SealedCaseHttpTests.RunAsync(); return; }
+if (args is ["--sealed-case-c1"]) { await SealedCaseHttpTests.FrozenPrivacyAndLegacyAcceptanceAsync(); return; }
+if (args is ["--sealed-case-timing"]) { SealedCaseTimingTests.Run(); return; }
+if (args is ["--sealed-case-plans"]) { SealedCasePlanTests.Run(); return; }
+if (args is ["--sealed-case-ai", var aiVariant])
+{
+    try { await SealedCaseHttpTests.AiGameAsync(aiVariant); }
+    catch (Exception error) { Console.Error.WriteLine(error is HttpRequestException ? "AI acceptance transport failure" : error.Message); Environment.ExitCode = 1; }
+    return;
+}
+if (args is ["--sealed-case-playable"]) { await SealedCaseHttpTests.PlayableCasesAsync(); return; }
+if (args is ["--sealed-case-runtime"])
+{
+    SealedCaseTests.Run(); SealedCaseRulesTests.Run(); SealedCaseProjectionTests.Run();
+    SealedCaseContextPersistenceTests.Run(); SealedCasePersistenceTests.Run();
+    SealedCaseTimingTests.Run(); SealedCasePlanTests.Run();
+    await SealedCaseHttpTests.RunAsync(); await SealedCaseHttpTests.PlayableCasesAsync(); return;
+}
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); return; }
 if (args is ["--mobile-game-http"]) { await MobileGameTests.RunHttpAsync(); return; }
 if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); return; }

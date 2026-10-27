@@ -286,7 +286,7 @@ internal sealed partial class CharacterProfileStore
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM character_account_fences WHERE account_id=$account UNION ALL SELECT 1 FROM character_deletions WHERE account_id=$account LIMIT 1";
+        command.CommandText = "SELECT 1 FROM character_account_fences WHERE account_id=$account UNION ALL SELECT 1 FROM character_deletions WHERE account_id=$account AND (completed=0 OR profile_id='*') LIMIT 1";
         command.Parameters.AddWithValue("$account", accountId);
         return command.ExecuteScalar() is not null;
     }

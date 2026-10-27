@@ -21,10 +21,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-internal static class SealedCaseHttpTests
+internal static partial class SealedCaseHttpTests
 {
     internal static async Task RunAsync()
     {
+        await FrozenPrivacyAndLegacyAcceptanceAsync();
         await PollingDoesNotConsumeAccountBudgetAsync();
         await CapacityRejectsThirtyFirstReadyAsync();
         await RevocationWhileLobbyWriteWaitsAsync();
@@ -93,11 +94,11 @@ internal static class SealedCaseHttpTests
             Equal(HttpStatusCode.Conflict, overflow.StatusCode);
         }
         Equal(8, (await owner.GetFromJsonAsync<JsonElement>($"/app/v1/sealed-cases/{id}")).GetProperty("readyPlayers").GetInt32());
-        Equal(false, complete.GetProperty("canStart").GetBoolean()); // scenario authority is deliberately unavailable
+        Equal(false, complete.GetProperty("canStart").GetBoolean()); // legacy selections lack explicit scenario consent
         var blocked = await owner.PostAsJsonAsync($"/app/v1/sealed-cases/{id}/start", new { operationId = "start-one", expectedRevision = revision });
-        Equal(HttpStatusCode.UnprocessableEntity, blocked.StatusCode);
-        var problem = await blocked.Content.ReadAsStringAsync(); Check(problem.Contains("sealed_case_scenario_unavailable", StringComparison.Ordinal), "explicit unavailable scenario");
-        Equal(HttpStatusCode.UnprocessableEntity, (await owner.PostAsJsonAsync($"/app/v1/sealed-cases/{id}/actions", new { operationId = "order", expectedRevision = revision, intent = "DREAM" })).StatusCode);
+        Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+        var problem = await blocked.Content.ReadAsStringAsync(); Check(problem.Contains("sealed_case_scenario_consent_required", StringComparison.Ordinal), "explicit scenario consent required");
+        Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync($"/app/v1/sealed-cases/{id}/actions", new { operationId = "order", expectedRevision = revision, intent = "DREAM" })).StatusCode);
         var persisted = new SealedCaseStore(Path.Combine(fixture.DataRoot, "sealed-case.sqlite")).Read(id);
         Equal(revision, persisted.Revision); Equal("lobby", persisted.Status);
         var json = await (await owner.GetAsync($"/app/v1/sealed-cases/{id}?viewerId=p2")).Content.ReadAsStringAsync();
@@ -109,7 +110,7 @@ internal static class SealedCaseHttpTests
         using var disabledClient = disabled.Client(); await disabled.LoginAsync(disabledClient, "p1");
         Equal(HttpStatusCode.NotFound, (await disabledClient.GetAsync("/app/v1/sealed-cases/unknown")).StatusCode);
         Check(!File.Exists(Path.Combine(disabled.DataRoot, "sealed-case.sqlite")), "disabled feature has no persistent side effects");
-        Console.WriteLine("SealedCase real HTTPS account/CSRF/group isolation and durable lobby checks passed; start/actions fail closed.");
+        Console.WriteLine("SealedCase real HTTPS account/CSRF/group isolation and durable lobby and explicit scenario-consent checks passed.");
     }
 
     private static async Task RevokedMemberDoesNotFreezeRosterAsync()
@@ -326,16 +327,21 @@ internal static class SealedCaseHttpTests
     {
         internal string? ObservedPath { get; set; }
         internal TaskCompletionSource Observed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal long OffsetSeconds;
+        internal long? FrozenAt;
         public override DateTimeOffset GetUtcNow()
         {
             var h = contexts.HttpContext;
             if (h is not null && HttpMethods.IsPost(h.Request.Method) && h.Request.Path == ObservedPath && h.Items.ContainsKey("dv-sealed-group")) Observed.TrySetResult();
-            return DateTimeOffset.UtcNow;
+            return (FrozenAt is { } frozen ? DateTimeOffset.FromUnixTimeSeconds(frozen) : DateTimeOffset.UtcNow).AddSeconds(Interlocked.Read(ref OffsetSeconds));
         }
     }
 
     private sealed class Fixture(WebApplication app, string root, X509Certificate2 certificate) : IAsyncDisposable
     {
+        internal IServiceProvider Services => app.Services;
+        internal void FreezeClock() => ((LobbyProbeClock)app.Services.GetRequiredService<TimeProvider>()).FrozenAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        internal void AdvanceSeconds(long seconds) => Interlocked.Add(ref ((LobbyProbeClock)app.Services.GetRequiredService<TimeProvider>()).OffsetSeconds, seconds);
         internal string DataRoot => Path.Combine(root, "accounts");
         internal Task<CharacterProfile?> CharacterAsync(string id) => app.Services.GetRequiredService<CharacterProfileStore>().ReadAsync(id);
         internal async Task AdvanceCharacterAsync(string id)
@@ -391,7 +397,7 @@ internal static class SealedCaseHttpTests
             app.MapPost("/test/login/{id}", async (string id, HttpContext h, AccountDatabase db, SignInManager<AccountUser> signIn) =>
             {
                 var user = await db.Users.SingleAsync(u => u.Id == id); var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var session = new AccountSession { Id = Guid.NewGuid().ToString("N"), UserId = id, ExpiresAt = now + 3600, AuthenticatedAt = now, LastSeenAt = now };
+                var session = new AccountSession { Id = Guid.NewGuid().ToString("N"), UserId = id, ExpiresAt = now + 24 * 3600, AuthenticatedAt = now, LastSeenAt = now };
                 db.Sessions.Add(session); await db.SaveChangesAsync();
                 await signIn.SignInWithClaimsAsync(user, new AuthenticationProperties { IsPersistent = false, ExpiresUtc = DateTimeOffset.FromUnixTimeSeconds(session.ExpiresAt) }, [new Claim(AccountIdentity.SessionClaim, session.Id)]);
                 return Results.NoContent();

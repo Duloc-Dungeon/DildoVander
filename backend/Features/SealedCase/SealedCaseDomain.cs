@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -7,16 +8,21 @@ namespace Kufr.Backend.Features.SealedCase;
 internal enum SealedPlayerState { Awake, Sleeping, Unconscious, Echo }
 internal enum SealedIntent { Hold, Rest, Guard, Prepare, Investigate, Follow, Steal, Sabotage, Stun, Lethal, Help, EchoReview, EchoDeliver, EchoScene, Dream, Mask, FeignSleep, Transfer }
 internal enum SealedConditionKind { TargetAppearsAsleep, VerifiedSleep }
+internal enum SealedDefensePolicy { TakeCover, CallForHelp, Withdraw }
 internal enum SealedResult { Success, Defended, Hold, RequestValid }
 internal sealed class SealedCaseRuleException(string message) : Exception(message);
 
 internal sealed record SealedCondition(SealedConditionKind Kind, string? EvidenceId = null);
 internal sealed record SealedAction(string Id, string ActorId, int Chapter, SealedIntent Intent,
     string? TargetId = null, string? Destination = null, string? Method = null, SealedCondition? Condition = null,
-    string Fallback = "HOLD", bool LethalConfirmed = false, int Revision = 1, SealedIntent? PreparedIntent = null)
+    string Fallback = "HOLD", bool LethalConfirmed = false, int Revision = 1, SealedIntent? PreparedIntent = null, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ResourceId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Summary = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SealedDefensePolicy? DefensePolicy = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ShelteredPosition = null)
 {
     internal void Validate()
     {
+        if (DefensePolicy is { } policy && !Enum.IsDefined(policy)) { throw new SealedCaseRuleException("Unknown defense policy."); }
         if (!Enum.IsDefined(Intent) || PreparedIntent is { } prepared && !Enum.IsDefined(prepared)
             || Condition is { } condition && !Enum.IsDefined(condition.Kind))
             throw new SealedCaseRuleException("Unknown action enum.");
@@ -131,6 +137,8 @@ internal sealed partial class SealedGame
         }
         var events = new Dictionary<string, SealedEvent>(StringComparer.Ordinal);
         var denied = new HashSet<string>(StringComparer.Ordinal);
+        var nextScenario = Scenario?.Copy();
+        nextScenario?.Masks.Clear();
         foreach (var (actorId, action) in actions.OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             var actor = working[actorId];
@@ -151,6 +159,27 @@ internal sealed partial class SealedGame
                 actor.Location = action.Destination; actor.Cover = 0;
             }
         }
+        if (nextScenario is not null)
+        {
+            var moved = working.ToDictionary(p => p.Key, p => p.Value.Copy(), StringComparer.Ordinal);
+            foreach (var follow in actions.Values.Where(a => a.Intent == SealedIntent.Follow && !denied.Contains(a.ActorId)))
+            {
+                var actor = working[follow.ActorId];
+                var target = follow.TargetId is { } targetId ? moved.GetValueOrDefault(targetId) : null;
+                var prior = Players[actor.Id];
+                var seen = target is not null && prior.KnownPlayers.Contains(target.Id)
+                    && (prior.Location == Players[target.Id].Location || prior.ObservedPlayers.Contains(target.Id))
+                    && (target.Location == prior.Location || _adjacency.GetValueOrDefault(prior.Location, []).Contains(target.Location))
+                    && (follow.Destination is null || follow.Destination == target.Location);
+                if (seen) { actor.Location = target!.Location; }
+                if (!seen) { events[actor.Id] = Event(follow, SealedResult.Hold, 1, "FOLLOW_NOT_OBSERVED"); }
+            }
+            foreach (var actor in working.Values.Where(p => p.State == SealedPlayerState.Awake))
+            {
+                actor.ObservedPlayers.Clear();
+                actor.ObservedPlayers.UnionWith(working.Values.Where(other => other.Id != actor.Id && other.Location == actor.Location).Select(other => other.Id));
+            }
+        }
         foreach (var (actorId, action) in actions.OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             if (denied.Contains(actorId)) continue;
@@ -158,6 +187,10 @@ internal sealed partial class SealedGame
             if (p.State == SealedPlayerState.Echo && action.Intent is not (SealedIntent.Hold or SealedIntent.EchoReview or SealedIntent.EchoDeliver or SealedIntent.EchoScene)) { Reject(action, "BODY_UNAVAILABLE"); continue; }
             if (p.State == SealedPlayerState.Unconscious && action.Intent is not (SealedIntent.Hold or SealedIntent.Dream)) { Reject(action, "UNCONSCIOUS"); continue; }
             if (p.State == SealedPlayerState.Sleeping && action.Intent != SealedIntent.Hold) { Reject(action, "ASLEEP_BEFORE_ACTION"); continue; }
+            if (nextScenario is not null && action.ShelteredPosition == true && p.State == SealedPlayerState.Awake
+                && SealedScenario.Definition.GetProperty("map").GetProperty("zones").EnumerateArray()
+                    .Any(zone => zone.GetProperty("id").GetString() == p.Location && zone.GetProperty("cover_available").GetBoolean()))
+            { p.Cover = 1; }
             if (action.Intent == SealedIntent.FeignSleep) { p.FeigningSleep = true; events[actorId] = Event(action, SealedResult.Success, 2); }
             else if (action.Intent is SealedIntent.Rest or SealedIntent.Prepare)
             {
@@ -173,6 +206,7 @@ internal sealed partial class SealedGame
             }
         }
         var snapshot = working.ToDictionary(p => p.Key, p => p.Value.Copy(), StringComparer.Ordinal);
+        ResolveScenarioActions(chapter, actions, working, snapshot, events, denied, nextScenario);
         var pending = new Dictionary<string, SealedPlayerState>(StringComparer.Ordinal);
         var spend = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (actorId, action) in actions.OrderBy(x => x.Key, StringComparer.Ordinal))
@@ -228,6 +262,13 @@ internal sealed partial class SealedGame
             if (p.State == SealedPlayerState.Unconscious && p.UnconsciousUntilEnd == chapter) { p.State = SealedPlayerState.Awake; p.UnconsciousUntilEnd = 0; }
             if (p.PreparationChapter <= chapter) { p.Preparation = 0; p.PreparedIntent = null; p.PreparationChapter = 0; }
         }
+        if (nextScenario is not null)
+        {
+            RecordOversightTrace(nextScenario, snapshot, actions, events, chapter);
+            ResolvePassiveDefense(nextScenario, snapshot, working, actions, events, chapter);
+            CaptureObservations(nextScenario, working, chapter);
+        }
+        Scenario = nextScenario;
         Players.Clear(); foreach (var p in working) Players.Add(p.Key, p.Value);
         var output = events.Values.OrderBy(x => x.ActorId, StringComparer.Ordinal).ToArray();
         _resolved[chapter] = (fingerprint, output);

@@ -6,6 +6,7 @@ using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Keepsakes;
 using Kufr.Backend.Features.Memory;
 using Kufr.Backend.Features.PersonaLab;
+using Kufr.Backend.Features.SealedCase;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,7 @@ internal static partial class AccountIdentityTests
                 LivePromptSnapshot.Create(PersonalityCatalog.OllivanderId, new GptLiveOptions()));
             var exports = new AccountDataExportStore(Path.Combine(root, "accounts"), TimeProvider.System);
             var conversations = new ConversationStore(TimeProvider.System, journal, eveningMemory: memory);
+            var cases = new SealedCaseStore(Path.Combine(root, "sealed-case.sqlite"));
             var services = new ServiceCollection();
             services.Configure<IdentityOptions>(options => options.Stores.SchemaVersion = IdentitySchemaVersions.Version3);
             services.AddDbContext<AccountDatabase>(options => options.UseSqlite("Data Source=" + Path.Combine(root, "identity.sqlite")));
@@ -40,6 +42,7 @@ internal static partial class AccountIdentityTests
             services.AddSingleton(journal); services.AddSingleton(memory); services.AddSingleton(characters);
             services.AddSingleton(keepsakes); services.AddSingleton(lab); services.AddSingleton(exports);
             services.AddSingleton(conversations);
+            services.AddSingleton(cases);
             services.AddLogging();
             services.AddIdentityCore<AccountUser>(options => options.Stores.SchemaVersion = IdentitySchemaVersions.Version3)
                 .AddRoles<IdentityRole>().AddEntityFrameworkStores<AccountDatabase>();
@@ -63,6 +66,21 @@ internal static partial class AccountIdentityTests
             var bobExport = exports.Create(bobExportAccess, bobExportRequest);
             await characters.SaveAsync("alice", new(0, new CharacterUserInput("Secret", "Original"), OpenAiConsent: true));
             await characters.SaveAsync("bob", new(0, new CharacterUserInput("Other", "Original"), OpenAiConsent: true));
+            var affectedCase = cases.Create("synthetic-group", "alice", 100, operationId: "deletion-affected");
+            var selectedProfile = (await characters.ReadAsync("alice"))!;
+            cases.Append(affectedCase.Id, affectedCase.GroupId, "alice", "lobby", "deletion-ready", 1, 101,
+                new SealedCaseLobbyEntry("alice", true, true, "synthetic-snapshot"),
+                capturePrivateSnapshot: () => SealedCasePrivateSnapshot.From("synthetic-snapshot", "alice", selectedProfile,
+                    new(new("ready", null, "Syntetický obraz.", null, 1, 101), [17, 23, 42])));
+            cases.InitializeWorld(affectedCase.Id, affectedCase.GroupId, 2, 102,
+                new SealedGame([new SealedPlayer("alice"), new SealedPlayer("bob")], "synthetic-affected"));
+            cases.ResolveWorldChapter(affectedCase.Id, affectedCase.GroupId, 1, 3, 103,
+                [new("hold-alice", "alice", 1, SealedIntent.Hold), new("hold-bob", "bob", 1, SealedIntent.Hold)]);
+            var unaffectedCase = cases.Create("synthetic-other-group", "bob", 104, operationId: "deletion-unaffected");
+            cases.InitializeWorld(unaffectedCase.Id, unaffectedCase.GroupId, 1, 105,
+                new SealedGame([new SealedPlayer("bob")], "synthetic-unaffected"));
+            cases.ResolveWorldChapter(unaffectedCase.Id, unaffectedCase.GroupId, 1, 2, 106,
+                [new("hold-bob", "bob", 1, SealedIntent.Hold)]);
             var aliceLab = lab.CreateSession("alice", new(lab.ActiveRevisionId, "gpt-live-1", "first-visit", "empty", "private"));
             var bobLab = lab.CreateSession("bob", new(lab.ActiveRevisionId, "gpt-live-1", "first-visit", "empty", "other"));
             var evening = memory.GetStatus("device").EveningId;
@@ -143,6 +161,20 @@ internal static partial class AccountIdentityTests
             var missingServices = new ServiceCollection().BuildServiceProvider();
             await new AccountDeletionService(db, missingServices, TimeProvider.System).ProcessPendingAsync();
             Check(await service.ReadStatusAsync(result.ReceiptId!) == "pending", "failed cleanup retains pending intent");
+            using (var connection = new SqliteConnection("Data Source=" + Path.Combine(root, "sealed-case.sqlite")))
+            {
+                connection.Open(); using var command = connection.CreateCommand();
+                command.CommandText = "CREATE TRIGGER synthetic_case_erase_failure BEFORE DELETE ON sealed_case_private_snapshots BEGIN SELECT RAISE(ABORT,'synthetic erase failure'); END";
+                command.ExecuteNonQuery();
+                await service.ProcessPendingAsync();
+                Check(await service.ReadStatusAsync(result.ReceiptId!) == "pending"
+                    && (await characters.PendingDeletionsAsync()).Any(x => x.AccountId == "alice" && x.ProfileId == "*"),
+                    "case erase failure cannot acknowledge the account saga or character fence");
+                command.CommandText = "SELECT COUNT(*) FROM sealed_case_resolutions WHERE case_id=$id";
+                command.Parameters.AddWithValue("$id", affectedCase.Id);
+                Check((long)command.ExecuteScalar()! == 1, "failed erasure atomically preserves world/history for retry");
+                command.CommandText = "DROP TRIGGER synthetic_case_erase_failure"; command.ExecuteNonQuery();
+            }
             var blockedDirectory = Path.Combine(root, "archive", owned[0]);
             Directory.CreateDirectory(blockedDirectory);
             var blockedPath = Path.Combine(blockedDirectory, "private-photo.jpg");
@@ -172,6 +204,26 @@ internal static partial class AccountIdentityTests
             }
             Check(!Directory.Exists(blockedDirectory), "fresh worker retry physically removes owned photo directory");
             Check(await service.ReadStatusAsync(result.ReceiptId!) == "completed", "retry completes durable saga");
+            using (var connection = new SqliteConnection("Data Source=" + Path.Combine(root, "sealed-case.sqlite")))
+            {
+                connection.Open(); using var command = connection.CreateCommand();
+                command.Parameters.AddWithValue("$id", affectedCase.Id);
+                foreach (var table in new[] { "sealed_case_world", "sealed_case_resolutions", "sealed_case_events", "sealed_case_rosters", "sealed_case_private_snapshots" })
+                {
+                    command.CommandText = $"SELECT COUNT(*) FROM {table} WHERE case_id=$id";
+                    Check((long)command.ExecuteScalar()! == 0, "account retry purges affected " + table);
+                }
+                command.Parameters.Clear();
+                command.CommandText = "DELETE FROM sealed_case_resolutions WHERE case_id=$id";
+                command.Parameters.AddWithValue("$id", unaffectedCase.Id);
+                var appendOnly = false;
+                try { command.ExecuteNonQuery(); }
+                catch (SqliteException) { appendOnly = true; }
+                Check(appendOnly, "unaffected history retains its append-only delete guard after erase");
+            }
+            Check(cases.ReadWorldHistory(unaffectedCase.Id, unaffectedCase.GroupId).Count == 1
+                && cases.ReadWorld(unaffectedCase.Id, unaffectedCase.GroupId).LastChapter == 1,
+                "account erase preserves another case's world and resolution history");
             Check(exports.Find(aliceExport.Id, aliceExportAccess) is null
                 && !HasExportRequest(exports.DatabasePath, "alice", aliceOldRequest)
                 && !HasExportRequest(exports.DatabasePath, "alice", aliceCurrentRequest),

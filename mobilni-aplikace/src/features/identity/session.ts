@@ -45,7 +45,7 @@ export function accountTransportBodyLimit(path: string, method: string, contentT
 
 export function accountTransportResponseLimit(path: string, method: string): number {
   if (method !== 'GET') return 1024 * 1024;
-  if (matchesExactTransportPath(prelaunchPortrait, path)) return 8 * 1024 * 1024;
+  if (matchesExactTransportPath(prelaunchPortrait, path) || /^\/app\/v1\/sealed-cases\/sc_[a-f0-9]{32}\/portraits\/[A-Za-z0-9_-]{1,128}$/.test(path)) return 8 * 1024 * 1024;
   return matchesExactTransportPath(archiveAsset, path)
     || matchesExactTransportPath(testingAsset, path)
     || matchesExactTransportPath(customerMemoryPath, path)

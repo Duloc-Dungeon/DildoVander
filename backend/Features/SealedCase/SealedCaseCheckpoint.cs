@@ -27,18 +27,20 @@ internal sealed record SealedPlayerCheckpoint(string Id, string Location, Sealed
 }
 
 internal sealed record SealedGameCheckpoint(int StorageVersion, string Seed,
-    Dictionary<string, string[]> Adjacency, SealedPlayerCheckpoint[] Players);
+    Dictionary<string, string[]> Adjacency, SealedPlayerCheckpoint[] Players, SealedScenarioState? Scenario = null);
 
 internal sealed partial class SealedGame
 {
     internal SealedGameCheckpoint Checkpoint() => new(1, _seed,
         _adjacency.OrderBy(x => x.Key, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Value.Order(StringComparer.Ordinal).ToArray()),
-        Players.Values.OrderBy(x => x.Id, StringComparer.Ordinal).Select(SealedPlayerCheckpoint.Capture).ToArray());
+        Players.Values.OrderBy(x => x.Id, StringComparer.Ordinal).Select(SealedPlayerCheckpoint.Capture).ToArray(), Scenario?.Copy());
 
     internal static SealedGame Restore(SealedGameCheckpoint checkpoint)
     {
         if (checkpoint.StorageVersion != 1) throw new SealedCasePersistenceException("unsupported_world_storage_version", 409);
-        return new(checkpoint.Players.Select(x => x.Restore()), checkpoint.Seed, checkpoint.Adjacency);
+        var game = new SealedGame(checkpoint.Players.Select(x => x.Restore()), checkpoint.Seed, checkpoint.Adjacency);
+        game.Scenario = checkpoint.Scenario?.Copy();
+        return game;
     }
 }

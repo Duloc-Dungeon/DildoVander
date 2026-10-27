@@ -390,7 +390,14 @@ internal static class SealedCasePersistenceTests
     private static SealedAction[] RestartOrders() => [new("attack", "owner", 2, SealedIntent.Lethal, "other", Method: "BREAKING_SEAL", LethalConfirmed: true), new("sleep", "other", 2, SealedIntent.Rest)];
 
     private static string TempPath() => Path.Combine(Path.GetTempPath(), "sealed-case-" + Guid.NewGuid().ToString("N") + ".sqlite");
-    private static void Delete(string path) { foreach (var file in new[] { path, path + "-wal", path + "-shm" }) if (File.Exists(file)) File.Delete(file); }
+    private static void Delete(string path)
+    {
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        foreach (var file in new[] { path, path + "-wal", path + "-shm" })
+        {
+            if (File.Exists(file)) { File.Delete(file); }
+        }
+    }
     private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new InvalidOperationException($"SealedCase HTTP/store: expected {expected}, got {actual}"); }
     private static void Throws<T>(Action action, string code) where T : Exception
     {

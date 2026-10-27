@@ -12,16 +12,16 @@ using Microsoft.AspNetCore.Identity;
 namespace Kufr.Backend.Features.SealedCase;
 
 internal sealed record SealedCaseCreateRequest(string? OperationId, int ExpectedPlayers, string? Variant = "first");
-internal sealed record SealedCaseLobbyRequest(string? OperationId, long ExpectedRevision, bool Ready, bool Consent);
+internal sealed record SealedCaseLobbyRequest(string? OperationId, long ExpectedRevision, bool Ready, bool Consent, bool ScenarioConsent = false);
 internal sealed record SealedCaseStartRequest(string? OperationId, long ExpectedRevision);
-internal sealed record SealedCaseLobbyEntry(string PlayerId, bool Ready, bool Consent, string? SnapshotRef = null);
+internal sealed record SealedCaseLobbyEntry(string PlayerId, bool Ready, bool Consent, string? SnapshotRef = null, bool ScenarioConsent = false);
 internal sealed record SealedCaseLobbyView(string Id, string PlayerId, string Status, long Revision,
     string Variant, int ExpectedPlayers, int ReadyPlayers, bool OwnReady, bool CanManage,
     bool CanStart, string StartBlocker, long ServerNow, int Chapters, int PlanningSeconds, int QuietSeconds);
 
-// This HTTP slice exposes a real durable, session-bound lobby, NOT a simulated game.
-// Until a complete scenario authority exists, start/actions deliberately fail closed.
-internal static class SealedCaseEndpoints
+// Session-bound lobby and playable scenario routes share frozen membership,
+// privacy reservations and the authoritative durable case journal.
+internal static partial class SealedCaseEndpoints
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private const string CaseItem = "dv-sealed-case";
@@ -33,7 +33,15 @@ internal static class SealedCaseEndpoints
         if (AccountConfiguration.Read(configuration).Enabled && configuration.GetValue<bool>("SealedCase:Enabled"))
         {
             services.AddSealedCaseRateLimits();
-            services.AddSingleton(sp => new SealedCaseStore(Path.Combine(sp.GetRequiredService<AccountConfiguration>().DataRoot, "sealed-case.sqlite")));
+            services.AddSingleton(sp =>
+            {
+                using var scope = sp.CreateScope();
+                var profiles = sp.GetRequiredService<CharacterProfileStore>();
+                var connectionString = scope.ServiceProvider.GetRequiredService<AccountDatabase>().Database.GetConnectionString()!;
+                var path = Path.Combine(sp.GetRequiredService<AccountConfiguration>().DataRoot, "sealed-case.sqlite");
+                CustomerAdmissionDatabasePaths.Validate(connectionString, profiles.CustomerDataDatabasePath, path);
+                return new SealedCaseStore(path, new SealedCasePrivacyAuthority(connectionString, profiles), sp.GetRequiredService<TimeProvider>());
+            });
         }
         return services;
     }
@@ -66,13 +74,6 @@ internal static class SealedCaseEndpoints
                     var cases = h.RequestServices.GetRequiredService<SealedCaseStore>();
                     var record = cases.Read(id);
                     if (record.GroupId != user.LaunchGroupId) return ApiProblem.Create(h, 404, "case_not_found");
-                    var profiles = h.RequestServices.GetRequiredService<CharacterProfileStore>();
-                    foreach (var owner in cases.ReadSnapshotOwners(id))
-                    {
-                        if (profiles.HasDeletionFence(owner)
-                            || await db.DeletionRequests.AnyAsync(deletion => deletion.UserId == owner, h.RequestAborted))
-                            return ApiProblem.Create(h, 404, "case_not_found");
-                    }
                     h.Items[CaseItem] = record;
                 }
                 return await next(invocation);
@@ -87,15 +88,15 @@ internal static class SealedCaseEndpoints
             var created = store.Create((string)h.Items[GroupItem]!, userId, clock.GetUtcNow().ToUnixTimeSeconds(), request.ExpectedPlayers, request.Variant ?? "first", request.OperationId, () => AuthorizeWrite(h, db, clock));
             return Results.Created($"/app/v1/sealed-cases/{created.Id}", await ViewAsync(store.Read(created.Id), userId, db, h.RequestServices.GetRequiredService<CharacterProfileStore>(), clock, h.RequestAborted));
         });
-        routes.MapGet("/{id}", async (HttpContext h, AccountDatabase db, TimeProvider clock) =>
-            Results.Ok(await ViewAsync((SealedCaseRecord)h.Items[CaseItem]!, h.User.FindFirstValue(ClaimTypes.NameIdentifier)!, db, h.RequestServices.GetRequiredService<CharacterProfileStore>(), clock, h.RequestAborted)));
+        routes.MapGet("/{id}", async (string id, HttpContext h, SealedCaseStore store, AccountDatabase db, TimeProvider clock) =>
+            ((SealedCaseRecord)h.Items[CaseItem]!).Status == "running" ? Results.Redirect($"/app/v1/sealed-cases/{id}/play") : Results.Ok(await ViewAsync(store.Read(id), h.User.FindFirstValue(ClaimTypes.NameIdentifier)!, db, h.RequestServices.GetRequiredService<CharacterProfileStore>(), clock, h.RequestAborted)));
         routes.MapPost("/{id}/lobby", async (SealedCaseLobbyRequest request, HttpContext h, SealedCaseStore store, AccountDatabase db, CharacterProfileStore characters, TimeProvider clock) =>
         {
             ValidateOperation(request.OperationId);
             if (request.Ready && !request.Consent) throw new SealedCasePersistenceException("sealed_case_consent_required", 400);
             var record = (SealedCaseRecord)h.Items[CaseItem]!;
             var userId = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { request.Ready, request.Consent }, Json))).ToLowerInvariant();
+            var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request.ScenarioConsent ? (object)new { request.Ready, request.Consent, request.ScenarioConsent } : new { request.Ready, request.Consent }, Json))).ToLowerInvariant();
             var replay = store.ReadReplay(record.Id, record.GroupId, userId, "lobby", request.OperationId!, request.ExpectedRevision, fingerprint,
                 () => AuthorizeWrite(h, db, clock));
             if (replay is not null) return Results.Ok(replay);
@@ -106,7 +107,7 @@ internal static class SealedCaseEndpoints
             SealedCasePrivateSnapshot? captured = null;
             CustomerAdmissionGuard? heldAdmission = null;
             var receipt = store.Append(record.Id, record.GroupId, userId, "lobby", request.OperationId!, request.ExpectedRevision,
-                clock.GetUtcNow().ToUnixTimeSeconds(), new SealedCaseLobbyEntry(userId, request.Ready, request.Consent, snapshotRef),
+                clock.GetUtcNow().ToUnixTimeSeconds(), new SealedCaseLobbyEntry(userId, request.Ready, request.Consent, snapshotRef, request.ScenarioConsent),
                 () => heldAdmission = AuthorizeLobbyWrite(h), current.ExpectedPlayers, fingerprint,
                 () => EligibleMembers(record.GroupId, db, characters), () =>
                 {
@@ -122,17 +123,7 @@ internal static class SealedCaseEndpoints
                 });
             return Results.Ok(receipt);
         });
-        routes.MapPost("/{id}/start", async (SealedCaseStartRequest request, HttpContext h, AccountDatabase db, TimeProvider clock) =>
-        {
-            ValidateOperation(request.OperationId);
-            var record = (SealedCaseRecord)h.Items[CaseItem]!;
-            var view = await ViewAsync(record, h.User.FindFirstValue(ClaimTypes.NameIdentifier)!, db, h.RequestServices.GetRequiredService<CharacterProfileStore>(), clock, h.RequestAborted);
-            if (!view.CanManage) return ApiProblem.Create(h, 403, "sealed_case_host_required");
-            if (request.ExpectedRevision != record.Revision) return ApiProblem.Create(h, 409, "revision_conflict");
-            if (view.ReadyPlayers != view.ExpectedPlayers) return ApiProblem.Create(h, 409, "sealed_case_lobby_not_ready");
-            return ApiProblem.Create(h, 422, "sealed_case_scenario_unavailable");
-        });
-        routes.MapPost("/{id}/actions", (HttpContext h) => ApiProblem.Create(h, 422, "sealed_case_scenario_unavailable"));
+        MapPlayableRoutes(routes);
     }
 
     private static void ValidateOperation(string? operationId)
@@ -180,17 +171,22 @@ internal static class SealedCaseEndpoints
         var eligible = await EligibleMembersAsync(record.GroupId, db, cancellationToken);
         eligible.RemoveWhere(profiles.HasDeletionFence);
         var latest = new Dictionary<string, SealedCaseLobbyEntry>(StringComparer.Ordinal);
+        var requiresReselection = false;
         foreach (var payload in record.Events)
         {
             using var doc = JsonDocument.Parse(payload);
             if (!doc.RootElement.TryGetProperty("playerId", out _) || !doc.RootElement.TryGetProperty("ready", out _) || !doc.RootElement.TryGetProperty("consent", out _)) continue;
             var entry = JsonSerializer.Deserialize<SealedCaseLobbyEntry>(payload, Json)!;
             if (eligible.Contains(entry.PlayerId)) latest[entry.PlayerId] = entry;
+            if (entry.PlayerId == userId)
+            {
+                requiresReselection = doc.RootElement.TryGetProperty("requiresReselection", out var reselect) && reselect.GetBoolean();
+            }
         }
         return new(record.Id, userId, record.Status, record.Revision, variant, expected,
             latest.Values.Count(x => x.Ready && x.Consent && x.SnapshotRef is not null),
             latest.TryGetValue(userId, out var own) && own.Ready && own.Consent && own.SnapshotRef is not null,
-            setup.RootElement.GetProperty("createdBy").GetString() == userId, false, "sealed_case_scenario_unavailable",
+            setup.RootElement.GetProperty("createdBy").GetString() == userId, false, requiresReselection ? "sealed_case_selection_required" : "sealed_case_scenario_unavailable",
             clock.GetUtcNow().ToUnixTimeSeconds(), schedule.Chapters, schedule.PlanningSeconds, schedule.QuietSeconds);
     }
 
