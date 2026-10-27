@@ -1,0 +1,16 @@
+{
+  "module": "POD_PECETI",
+  "rulesVersion": "1.0.0",
+  "scenarioId": "POD_PECETI_POSLEDNI_ZVON_V1",
+  "scenarioVersion": "1.0.0",
+  "scenarioSchemaVersion": "1.0",
+  "contracts": {
+    "action": "1.0",
+    "event": "1.0",
+    "context": "1.0"
+  },
+  "sourcePackageVersion": "1.0",
+  "sourcePackageDate": "2026-10-26",
+  "status": "PARAMETERIZED_PLAYTEST_BASELINE",
+  "disclosure": "SERVER_ONLY_CONTENT_NOT_FOR_CLIENT"
+}

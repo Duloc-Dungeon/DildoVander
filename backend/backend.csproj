@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="BackendTests" />
+    <EmbeddedResource Include="Features/SealedCase/sealed-case-content-version.json" LogicalName="Kufr.Backend.SealedCaseContentVersion" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.13" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />

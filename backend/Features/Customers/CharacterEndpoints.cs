@@ -86,7 +86,8 @@ internal static class CharacterEndpoints
         group.MapDelete("", async (long expectedRevision, string expectedProfileId, HttpContext http, CharacterProfileStore store) =>
         {
             await store.DeleteAsync(AccountId(http), expectedRevision, expectedProfileId, http.RequestAborted);
-            await ReconcileDeletionsAsync(http.RequestServices, store, http.RequestAborted);
+            // The endpoint filter still holds identity admission here. The durable
+            // reconciler performs cross-store cleanup only after that reservation is released.
             return Results.NoContent();
         });
     }
@@ -96,17 +97,23 @@ internal static class CharacterEndpoints
     internal static Task ReconcileDeletionsAsync(IServiceProvider services, CharacterProfileStore store, CancellationToken token)
     {
         var journal = services.GetService<OperationJournal>();
-        if (journal is null) { return Task.CompletedTask; }
-        var conversations = services.GetRequiredService<ConversationStore>();
+        var conversations = journal is null ? null : services.GetService<ConversationStore>();
+        var sealedCases = services.GetService<Kufr.Backend.Features.SealedCase.SealedCaseStore>();
         return store.ReplayDeletionsAsync((accountId, profileId) =>
         {
+            // Case cleanup is mandatory and independent of the optional operation journal.
+            // ReplayDeletionsAsync marks the tombstone complete only after this callback returns.
+            sealedCases?.EraseAccount(accountId);
             var wands = services.GetService<Kufr.Backend.Features.Wands.WandGenerationStore>();
             if (profileId is null) { wands?.DeleteAccount(accountId); }
             else { wands?.DeleteProfile(accountId, profileId); }
-            journal.RevokeCustomerProfile(accountId, profileId);
-            foreach (var session in journal.CustomerSessions(accountId).Where(session =>
-                (profileId is null || session.ProfileId == profileId) && session.ConversationId is not null))
-            { conversations.InvalidateMemoryContext(session.DeviceId, session.ConversationId); }
+            if (journal is not null)
+            {
+                journal.RevokeCustomerProfile(accountId, profileId);
+                foreach (var session in journal.CustomerSessions(accountId).Where(session =>
+                    (profileId is null || session.ProfileId == profileId) && session.ConversationId is not null))
+                { conversations!.InvalidateMemoryContext(session.DeviceId, session.ConversationId); }
+            }
             return Task.CompletedTask;
         }, token);
     }

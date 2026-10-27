@@ -218,6 +218,22 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
         return snapshot ?? throw new CustomerDataAccessException(409, "character_revision_mismatch");
     }
 
+    internal CharacterProfile? ReadCurrentOwnedProfile()
+    {
+        ValidateCurrent();
+        var profile = profiles.ReadHeldCurrentAdmissionProfile(character, Proof.AccountId);
+        ValidateCurrent();
+        return profile;
+    }
+
+    internal CharacterPortraitCapture? ReadOwnedPortrait(string profileId, long revision)
+    {
+        ValidateCurrent();
+        var portrait = profiles.ReadHeldPortrait(character, Proof.AccountId, profileId, revision);
+        ValidateCurrent();
+        return portrait;
+    }
+
     internal bool IsProfileRevoked(string profileId)
     {
         ValidateCurrent();

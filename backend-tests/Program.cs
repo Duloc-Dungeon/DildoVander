@@ -7,7 +7,11 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
-if (args is ["--sealed-case"]) { SealedCaseTests.Run(); Console.WriteLine("SealedCase foundation checks passed."); return; }
+if (args is ["--sealed-case-context-persistence"]) { SealedCaseContextPersistenceTests.Run(); return; }
+if (args is ["--sealed-case-projections"]) { SealedCaseProjectionTests.Run(); return; }
+if (args is ["--sealed-case"]) { SealedCaseTests.Run(); SealedCaseProjectionTests.Run(); SealedCaseContextPersistenceTests.Run(); Console.WriteLine("SealedCase foundation checks passed."); return; }
+if (args is ["--sealed-case-restart-write", var writePath]) { SealedCasePersistenceTests.WriteRestartFixture(writePath); return; }
+if (args is ["--sealed-case-restart-read", var readPath]) { SealedCasePersistenceTests.VerifyRestartFixture(readPath); return; }
 if (args is ["--sealed-case-persistence"]) { SealedCasePersistenceTests.Run(); Console.WriteLine("SealedCase persistence checks passed."); return; }
 if (args is ["--sealed-case-rules"]) { SealedCaseRulesTests.Run(); return; }
 if (args is ["--sealed-case-http"]) { await SealedCaseHttpTests.RunAsync(); return; }

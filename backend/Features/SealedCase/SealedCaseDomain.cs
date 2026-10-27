@@ -91,7 +91,7 @@ internal sealed record SealedEvent(string Id, int Chapter, int Phase, string Act
     SealedIntent Intent, SealedResult Result, string? Reason, SealedModifiers? Modifiers = null, SealedRolls? Rolls = null,
     bool TraceCreated = false, IReadOnlyList<string>? CausalParentIds = null);
 
-internal sealed class SealedGame
+internal sealed partial class SealedGame
 {
     private readonly string _seed;
     private readonly Dictionary<string, HashSet<string>> _adjacency;
@@ -272,7 +272,14 @@ internal sealed class SealedWorldLog
     internal IReadOnlyList<SealedWorldEvent> Events => _events;
     internal void Append(SealedWorldEvent item) { if (_events.Any(x => x.Id == item.Id)) throw new SealedCaseRuleException("Duplicate world event id."); _events.Add(item); }
 }
-internal sealed record SealedExperience(string Id, string ObserverId, string? SourceEventId, string Text, string Confidence);
+internal sealed record SealedExperience(string Id, string ObserverId, string? SourceEventId, string Text, string Confidence,
+    int Phase = 3, string Modality = "SAW", string? PerceivedState = null)
+{
+    internal string Classification => Confidence switch
+    {
+        "REPORTED" => "STATEMENT", "INFERRED" => "INFERENCE", "UNCERTAIN" => "UNCERTAIN_FRAGMENT", _ => "CONFIRMED_OBSERVATION"
+    };
+}
 internal enum SealedPresentationKind { Statement, PhysicalPerformance, DisplayedEvidence }
 internal sealed record SealedAudience(string Kind, IReadOnlyList<string> Recipients)
 {
@@ -281,7 +288,14 @@ internal sealed record SealedAudience(string Kind, IReadOnlyList<string> Recipie
 }
 internal sealed record SealedPresentation(string Id, string AuthorId, string Text, SealedAudience Audience,
     IReadOnlyList<string> DeliveryReceipts, bool Published, SealedPresentationKind Kind = SealedPresentationKind.Statement);
-internal sealed record SealedCovertOrder(string Id, string ActorId, string Intent, string? TargetId, bool Confirmed, IReadOnlyList<string> WorldEventRefs);
+internal sealed record SealedCovertOrder(string Id, string ActorId, string Intent, string? TargetId, bool Confirmed, IReadOnlyList<string> WorldEventRefs)
+{
+    // Trusted observer/action disclosure, separate from internal event provenance.
+    // A source writer must explicitly authorize these for this order's actor;
+    // neither hidden event existence nor SourceEventId grants causal knowledge.
+    internal IReadOnlyList<string> AuthorizedResultRefs { get; init; } = [];
+    internal bool ExecutionAcknowledged { get; init; }
+}
 internal sealed record SealedWorldTruthProjection(string Source, string Access, IReadOnlyList<string> EventRefs);
 internal sealed record SealedPresentationProjection(string Id, string AuthorId, string Text, SealedPresentationKind Kind, string AudienceKind, IReadOnlyList<string> Recipients, bool Published, IReadOnlyList<string> DeliveryReceipts);
 internal sealed record SealedCovertProjection(string ActionRef, string Intent, bool Confirmed, string ExecutionStatus, IReadOnlyList<string> WorldEventRefs, IReadOnlyList<string> PerceivedResultRefs);
@@ -300,20 +314,23 @@ internal static class SealedProjection
         var p = PresentationForPlayer(presentations, playerId).Select(x => new SealedPresentationProjection(x.Id, x.AuthorId, x.Text, x.Kind, x.Audience.Kind, x.Audience.Recipients, x.AuthorId == playerId && x.Published, x.DeliveryReceipts)).ToArray();
         var c = orders.Where(x => x.ActorId == playerId).Select(order =>
         {
-            var refs = order.WorldEventRefs.Where(id => world.Events.Any(e => e.Id == id && e.ActorId == playerId)).ToArray();
-            var perceived = ownExperience.Where(x => x.SourceEventId is not null && refs.Contains(x.SourceEventId, StringComparer.Ordinal)).Select(x => x.Id).Distinct(StringComparer.Ordinal).ToArray();
+            var refs = revealed ? order.WorldEventRefs.Where(id => world.Events.Any(e => e.Id == id && e.ActorId == playerId)).ToArray() : [];
+            var perceived = order.Confirmed ? ownExperience.Where(x => order.AuthorizedResultRefs.Contains(x.Id, StringComparer.Ordinal))
+                .Select(x => x.Id).Distinct(StringComparer.Ordinal).ToArray() : [];
             return new SealedCovertProjection(order.Id, order.Intent, order.Confirmed,
-                refs.Length == 0 ? "PLANNED" : revealed || perceived.Length > 0 ? "RESOLVED" : "RESOLVED_RESULT_NOT_OBSERVED",
-                revealed ? refs : [], perceived);
+                perceived.Length > 0 || revealed && refs.Length > 0 ? "RESOLVED"
+                    : order.Confirmed && order.ExecutionAcknowledged ? "RESOLVED_RESULT_NOT_OBSERVED" : "PLANNED",
+                refs, perceived);
         }).ToArray();
         var truthRefs = revealed ? world.Events.Where(e => e.ActorId == playerId || e.TargetId == playerId).Select(e => e.Id).Distinct().ToArray() : [];
-        return new(playerId, new("GLOBAL_EVENT_LOG", revealed ? "REVEALED_REFERENCES" : "WITHHELD", truthRefs), ownExperience, p, c);
+        return new(playerId, new("GLOBAL_EVENT_LOG", revealed ? "REVEALED_REFERENCES" : "WITHHELD", truthRefs),
+            ownExperience.Select(x => x with { SourceEventId = revealed ? x.SourceEventId : null }).ToArray(), p, c);
     }
 
     internal static IReadOnlyList<SealedPresentation> PresentationForPlayer(IReadOnlyList<SealedPresentation> records, string viewer) => records.Where(r =>
         r.AuthorId == viewer || r.DeliveryReceipts.Contains(viewer, StringComparer.Ordinal) &&
         (r.Audience.Kind == "PUBLIC" || r.Audience.Recipients.Contains(viewer, StringComparer.Ordinal)))
-        .Select(r => r with { Audience = r.AuthorId == viewer ? r.Audience : new SealedAudience(r.Audience.Kind, []), DeliveryReceipts = r.AuthorId == viewer ? r.DeliveryReceipts : [] }).ToArray();
+        .Select(r => r with { Audience = new SealedAudience(r.Audience.Kind, r.AuthorId == viewer ? r.Audience.Recipients.ToArray() : []), DeliveryReceipts = r.AuthorId == viewer ? r.DeliveryReceipts.ToArray() : [] }).ToArray();
 
     internal static IReadOnlyList<SealedPresentationProjection> PublicFeed(IReadOnlyList<SealedPresentation> records) => records
         .Where(r => r.Audience.Kind == "PUBLIC" && r.Published)

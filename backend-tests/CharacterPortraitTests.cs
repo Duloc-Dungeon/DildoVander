@@ -15,6 +15,7 @@ internal static class CharacterPortraitTests
             await ExperienceWireContractAsync();
             WelcomeContract();
             await ConsentAndDurabilityAsync(Path.Combine(root, "durable"));
+            await HeldPortraitCaptureAsync(Path.Combine(root, "held-capture"));
             await ProfileIdentityFenceAsync(Path.Combine(root, "identity"));
             await RevisionAndDeletionAsync(Path.Combine(root, "fences"));
             await InterruptedAndRetriesAsync(Path.Combine(root, "retry"));
@@ -279,6 +280,22 @@ internal static class CharacterPortraitTests
         current = store.ClaimPortrait()!;
         await store.FenceAccountDeletionAsync("bob");
         Check(!store.CanDispatchPortrait(current) && !store.CompletePortrait(current, [1], null), "account deletion prevents resurrection");
+    }
+
+    private static async Task HeldPortraitCaptureAsync(string root)
+    {
+        var store = new CharacterProfileStore(root);
+        var profile = await store.SaveAsync("capture-owner", new(0, new("Raven", "Fiction"), OpenAiConsent: true, PortraitConsent: true));
+        var job = (await store.ClaimAsync())!;
+        await store.CompleteAsync(job, Result(job), null);
+        var portraitJob = store.ClaimPortrait()!;
+        Check(store.CompletePortrait(portraitJob, [17, 23, 42], null, "Raven dorazil."), "capture fixture portrait is available");
+        using var held = store.OpenCustomerDataGuard(new Kufr.Backend.Features.CustomerData.CustomerDataGuardDeadline(CancellationToken.None));
+        var capture = store.ReadHeldPortrait(held, "capture-owner", profile.ProfileId, profile.Revision);
+        Check(capture?.Portrait.Status == "ready" && capture.Image!.SequenceEqual(new byte[] { 17, 23, 42 }),
+            "held connection captures exact ready portrait metadata and private image");
+        Check(store.ReadHeldPortrait(held, "someone-else", profile.ProfileId, profile.Revision) is null,
+            "held portrait capture does not expose another account's image");
     }
 
     private static async Task ProfileIdentityFenceAsync(string root)
