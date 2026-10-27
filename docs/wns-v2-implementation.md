@@ -135,3 +135,26 @@ soukromé pracovní složce; systémový cache mount nebyl měněn.
 telefonu, iOS/Android signing a instalace, nativní export/haptika, plná hra Pod
 pečetí a lidský pilot. Nic nebylo nasazeno. Stav těchto položek není „hotovo“
 jen proto, že sestavení nebo syntetický browser test projde.
+
+## Oprava CI po úklidu zdrojů
+
+- PR #321 odhalil, že `cleanup` odstranil spouštěné CI skripty, zatímco jejich
+  workflow zůstala zachována. Ze základu `8c202e50ab4a86bf702203a49b79d4943c0e3fc1`
+  byly obnoveny přímo potřebné CI, balicí, tokenové a syntetické viewer vstupy.
+  Nebyly vypnuty kontroly, změněna pravidla propagace artefaktů ani obnoveny
+  CAD exporty, modely či celý konstrukční strom.
+- Obnovený `mechanism.py` slouží existujícímu twin testu k načtení dvou funkcí
+  přes AST; nejde o spuštění CadQuery ani mechanickou přejímku. Obnovené DV02
+  dokumenty a metadata jsou vstupy zachované kontroly inventáře, nikoli nové
+  řízení práce: pravidla nativního Hermes a tento `AGENTS.md` mají přednost
+  před historickými odkazy na projektové trackery.
+- Syntetické cache testy nyní předávají identitu svého injektovaného mesheru,
+  místo aby vyžadovaly nepoužívaný CAD renderer `preview.py`. Regrese navíc
+  ověřuje, že změna mesheru nevrátí mesh z předchozí cache.
+- `scripts/ci/test_workflow_inputs.py` hlídá existenci přímo odkazovaných CI
+  skriptů a bootstrap dat; test s mazáním jednotlivých fixture vstupů ověřuje,
+  že absence není tiše ignorována. Nenahrazuje následné buildy a runtime testy.
+- Lokálně prošly testy provenience, balení webu, designového systému, bootstrapu,
+  všech vyžadovaných syntetických viewer skupin a skutečné Gitleaks regrese
+  verze 8.30.1. Výsledky nejsou tvrzením o zeleném vzdáleném CI ani nasazení;
+  produkční preflight dosud blokuje nativní schválení.
