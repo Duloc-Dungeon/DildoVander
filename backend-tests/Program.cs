@@ -7,6 +7,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--push"]) { await PushTests.RunAsync(); return; }
+if (args is ["--push-http"]) { await AccountIdentityTests.RunPushHttpAsync(); return; }
 if (args is ["--application-updates"]) { await ApplicationUpdateTests.RunAsync(); return; }
 if (args is ["--sealed-case-context-persistence"]) { SealedCaseContextPersistenceTests.Run(); return; }
 if (args is ["--sealed-case-projections"]) { SealedCaseProjectionTests.Run(); return; }
@@ -58,6 +60,7 @@ if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await Ai
 if (args is ["--observability-logs"]) { await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--ai-observability"]) { await AiObservabilityTests.RunAsync(); return; }
 if (args is ["--bounded-sdk-transport"]) { await BoundedSdkTransportTests.RunAsync(); return; }
+if (args is ["--text-dialog-budget"]) { ResponsesTextDialogBudgetTests.Run(); Console.WriteLine("Text dialogue model budgets passed."); return; }
 if (args is ["--tester-identity"]) { await AccountIdentityTests.RunTesterIdentityAsync(); return; }
 if (args is ["--passkey-labels"]) { await AccountIdentityTests.RunPasskeyLabelsAsync(); return; }
 if (args is ["--testing-hardware"]) { await TestingHardwareTests.RunAsync(); return; }
@@ -259,6 +262,8 @@ await AutonomousLiveTests.RunVoiceFallbackAsync();
 await GptLiveTests.RunAsync();
 await DeviceMediaTransportTests.RunAsync();
 await AccountIdentityTests.RunTesterIdentityAsync();
+await PushTests.RunAsync();
+await AccountIdentityTests.RunPushHttpAsync();
 await TestingConversationTests.RunAsync();
 await TestingMultiTurnTests.RunAsync();
 await TestingHardwareTests.RunAsync();

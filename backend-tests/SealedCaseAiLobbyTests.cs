@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Kufr.Backend.Features.Customers;
+using Kufr.Backend.Features.GptLive;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.SealedCase;
@@ -49,6 +50,7 @@ internal static partial class SealedCaseHttpTests
 
     internal static async Task AiLobbyAsync()
     {
+        Check(SealedCaseAiPlayers.DefaultModel == WandDecisionBudget.Luna, "sealed case AI players default to the shared Luna model");
         using (var disabled = new SealedCaseAiPlayers(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             { ["OPENAI_API_KEY"] = "synthetic-not-a-key", ["SealedCase:AiPlayers:Enabled"] = "false" }).Build()))
         { Check(!disabled.Available, "AI disabled even with a credential"); }

@@ -64,7 +64,7 @@ export function applicationCsp() {
           // HTML parsing normalizes CRLF and CR before CSP hashes inline text.
           .map(match => `'sha256-${createHash('sha256').update(match[1].replace(/\r\n?/g, '\n')).digest('base64')}'`);
         const policy = ["default-src 'none'", `script-src 'self' ${hashes.join(' ')}`,
-          "style-src 'self'", "img-src 'self' blob: data:", "font-src 'self'",
+          "style-src 'self'", "img-src 'self' blob: data:", "font-src 'self'", "manifest-src 'self'",
           "connect-src 'self' https: wss:", "media-src 'self' blob:", "worker-src 'self' blob:",
           "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-src 'none'"].join('; ');
         return [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: policy }, injectTo: 'head-prepend' }];

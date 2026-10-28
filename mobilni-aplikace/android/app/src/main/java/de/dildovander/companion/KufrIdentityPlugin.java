@@ -78,6 +78,16 @@ public final class KufrIdentityPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void pushAvailability(PluginCall call) {
+        // The same web bundle also ships in APKs built without Firebase config.
+        // Never call FirebaseMessaging.getInstance() in those builds.
+        int resource = getContext().getResources().getIdentifier("google_app_id", "string", getContext().getPackageName());
+        JSObject result = new JSObject();
+        result.put("available", resource != 0 && !getContext().getString(resource).isEmpty());
+        call.resolve(result);
+    }
+
+    @PluginMethod
     public void publicOrigin(PluginCall call) {
         JSObject result = new JSObject(); result.put("origin", origin()); call.resolve(result);
     }

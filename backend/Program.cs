@@ -25,6 +25,7 @@ using Kufr.Backend.Features.Observability;
 using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.Game;
 using Kufr.Backend.Features.SealedCase;
+using Kufr.Backend.Features.Push;
 using Kufr.Backend.Features.ApplicationUpdates;
 
 var provisioning = args.Contains("--memory-provision");
@@ -43,6 +44,7 @@ builder.Services.AddBackendTelemetry(builder.Configuration, builder.Environment)
 builder.Services.AddAccountIdentity(builder.Configuration);
 builder.Services.AddLaunchManagement(builder.Configuration);
 builder.Services.AddMobileGame(builder.Configuration);
+builder.Services.AddPushNotifications(builder.Configuration);
 builder.Services.AddSealedCase(builder.Configuration);
 if (accountProvisioning)
 {
@@ -199,6 +201,7 @@ app.UseAccountIdentity();
 app.UseLaunchAccessPolicy();
 app.MapAccountEndpoints();
 app.MapLaunchEndpoints();
+app.MapPushEndpoints();
 app.MapApplicationUpdateEndpoints();
 Kufr.Backend.Features.Wands.MobileWandEndpoints.MapMobileWands(app);
 Kufr.Backend.Features.Wands.MobileWandWorkshopEndpoints.MapWorkshopLive(app);

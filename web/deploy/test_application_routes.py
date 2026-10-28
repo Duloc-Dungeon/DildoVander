@@ -6,6 +6,30 @@ import keepsake_proxy as proxy
 
 
 class ApplicationRoutingTests(unittest.TestCase):
+    def test_push_bootstrap_files_are_exact_public_revalidated_static_routes(self):
+        config = proxy.render_compatibility('keepsake.example.invalid')
+        for route, media_type in (
+            ('/push-sw.js', 'application/javascript'),
+            ('/manifest.webmanifest', 'application/manifest+json'),
+            ('/push-icon.png', 'image/png'),
+        ):
+            block = config.split('location = ' + route + ' {', 1)[1].split('\n}', 1)[0]
+            for directive in ('GET|HEAD', 'root /var/www/dildovander/current;',
+                              'try_files $uri =404;', 'types { }',
+                              'default_type ' + media_type + ';', 'no-cache', 'nosniff'):
+                self.assertIn(directive, block)
+            self.assertNotIn('auth_request', block)
+            self.assertNotIn('proxy_pass', block)
+            self.assertNotIn('/index.html', block)
+            raw_pattern = re.search(r'if \(\$request_uri !~ "([^"]+)"', block).group(1)
+            self.assertIsNotNone(re.search(raw_pattern, route))
+            self.assertIsNotNone(re.search(raw_pattern, route + '?version=1'))
+            for invalid in (route + '/extra', route + '/../../admin', '/' + route,
+                            route.replace('.', '%2e', 1)):
+                self.assertIsNone(re.search(raw_pattern, invalid), invalid)
+        worker = config.split('location = /push-sw.js {', 1)[1].split('\n}', 1)[0]
+        self.assertIn('Service-Worker-Allowed "/"', worker)
+
     def test_mobile_game_paths_are_private_and_bounded(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
         for route in ('/play', '/play/wand', '/play/challenge', '/play/practice', '/play/chronicle', '/play/boss', '/play/keeper', '/play/ranking', '/play/messages', '/play/teams', '/play/pod-peceti'):
