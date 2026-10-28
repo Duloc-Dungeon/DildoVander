@@ -31,7 +31,15 @@ export function projectGeneratedWand(value: unknown): GeneratedWand | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   if (!Number.isInteger(raw.physicalSlot) || Number(raw.physicalSlot) < 1 || Number(raw.physicalSlot) > 6) return null;
-  const result: Record<string, unknown> = { physicalSlot: raw.physicalSlot };
+  const fiction = projectMobileGeneratedWand(raw);
+  return fiction ? { ...fiction, physicalSlot: Number(raw.physicalSlot) } : null;
+}
+
+/** The mobile workshop creates one personal result without a physical slot. */
+export function projectMobileGeneratedWand(value: unknown): Omit<GeneratedWand, 'physicalSlot'> | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
   for (const field of fields) {
     if (!text(raw[field], field === 'wandId' ? 160 : 2000)) return null;
     result[field] = raw[field];
@@ -39,5 +47,5 @@ export function projectGeneratedWand(value: unknown): GeneratedWand | null {
   if (combatArchetypes.includes(raw.combatArchetype as CombatArchetype)) result.combatArchetype = raw.combatArchetype;
   if (text(raw.combatRulesVersion, 80)) result.combatRulesVersion = raw.combatRulesVersion;
   const spells = projectSpells(raw.spells);
-  return spells ? { ...result, spells } as unknown as GeneratedWand : null;
+  return spells ? { ...result, spells } as unknown as Omit<GeneratedWand, 'physicalSlot'> : null;
 }

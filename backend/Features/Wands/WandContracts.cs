@@ -24,7 +24,8 @@ internal sealed record WandCandidateContent(string Name, string Material, string
     string Temperament, string Lore, string DesignDescription, string Affinity, string Weakness,
     WandSpell[] Spells, string CombatArchetype = "balanced");
 internal sealed record WandGenerationRequest(string AccountId, string OperationId,
-    CharacterConversationSnapshot Profile, int ReadyMask, bool OpenAiConsent, string[] Evidence);
+    CharacterConversationSnapshot Profile, int ReadyMask, bool OpenAiConsent, string[] Evidence,
+    string? OutputLanguage = null);
 internal sealed record WandGenerationSession(string SessionId, string OperationId, string ProfileId,
     long ProfileRevision, int ReadyMask, string Status, string? ErrorCode,
     GeneratedWandSnapshot[] Candidates, GeneratedWandSnapshot? SelectedWand);

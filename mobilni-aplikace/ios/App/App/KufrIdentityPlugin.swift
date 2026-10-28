@@ -219,12 +219,15 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
             request.httpMethod = method
             request.setValue(origin.absoluteString, forHTTPHeaderField: "Origin")
-            let permitted = ["accept", "content-type", "x-dv-csrf", "x-dv-confirm", "x-dv-device-id", "idempotency-key", "session-id", "boot-id", "media-epoch", "input-epoch", "input-sequence", "x-dv10-consent", "traceparent"]
+            let permitted = ["accept", "content-type", "x-dv-csrf", "x-dv-confirm", "x-dv-device-id", "idempotency-key", "session-id", "boot-id", "media-epoch", "input-epoch", "input-sequence", "x-dv10-consent", "traceparent", "x-wand-question-id", "x-wand-question-revision"]
             for (name, value) in call.getObject("headers") ?? [:] {
                 guard permitted.contains(name.lowercased()), let text = value as? String, text.count <= 1024,
                       !text.contains("\r"), !text.contains("\n"),
                       AccountTransportPolicy.accountHeaderAllowed(path: path, method: method, name: name, value: text) else { throw AccountError.invalidPath }
                 if name.lowercased() != "x-dv-csrf" { request.setValue(text, forHTTPHeaderField: name) }
+            }
+            guard AccountTransportPolicy.accountHeadersAllowed(path: path, method: method, headers: call.getObject("headers") ?? [:]) else {
+                throw AccountError.invalidPath
             }
             if let encoded = call.getString("bodyBase64") {
                 let bodyLimit = AccountTransportPolicy.accountRequestBodyLimit(

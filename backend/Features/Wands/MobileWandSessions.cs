@@ -50,6 +50,26 @@ internal sealed partial class WandGenerationStore
         return command.ExecuteScalar() is { } tier ? Convert.ToInt32(tier) : 0;
     }
 
+    internal void RetireMobileOperation(string owner, string operation)
+    {
+        using var connection = Open(); EnsureMobile(connection);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using (var selected = Command(connection, transaction,
+            "SELECT 1 FROM wand_generation_sessions WHERE account_id=$a AND operation_id=$o AND selected_json IS NOT NULL",
+            ("$a", owner), ("$o", operation)))
+        {
+            if (selected.ExecuteScalar() is not null) throw new WandGenerationException("wand_already_created", 409);
+        }
+        Execute(connection, transaction, """
+            UPDATE wand_generation_sessions SET state='revoked',request_json=NULL,candidates_json=NULL,
+                selected_json=NULL,lease_token=NULL,lease_until=0,error_code=NULL
+            WHERE account_id=$a AND operation_id=$o
+            """, ("$a", owner), ("$o", operation));
+        Execute(connection, transaction, "DELETE FROM mobile_wand_crafts WHERE account_id=$a AND operation_id=$o",
+            ("$a", owner), ("$o", operation));
+        transaction.Commit();
+    }
+
     internal string? ClaimMobileVoice(string owner)
     {
         using var connection = Open(); EnsureMobile(connection);

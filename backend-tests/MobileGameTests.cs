@@ -514,19 +514,16 @@ internal static class MobileGameTests
             && (await wandDenied.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "game_wand_required",
             "direct API requests cannot start gameplay without a persisted wand");
 
-        var canonicalStart = await foreign.PostAsJsonAsync("/app/v1/customer/wand/sessions", new { operationId = Guid.NewGuid().ToString("N") });
-        Check(canonicalStart.StatusCode == HttpStatusCode.OK, "first wand reservation is available for authenticated owner");
-        var canonicalId = (await canonicalStart.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!;
-        var resumed = await foreign.PostAsJsonAsync("/app/v1/customer/wand/sessions", new { operationId = Guid.NewGuid().ToString("N") });
-        Check((await resumed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString() == canonicalId, "refresh resumes canonical pending operation without another generation");
-        var ticket = await foreign.PostAsJsonAsync($"/app/v1/customer/wand/sessions/{canonicalId}/ticket", new { socketOrigin = "https://localhost" });
-        Check(ticket.StatusCode == HttpStatusCode.OK, "Android WebView socket origin gets a bounded account ticket");
-        var unrelated = await fixture.UnrelatedOperationAsync();
-        var import = await alice.PostAsJsonAsync("/app/v1/customer/wand/sessions", new { operationId = unrelated, upgrade = true });
-        // Alice receives CSRF below; use the same independently retrieved token here.
+        var legacyStart = await foreign.PostAsJsonAsync("/app/v1/customer/wand/sessions", new { operationId = Guid.NewGuid().ToString("N") });
+        Check(legacyStart.StatusCode == HttpStatusCode.Gone,
+            "legacy freeform mobile generation cannot bypass the server-owned workshop");
+        Check((await foreign.GetAsync("/app/v1/customer/wand/workshop?upgrade=1")).StatusCode == HttpStatusCode.OK,
+            "numeric upgrade query is accepted by the workshop eligibility endpoint");
         alice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(alice));
-        import = await alice.PostAsJsonAsync("/app/v1/customer/wand/sessions", new { operationId = unrelated, upgrade = true });
-        Check(import.StatusCode == HttpStatusCode.Conflict && (await import.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "wand_operation_conflict", "unrelated selected operation cannot grant an upgrade");
+        var legacyUpgrade = await alice.PostAsJsonAsync("/app/v1/customer/wand/sessions",
+            new { operationId = Guid.NewGuid().ToString("N"), upgrade = true });
+        Check(legacyUpgrade.StatusCode == HttpStatusCode.Gone,
+            "legacy mobile upgrade endpoint cannot bypass workshop eligibility");
         alice.DefaultRequestHeaders.Remove("X-DV-CSRF");
 
         var challengeBody = new
@@ -606,8 +603,14 @@ internal static class MobileGameTests
             "foreign launch group cannot read a boss attempt");
         await fixture.RemoveWandAsync();
         var bossState = await (await alice.GetAsync($"/app/v1/game/boss/attempts/{bossAttempt}")).Content.ReadFromJsonAsync<JsonElement>();
-        Check((await alice.PostAsJsonAsync($"/app/v1/game/boss/attempts/{bossAttempt}/choose", new {operationId=Guid.NewGuid().ToString("D"),expectedRevision=bossState.GetProperty("revision").GetInt64(),choice="strike"})).StatusCode == HttpStatusCode.Conflict,
-            "deleted wand blocks actual gameplay");
+        var bossChoice = await alice.PostAsJsonAsync($"/app/v1/game/boss/attempts/{bossAttempt}/choose", new {operationId=Guid.NewGuid().ToString("D"),expectedRevision=bossState.GetProperty("revision").GetInt64(),choice="strike"});
+        Check(bossChoice.StatusCode == HttpStatusCode.OK,
+            "a guest without a wand can use the bounded boss attempt escape route");
+        using (var ordinaryGame = await alice.PostAsJsonAsync("/app/v1/game/matches",
+            new { opponentId = fixture.BobId, mode = "quick", operationId = Guid.NewGuid().ToString("D") }))
+            Check(ordinaryGame.StatusCode == HttpStatusCode.Conflict,
+                "the boss escape route does not waive the wand requirement for ordinary matches");
+        bossState = await (await alice.GetAsync($"/app/v1/game/boss/attempts/{bossAttempt}")).Content.ReadFromJsonAsync<JsonElement>();
         Check((await alice.PostAsJsonAsync($"/app/v1/game/boss/attempts/{bossAttempt}/cancel", new {operationId=Guid.NewGuid().ToString("D"),expectedRevision=bossState.GetProperty("revision").GetInt64()})).StatusCode == HttpStatusCode.OK,
             "deleted wand never blocks cancelling an existing session");
         var limited = false;
@@ -674,6 +677,7 @@ internal static class MobileGameTests
             builder.Services.AddMobileGame(builder.Configuration);
             builder.Services.AddSingleton(new CharacterProfileStore(Path.Combine(root, "profiles")));
             builder.Services.AddSingleton<WandGenerationStore>();
+            builder.Services.AddSingleton<Kufr.Backend.Features.Show.ShowSpeechProvider>();
             builder.Services.AddSingleton<IWandGenerationProvider>(new MobileWandTests.Provider());
             builder.Services.AddSingleton<WandGenerationService>();
             builder.Services.AddSingleton<GptLiveClient>();

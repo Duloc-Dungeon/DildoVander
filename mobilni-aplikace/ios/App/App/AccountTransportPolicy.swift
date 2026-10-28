@@ -21,6 +21,15 @@ enum AccountTransportPolicy {
         // These limits apply to accountTransport; the legacy JSON bridge keeps its own bound.
         if customerCompletionRead(path: path, method: method) { return 256 }
         if method == "POST", customerWaiting(path: path, method: method) { return 2 * 1024 }
+        if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/transcribe$", options: .regularExpression) != nil,
+           method == "POST", let type = contentType?.split(separator: ";", maxSplits: 1).first?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           ["audio/webm", "audio/mp4", "audio/ogg", "audio/wav"].contains(type) {
+            return 8 * 1024 * 1024
+        }
+        if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$", options: .regularExpression) != nil,
+           method == "POST" { return 16 * 1024 }
+        if path.contains("/customer/wand/workshop/") { return 16 * 1024 }
         guard accountArchivePortraitUpload(path: path, method: method),
               let type = contentType?.split(separator: ";", maxSplits: 1).first?
                 .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
@@ -33,6 +42,8 @@ enum AccountTransportPolicy {
     }
 
     static func accountResponseLimit(path: String, method: String) -> Int {
+        if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$", options: .regularExpression) != nil,
+           method == "POST" { return 8 * 1024 * 1024 }
         if prelaunchPortrait(path: path, method: method) || sealedCasePortrait(path: path, method: method) { return 8 * 1024 * 1024 }
         if method == "GET", path.contains("/keepsakes/"), path.contains("/assets/"),
            testingSessions(path: path, method: method) { return 32 * 1024 * 1024 }
@@ -60,6 +71,12 @@ enum AccountTransportPolicy {
 
     static func accountResponseContentTypeAllowed(path: String, method: String, contentType: String?, status: Int = 200) -> Bool {
         if !(200..<300).contains(status) { return true }
+        if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$", options: .regularExpression) != nil,
+           method == "POST" {
+            guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+            return value == "audio/wav"
+        }
         guard prelaunchPortrait(path: path, method: method) || sealedCasePortrait(path: path, method: method) else { return true }
         guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
@@ -67,12 +84,37 @@ enum AccountTransportPolicy {
     }
 
     static func accountHeaderAllowed(path: String, method: String, name: String, value: String) -> Bool {
-        if name.lowercased() == "traceparent" { return validTraceparent(value) }
-        guard name.lowercased() == "x-dv10-consent" else { return true }
+        let normalizedName = name.lowercased()
+        if normalizedName == "traceparent" { return validTraceparent(value) }
+        if normalizedName == "x-wand-question-id" {
+            return wandTranscription(path: path, method: method) && value.range(of: "^[0-9a-f]{32}$", options: .regularExpression) != nil
+        }
+        if normalizedName == "x-wand-question-revision" {
+            return wandTranscription(path: path, method: method) && value.range(of: "^[1-9][0-9]{0,18}$", options: .regularExpression) != nil
+        }
+        guard normalizedName == "x-dv10-consent" else { return true }
         guard accountArchivePortraitUpload(path: path, method: method),
               value.utf8.count <= 10, value.allSatisfy({ $0.isASCII && $0.isNumber }),
               let version = Int32(value), version > 0 else { return false }
         return true
+    }
+
+    static func accountHeadersAllowed(path: String, method: String, headers: [String: Any]) -> Bool {
+        let questionIds = headers.filter { $0.key.lowercased() == "x-wand-question-id" }
+        let questionRevisions = headers.filter { $0.key.lowercased() == "x-wand-question-revision" }
+        guard wandTranscription(path: path, method: method) else {
+            return questionIds.isEmpty && questionRevisions.isEmpty
+        }
+        guard questionIds.count == 1, questionRevisions.count == 1,
+              let id = questionIds.first?.value as? String,
+              let revision = questionRevisions.first?.value as? String else { return false }
+        return accountHeaderAllowed(path: path, method: method, name: "x-wand-question-id", value: id)
+            && accountHeaderAllowed(path: path, method: method, name: "x-wand-question-revision", value: revision)
+    }
+
+    private static func wandTranscription(path: String, method: String) -> Bool {
+        method == "POST"
+            && path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/transcribe$", options: .regularExpression) != nil
     }
 
     private static func validArchiveUUID(_ value: String) -> Bool {
@@ -544,6 +586,7 @@ enum AccountTransportPolicy {
     }
 
     static func account(path: String, method: String) -> Bool {
+        if wandWorkshop(path: path, method: method) { return true }
         if path == "/app/v1/customer/wand" { return method == "GET" }
         if path == "/app/v1/customer/wand/sessions" { return method == "POST" }
         if path.range(of: "^/app/v1/customer/wand/sessions/[0-9a-f]{32}/ticket\\z", options: .regularExpression) != nil { return method == "POST" }
@@ -785,6 +828,25 @@ enum AccountTransportPolicy {
         if parts.count == 8, ["portraits", "generation"].contains(routeParts[5]),
            validArchiveUUID(parts[6]), routeParts[7] == "cancel" { return method == "POST" }
         return false
+    }
+
+    private static func wandWorkshop(path: String, method: String) -> Bool {
+        guard !path.contains("#"), !path.contains("%"), !path.contains("\\") else { return false }
+        let components = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        guard components.count <= 2 else { return false }
+        let route = String(components[0])
+        let query = components.count == 2 ? String(components[1]) : nil
+        if route == "/app/v1/customer/wand/workshop" || route == "/app/v1/customer/wand/workshop/sessions/current" {
+            return method == "GET" && (query == nil || query == "upgrade=0" || query == "upgrade=1")
+        }
+        if query != nil { return false }
+        if route == "/app/v1/customer/wand/workshop/sessions" { return method == "POST" }
+        let session = "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}"
+        if route.range(of: session + "$", options: .regularExpression) != nil { return method == "GET" }
+        if route.range(of: session + "/(answers|skip|audio|transcribe|artwork/retry)$", options: .regularExpression) != nil {
+            return method == "POST"
+        }
+        return route.range(of: session + "/answers/[0-9a-f]{32}$", options: .regularExpression) != nil && method == "PUT"
     }
 }
 

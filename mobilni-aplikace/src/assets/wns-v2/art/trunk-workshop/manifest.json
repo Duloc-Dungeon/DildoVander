@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "createdOn": "2026-10-28",
+  "project": "Duloc-Dungeon/DildoVander",
+  "inspectedCommit": "008a90759e53a9a904861b59be689f14ac4ea069",
+  "assetGeneration": "Built-in ImageGen; exact prompts in docs/image-prompts.json",
+  "export": "ImageMagick WebP quality 86, lossless alpha; original PNGs unchanged",
+  "rendering": {
+    "background": "#080909",
+    "fit": "contain",
+    "fullCanvasPreserved": true,
+    "closedOpenIsAnimationRig": false,
+    "textInRaster": false,
+    "defaultAudio": "off until explicit user action",
+    "motion": "Small amplitude from actual assistant output only; reduced-motion disables it"
+  },
+  "rules": [
+    "Never deploy examples/sever-wand-demo.png as a user result or fixed wand catalog.",
+    "Use the protected canonical artwork belonging to the stored WandId.",
+    "The tray is optional; use only for artwork with compatible alpha and composition.",
+    "Closed/open images are separate stills, not registered frames or separable 3D layers.",
+    "Names, subtitles, questions and progress remain accessible live text."
+  ],
+  "files": [
+    {
+      "file": "assets/trunk-open-master.png",
+      "role": "production-master",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 2063497,
+      "format": "PNG",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "visibleBoundsAlpha128": [
+        36,
+        139,
+        1229,
+        1157
+      ],
+      "sha256": "27a4ba96fc683f4bec8d5a4a35caab256ab599534b49771ee8b18c1ec3a846b1"
+    },
+    {
+      "file": "assets/trunk-open-640.webp",
+      "role": "production-export",
+      "width": 640,
+      "height": 640,
+      "bytes": 58572,
+      "format": "WEBP",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "visibleBoundsAlpha128": [
+        18,
+        71,
+        627,
+        590
+      ],
+      "sha256": "b23bc8b5eb04486ce2d2fc2251f130611966aeb2c4f1dc58823dc237f5dc7afd"
+    },
+    {
+      "file": "assets/trunk-open-960.webp",
+      "role": "production-export",
+      "width": 960,
+      "height": 960,
+      "bytes": 120714,
+      "format": "WEBP",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "visibleBoundsAlpha128": [
+        27,
+        106,
+        941,
+        885
+      ],
+      "sha256": "00cb8199979f417d4110e4f94ec5decf84aac7d7875686e18c203eadc9f29ba6"
+    },
+    {
+      "file": "assets/trunk-closed-master.png",
+      "role": "production-master",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1483988,
+      "format": "PNG",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "visibleBoundsAlpha128": [
+        29,
+        388,
+        1235,
+        1116
+      ],
+      "sha256": "cfe2731a0e3019cfb612eab0289e18fbb87cddc7d8f710b1f408cf1ff8b1f213"
+    },
+    {
+      "file": "assets/trunk-closed-640.webp",
+      "role": "production-export",
+      "width": 640,
+      "height": 640,
+      "bytes": 42696,
+      "format": "WEBP",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "visibleBoundsAlpha128": [
+        15,
+        198,
+        630,
+        569
+      ],
+      "sha256": "0f2c2bb6e3f037d038da46961a18a89bb4ab66daf8f9b97c0e2cb624f4f887c2"
+    },
+    {
+      "file": "assets/trunk-closed-960.webp",
+      "role": "production-export",
+      "width": 960,
+      "height": 960,
+      "bytes": 88536,
+      "format": "WEBP",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "visibleBoundsAlpha128": [
+        22,
+        297,
+        945,
+        854
+      ],
+      "sha256": "33516bbb5b3803aee55581b38d2a87799a1fdf29f4e506dd3311ec42495623bb"
+    },
+    {
+      "file": "assets/reveal-tray-master.png",
+      "role": "production-master",
+      "width": 2172,
+      "height": 724,
+      "bytes": 1728230,
+      "format": "PNG",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "visibleBoundsAlpha128": [
+        43,
+        157,
+        2130,
+        583
+      ],
+      "sha256": "d333a65acdd8e23f48aef05bfce7d6353ae5dc8a0b0239a11d4a4b98ed63c932"
+    },
+    {
+      "file": "assets/reveal-tray-960.webp",
+      "role": "production-export",
+      "width": 960,
+      "height": 320,
+      "bytes": 23336,
+      "format": "WEBP",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "visibleBoundsAlpha128": [
+        19,
+        69,
+        941,
+        258
+      ],
+      "sha256": "3d29324148d8e7890c16a111d65f6dc6eedd07f253f694e0204da0e453343223"
+    },
+    {
+      "file": "assets/reveal-tray-1440.webp",
+      "role": "production-export",
+      "width": 1440,
+      "height": 480,
+      "bytes": 49784,
+      "format": "WEBP",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "visibleBoundsAlpha128": [
+        28,
+        104,
+        1412,
+        386
+      ],
+      "sha256": "0c9392f67b687c58884e1987d4f3864e904e2f02d10ecda14e5cc7cda4a51425"
+    },
+    {
+      "file": "examples/sever-wand-demo.png",
+      "role": "fictional-demo-only",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 906193,
+      "format": "PNG",
+      "hasAlpha": true,
+      "alphaExtrema": [
+        0,
+        254
+      ],
+      "visibleBoundsAlpha128": [
+        19,
+        441,
+        1518,
+        585
+      ],
+      "sha256": "8f18c06fafb121818a0cb83d5cbfdfcf75418494804e6d9a7e02fd5a9914ad95"
+    }
+  ]
+}

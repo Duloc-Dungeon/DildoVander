@@ -48,8 +48,8 @@ try {
         await page.getByText(saved, { exact: true }).waitFor();
         assert.equal(await page.getByRole('link', { name: 'Odveta', exact: true }).count(), 1);
       }
-      if (state === 'first-wand') { assert.equal(await page.getByRole('button', {name:'Mluvit s Olivanderem'}).count(), 1); assert.equal(await page.getByRole('radio').count(), 0); }
-      if (state === 'upgrade-wand') assert.equal(await page.getByRole('heading', {name:'Vylepšit hůlku s Olivanderem'}).count(), 1);
+      if (state === 'first-wand') { assert.equal(await page.getByRole('link', {name:'Vstoupit do kufrovy dílny'}).count(), 1); assert.equal(await page.getByRole('radio').count(), 0); }
+      if (state === 'upgrade-wand') assert.equal(await page.getByRole('link', {name:'Vylepšit hůlku v kufrově dílně'}).count(), 1);
       if (state === 'choice') {
         const count = requests.length;
         await page.getByRole('radio', { name: /Lest/ }).check();

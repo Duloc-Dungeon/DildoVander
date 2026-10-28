@@ -107,8 +107,10 @@ builder.Services.AddSingleton(sp => HybridMemoryOptions.Read(builder.Configurati
 builder.Services.AddSingleton<WandDecisionService>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.WandGenerationStore>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IWandGenerationProvider, Kufr.Backend.Features.Wands.OpenAiWandGenerationProvider>();
+builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IMobileWandQuestionProvider, Kufr.Backend.Features.Wands.OpenAiMobileWandQuestionProvider>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.WandGenerationService>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.MobileWandRuntime>();
+builder.Services.AddHostedService<Kufr.Backend.Features.Wands.MobileWandWorkshopWorker>();
 builder.Services.AddSingleton<OpenAiVectorMemoryProvider>();
 builder.Services.AddSingleton<HybridMemoryService>();
 builder.Services.AddHostedService<MemoryIndexWorker>();

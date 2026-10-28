@@ -399,7 +399,7 @@ internal static class GameBossEndpoints
     }
     private static string User(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
         ?? throw new GameFault(401, "account_required");
-    internal static async Task<string> ParticipantGroupAsync(HttpContext context)
+    internal static async Task<string> ParticipantGroupAsync(HttpContext context, bool requireWand = true)
     {
         var id = User(context);
         if (!context.User.HasClaim(claim => claim.Type == AccountIdentity.SessionClaim)) { throw new GameFault(401, "account_required"); }
@@ -411,8 +411,19 @@ internal static class GameBossEndpoints
         { throw new GameFault(403, "game_group_inactive"); }
         var access = await context.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(context.User);
         if (!access.Allowed) { throw new GameFault(403, "game_group_inactive"); }
-        if (context.Request.Method != "GET" && !context.Request.Path.Value!.EndsWith("/cancel", StringComparison.Ordinal)
-            && !context.Request.Path.Value.EndsWith("/decline", StringComparison.Ordinal))
+        // Boss attempts are the explicitly bounded exhibition escape route for
+        // guests who have not yet crafted a wand (or are captive and cannot use
+        // the workshop). StartBoss still requires a revealed group boss and
+        // ChooseBoss is scoped to that participant's existing attempt.
+        var path = context.Request.Path.Value ?? "";
+        var bossAttemptAction = context.Request.Method == "POST"
+            && (path == "/app/v1/game/boss/attempts"
+                || System.Text.RegularExpressions.Regex.IsMatch(path,
+                    @"^/app/v1/game/boss/attempts/[0-9a-fA-F]{32}/(?:choose|cancel)$",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant));
+        if (requireWand && context.Request.Method != "GET" && !bossAttemptAction
+            && !path.EndsWith("/cancel", StringComparison.Ordinal)
+            && !path.EndsWith("/decline", StringComparison.Ordinal))
             await MobileWandSessions.RequireForGame(context, id);
         return user.LaunchGroupId;
     }

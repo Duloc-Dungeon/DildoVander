@@ -2,12 +2,12 @@
 import { computed, ref, watch } from 'vue';
 import './archive.css';
 import SpellGlyph from './SpellGlyph.vue';
-import { combatSpecialty, projectGeneratedWand } from './generatedWand';
+import { combatSpecialty, projectGeneratedWand, projectMobileGeneratedWand } from './generatedWand';
 import { customerCopy } from '../../application/customerCopy';
-const props = withDefaults(defineProps<{ wand?: unknown; showName?: boolean; imageUrl?: string; imagePending?: boolean; imageError?: boolean; showArtwork?: boolean; synthetic?: boolean; imageState?: string; retryBusy?: boolean; canRetry?: boolean; keepsakeTo?: string; historyTo?: string }>(), { showArtwork: true });
+const props = withDefaults(defineProps<{ wand?: unknown; mobile?: boolean; showName?: boolean; imageUrl?: string; imagePending?: boolean; imageError?: boolean; showArtwork?: boolean; synthetic?: boolean; imageState?: string; retryBusy?: boolean; canRetry?: boolean; keepsakeTo?: string; historyTo?: string }>(), { showArtwork: true });
 const emit = defineEmits<{ retry: [] }>();
-const wand = computed(() => projectGeneratedWand(props.wand));
-const en = computed(() => customerCopy.language.value === 'en');
+const wand = computed(() => props.mobile ? projectMobileGeneratedWand(props.wand) : projectGeneratedWand(props.wand));
+const en = computed(() => !props.mobile && customerCopy.language.value === 'en');
 const decodeError = ref(false);
 watch(() => props.imageUrl, () => { decodeError.value = false; });
 const failed = computed(() => props.imageError || decodeError.value || ['failed', 'provider_unknown', 'unknown'].includes(props.imageState ?? ''));
