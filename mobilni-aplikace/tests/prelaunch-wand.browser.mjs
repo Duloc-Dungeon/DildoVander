@@ -58,7 +58,7 @@ try {
     await page.waitForFunction(() => document.querySelector('.trunk-stage__wand')?.naturalWidth > 0);
     assert.equal(await overflow(), false, `${width}: saved wand fits`);
     await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).click();
-    await page.getByText('Hůlka je uložená. Teď už jen počkat, až večer začne.', { exact: true }).waitFor();
+    await page.getByText('Hůlka je uložená. Ollivander Industries™ děkuje za důvěru. Považuje ji za odvážnou.', { exact: true }).waitFor();
     assert.equal(new URL(page.url()).pathname, '/launch');
     await page.reload();
     await page.getByRole('button', { name: 'Prohlédnout hůlku', exact: true }).waitFor();

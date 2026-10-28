@@ -253,7 +253,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 
 <template>
   <section class="trunk-workshop" aria-labelledby="workshop-title">
-    <header class="trunk-workshop__header"><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton><RouterLink v-else to="/play" @click="stopMedia">← Zpět do hry</RouterLink><span>Wand Night Stand</span></header>
+    <header class="trunk-workshop__header"><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton><RouterLink v-else to="/play" @click="stopMedia">← Zpět do hry</RouterLink><span>Ollivander Industries™</span></header>
     <div class="trunk-workshop__identity"><p class="trunk-workshop__eyebrow">{{ upgrade ? 'Nová kapitola tvé hůlky' : 'Tvoje první hůlka' }}</p><h1 id="workshop-title" :tabindex="prelaunch ? -1 : undefined">Kufrova dílna</h1><p v-if="entry?.profile"><strong>{{ entry.profile.name }}</strong> · {{ entry.profile.universe }}</p></div>
     <div class="trunk-workshop__scene">
       <TrunkStage :stage="stage" :assistant-output-level="outputLevel" :wand-artwork-url="artworkUrl" :wand-name="wand?.name" :artwork-status="artworkState" />
@@ -272,7 +272,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
         </template>
         <template v-else-if="session?.status === 'generating'"><h2>Hůlka dostává tvar</h2><p>Výroba poběží i po odchodu z obrazovky. Rozhovor už je uložený.</p></template>
         <template v-else>
-          <p v-if="!session">Kufr zná připravenou postavu. Promluv si s ním o hůlce, která k ní patří.</p>
+          <p v-if="!session">Hůlka si vybírá kouzelníka. Kufr zná tvoji postavu, ale rád si vyslechne i tvoji obhajobu.</p>
           <h2 v-if="subtitle" class="trunk-workshop__question" aria-live="polite">{{ subtitle }}</h2>
           <template v-if="mode === 'voice'"><AwButton v-if="!active && canStart" variant="primary" :disabled="busy" @click="startVoice">{{ session ? 'Pokračovat hlasem' : 'Promluvit s kufrem' }}</AwButton><AwButton v-if="active" @click="muted = !muted; live.setMuted(muted)">{{ muted ? 'Zapnout mikrofon' : 'Ztlumit mikrofon' }}</AwButton></template>
           <template v-else-if="session?.status === 'asking'"><form @submit.prevent="submit"><label for="trunk-answer">Tvoje sdělení kufru</label><textarea id="trunk-answer" ref="answerField" v-model="draft" maxlength="2000" rows="3" :disabled="busy" /><AwButton type="submit" variant="primary" :disabled="!draft.trim() || busy">Odeslat</AwButton></form><AwButton :disabled="!canStart || busy" @click="startVoice">Pokračovat hlasem</AwButton></template>
