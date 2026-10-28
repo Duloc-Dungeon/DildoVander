@@ -67,6 +67,10 @@ včetně TestFlight. Živé placené testy vyžadují samostatné zadání. Konf
 [Git workflow](docs/git-workflow.md). Pravidla předání jsou v [CONTRIBUTING.md](CONTRIBUTING.md)
 a hlášení zranitelností v [SECURITY.md](SECURITY.md).
 
+CAD, fyzický firmware i softwarový simulátor jsou z automatických PR/release
+buildů vyřazené. Jejich zdroje a ruční postupy zůstávají zachované. Backend
+simulátor standardně nekompiluje ani nepřibaluje a nepotřebuje C++ kompilátor.
+
 Zdrojový repozitář je od 12. 10. 2026 veřejný. Buildy používají standardní
 GitHub-hosted runnery; produkční runnery nejsou ke zdroji připojené.
 Podepsaná IPA vzniká ve stávajících macOS workflow s prostředími

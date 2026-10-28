@@ -42,7 +42,7 @@ class BranchWorkflowTests(unittest.TestCase):
                                         capture_output=True, text=True, check=True)
                 selected = json.loads(result.stdout)
                 enabled = {name for name, value in selected.items() if value}
-                self.assertEqual(enabled, set(selected) if expected == "all" else
+                self.assertEqual(enabled, set(selected) - {"firmware"} if expected == "all" else
                                  set() if expected == "none" else {expected})
 
     def run_settings(self, mode="normal", apply=True):

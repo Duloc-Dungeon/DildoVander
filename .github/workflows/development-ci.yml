@@ -102,10 +102,6 @@ jobs:
         run: node --test scripts/ci/*.test.cjs
       - name: Test artifact integrity and safe extraction
         run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
-      - name: Test model workflow contracts with small synthetic data
-        run: |
-          python3 -m unittest discover -s mechanika/final -p test_fast_build.py
-          python3 -m unittest discover -s web/deploy -p test_cad_host.py
       - name: Check whitespace
         run: git diff --check HEAD^ HEAD
       - name: Verify Vapour Chrome design integrity

@@ -33,9 +33,14 @@ locků a nativních závislostí zachovává stávající oddělené bezpečnost
 2. Při konfliktu nebo zastaralém základu sluč aktuální `main` do
    `development`, vyřeš konflikty a nech kontroly doběhnout znovu.
 3. `CI required` pro tento PR vyžaduje všechny existující běžné projekty:
-   repository, backend, firmware, web, iOS, Android, offline AI evaluace a site.
+   repository, backend, web, iOS, Android, offline AI evaluace a site.
    Platí to i pro samotnou dokumentaci. Placené evaluace a CAD generování
    zůstávají samostatné explicitní operace.
+
+   Fyzický firmware, CAD a softwarový simulátor jsou pozastavené a automatické PR/release buildy je
+   nevybírají. `project=all` je nezahrnuje. Ruční `project=firmware` a samostatné
+   ruční CAD workflow zůstávají dostupné. Backend simulátor standardně
+   nekompiluje ani nepřibaluje; ruční režim popisuje lokální preflight.
 4. Po úspěšném CI a review použij **Create a merge commit**. Squash tohoto PR
    by ztratil společnou historii a komplikoval další vydání.
 5. `development` zachovej. Následující pracovní větev znovu založ z něj.
@@ -47,6 +52,17 @@ nespouští vydání. `main` zůstává výchozí větví repozitáře kvůli d�
 řídicím workflow; při zakládání PR vždy výslovně zvol cíl `development`.
 Starší PR přímo do `main` přesměruj do `development`; jejich dosavadní CI
 zůstává během přechodu dostupné. Ruční recovery buildy na `main` zůstávají.
+
+Úplné PR CI ukládá doklad o provedených kontrolách. Pokud release nezávisle
+prokáže shodu tohoto dokladu s výsledným merge commitem, na `main` už znovu
+nespouští stejné testovací sady. Znovu sestaví distribuční balíčky, ověří novou
+binárku a zachová kontrolu historie na tajné údaje. Chybějící, neúplný nebo
+zastaralý doklad znamená plné testy. Podrobnosti jsou v
+[ověření vydání](release-validation.md). Před PR platí
+[rychlý lokální preflight](local-preflight.md): backendové regresní skupiny,
+npm testy, typecheck a krátké kontroly repozitáře. Nativní buildy, balení
+a dlouhé HTTP/browserové integrace zůstávají v plném PR CI nebo ve volitelném
+lokálním režimu `--profile full`.
 
 ## První aktivace
 
