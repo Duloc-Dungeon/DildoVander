@@ -2065,6 +2065,23 @@
         ],
         "additionalProperties": false
       },
+      "GameLobbyOpponent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "maxLength": 128 },
+          "displayName": { "type": "string", "maxLength": 240 },
+          "xp": { "type": "integer", "minimum": 0 },
+          "matchesPlayed": { "type": "integer", "minimum": 0 },
+          "hasWand": { "type": "boolean" },
+          "wandTier": { "type": "integer", "minimum": 0, "maximum": 2 },
+          "tacticalUnlocked": {
+            "type": "boolean",
+            "description": "True only when both the 30 XP and tier-two wand requirements are met."
+          }
+        },
+        "required": ["id", "displayName", "xp", "matchesPlayed", "hasWand", "wandTier", "tacticalUnlocked"],
+        "additionalProperties": false
+      },
       "GameRound": {
         "type": "object",
         "properties": {
@@ -2695,7 +2712,7 @@
           "opponents": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/GameOpponent"
+              "$ref": "#/components/schemas/GameLobbyOpponent"
             }
           },
           "incoming": {

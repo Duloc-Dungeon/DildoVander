@@ -69,6 +69,23 @@ try {
     await properties.focus(); await page.keyboard.press('Enter');
     assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1);
     await page.screenshot({ path: path.join(output, `result-${width}.png`), fullPage: true }); captures++;
+    await page.goto(`${origin}/__workshop/upgrade`);
+    await page.getByText('Nová kapitola tvé hůlky', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
+    assert.equal(requests.find(request => request.path.endsWith('/sessions') && request.method === 'POST').body.upgrade, true);
+    assert.equal(requests.some(request => request.path.endsWith('/workshop') && request.upgrade === '1'), true);
+    for (const text of ['Chci vylepšit svou hůlku.', 'Zachovej její klid a přidej důraz.']) {
+      await page.getByLabel('Tvoje sdělení kufru').fill(text);
+      await page.getByRole('button', { name: 'Odeslat', exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('textarea')?.disabled);
+    }
+    await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).click();
+    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    await page.reload();
+    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1);
+    assert.equal(await overflow(), false, `${width}: upgraded wand result no overflow`);
+    await page.screenshot({ path: path.join(output, `upgrade-result-${width}.png`), fullPage: true }); captures++;
     await page.goto(`${origin}/__workshop/captured`);
     await page.getByText('Dílnu uzavřel Baron.', { exact: false }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Promluvit s kufrem', exact: true }).count(), 0);

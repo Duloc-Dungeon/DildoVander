@@ -53,7 +53,10 @@ internal static class GameDisplayNames
         {
             DisplayName = Resolve(lobby.Player.Id, lobby.Player.DisplayName, displayNames)
         },
-        Opponents = lobby.Opponents.Select(opponent => Decorate(opponent, displayNames)).ToArray(),
+        Opponents = lobby.Opponents.Select(opponent => opponent with
+        {
+            DisplayName = Resolve(opponent.Id, opponent.DisplayName, displayNames)
+        }).ToArray(),
         Incoming = lobby.Incoming.Select(match => Decorate(match, displayNames)).ToArray(),
         Active = lobby.Active.Select(match => Decorate(match, displayNames)).ToArray(),
         History = lobby.History.Select(match => Decorate(match, displayNames)).ToArray()
