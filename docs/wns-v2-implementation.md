@@ -135,6 +135,39 @@ Lokální evidence této relace je v
 Browser instalace používá zapisovatelný `PLAYWRIGHT_BROWSERS_PATH` v téže
 soukromé pracovní složce; systémový cache mount nebyl měněn.
 
+### První průchod hosta — 29. října 2026
+
+`test:guest-journey:browser` spojuje sdílené UI se skutečným izolovaným HTTPS
+backendem a virtuálním WebAuthn autentikátorem. Fixture vytvoří dočasného
+vlastníka, zákaznickou pozvánku a skupinu s budoucím otevřením. Enrichment,
+portrét i obrazový fallback mají lokální testovací implementace; test nevyžaduje
+externí poskytovatele ani placenou generaci. Launcher po skončení ověří odstranění
+dočasné databáze, klíčů a soukromé pozvánky.
+
+Ověřeno: explicitní souhlas, zachování formuláře po simulovaném zrušení
+přístupového klíče, skutečná registrace hosta a uložení postavy, ztracená odpověď
+po dokončeném zápisu, obnovení stránky bez dalšího vytvoření, budoucí odpočet,
+dekódování lokálního testovacího portrétu, opětovné přihlášení stejným klíčem
+a obecné odmítnutí použité či neznámé pozvánky. Mobilní čekárna nově skrývá
+nepovinné rozlišovací označení do rozbalovací sekce a po odhalení postavy nabízí
+zkratku k hůlce; při chybě portrétu zůstává tento další krok dostupný.
+
+Spuštění z kořene app repozitáře v PowerShellu na Windows:
+
+```powershell
+dotnet build backend-tests/BackendTests.csproj -c Release -r win-x64 --self-contained false -p:RestoreLockedMode=true
+npm run build --prefix mobilni-aplikace
+$env:KUFR_TESTS_DLL = 'backend-tests/bin/Release/net10.0/win-x64/BackendTests.dll'
+$env:APP_SCREENSHOTS = Join-Path (Get-Location).Path '.codex/artifacts/guest-journey'
+npm run test:guest-journey:browser --prefix mobilni-aplikace
+```
+
+Jde o lokální přejímku s virtuálním klíčem, nikoli důkaz chování na fyzickém
+telefonu, živé AI nebo skutečné tvorby hůlky. Starší `test:accounts:fixture`
+v tomto checkoutu před změnou stále očekával po registraci `/settings`, zatímco
+aktuální aplikace přechází na `/launch`; nový zákaznický průchod tento starší
+administrátorský scénář nenahrazuje.
+
 ## Zatím neověřeno
 
 ### Čeština — ověřený rozdíl oproti dílčímu auditu

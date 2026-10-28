@@ -147,6 +147,8 @@ try {
   assert.doesNotMatch(await page.locator('.launch-copy').innerText(), /Poznáváme postavu|Mícháme barvy|portrét|rešerš|malujeme/i);
   assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
   assert.equal(writes.at(-1).openAiConsent, true);
+  assert.equal(await page.locator('.launch-label-options').evaluate(details => details.open), false, 'optional labels start collapsed');
+  await page.locator('.launch-label-options summary').click();
   await page.getByLabel('Rozlišovací označení (nepovinné)').fill('U okna');
   await page.getByRole('button', { name: 'Uložit označení', exact: true }).click();
   await page.getByRole('heading', { name: 'Matylda · U okna', exact: true }).waitFor();

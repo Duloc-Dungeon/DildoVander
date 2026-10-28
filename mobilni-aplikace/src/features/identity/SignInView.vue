@@ -42,8 +42,13 @@ const pendingBetaDraft = ref<{ name: string; universe: string } | null>(null);
 const aiConsent = ref(false);
 const busy = ref(false);
 const error = ref<CustomerCopyKey | ''>('');
+const stepHeading = ref<HTMLHeadingElement | null>(null);
 const language = computed(() => interfaceLanguagePreference.language.value);
 watch(() => account.value?.id, id => interfaceLanguagePreference.setScope(id), { immediate: true });
+// These steps share a route, so route navigation cannot announce the new view.
+watch([arrival, enrollment, enrollmentKind, betaEntry, customerEnrollment], () => {
+  stepHeading.value?.focus();
+}, { flush: 'post' });
 function errorKey(value: unknown): CustomerCopyKey {
   if (value instanceof DOMException && value.name === 'NotAllowedError') return 'signin.error-cancelled';
   if (value instanceof Error && value.message === 'Přístupové klíče vyžadují HTTPS a podporovaný prohlížeč.') return 'signin.error-secure-context';
@@ -213,18 +218,30 @@ async function submit(): Promise<void> {
   <section class="signin-page" aria-labelledby="sign-in-title">
     <header class="signin-masthead">
       <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><span>Wand<br />Night Stand</span></RouterLink>
+      <AwButton v-if="arrival && !account" class="signin-code-entry" @click="setEnrollmentMode('invite')">{{ customerCopy.text('signin.have-invite') }}</AwButton>
     </header>
     <div v-if="arrival && !account" class="arrival-content">
       <div class="signin-art signin-art--amber" aria-hidden="true"><img :src="amberWand" alt="" width="1254" height="1254" fetchpriority="high" /></div>
-      <h1 id="sign-in-title">{{ language === 'en' ? 'Enter on your own reputation.' : 'Vstup na vlastní pověst.' }}</h1>
-      <p>Ollivander Industries™ tě vítá v mobilní pobočce. U našich hůlek je vlastní rozum samozřejmostí. U zákazníků příjemným překvapením.</p>
+      <h1 id="sign-in-title" ref="stepHeading" tabindex="-1">{{ language === 'en' ? 'Enter on your own reputation.' : 'Vstup na vlastní pověst.' }}</h1>
+      <div class="arrival-copy">
+        <p>Vyber si fiktivní postavu pro společný večer. Pak si vytvoříš účet a přístupový klíč pro návrat.</p>
+        <p class="identity-hint">Ollivander Industries™ tě vítá v mobilní pobočce. U našich hůlek je vlastní rozum samozřejmostí. U zákazníků příjemným překvapením.</p>
+      </div>
       <AwButton variant="primary" @click="beginFromArrival">{{ language === 'en' ? 'Begin' : 'Začít' }}</AwButton>
       <AwButton @click="showPasskeySignIn">{{ language === 'en' ? 'I already have access' : 'Už mám přístup' }}</AwButton>
       <nav class="signin-help" aria-label="Nápověda"><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></nav>
     </div>
     <div v-else class="signin-content">
       <div v-if="!enrollment && !account && !customerEnrollment" class="signin-art signin-art--violet" aria-hidden="true"><img :src="accessKey" alt="" width="696" height="430" /></div>
-      <header class="signin-intro"><h1 id="sign-in-title">{{ account ? customerCopy.text('signin.title') : enrollment || customerEnrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : (language === 'en' ? 'What shall we call you?' : 'Jak ti budou říkat?') : (language === 'en' ? 'Back on the scene.' : 'Zpátky na scénu.') }}</h1></header>
+      <header class="signin-intro">
+        <h1 id="sign-in-title" ref="stepHeading" tabindex="-1">{{ account ? customerCopy.text('signin.title') : enrollment || customerEnrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : (language === 'en' ? 'What shall we call you?' : 'Jak ti budou říkat?') : (language === 'en' ? 'Back on the scene.' : 'Zpátky na scénu.') }}</h1>
+        <p v-if="!account && enrollment && enrollmentKind === 'invite'" class="identity-hint">Vyber si postavu pro společný večer. Přijetím pozvánky si založíš účet pro svůj osobní zážitek.</p>
+      </header>
+      <nav v-if="!account && !customerEnrollment" class="signin-options" aria-label="Způsob vstupu">
+        <AwButton v-if="!enrollment || enrollmentKind !== 'invite' || betaEntry" :disabled="busy || signingOut" @click="setEnrollmentMode('invite')">{{ customerCopy.text(enrollment && enrollmentKind === 'recovery' ? 'signin.back-to-invitation' : 'signin.have-invite') }}</AwButton>
+        <AwButton v-if="!enrollment || enrollmentKind !== 'recovery'" :disabled="busy || signingOut" @click="setEnrollmentMode('recovery')">{{ customerCopy.text('signin.use-recovery') }}</AwButton>
+        <AwButton v-if="enrollment" :disabled="busy || signingOut" @click="showPasskeySignIn">{{ customerCopy.text('signin.have-passkey') }}</AwButton>
+      </nav>
       <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
       <AwNotice v-if="recoveryHint" tone="warning" role="status">{{ language === 'en' ? 'We could not confirm whether account creation finished. Sign in with your existing passkey to continue; your name and universe are kept on this screen.' : 'Nepodařilo se ověřit, zda se vytvoření účtu dokončilo. Pokračuj přihlášením svým přístupovým klíčem; jméno a univerzum zůstávají na této obrazovce.' }}</AwNotice>
       <p v-if="loading" role="status">{{ customerCopy.text('signin.loading') }}</p>
@@ -244,28 +261,22 @@ async function submit(): Promise<void> {
             <AwNotice v-else-if="betaEntry && enrollmentUnavailable" tone="warning" role="alert">{{ language === 'en' ? 'We could not check invitation availability. Check your connection and try again.' : 'Možnost přijetí pozvánky se nepodařilo ověřit. Zkontroluj připojení a zkus to znovu.' }} <AwButton @click="refreshDefaultEnrollment">{{ language === 'en' ? 'Try again' : 'Zkusit znovu' }}</AwButton></AwNotice>
             <AwNotice v-else-if="betaEntry && ((defaultEnrollment?.available === false && !token) || betaClosedError)" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
             <AwNotice v-else-if="betaChangedError" tone="warning">{{ language === 'en' ? 'The beta group or its rules changed. Review the current settings and continue again.' : 'Beta skupina nebo její pravidla se změnily. Zkontroluj aktuální podmínky a spusť vstup znovu.' }}</AwNotice>
-            <AwField id="account-name" :label="customerCopy.text('signin.invite-name')" :hint="customerCopy.text('signin.invite-name-hint')"><input id="account-name" aria-describedby="account-name-hint" ref="invitationNameInput" v-model="invitationName" class="aw-input" maxlength="80" autocomplete="nickname" required :disabled="busy" /></AwField>
+            <AwField id="account-name" :label="customerCopy.text('signin.invite-name')" :hint="customerCopy.text('signin.invite-name-hint')"><input id="account-name" aria-describedby="account-name-hint" ref="invitationNameInput" v-model="invitationName" class="aw-input" placeholder="Např. Hermiona Granger" maxlength="80" autocomplete="nickname" required :disabled="busy" /></AwField>
             <div v-if="betaEntry && defaultEnrollment?.fixedUniverse" class="fixed-universe"><span>{{ customerCopy.text('signin.invite-universe') }}</span><p id="account-universe">{{ defaultEnrollment.fixedUniverse }}</p><small>{{ language === 'en' ? 'The invitation sets this universe.' : 'Univerzum je určené pozvánkou.' }}</small></div>
-            <AwField v-else id="account-universe" :label="customerCopy.text('signin.invite-universe')"><input id="account-universe" v-model="invitationUniverse" class="aw-input" maxlength="160" autocomplete="off" required :disabled="busy" /></AwField>
+            <AwField v-else id="account-universe" :label="customerCopy.text('signin.invite-universe')" hint="Svět, ze kterého tvoje postava pochází."><input id="account-universe" aria-describedby="account-universe-hint" v-model="invitationUniverse" class="aw-input" placeholder="Např. Harry Potter" maxlength="160" autocomplete="off" required :disabled="busy" /></AwField>
           </template>
           <AwField v-if="(!betaEntry || enrollmentKind === 'recovery') && !linkedInvitation" id="account-invite" :label="customerCopy.text(enrollmentKind === 'recovery' ? 'signin.recovery-code-label' : 'signin.invite-code-label')" :hint="customerCopy.text('signin.token-hint')"><input id="account-invite" aria-describedby="account-invite-hint" ref="invitationCodeInput" v-model="token" class="aw-input" type="password" autocomplete="off" maxlength="256" required :disabled="busy" /></AwField>
 
-          <p v-if="enrollmentKind === 'invite'" class="identity-hint">{{ customerCopy.text('signin.passkey-before-dialog') }}</p>
         </template>
           <fieldset v-if="customerEnrollment || enrollment && enrollmentKind === 'invite'" class="consent-fieldset">
+            <legend>Souhlas s osobním zážitkem</legend>
             <label><input v-model="aiConsent" type="checkbox" required :disabled="busy" /> <span>{{ language === 'en' ? 'I agree to use OpenAI to create my character and personal experience.' : 'Souhlasím se zpracováním údajů postavy a zvuku rozhovoru službou OpenAI pro vytvoření osobního zážitku.' }}</span></label>
             <p class="identity-hint">{{ language === 'en' ? 'Without this consent, we will not create your character.' : 'Bez tohoto souhlasu registraci nelze dokončit.' }}</p>
             <details><summary>{{ customerCopy.text('signin.ai-consent-details') }}</summary><p>{{ customerCopy.text('signin.ai-consent-copy') }} <RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></p></details>
           </fieldset>
+        <p v-if="customerEnrollment || enrollment && enrollmentKind === 'invite'" class="identity-hint">{{ customerCopy.text('signin.passkey-before-dialog') }}</p>
         <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || ((customerEnrollment || enrollment && enrollmentKind === 'invite') && !aiConsent) || (betaEntry && (enrollmentLoading || !defaultEnrollment?.available)) || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment ? customerCopy.text('signin.customer-create') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : betaEntry ? (language === 'en' ? 'Accept invitation' : 'Přijmout pozvánku') : customerCopy.text('signin.invite-create-key') : customerCopy.text('signin.submit-signin') }}</AwButton>
         <p v-if="!enrollment && !customerEnrollment" class="identity-hint">{{ language === 'en' ? 'This opens system verification. Confirm with your device; no account password is needed.' : 'Otevře se systémové ověření. Potvrď ho na svém zařízení; heslo k účtu nepotřebuješ.' }}</p>
-        <div v-if="!customerEnrollment" class="signin-options">
-          <AwButton v-if="enrollment" @click="showPasskeySignIn">{{ customerCopy.text('signin.have-passkey') }}</AwButton>
-          <AwButton v-if="betaEntry" @click="setEnrollmentMode('invite')">{{ customerCopy.text('signin.have-invite') }}</AwButton>
-          <AwButton v-else @click="setEnrollmentMode('invite')">{{ customerCopy.text('signin.have-invite') }}</AwButton>
-          <AwButton v-if="enrollmentKind === 'invite'" @click="setEnrollmentMode('recovery')">{{ customerCopy.text('signin.use-recovery') }}</AwButton>
-          <AwButton v-else-if="enrollment" @click="setEnrollmentMode('invite')">{{ customerCopy.text('signin.back-to-invitation') }}</AwButton>
-        </div>
         <AwButton v-if="customerEnrollment" @click="customerEnrollment = false">{{ customerCopy.text('signin.back-to-signin') }}</AwButton>
         <AwButton v-else-if="!enrollment && launchAllowed === true" @click="customerEnrollment = true; error = ''">{{ customerCopy.text('signin.create-customer') }}</AwButton>
       </form>
@@ -286,9 +297,11 @@ async function submit(): Promise<void> {
   padding-block: max(24px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) max(32px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   color: var(--wns-text);
 }
-.signin-masthead { display: flex; align-items: center; min-height: 44px; margin-bottom: clamp(2rem, 6vh, 3rem); }
+.signin-masthead { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: clamp(2rem, 6vh, 3rem); }
 .signin-wordmark { display: inline-flex; align-items: center; min-height: 44px; color: inherit; text-decoration: none; font: 800 1.15rem/1 var(--wns-font-family); letter-spacing: -.03em; }
 .arrival-content, .signin-content { display: grid; gap: 24px; min-width: 0; }
+.arrival-copy, .signin-intro { display: grid; gap: 12px; }
+.arrival-copy p { margin: 0; }
 .signin-page h1 { margin: 0; font: var(--wns-weight-heading) clamp(2rem, 8.5vw, 3rem)/1.12 var(--wns-font-family); letter-spacing: -.04em; text-align: start; text-wrap: balance; }
 .arrival-content > p { margin: 0; color: var(--wns-muted); }
 .signin-art { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; width: 100%; height: clamp(12rem, 30vh, 18rem); overflow: hidden; border-radius: var(--wns-radius-hero); }
@@ -302,14 +315,16 @@ async function submit(): Promise<void> {
 .signin-page :deep(.aw-input) { min-height: 48px; font-size: 1rem; color: var(--wns-text); background: var(--wns-input-bg); border-color: var(--wns-input-border); border-radius: var(--wns-radius-field); }
 .identity-hint { margin: 0; color: var(--wns-muted); font-size: .9rem; }
 .consent-fieldset { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.consent-fieldset legend { padding: 0; margin-bottom: 12px; font-weight: var(--wns-weight-label); }
 .consent-fieldset label { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; line-height: 1.55; }
 .consent-fieldset input { flex: 0 0 24px; width: 24px; height: 24px; margin: .15rem 0 0; accent-color: var(--wns-mint); }
 .consent-fieldset summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
 .consent-fieldset details p { margin: 8px 0 0; }
 .fixed-universe p { margin: 4px 0; font-weight: var(--wns-weight-label); }
 .fixed-universe small { color: var(--wns-muted); }
-.signin-options { display: grid; gap: 4px; }
-.signin-options .aw-button { justify-content: flex-start; padding-inline: 0; border: 0; background: transparent; text-align: start; text-decoration: underline; text-underline-offset: .2em; }
+.signin-options { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.signin-options .aw-button, .signin-code-entry { justify-content: flex-start; padding-inline: 0; border: 0; background: transparent; text-align: start; text-decoration: underline; text-underline-offset: .2em; }
+.signin-code-entry { max-width: 11rem; }
 .signin-help { display: flex; flex-wrap: wrap; gap: 8px 24px; }
 .signin-help a { display: inline-flex; align-items: center; min-height: 44px; }
 .signin-back { justify-self: start; }
