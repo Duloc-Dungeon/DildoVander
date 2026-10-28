@@ -57,7 +57,7 @@ internal sealed class MobileWandRuntime(IServiceScopeFactory scopes, WandGenerat
             if (user.LaunchGroupId is null || scope.ServiceProvider.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId)?.OpenedAt is null
                 || scope.ServiceProvider.GetRequiredService<GameStore>().Stats(user.LaunchGroupId, a.Owner, "").Xp < 30) return false;
             var principal = await scope.ServiceProvider.GetRequiredService<IUserClaimsPrincipalFactory<AccountUser>>().CreateAsync(user);
-            if (!principal.IsInRole(AccountRoles.Customer) || !(await scope.ServiceProvider.GetRequiredService<LaunchAccessService>().EvaluateAsync(principal)).Allowed) return false;
+            if (!AccountRoles.IsPlayer(principal) || !(await scope.ServiceProvider.GetRequiredService<LaunchAccessService>().EvaluateAsync(principal)).Allowed) return false;
         }
         var profile = await scope.ServiceProvider.GetRequiredService<CharacterProfileStore>().ReadAsync(a.Owner, token);
         return profile?.ProfileId == a.Profile.ProfileId && profile.Revision == a.Profile.Revision;

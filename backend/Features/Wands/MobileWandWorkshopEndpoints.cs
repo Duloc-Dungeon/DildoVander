@@ -114,7 +114,7 @@ internal static partial class MobileWandWorkshopEndpoints
                     else
                         wands.RetireMobileOperation(owner, priorMobile); // Legacy pre-generated candidates never enter this flow.
                 }
-                var launchGroup = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false);
+                var launchGroup = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false, allowOwnerPreparation: !request.Upgrade);
                 var membership = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(user => user.Id == owner
                     && user.LaunchGroupId == launchGroup && user.LaunchGroupRevokedAt == null
                     && !user.Disabled && !accounts.DeletionRequests.Any(deletion => deletion.UserId == owner),
@@ -240,18 +240,22 @@ internal static partial class MobileWandWorkshopEndpoints
         WandGenerationStore wands, string owner, string operationId)
     {
         string groupId;
-        try { groupId = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false); }
+        var ownerPreparation = http.User.IsInRole(AccountRoles.Owner)
+            && wands.MobileOperationTier(owner, operationId) == 1;
+        try { groupId = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false, allowOwnerPreparation: ownerPreparation); }
         catch (GameFault) { return false; }
         var accounts = http.RequestServices.GetRequiredService<AccountDatabase>();
         var user = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == owner
-            && item.LaunchGroupId == groupId && item.LaunchGroupRevokedAt == null && !item.Disabled
+            && (ownerPreparation || item.LaunchGroupId == groupId && item.LaunchGroupRevokedAt == null) && !item.Disabled
             && !accounts.DeletionRequests.Any(deletion => deletion.UserId == owner), http.RequestAborted);
         if (user is null) return false;
         var roles = await http.RequestServices.GetRequiredService<UserManager<AccountUser>>().GetRolesAsync(user);
-        if (!roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)) return false;
+        if (!roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)
+            && !roles.Contains(AccountRoles.Owner, StringComparer.Ordinal)) return false;
         if (!(await http.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(http.User)).Allowed)
             return false;
-        return wands.WorkshopMatchesLaunchSnapshot(owner, operationId, groupId, user.LaunchGroupAccessRevision);
+        // Owners retain preparation access to every group when changing their active play context.
+        return ownerPreparation || wands.WorkshopMatchesLaunchSnapshot(owner, operationId, groupId, user.LaunchGroupAccessRevision);
     }
 
     private static async Task<string?> UnavailableReasonAsync(HttpContext http, GameStore games,
@@ -259,7 +263,7 @@ internal static partial class MobileWandWorkshopEndpoints
     {
         try
         {
-            var group = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false);
+            var group = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false, allowOwnerPreparation: !isUpgrade);
             var boss = games.ReadBoss(group, owner);
             if (boss.Revealed && !boss.Rescued) return "wand_workshop_boss_captured";
             if (isUpgrade && games.Stats(group, owner, "").Xp < 30) return "wand_upgrade_locked";

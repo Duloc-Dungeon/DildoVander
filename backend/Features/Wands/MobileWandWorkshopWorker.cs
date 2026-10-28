@@ -33,18 +33,21 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
     }
 
     private static async Task<bool> CurrentAuthorityAsync(string accountId, string groupId,
-        long accessRevision, IServiceProvider services, CancellationToken token)
+        long accessRevision, int tier, IServiceProvider services, CancellationToken token)
     {
         var accounts = services.GetRequiredService<AccountDatabase>();
         var user = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == accountId
-            && !item.Disabled && item.LaunchGroupRevokedAt == null && item.LaunchGroupId == groupId
-            && item.LaunchGroupAccessRevision == accessRevision
+            && !item.Disabled
             && !accounts.DeletionRequests.Any(deletion => deletion.UserId == accountId), token);
         if (user is null || !AccountAiConsent.HasConsent(user)
             || !await HasActiveSessionAsync(accounts, accountId, token)) return false;
         var userManager = services.GetRequiredService<UserManager<AccountUser>>();
         var roles = await userManager.GetRolesAsync(user);
-        if (!roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)) return false;
+        var isOwner = roles.Contains(AccountRoles.Owner, StringComparer.Ordinal);
+        if (!roles.Contains(AccountRoles.Customer, StringComparer.Ordinal) && !isOwner) return false;
+        var ownerPreparation = isOwner && tier == 1;
+        if (!ownerPreparation && (user.LaunchGroupRevokedAt is not null || user.LaunchGroupId != groupId
+            || user.LaunchGroupAccessRevision != accessRevision)) return false;
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, accountId), new(AccountIdentity.SessionClaim, "workshop-worker")
@@ -52,7 +55,8 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "workshop"));
         var access = await services.GetRequiredService<LaunchAccessService>().EvaluateAsync(principal);
-        if (!access.Allowed || services.GetRequiredService<LaunchPolicyStore>().ReadGroup(groupId)?.OpenedAt is null)
+        var group = services.GetRequiredService<LaunchPolicyStore>().ReadGroup(groupId);
+        if (!access.Allowed || group is null || group.OpenedAt is null && !ownerPreparation)
             return false;
         return true;
     }
@@ -67,7 +71,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             store.DeferWorkshop(job.AccountId, job.OperationId);
             return;
         }
-        if (!await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, services, token))
+        if (!await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, job.Tier, services, token))
         {
             store.FailWorkshop(job.AccountId, job.OperationId, "workshop_authority_revoked");
             return;
@@ -86,15 +90,14 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             return;
         }
 
-        if (user.LaunchGroupId is null
-            || services.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId)?.OpenedAt is null)
+        if (user.LaunchGroupId is null)
         {
             store.FailWorkshop(job.AccountId, job.OperationId, "game_group_inactive");
             return;
         }
 
         var game = services.GetRequiredService<GameStore>();
-        var boss = game.ReadBoss(user.LaunchGroupId, job.AccountId);
+        var boss = game.ReadBoss(job.LaunchGroupId, job.AccountId);
         if (boss.Revealed && !boss.Rescued)
         {
             store.PauseWorkshopForBoss(job.AccountId, job.OperationId);
@@ -158,7 +161,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
 
     private static async Task<bool> ContextAuthorityAsync(MobileWandWorkshopJob job,
         IServiceProvider services, CancellationToken token) =>
-        await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, services, token)
+        await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, job.Tier, services, token)
         && await services.GetRequiredService<CharacterProfileStore>().CapturePreparedAsync(job.AccountId,
             job.Profile.ProfileId, job.Profile.Revision, token) is not null;
 

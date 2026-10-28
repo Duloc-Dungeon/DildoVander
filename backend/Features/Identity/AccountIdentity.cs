@@ -158,6 +158,10 @@ internal static class AccountIdentity
                 if (!result.Succeeded) { throw new InvalidOperationException("Cannot initialize account roles."); }
             }
         }
+        await db.Users.Where(user => user.DisplayName != AccountRoles.OwnerDisplayName
+                && db.UserRoles.Any(member => member.UserId == user.Id
+                    && db.Roles.Any(role => role.Id == member.RoleId && role.Name == AccountRoles.Owner)))
+            .ExecuteUpdateAsync(update => update.SetProperty(user => user.DisplayName, AccountRoles.OwnerDisplayName));
     }
 
     public static void UseAccountIdentity(this WebApplication app)
@@ -238,6 +242,11 @@ internal static class AccountIdentity
             || user.SecurityStamp != context.Principal?.FindFirstValue(users.Options.ClaimsIdentity.SecurityStampClaimType))
         {
             context.RejectPrincipal(); return;
+        }
+        if (user.DisplayName != AccountRoles.OwnerDisplayName && await users.IsInRoleAsync(user, AccountRoles.Owner))
+        {
+            user.DisplayName = AccountRoles.OwnerDisplayName;
+            await db.SaveChangesAsync();
         }
         // Rebuild roles on every request: revocation is effective immediately.
         var now = AccountEndpoints.Now();

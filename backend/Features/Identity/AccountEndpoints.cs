@@ -210,6 +210,7 @@ internal static partial class AccountEndpoints
         var roles = recoveryUser is null ? new[] { invitation.Role } : await (
             from membership in db.UserRoles join role in db.Roles on membership.RoleId equals role.Id
             where membership.UserId == id select role.Name!).ToArrayAsync();
+        if (roles.Contains(AccountRoles.Owner, StringComparer.Ordinal)) { name = AccountRoles.OwnerDisplayName; }
         var label = PasskeyLabels.Account(name, roles);
         var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = id, Name = label, DisplayName = label });
         await SaveCeremonyAsync(context, db, "enroll", id, name, hash, openAiConsent: request.OpenAiConsent);
@@ -267,7 +268,7 @@ internal static partial class AccountEndpoints
         }
         var user = invitation.UserId is null ? new AccountUser
         {
-            Id = ceremony.UserId, UserName = ceremony.UserId, DisplayName = ceremony.DisplayName, CreatedAt = Now(),
+            Id = ceremony.UserId, UserName = ceremony.UserId, DisplayName = invitation.Role == AccountRoles.Owner ? AccountRoles.OwnerDisplayName : ceremony.DisplayName, CreatedAt = Now(),
             LaunchGroupId = invitation.LaunchGroupId,
             LaunchGroupJoinedAt = invitation.LaunchGroupId is null ? null : Now(),
             LaunchGroupAccessRevision = invitation.LaunchGroupId is null ? 0 : 1

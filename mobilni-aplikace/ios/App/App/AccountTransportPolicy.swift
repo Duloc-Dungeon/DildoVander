@@ -564,6 +564,8 @@ enum AccountTransportPolicy {
             "/app/v1/customer/enrollment/options": ["POST"],
             "/app/v1/customer/enrollment/complete": ["POST"],
             "/app/v1/customer/access": ["GET"],
+            "/app/v1/customer/groups": ["GET"],
+            "/app/v1/customer/groups/active": ["PUT"],
             "/app/v1/customer/character": ["GET", "PUT", "DELETE"],
             "/app/v1/customer/conversation-preferences": ["GET", "PUT"],
             "/app/v1/customer/character/correction": ["POST"],

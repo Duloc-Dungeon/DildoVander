@@ -80,6 +80,12 @@ internal static partial class AccountIdentityTests
         var update = new LaunchConfigurationUpdate(0, true, future, false, true, future, false,
             "Europe/Prague", "Hvězdy drží tajemství.", "Někdo právě leští souhvězdí.", true, "One mysterious sentence.");
         Check((await owner.PutAsJsonAsync("/app/v1/admin/launch", update)).IsSuccessStatusCode, "administrator can configure launch over real authenticated HTTPS");
+        var ownerSession = await JsonAsync(await owner.GetAsync("/app/v1/session"));
+        Check(ownerSession.GetProperty("account").GetProperty("displayName").GetString() == "Olivander",
+            "Owner enrollment ignores a custom display name and uses fixed Olivander identity");
+        Check((await owner.PutAsJsonAsync("/app/v1/prelaunch/character",
+            new { expectedRevision = 0, name = "Aragorn", universe = "Middle-earth", openAiConsent = true })).IsSuccessStatusCode,
+            "Owner creates a fictional character before global application launch");
         var invitation = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Customer" })))
             .GetProperty("token").GetString()!;
         await EnrollAsync(customer, customerKey, invitation, "Invited guest");

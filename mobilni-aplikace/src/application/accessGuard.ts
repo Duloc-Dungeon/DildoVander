@@ -40,13 +40,13 @@ export function installAccessGuard(router: Router): void {
     }
     const denied = accessRedirect(to);
     if (denied) return denied;
-    if (isCustomerAccount(account.value) && !['/access-revoked', '/privacy', '/support', '/account-deletion', '/me/account'].includes(to.path)) {
+    if (isCustomerAccount(account.value) && !account.value.roles.includes('Owner') && !['/access-revoked', '/privacy', '/support', '/account-deletion', '/me/account'].includes(to.path)) {
       const membership = await refreshCustomerMembership();
       if (membership === 'revoked') return { path: '/access-revoked', replace: true };
       if (membership !== 'active' && to.path !== '/launch') return { path: '/launch', replace: true };
     }
     if (['/access-revoked', '/me/account'].includes(to.path)) return undefined;
-    if (to.path !== '/launch' && account.value) {
+    if (to.path !== '/launch' && account.value && !account.value.roles.includes('Owner')) {
       try {
         const launch = await accountRequest<{ allowed: boolean }>('/app/v1/launch');
         launchAllowed.value = launch.allowed === true;

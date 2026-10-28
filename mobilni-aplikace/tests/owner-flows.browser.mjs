@@ -49,6 +49,8 @@ try {
     let countdownAttempts = 0;
     let invitationWrites = 0;
     let reauthentications = 0;
+    let ownerGroupId = 'owner-friday';
+    let ownerAccessRevision = 1;
     await context.addInitScript(() => {
       window.confirm = () => true;
       localStorage.setItem('dildovander.theme', 'olivander');
@@ -64,8 +66,20 @@ try {
       if (url.origin !== origin) return route.abort();
       const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
       const rejected = () => json({ code: 'recent_passkey_required' }, 403);
-      if (url.pathname === '/app/v1/session') return json({ enabled: true, account: { id: 'fixture-owner', displayName: 'Vlastník', roles: ['Owner'] }, csrfToken: 'fixture-only', origin });
-      if (url.pathname === '/app/v1/launch') return json({ allowed: true });
+      if (url.pathname === '/app/v1/session') return json({ enabled: true, account: { id: 'fixture-owner', displayName: 'Olivander', roles: ['Owner'] }, csrfToken: 'fixture-only', origin });
+      if (url.pathname === '/app/v1/launch') return json({ allowed: false });
+      if (url.pathname === '/app/v1/customer/groups/active') {
+        const input = request.postDataJSON();
+        assert.equal(input.expectedRevision, ownerAccessRevision);
+        assert.equal(input.groupId, 'owner-saturday');
+        ownerGroupId = input.groupId;
+        ownerAccessRevision++;
+        return json({ groups: [{ id: 'owner-friday', name: 'Pátek' }, { id: 'owner-saturday', name: 'Sobota' }], groupId: ownerGroupId, accessRevision: ownerAccessRevision });
+      }
+      if (url.pathname === '/app/v1/customer/groups') return json({ groups: [{ id: 'owner-friday', name: 'Pátek' }, { id: 'owner-saturday', name: 'Sobota' }], groupId: ownerGroupId, accessRevision: ownerAccessRevision });
+      if (url.pathname === '/app/v1/customer/character') return json({ profile: null });
+      if (url.pathname === '/app/v1/customer/sessions') return json({ items: [] });
+      if (url.pathname === '/app/v1/customer/wand') return json({ hasCharacter: false, wand: null, tier: 0 });
       if (url.pathname === '/app/v1/passkeys/reauthentication-options') return json({ challenge: 'AQID', allowCredentials: [] });
       if (url.pathname === '/app/v1/passkeys/reauthenticate') { recent = true; reauthentications++; return json({}); }
       if (url.pathname === '/app/v1/admin/users') return json({ users: [], grants: [] });
@@ -159,10 +173,26 @@ try {
     await page.getByText('Noc už je otevřená.').waitFor();
     assert.equal(reauthentications, 2);
     await capture(page, `owner-evening-${width}`);
+    await page.getByRole('button', { name: 'Hrát jako hráč', exact: true }).click();
+    await page.waitForURL(`${origin}/play`);
+    await Promise.all([
+      page.waitForResponse(response => response.url().endsWith('/app/v1/customer/groups/active') && response.request().method() === 'PUT'),
+      page.getByLabel('Skupina hráčů').selectOption('owner-saturday'),
+    ]);
+    assert.equal(ownerGroupId, 'owner-saturday');
+    await page.getByRole('link', { name: 'Moje postava a hůlka', exact: true }).click();
+    await page.waitForURL(`${origin}/me/character`);
+    await page.locator('.customer-form').waitFor();
+    assert.equal(await page.locator('.application-sidebar').count(), 0);
+    assert.equal(await page.locator('.wns-game-navigation').count(), 1);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await capture(page, `owner-player-${width}`);
+    await page.getByRole('button', { name: 'Přejít do administrace', exact: true }).click();
+    await page.waitForURL(`${origin}/settings/admin`);
     await context.close();
   }
   assert.deepEqual(errors, []);
-  await writeFile(path.join(output, 'evidence.json'), JSON.stringify({ fixture: 'loopback only; fake passkey transport', screenshots, pageErrors: errors, checks: ['owner group creation recovery', 'explicit one-use invitation creation', 'initial countdown draft required', 'expired owner authentication recovery without mutation replay', 'confirmed countdown and manual evening opening', '320, 390, 1280 pixel widths', 'optional portrait failure does not block launch settings'] }, null, 2));
+  await writeFile(path.join(output, 'evidence.json'), JSON.stringify({ fixture: 'loopback only; fake passkey transport', screenshots, pageErrors: errors, checks: ['owner group creation recovery', 'explicit one-use invitation creation', 'initial countdown draft required', 'expired owner authentication recovery without mutation replay', 'confirmed countdown and manual evening opening', 'owner player mode and group switch before launch', 'owner character creation form and player navigation', '320, 390, 1280 pixel widths', 'optional portrait failure does not block launch settings'] }, null, 2));
   console.log(JSON.stringify({ output, screenshots: screenshots.length, pageErrors: errors }));
 } finally {
   if (browser) await browser.close();

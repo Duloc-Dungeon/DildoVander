@@ -47,6 +47,7 @@ if (args is ["--mobile-workshop-socket"]) { await MobileWorkshopSocketTests.RunA
 if (args is ["--mobile-workshop-voice-verify"]) { await MobileWorkshopLiveTests.VerifySpokenTurnsAsync(); return; }
 if (args is ["--mobile-workshop-artwork-verify", var sourceDatabase, var imageModel]) { await MobileWorkshopLiveTests.VerifyArtworkAsync(sourceDatabase, imageModel); return; }
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); return; }
+if (args is ["--owner-player-http"]) { await MobileGameTests.RunOwnerPlayerHttpAsync(); return; }
 if (args is ["--mobile-game-http"]) { await MobileGameTests.RunHttpAsync(); return; }
 if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); return; }
 if (args is ["--mobile-game-teams"]) { GameTeamTests.Run(); return; }

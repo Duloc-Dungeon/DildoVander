@@ -17,6 +17,22 @@ to the canonical URL and retains its `KUFR_BACKEND_URL` override.
 
 # Backend kufru
 
+## Vlastník ve hře
+
+Účet s rolí `Owner` má pevné zobrazované jméno `Olivander` a členství ve všech
+hráčských skupinách. Uložené `LaunchGroupId` vybírá jeho aktuální hráčský kontext;
+přepnutí neodebírá členství v ostatních skupinách. Ostatní účty nadále vyžadují
+roli `Customer`, přiřazení ke skupině a platný přístup.
+
+Owner-only `GET /app/v1/customer/groups` vrací `{ groups, groupId, accessRevision }`
+a při chybějící volbě vybere první existující skupinu. `PUT` na
+`/app/v1/customer/groups/active` přijímá `{ groupId, expectedRevision }`;
+souběžná změna vrací `409`. Používá stávající ověření relace, originu a CSRF.
+Owner může připravit postavu a první hůlku před otevřením skupiny. Samotná hra
+a vyšší úrovně hůlky zachovávají podmínky spuštění a postupu.
+
+Cílené HTTPS regrese spouští backend harness přes `--owner-player-http`.
+
 [AI Persona Lab](Features/PersonaLab/README.md) poskytuje oddělené testování
 postavy přihlášeným účtům, verzované instrukce, hodnocení a diagnostiku obou
 podporovaných hlasových enginů.
