@@ -99,7 +99,7 @@ internal sealed class WandDecisionService : IDisposable
         }
     }
 
-    internal static string BuildRequest(WandDecisionInput input, string model = ResponsesTextDialogBudget.Model)
+    internal static string BuildRequest(WandDecisionInput input, string model = WandDecisionBudget.Luna)
     {
         if (!WandDecisionBudget.Supports(model)) throw new InvalidOperationException("Unsupported Live decision model.");
         foreach (var total in new[] { 8_000, 6_000, 4_000, 2_000 })
@@ -177,7 +177,7 @@ internal sealed class WandDecisionService : IDisposable
         return payload;
     }
 
-    internal static WandDecisionResult Parse(JsonElement root, WandDecisionInput input, string model = ResponsesTextDialogBudget.Model)
+    internal static WandDecisionResult Parse(JsonElement root, WandDecisionInput input, string model = WandDecisionBudget.Luna)
     {
         if (root.GetProperty("status").GetString() != "completed") throw new InvalidDataException("Incomplete decision.");
         var outputs = root.GetProperty("output").EnumerateArray().Where(o => o.GetProperty("type").GetString() == "function_call").ToArray();

@@ -39,9 +39,37 @@ GPT Live ani hlasové přehrávání. Produkční textový poskytovatel potřebu
 `OPENAI_API_KEY`; offline fixture konfigurace musí volbu výslovně vypnout.
 
 Produkční rozhovor používá jedinou osobnost **DV01** a **GPT Live `gpt-live-1`**.
-GPT Realtime 2.1 `gpt-realtime-2.1` je neaktivní zdrojová záloha. Live tvoří
-běžnou řeč sám. Sol rozhoduje jen o skutečné hůlce; samostatná vision služba
-zpracovává fotografie. Deterministické adaptéry jsou testovací pomůcky.
+GPT Realtime 2.1 `gpt-realtime-2.1` zůstává neaktivní zdrojovou zálohou pro
+obousměrný rozhovor. Samostatná syntéza hotového textu používá Realtime API
+model `gpt-realtime-2.1-mini`; výsledkem zůstává WAV. Live tvoří běžnou řeč sám.
+Luna rozhoduje o volbě hůlky, Terra obsluhuje textový dialog, výzkum a delší
+autorské texty. Samostatná vision služba zpracovává fotografie.
+Deterministické adaptéry jsou testovací pomůcky.
+
+Výchozí modely aplikace jsou nastavené v `backend/appsettings.json`; odpovídající
+proměnné prostředí s `__` místo `:` je mohou přepsat. Při nasazení mají přednost
+existující explicitní provozní hodnoty.
+
+| Úloha | Výchozí model | Konfigurace |
+| --- | --- | --- |
+| Textový dialog, výzkum a autorské texty | `gpt-6.1-terra` | dialog má vestavěný výchozí model; `Backend:Vision:Model`, `Keepsake:StoryModel`, `CustomerCharacters:Model`, `Wands:Model` |
+| Úzké rozhodnutí Live a hráči Pod pečetí | `gpt-6-luna` | `Backend:GptLive:DecisionModel`, `SealedCase:AiPlayers:Model` |
+| Obrázky portrétů a hůlek | `gpt-image-2.5-flare` | `CustomerCharacters:PortraitModel`, `Keepsake:ImageModel` |
+| Plně duplexní rozhovor | `gpt-live-1` | `Backend:Conversation:LiveModel` |
+| Syntéza hotového textu pro uložené odpovědi a krátké pokyny | `gpt-realtime-2.1-mini` | `ShowCueSpeechClient` |
+
+Generování obrázků posílá `moderation=low`, včetně portrétů a průhledných hůlek;
+parametr se ukládá také do provenance hůlky. Textové a hlasové požadavky tento
+obrazový parametr nepřijímají. Starší volba hlasu `onyx` se při samostatné syntéze
+překládá na podporovaný `cedar`.
+
+Mobilní dílna vyhodnotí ustálený uložený přepis i bez delegace hlasového modelu.
+Stejný přepis znovu automaticky nevyhodnocuje; počet rozhodnutí v jednom spojení
+je omezený. Opravené odpovědi a aktuální oprávnění se kontrolují před přijetím
+výroby. Odpojení nezahodí již rozběhnuté rozhodnutí, pokud jeho podklady a
+oprávnění stále platí. Uložení hůlky a její obrázek mají samostatný stav;
+neúspěšný obrázek nevyžaduje novou hůlku. Diagnostika odmítnutí uchovává HTTP
+status, nikoli text těla odpovědi poskytovatele.
 
 [Aktuální architektura a provozní kontrakt](../docs/autonomous-live-memory.md)
 popisuje paměť, transport, migraci a akceptaci.

@@ -21,19 +21,21 @@ class Response(io.BytesIO):
 
 class DeploymentVerificationTests(unittest.TestCase):
     def test_model_access_is_metadata_only_and_retired_actor_cannot_call_provider(self):
-        environment = {"LIVE_ACTOR_MODE": "AutonomousActor", "LIVE_DECISION_MODEL": "gpt-6-luna",
-                       "OPENAI_API_KEY": "test-api"}
-        with patch.dict(os.environ, environment, clear=True), contextlib.redirect_stdout(io.StringIO()), \
-                patch("server_mode_smoke.urllib.request.build_opener") as build:
-            build.return_value.open.return_value = Response(200, {"id": "gpt-6-luna"})
-            server_mode_smoke.verify_decision_model()
-            request = build.return_value.open.call_args.args[0]
-            self.assertEqual(request.get_method(), "GET")
-            self.assertEqual(request.full_url, "https://api.openai.com/v1/models/gpt-6-luna")
-            os.environ["LIVE_ACTOR_MODE"] = "LegacyBackendScripted"
-            with self.assertRaises(ValueError):
-                server_mode_smoke.verify_decision_model()
-            self.assertEqual(build.return_value.open.call_count, 1)
+        for model in ("gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"):
+            with self.subTest(model=model):
+                environment = {"LIVE_ACTOR_MODE": "AutonomousActor", "LIVE_DECISION_MODEL": model,
+                               "OPENAI_API_KEY": "test-api"}
+                with patch.dict(os.environ, environment, clear=True), contextlib.redirect_stdout(io.StringIO()), \
+                        patch("server_mode_smoke.urllib.request.build_opener") as build:
+                    build.return_value.open.return_value = Response(200, {"id": model})
+                    server_mode_smoke.verify_decision_model()
+                    request = build.return_value.open.call_args.args[0]
+                    self.assertEqual(request.get_method(), "GET")
+                    self.assertEqual(request.full_url, "https://api.openai.com/v1/models/" + model)
+                    os.environ["LIVE_ACTOR_MODE"] = "LegacyBackendScripted"
+                    with self.assertRaises(ValueError):
+                        server_mode_smoke.verify_decision_model()
+                    self.assertEqual(build.return_value.open.call_count, 1)
 
     def test_missing_model_access_fails_before_activation(self):
         environment = {"LIVE_DECISION_MODEL": "gpt-6-luna", "OPENAI_API_KEY": "test-api"}

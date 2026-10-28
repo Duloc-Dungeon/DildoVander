@@ -8,7 +8,7 @@ namespace Kufr.Backend.Features.GptLive;
 internal static class WandDecisionBudget
 {
     internal const string Luna = "gpt-6-luna";
-    internal static bool Supports(string model) => model is Luna or ResponsesTextDialogBudget.Model;
+    internal static bool Supports(string model) => model is Luna or ResponsesTextDialogBudget.Model or ResponsesTextDialogBudget.LegacyModel;
     internal static int OutputTokens(string model) => model == Luna ? 512 : 1200;
 
     internal static long Reservation(WandDecisionInput input, string model) => model switch
@@ -16,7 +16,7 @@ internal static class WandDecisionBudget
         // At most 14k input bytes/tokens + 512 output tokens cost $0.002006.
         // Reserve $0.01; account for all input at the cache-write price.
         Luna => 10_000,
-        ResponsesTextDialogBudget.Model => ResponsesTextDialogBudget.ReservedMicroUsd
+        ResponsesTextDialogBudget.Model or ResponsesTextDialogBudget.LegacyModel => ResponsesTextDialogBudget.ReservedMicroUsd
             + Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(input)) * 5L,
         _ => throw new InvalidOperationException("Unsupported Live decision model.")
     };

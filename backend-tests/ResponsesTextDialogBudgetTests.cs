@@ -7,14 +7,14 @@ internal static class ResponsesTextDialogBudgetTests
         var response = new TextDialogResponse(
             "Odpověď", "ask", "", null, ResponsesTextDialogBudget.Model, 621, 102, "default");
         var actual = ResponsesTextDialogBudget.CalculateActualMicroUsd(response);
-        Require(actual == 2573, "all input is charged at the cache-write rate");
+        Require(actual == 1287, "Terra input is charged at the cache-write rate and rounded up");
         Require(actual < ResponsesTextDialogBudget.ReservedMicroUsd,
             "measured test case fits the pre-call reservation");
 
         var maximumRequest = response with { InputTokens = 15_200, OutputTokens = 1_200 };
         Require(2 * ResponsesTextDialogBudget.CalculateActualMicroUsd(maximumRequest)
-            == ResponsesTextDialogBudget.ReservedMicroUsd,
-            "reservation covers Fast rates if the provider disregards the requested Standard tier");
+            <= ResponsesTextDialogBudget.ReservedMicroUsd,
+            "reservation covers Terra Fast rates if the provider disregards the requested Standard tier");
         var serializedRequestCap = response with
         {
             InputTokens = ResponsesTextDialogBudget.MaxRequestBytes,
@@ -49,14 +49,19 @@ internal static class ResponsesTextDialogBudgetTests
             }
         }
 
-        Require(ResponsesTextDialogBudget.IsSupportedModel(ResponsesTextDialogBudget.Model), "Sol is supported");
+        Require(ResponsesTextDialogBudget.IsSupportedModel(ResponsesTextDialogBudget.Model), "Terra is supported");
+        Require(ResponsesTextDialogBudget.IsSupportedModel(ResponsesTextDialogBudget.LegacyModel), "explicit legacy Sol is supported");
         Require(!ResponsesTextDialogBudget.IsSupportedModel("gpt-6-luna"), "Luna is disabled after live evaluation");
+
+        var legacySol = response with { ReturnedModel = ResponsesTextDialogBudget.LegacyModel };
+        Require(ResponsesTextDialogBudget.CalculateActualMicroUsd(legacySol, ResponsesTextDialogBudget.LegacyModel) == 2573,
+            "explicit legacy Sol retains its Standard price calculation");
 
         var wrongModel = response with { ReturnedModel = "other-model" };
         try
         {
             ResponsesTextDialogBudget.CalculateActualMicroUsd(wrongModel);
-            throw new Exception("Unknown model was priced as GPT-6.1 Sol.");
+            throw new Exception("Unknown model was priced as GPT-6.1 Terra.");
         }
         catch (TextDialogUnavailableException)
         {

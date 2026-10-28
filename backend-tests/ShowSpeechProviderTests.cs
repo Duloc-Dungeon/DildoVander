@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
-using System.Net;
-using System.Net.Http.Headers;
+using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using Kufr.Backend.Features.Show;
 using Kufr.Backend.Features.Speech;
@@ -9,214 +9,251 @@ internal static class ShowSpeechProviderTests
 {
     internal static async Task RunAsync()
     {
-        await RequestAndDeviceAudioContractAsync();
-        await InvalidInputDoesNotDispatchAsync();
-        await BoundedProviderResponsesAsync();
-        await FailureDoesNotRetryAsync();
-        await CancellationWipesTransportBufferAsync();
-        Console.WriteLine("Show speech SDK transport tests passed: PCM/voice, bounded content, single dispatch and cancelled-buffer wiping (no network).");
+        await RealtimeRequestAndDeviceAudioContractAsync();
+        await InvalidInputDoesNotConnectAsync();
+        await BoundedAndMalformedRealtimeResponsesAsync();
+        await FailedResponseDoesNotPublishPartialAudioAsync();
+        await CancellationDisposesRealtimeSocketAsync();
+        Console.WriteLine("Show speech Realtime tests passed: text/voice/speed, bounded PCM, malformed frames, cancellation and disposal (no network).");
     }
 
-    private static async Task RequestAndDeviceAudioContractAsync()
+    private static async Task RealtimeRequestAndDeviceAudioContractAsync()
     {
         const string line = "Ministerstvo uznává zásah.";
-        var expectedOptions = SpeechOptions.Default;
-        var handler = new Handler(async (request, cancellation) =>
-        {
-            Check(request.Method == HttpMethod.Post
-                && request.RequestUri == new Uri("https://api.openai.com/v1/audio/speech"), "official SDK uses the HTTPS speech endpoint");
-            Check(request.Headers.Authorization?.ToString() == "Bearer fixture-show-key", "credential stays in the authorization header");
-            Check(request.Content!.Headers.ContentType?.MediaType == "application/json", "SDK sends JSON");
-            using var body = JsonDocument.Parse(await request.Content.ReadAsStringAsync(cancellation));
-            var payload = body.RootElement;
-            Check(payload.GetProperty("model").GetString() == ShowCueSpeechClient.Model
-                && payload.GetProperty("voice").GetString() == expectedOptions.Voice
-                && Math.Abs(payload.GetProperty("speed").GetDouble() - expectedOptions.Speed) < .0001
-                && payload.GetProperty("response_format").GetString() == "pcm"
-                && payload.GetProperty("input").GetString() == line,
-                "request preserves the pinned model, selected voice, speed, PCM and exact authored line");
-            Check(payload.GetProperty("instructions").GetString()!.Contains("Přečti přesně vstupní text", StringComparison.Ordinal),
-                "server instructions prohibit adding improvised words");
-            return Response(Pcm(), expectedOptions.Voice == "marin" ? "audio/pcm" : "application/octet-stream");
-        });
-        using var http = new HttpClient(handler);
-        var client = new ShowCueSpeechClient(http, "fixture-show-key");
-        foreach (var options in new[] { SpeechOptions.Default, new SpeechOptions("cedar", 1.15) })
-        {
-            expectedOptions = options;
-            var wav = await client.GenerateAsync(line, options, default);
-            Check(wav.AsSpan(0, 4).SequenceEqual("RIFF"u8)
-                && wav.AsSpan(8, 4).SequenceEqual("WAVE"u8)
-                && BinaryPrimitives.ReadInt32LittleEndian(wav.AsSpan(24)) == 32_000
-                && BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(22)) == 1
-                && BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(34)) == 16
-                && wav.Length == 44 + 640 * 2,
-                "24 kHz provider PCM becomes a real 32 kHz mono PCM16 device WAV with preserved duration");
-            Check(wav.AsSpan(44).ToArray().Any(value => value != 0), "resampling preserves nonempty audio rather than fabricating a silent header");
-        }
-        Check(handler.Calls == 2, "one provider request per authored line");
+        var audio = Pcm();
+        var socket = SuccessSocket(audio);
+        var client = new ShowCueSpeechClient("fixture-show-key", null, _ => Task.FromResult<WebSocket>(socket));
+        var wav = await client.GenerateAsync(line, new SpeechOptions("cedar", 1.15), default);
+
+        Check(wav.AsSpan(0, 4).SequenceEqual("RIFF"u8)
+            && wav.AsSpan(8, 4).SequenceEqual("WAVE"u8)
+            && BinaryPrimitives.ReadInt32LittleEndian(wav.AsSpan(24)) == 32_000
+            && BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(22)) == 1
+            && BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(34)) == 16
+            && wav.Length == 44 + 640 * 2,
+            "Realtime 24 kHz PCM becomes the existing 32 kHz mono PCM16 device WAV with preserved duration");
+        Check(wav.AsSpan(44).ToArray().Any(value => value != 0), "device audio contains converted PCM");
+        Check(socket.Disposed, "Realtime socket is disposed after a completed response");
+
+        var commands = socket.SentMessages.Select(message => JsonDocument.Parse(message)).ToArray();
+        var update = commands.Select(document => document.RootElement)
+            .Single(root => root.GetProperty("type").GetString() == "session.update");
+        var outputAudio = update.GetProperty("session").GetProperty("audio").GetProperty("output");
+        Check(update.GetProperty("session").GetProperty("model").GetString() == ShowCueSpeechClient.Model
+            && update.GetProperty("session").GetProperty("max_output_tokens").GetInt32() == 1024
+            && outputAudio.GetProperty("format").GetProperty("rate").GetInt32() == 24_000
+            && outputAudio.GetProperty("voice").GetString() == "cedar"
+            && Math.Abs(outputAudio.GetProperty("speed").GetSingle() - 1.15f) < 0.001f,
+            "Realtime session uses the replacement model, PCM24, selected voice and selected speed");
+
+        var response = commands.Select(document => document.RootElement)
+            .Single(root => root.GetProperty("type").GetString() == "response.create");
+        Check(response.GetProperty("response").GetProperty("output_modalities")[0].GetString() == "audio"
+            && response.GetProperty("response").GetProperty("instructions").GetString()!.Contains(
+                JsonSerializer.Serialize(line), StringComparison.Ordinal),
+            "response requests audio and passes the exact authored line without adding conversational input");
+
+        var onyxSocket = SuccessSocket(audio);
+        var onyxClient = new ShowCueSpeechClient("fixture-show-key", null,
+            _ => Task.FromResult<WebSocket>(onyxSocket));
+        _ = await onyxClient.GenerateAsync(line, new SpeechOptions("onyx", 1), default);
+        using var onyxUpdate = JsonDocument.Parse(onyxSocket.SentMessages
+            .Single(message => message.Contains("session.update", StringComparison.Ordinal)));
+        Check(onyxUpdate.RootElement.GetProperty("session").GetProperty("audio").GetProperty("output")
+            .GetProperty("voice").GetString() == "cedar",
+            "legacy onyx selection remains accepted and maps to the supported cedar voice");
     }
 
-    private static async Task InvalidInputDoesNotDispatchAsync()
+    private static async Task InvalidInputDoesNotConnectAsync()
     {
-        var handler = new Handler((_, _) => throw new InvalidOperationException("Invalid input must not reach HTTP."));
-        using var http = new HttpClient(handler);
-        var client = new ShowCueSpeechClient(http, "fixture-show-key");
+        var connectCalls = 0;
+        var client = new ShowCueSpeechClient("fixture-show-key", null, _ =>
+        {
+            connectCalls++;
+            throw new InvalidOperationException("Invalid input must not connect.");
+        });
         foreach (var line in new[] { "", " \n\t", new string('a', 501), string.Concat(Enumerable.Repeat("🪄", 501)) })
         {
             await RejectAsync<ArgumentException>(() => client.GenerateAsync(line, default));
         }
-        foreach (var options in new[] { new SpeechOptions("unapproved", 1), new SpeechOptions(null!, 1),
-            new SpeechOptions("marin", double.NaN), new SpeechOptions("marin", .84), new SpeechOptions("marin", 1.26) })
-        {
-            await RejectAsync<ArgumentException>(() => client.GenerateAsync("Ahoj", options, default));
-        }
-        Check(handler.Calls == 0, "invalid short text, voice or speed cannot create a provider request");
+        await RejectAsync<ArgumentException>(() => client.GenerateAsync("Ahoj", new SpeechOptions("alloy", 1), default));
+        await RejectAsync<ArgumentException>(() => client.GenerateAsync("Ahoj", new SpeechOptions("marin", 1.26), default));
+        Check(connectCalls == 0, "invalid text, unsupported voice or speed does not open a paid Realtime session");
     }
 
-    private static async Task BoundedProviderResponsesAsync()
+    private static async Task BoundedAndMalformedRealtimeResponsesAsync()
     {
-        foreach (var contentType in new string?[] { "audio/mpeg", "application/json", null })
-        {
-            using var stream = new ObservedStream(128);
-            var handler = new Handler((_, _) => Task.FromResult(StreamResponse(stream, contentType)));
-            using var http = new HttpClient(handler);
-            await RejectAsync<InvalidDataException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", default));
-            Check(handler.Calls == 1 && stream.ReadCalls == 0 && stream.Disposed, "unexpected media type is rejected before reading and response is disposed");
-        }
-        using (var declared = new ObservedStream(128))
-        {
-            var handler = new Handler((_, _) => Task.FromResult(StreamResponse(declared, "audio/pcm", PcmSpeechAudio.MaxProviderBytes + 1L)));
-            using var http = new HttpClient(handler);
-            await RejectAsync<InvalidDataException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", default));
-            Check(handler.Calls == 1 && declared.ReadCalls == 0 && declared.Disposed, "declared oversize is rejected without buffering audio");
-        }
-        using (var streamed = new ObservedStream(PcmSpeechAudio.MaxProviderBytes + 2))
-        {
-            var handler = new Handler((_, _) => Task.FromResult(StreamResponse(streamed, "application/octet-stream")));
-            using var http = new HttpClient(handler);
-            await RejectAsync<InvalidDataException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", default));
-            Check(handler.Calls == 1 && streamed.BytesRead == PcmSpeechAudio.MaxProviderBytes + 1
-                && streamed.SawNonzeroData && streamed.Buffer.Span.ToArray().All(value => value == 0) && streamed.Disposed,
-                "unknown-length response stops at limit plus one and wipes the bounded transport buffer");
-        }
-        foreach (var pcm in new[] { Array.Empty<byte>(), new byte[3] })
-        {
-            var handler = new Handler((_, _) => Task.FromResult(Response(pcm, "audio/pcm")));
-            using var http = new HttpClient(handler);
-            await RejectAsync<InvalidDataException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", default));
-            Check(handler.Calls == 1, "empty or misaligned PCM cannot be returned as a valid device WAV");
-        }
+        var oversizedFrames = new List<string> { SessionCreated(), SessionUpdated() };
+        oversizedFrames.AddRange(Enumerable.Range(0, 9).Select(_ => AudioDelta(new byte[180_000])));
+        oversizedFrames.Add(ResponseDone());
+        var oversized = new ScriptedSocket(oversizedFrames);
+        var oversizedClient = new ShowCueSpeechClient("fixture-show-key", null,
+            _ => Task.FromResult<WebSocket>(oversized));
+        await RejectAsync<InvalidDataException>(() => oversizedClient.GenerateAsync("Ahoj", default));
+        Check(oversized.Disposed, "oversized PCM response disposes its session socket");
+
+        var malformed = new ScriptedSocket(["not-json"]);
+        var malformedClient = new ShowCueSpeechClient("fixture-show-key", null,
+            _ => Task.FromResult<WebSocket>(malformed));
+        await RejectAnyAsync(() => malformedClient.GenerateAsync("Ahoj", default));
+        Check(malformed.Disposed, "malformed Realtime frame disposes its session socket");
     }
 
-    private static async Task FailureDoesNotRetryAsync()
-    {
-        foreach (var status in new[] { HttpStatusCode.TooManyRequests, HttpStatusCode.ServiceUnavailable, HttpStatusCode.TemporaryRedirect })
-        {
-            var handler = new Handler((_, _) =>
-            {
-                var response = new HttpResponseMessage(status) { Content = new StringContent("provider-private-error") };
-                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.Zero);
-                if (status == HttpStatusCode.TemporaryRedirect) { response.Headers.Location = new Uri("https://untrusted.invalid/speech"); }
-                return Task.FromResult(response);
-            });
-            using var http = new HttpClient(handler);
-            if (status == HttpStatusCode.TemporaryRedirect)
-            {
-                await RejectAsync<InvalidDataException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", default));
-            }
-            else
-            {
-                await RejectAsync<System.ClientModel.ClientResultException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", default));
-            }
-            Check(handler.Calls == 1, "HTTP failure or redirect cannot trigger a second provider request");
-        }
-    }
-
-    private static async Task CancellationWipesTransportBufferAsync()
+    private static async Task CancellationDisposesRealtimeSocketAsync()
     {
         using var cancellation = new CancellationTokenSource();
-        using var stream = new ObservedStream(256, cancelOnSecondRead: cancellation);
-        var handler = new Handler((_, _) => Task.FromResult(StreamResponse(stream, "audio/pcm")));
-        using var http = new HttpClient(handler);
-        await RejectAsync<OperationCanceledException>(() => new ShowCueSpeechClient(http, "fixture-show-key").GenerateAsync("Ahoj", cancellation.Token));
-        Check(handler.Calls == 1 && stream.ReadCalls == 2 && stream.SawNonzeroData
-            && !stream.Buffer.IsEmpty && stream.Buffer.Span.ToArray().All(value => value == 0) && stream.Disposed,
-            "cancellation after partial audio wipes the actually-used transport buffer and releases its stream");
+        var socket = new ScriptedSocket([SessionCreated(), SessionUpdated()], cancellation);
+        var client = new ShowCueSpeechClient("fixture-show-key", null,
+            _ => Task.FromResult<WebSocket>(socket));
+        await RejectAsync<OperationCanceledException>(() => client.GenerateAsync("Ahoj", cancellation.Token));
+        Check(socket.Disposed, "cancelled Realtime session disposes the WebSocket");
     }
+
+    private static async Task FailedResponseDoesNotPublishPartialAudioAsync()
+    {
+        foreach (var status in new[] { "failed", "incomplete", "cancelled" })
+        {
+            var socket = new ScriptedSocket(
+                [SessionCreated(), SessionUpdated(), AudioDelta(Pcm()), ResponseDone(status)]);
+            var client = new ShowCueSpeechClient("fixture-show-key", null,
+                _ => Task.FromResult<WebSocket>(socket));
+            await RejectAsync<InvalidDataException>(() => client.GenerateAsync("Ahoj", default));
+            Check(socket.Disposed, $"{status} Realtime response disposes the session after partial audio");
+        }
+    }
+
+    private static ScriptedSocket SuccessSocket(byte[] pcm) => new(
+        [SessionCreated(), SessionUpdated(), AudioDelta(pcm), ResponseDone()]);
+
+    private static string SessionCreated() => """
+        {"type":"session.created","event_id":"evt_created","session":{"id":"sess_1","object":"realtime.session","model":"gpt-realtime-2.1-mini"}}
+        """;
+
+    private static string SessionUpdated() => """
+        {"type":"session.updated","event_id":"evt_updated","session":{"id":"sess_1","object":"realtime.session","model":"gpt-realtime-2.1-mini"}}
+        """;
+
+    private static string AudioDelta(byte[] bytes) => JsonSerializer.Serialize(new
+    {
+        type = "response.output_audio.delta", event_id = "evt_audio", response_id = "resp_1",
+        item_id = "item_1", output_index = 0, content_index = 0, delta = Convert.ToBase64String(bytes)
+    });
+
+    private static string ResponseDone(string status = "completed") => JsonSerializer.Serialize(new
+    {
+        type = "response.done", event_id = "evt_done",
+        response = new { id = "resp_1", @object = "realtime.response", status, output = Array.Empty<object>() }
+    });
 
     private static byte[] Pcm()
     {
         var bytes = new byte[480 * 2];
         for (var sample = 0; sample < 480; sample++)
         {
-            BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(sample * 2), (short)(10_000 * Math.Sin(2 * Math.PI * 800 * sample / 24_000)));
+            BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(sample * 2),
+                (short)(10_000 * Math.Sin(2 * Math.PI * 800 * sample / 24_000)));
         }
         return bytes;
     }
-    private static HttpResponseMessage Response(byte[] bytes, string contentType)
-    {
-        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
-        response.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
-        return response;
-    }
-    private static HttpResponseMessage StreamResponse(Stream stream, string? contentType, long? length = null)
-    {
-        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stream) };
-        response.Content.Headers.ContentType = contentType is null ? null : new MediaTypeHeaderValue(contentType);
-        response.Content.Headers.ContentLength = length;
-        return response;
-    }
+
     private static async Task RejectAsync<T>(Func<Task<byte[]>> action) where T : Exception
     {
-        try { _ = await action(); }
-        catch (T) { return; }
+        try
+        {
+            _ = await action();
+        }
+        catch (T)
+        {
+            return;
+        }
+
         throw new InvalidOperationException($"Show speech test expected {typeof(T).Name}.");
     }
+
+    private static async Task RejectAnyAsync(Func<Task<byte[]>> action)
+    {
+        try
+        {
+            _ = await action();
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException("Show speech test expected malformed frame rejection.");
+    }
+
     private static void Check(bool condition, string message)
     {
-        if (!condition) { throw new InvalidOperationException($"Show speech test failed: {message}"); }
-    }
-    private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
-    {
-        internal int Calls;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        if (!condition)
         {
-            Calls++;
-            return send(request, cancellationToken);
+            throw new InvalidOperationException($"Show speech test failed: {message}");
         }
     }
-    private sealed class ObservedStream(int length, CancellationTokenSource? cancelOnSecondRead = null) : Stream
+
+    private sealed class ScriptedSocket(IReadOnlyList<string> frames, CancellationTokenSource? cancelWhenExhausted = null) : WebSocket
     {
-        internal int ReadCalls;
-        internal int BytesRead;
-        internal Memory<byte> Buffer { get; private set; }
-        internal bool SawNonzeroData;
-        internal bool Disposed;
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        private readonly Queue<byte[]> incoming = new(frames.Select(Encoding.UTF8.GetBytes));
+        private readonly List<string> sentMessages = [];
+        private WebSocketState state = WebSocketState.Open;
+
+        internal IReadOnlyList<string> SentMessages => sentMessages;
+        internal bool Disposed { get; private set; }
+
+        public override WebSocketCloseStatus? CloseStatus => null;
+        public override string? CloseStatusDescription => null;
+        public override WebSocketState State => state;
+        public override string? SubProtocol => "realtime";
+        public override void Abort() => state = WebSocketState.Aborted;
+        public override void Dispose()
         {
-            ReadCalls++;
-            if (ReadCalls == 2 && cancelOnSecondRead is not null) { cancelOnSecondRead.Cancel(); }
+            Disposed = true;
+            state = WebSocketState.Closed;
+        }
+
+        public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
+        {
+            state = WebSocketState.Closed;
+            return Task.CompletedTask;
+        }
+
+        public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
+        {
+            state = WebSocketState.CloseSent;
+            return Task.CompletedTask;
+        }
+
+        public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage,
+            CancellationToken cancellationToken)
+        {
             cancellationToken.ThrowIfCancellationRequested();
-            var count = Math.Min(buffer.Length, length - BytesRead);
-            if (cancelOnSecondRead is not null) { count = Math.Min(count, 64); }
-            if (count == 0) { return ValueTask.FromResult(0); }
-            buffer.Span[..count].Fill(0x5A);
-            Buffer = buffer[..count];
-            SawNonzeroData = true;
-            BytesRead += count;
-            return ValueTask.FromResult(count);
+            if (messageType != WebSocketMessageType.Text || !endOfMessage)
+            {
+                throw new InvalidDataException("Unexpected client WebSocket frame.");
+            }
+
+            sentMessages.Add(Encoding.UTF8.GetString(buffer));
+            return Task.CompletedTask;
         }
-        protected override void Dispose(bool disposing) { Disposed = true; base.Dispose(disposing); }
-        public override int Read(byte[] buffer, int offset, int count) => ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-        public override void Flush() { }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer,
+            CancellationToken cancellationToken)
+        {
+            if (incoming.Count == 0)
+            {
+                cancelWhenExhausted?.Cancel();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            var bytes = incoming.Dequeue();
+            if (bytes.Length > buffer.Count)
+            {
+                throw new InvalidDataException("Scripted Realtime frame does not fit the receive buffer.");
+            }
+
+            bytes.CopyTo(buffer.Array!, buffer.Offset);
+            return new WebSocketReceiveResult(bytes.Length, WebSocketMessageType.Text, true);
+        }
     }
 }
