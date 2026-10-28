@@ -272,7 +272,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
         </template>
         <template v-else-if="session?.status === 'generating'"><h2>Hůlka dostává tvar</h2><p>Výroba poběží i po odchodu z obrazovky. Rozhovor už je uložený.</p></template>
         <template v-else>
-          <p v-if="!session">Hůlka si vybírá kouzelníka. Kufr zná tvoji postavu, ale rád si vyslechne i tvoji obhajobu.</p>
+          <p v-if="!session">Promluv si s kufrem o své hůlce. Lidem rozumí. Po staletí mu sedají na víko a tvrdí, že se tam ještě něco vejde.</p>
           <h2 v-if="subtitle" class="trunk-workshop__question" aria-live="polite">{{ subtitle }}</h2>
           <template v-if="mode === 'voice'"><AwButton v-if="!active && canStart" variant="primary" :disabled="busy" @click="startVoice">{{ session ? 'Pokračovat hlasem' : 'Promluvit s kufrem' }}</AwButton><AwButton v-if="active" @click="muted = !muted; live.setMuted(muted)">{{ muted ? 'Zapnout mikrofon' : 'Ztlumit mikrofon' }}</AwButton></template>
           <template v-else-if="session?.status === 'asking'"><form @submit.prevent="submit"><label for="trunk-answer">Tvoje sdělení kufru</label><textarea id="trunk-answer" ref="answerField" v-model="draft" maxlength="2000" rows="3" :disabled="busy" /><AwButton type="submit" variant="primary" :disabled="!draft.trim() || busy">Odeslat</AwButton></form><AwButton :disabled="!canStart || busy" @click="startVoice">Pokračovat hlasem</AwButton></template>

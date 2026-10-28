@@ -20,7 +20,7 @@ try {
     page.on('pageerror', error => errors.push(error.message));
     page.on('response', response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); });
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+    const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     await page.goto(`${origin}/__workshop/prelaunch`);
     await page.locator('.portrait-stage[data-curtain="open"]').waitFor();
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
