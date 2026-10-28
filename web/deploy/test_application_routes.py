@@ -56,6 +56,23 @@ class ApplicationRoutingTests(unittest.TestCase):
         self.assertNotIn('return 30', block)
         self.assertNotIn('try_files', block)
 
+    def test_admin_portrait_upload_is_a_bounded_exception_inside_account_api(self):
+        config = proxy.render_compatibility('keepsake.example.invalid')
+        account = config.split('location ^~ /app/v1/ {', 1)[1].split('\n}', 1)[0]
+        pattern = r'^/app/v1/admin/characters/[0-9a-f]{32}/portrait$'
+        parent, upload = account.split('    location ~ "' + pattern + '" {', 1)
+        self.assertIn('client_max_body_size 256k;', parent)
+        for directive in ('client_max_body_size 8m;', 'GET|PUT', 'proxy_pass http://127.0.0.1:5080;'):
+            self.assertIn(directive, upload)
+        raw_pattern = re.search(r'if \(\$request_uri !~ "([^"]+)"', upload).group(1)
+        valid = '/app/v1/admin/characters/' + 'a' * 32 + '/portrait'
+        self.assertIsNotNone(re.fullmatch(pattern, valid))
+        self.assertIsNotNone(re.search(raw_pattern, valid + '?expectedRevision=1'))
+        for invalid in (valid + '/extra', valid.replace('/portrait', ''), valid.replace('/app/', '/%61pp/'),
+                        valid.replace('a' * 32, 'invalid'), '/' + valid):
+            self.assertIsNone(re.fullmatch(pattern, invalid), invalid)
+            self.assertIsNone(re.search(raw_pattern, invalid), invalid)
+
     def test_only_deliberate_page_routes_receive_the_app(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
         pages = set(re.findall(r'location = ([^ ]+) \{\n(?:(?!\n}).)*?try_files /index.html =404;', config, re.DOTALL))
@@ -90,7 +107,7 @@ class ApplicationRoutingTests(unittest.TestCase):
 
     def test_customer_pages_are_private_get_only_and_do_not_catch_apis(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
-        for route in ('/launch', '/settings/admin/launch', '/access-revoked', '/account-deletion', '/me', '/me/', '/me/character', '/me/conversation', '/me/keepsakes', '/me/account', '/tonight', '/admin/customer-sessions', '/testing-sessions'):
+        for route in ('/launch', '/settings/admin/launch', '/settings/admin/characters', '/access-revoked', '/account-deletion', '/me', '/me/', '/me/character', '/me/conversation', '/me/keepsakes', '/me/account', '/tonight', '/admin/customer-sessions', '/testing-sessions'):
             with self.subTest(route=route):
                 block = config.split('location = ' + route + ' {', 1)[1].split('\n}', 1)[0]
                 for value in ('GET|HEAD', 'no-store', 'no-referrer', 'noindex, nofollow', 'access_log off;', 'try_files /index.html =404;'):

@@ -14,6 +14,12 @@ enum AccountTransportPolicy {
     }
 
     static func accountRequestBodyLimit(path: String, method: String, contentType: String?) -> Int {
+        if adminCharacterProfilePath(path) && method == "PUT" { return 256 * 1024 }
+        if adminCharacterPortrait(path: path, method: method, read: false) {
+            let type = contentType?.split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return ["image/jpeg", "image/png", "image/webp"].contains(type ?? "") ? 8 * 1024 * 1024 : 256 * 1024
+        }
         if path == "/app/v1/customer/conversation-preferences" {
             if method == "GET" { return 0 }
             if method == "PUT" { return 2 * 1024 }
@@ -42,6 +48,11 @@ enum AccountTransportPolicy {
     }
 
     static func accountResponseLimit(path: String, method: String) -> Int {
+        if (method == "GET" && (adminCharacterList(path) || adminCharacterProfilePath(path))) ||
+            (method == "PUT" && (adminCharacterProfilePath(path) || adminCharacterPortrait(path: path, method: method, read: false))) {
+            return 256 * 1024
+        }
+        if adminCharacterPortrait(path: path, method: method, read: true) { return 8 * 1024 * 1024 }
         if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$", options: .regularExpression) != nil,
            method == "POST" { return 8 * 1024 * 1024 }
         if prelaunchPortrait(path: path, method: method) || sealedCasePortrait(path: path, method: method) { return 8 * 1024 * 1024 }
@@ -76,6 +87,11 @@ enum AccountTransportPolicy {
             guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
                 .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
             return value == "audio/wav"
+        }
+        if adminCharacterPortrait(path: path, method: method, read: true) {
+            guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+            return value == "image/webp"
         }
         guard prelaunchPortrait(path: path, method: method) || sealedCasePortrait(path: path, method: method) else { return true }
         guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
@@ -607,6 +623,7 @@ enum AccountTransportPolicy {
         if customerCompletionPage(path: path, method: method) || accountCollectionPage(path: path, method: method) { return true }
         if let parts = URLComponents(string: path), parts.scheme == nil, parts.host == nil, parts.fragment == nil,
            !parts.percentEncodedPath.contains("%"), !path.contains("\\"), path.count <= 4096 {
+            if adminCharacters(path: path, method: method) { return true }
             if prelaunchAccount(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }
             if show(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }
             if method == "DELETE", parts.path == "/app/v1/customer/character", let query = parts.queryItems,
@@ -720,6 +737,31 @@ enum AccountTransportPolicy {
               value.utf8.count <= 19, value.allSatisfy({ $0.isASCII && $0.isNumber }),
               let revision = Int64(value), revision > 0 else { return false }
         return true
+    }
+
+    private static func adminCharacterProfilePath(_ path: String) -> Bool {
+        path.range(of: "^/app/v1/admin/characters/(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$", options: .regularExpression) != nil
+    }
+
+    private static func adminCharacterPortrait(path: String, method: String, read: Bool) -> Bool {
+        let expectedMethod = read ? "GET" : "PUT"
+        guard method == expectedMethod else { return false }
+        let queryName = read ? "revision" : "expectedRevision"
+        return path.range(of: "^/app/v1/admin/characters/(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/portrait\\?\(queryName)=[1-9][0-9]{0,18}$", options: .regularExpression) != nil
+    }
+
+    private static func adminCharacters(path: String, method: String) -> Bool {
+        guard !path.contains(where: { $0.isWhitespace }) else { return false }
+        if adminCharacterList(path) { return method == "GET" }
+        if adminCharacterProfilePath(path) { return method == "GET" || method == "PUT" }
+        return adminCharacterPortrait(path: path, method: method, read: true) ||
+            adminCharacterPortrait(path: path, method: method, read: false)
+    }
+
+    private static func adminCharacterList(_ path: String) -> Bool {
+        !path.contains(where: { $0.isWhitespace }) && (path == "/app/v1/admin/characters" ||
+            path.range(of: "^/app/v1/admin/characters\\?after=[0-9a-f]{32}$", options: .regularExpression) != nil
+        )
     }
 
     private static func sealedCasePortrait(path: String, method: String) -> Bool {

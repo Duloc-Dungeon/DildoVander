@@ -14,6 +14,45 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void adminCharacterRoutesAndTransportLimitsAreExact() {
+        String id = "12345678123442348234123456789abc";
+        String profile = "/app/v1/admin/characters/" + id;
+        String upload = profile + "/portrait?expectedRevision=12";
+        String read = profile + "/portrait?revision=12";
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/characters", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/characters?after=" + id, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/characters?after=" + id, "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows(profile, "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(profile, "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows(upload, "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows(read, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(read, "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows(upload, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/characters", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(profile, "DELETE"));
+        for (String invalid : Arrays.asList(
+            profile + "/portrait?revision=0", profile + "/portrait?expectedRevision=0",
+            profile + "/portrait?expectedRevision=01", profile + "/portrait?expectedRevision=12&extra=1",
+            profile + "/portrait?expectedRevision=12&expectedRevision=13",
+            profile + "/portrait?expectedRevision=%31", profile + "/portrait?expectedRevision=12 ",
+            "/app/v1/admin/characters?after=ABCDEF0123456789ABCDEF0123456789",
+            "/app/v1/admin/characters?after=not-a-cursor",
+            "/app/v1/admin/characters?after=" + id + "&extra=1",
+            "/app/v1/admin/characters?after=" + id + "&after=" + id,
+            "/app/v1/admin/characters?",
+            "/app/v1/admin/characters/not-a-profile", "/app/v1/admin/characters/" + id + "/portrait/../other")) {
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "GET"));
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "PUT"));
+        }
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.requestBodyLimit(profile, "PUT", "application/json"));
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.requestBodyLimit(upload, "PUT", "image/webp"));
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.requestBodyLimit(upload, "PUT", "image/svg+xml"));
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(read, "GET"));
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.responseBodyLimit(upload, "PUT"));
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.responseBodyLimit(profile, "GET"));
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.responseBodyLimit("/app/v1/admin/characters?after=" + id, "GET"));
+    }
+
     @Test public void sealedCaseRoutesAreMethodAndScopeBound() {
         String root = "/app/v1/sealed-cases";
         String id = root + "/sc_" + String.join("", Collections.nCopies(32, "a"));

@@ -30,6 +30,7 @@ internal static class CharacterEndpoints
     {
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) { return; }
         app.MapPrelaunchCharacters();
+        app.MapAdminCharacters();
         var group = app.MapGroup("/app/v1/customer/character").RequireAuthorization().RequireRateLimiting("account");
         group.AddEndpointFilter(async (invocation, next) =>
         {

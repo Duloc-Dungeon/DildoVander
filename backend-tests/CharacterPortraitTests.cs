@@ -83,7 +83,8 @@ internal static class CharacterPortraitTests
             "Keep the surprise secret.", true, CancellationToken.None);
         Check(handler.Calls == 1 && result.LoadingMessage == PortraitExperienceHandler.Loading
             && result.Welcome?.Joke == PortraitExperienceHandler.Joke
-            && result.FinalMessage == PortraitExperienceHandler.Joke,
+            && result.Welcome?.Identity == PortraitExperienceHandler.Identity
+            && result.FinalMessage == PortraitExperienceHandler.Joke + " " + PortraitExperienceHandler.Identity,
             "one Responses call parses structured welcome and retains the legacy finalMessage projection");
     }
 
@@ -109,6 +110,10 @@ internal static class CharacterPortraitTests
             var invalidTeaserId = item.Item3 == "rivalry" ? "contrary_will" : "rivalry";
             Check(!CharacterWelcomePolicy.Valid(welcome with { TeaserId = invalidTeaserId }, job),
                 item.Item1 + " cannot change the application-approved teaser category");
+            Check(CharacterWelcomePolicy.Valid(welcome with { Teaser = "", TeaserId = null }, job),
+                item.Item1 + " may omit an otherwise permitted teaser");
+            Check(!CharacterWelcomePolicy.Valid(welcome with { Teaser = "" }, job),
+                "an omitted teaser cannot claim an unused theme");
         }
 
         var other = WelcomeJob("Sam Elánius", "Zeměplocha", "other-profile", 1);
@@ -133,6 +138,21 @@ internal static class CharacterPortraitTests
         Check(CharacterWelcomePolicy.Valid(new("Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.", "",
             "Některé věci tu mají vlastní vůli.", [], WelcomeWriterInput.AllowedTeaserId(generic.Input, noEvidence)), generic),
             "a generic approved teaser requires no invented factual evidence");
+        var inputOnly = new CharacterWelcome("Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.",
+            WelcomeWriterInput.InputIdentity(generic.Input), "", [], null);
+        Check(CharacterWelcomePolicy.Valid(inputOnly, generic),
+            "without verified facts identity may state only the chosen name and world");
+        Check(!CharacterWelcomePolicy.Valid(inputOnly with { Identity = "Slavný potomek dávných králů." }, generic),
+            "unverified biography is still rejected");
+        Check(WelcomeWriterInput.InputIdentity(new(new string('x', 100), new string('y', 200))) == "",
+            "oversized input-only identity is omitted instead of inventing a shorter identity");
+        foreach (var world in new[] { "Original_fiction", "Original\nfiction", "Original\tfiction", "<Fiction>", "Kufr" })
+        {
+            var unsafeInput = generic with { Input = new("Raven", world) };
+            Check(WelcomeWriterInput.InputIdentity(unsafeInput.Input) == ""
+                && CharacterWelcomePolicy.Valid(inputOnly with { Identity = "" }, unsafeInput),
+                "input incompatible with display policy omits identity without losing a safe joke");
+        }
         var reordered = original with { Enrichment = original.Enrichment with { Facts = original.Enrichment.Facts.Reverse().ToArray() } };
         var originalIds = WelcomeWriterInput.Facts(original.Input, original.Enrichment, original.ProfileId, original.Revision)
             .ToDictionary(fact => fact.Text, fact => fact.Id, StringComparer.Ordinal);
@@ -187,7 +207,8 @@ internal static class CharacterPortraitTests
     private sealed class PortraitExperienceHandler : HttpMessageHandler
     {
         internal const string Loading = "Raven zaslechl za zavřenými dveřmi své jméno. Olivander si vyžádal vývar.";
-        internal const string Joke = "Tvá pověst dorazila před tebou. Už jsme se jí omluvili.";
+        internal const string Joke = "Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.";
+        internal const string Identity = "Vystupuješ jako Raven ze světa Original fiction.";
         internal int Calls { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -197,11 +218,19 @@ internal static class CharacterPortraitTests
                 "experience uses one Responses request through the injected offline transport");
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
             var payload = body.RootElement;
+            var instructions = payload.GetProperty("instructions").GetString()!;
+            Check(instructions.Contains("Piš původní české věty, ne překlad anglického vtipu.", StringComparison.Ordinal)
+                && instructions.Contains("Na závěr použij nejvýše jeden nepřímý náznak z allowedTeaser.", StringComparison.Ordinal)
+                && instructions.Contains("Nepotvrzuj personální změnu za Olivandera.", StringComparison.Ordinal),
+                "actual Responses request carries the supplied Czech welcome authoring instructions");
             Check(payload.GetProperty("store").GetBoolean() == false
                 && payload.GetProperty("text").GetProperty("format").GetProperty("type").GetString() == "json_object"
                 && payload.GetProperty("input").GetString()!.Contains("json", StringComparison.OrdinalIgnoreCase),
                 "JSON-mode instruction must occur inside input, not only the separate instructions field");
-            var text = JsonSerializer.Serialize(new { loadingMessage = Loading, joke = Joke, identity = "", teaser = "", usedFactIds = Array.Empty<string>(), teaserId = (string?)null });
+            using var writerInput = JsonDocument.Parse(payload.GetProperty("input").GetString()!.Split('\n', 2)[1]);
+            Check(writerInput.RootElement.GetProperty("welcome").GetProperty("character").GetProperty("inputIdentity").GetString() == Identity,
+                "unverified identity is grounded in the exact supplied character name and world");
+            var text = JsonSerializer.Serialize(new { loadingMessage = Loading, joke = Joke, identity = Identity, teaser = "", usedFactIds = Array.Empty<string>(), teaserId = (string?)null });
             var response = JsonSerializer.Serialize(new
             {
                 status = "completed",

@@ -204,6 +204,46 @@ describe('native account archive transport limits', () => {
 
 });
 
+describe('native admin character transport limits', () => {
+  it('bounds JSON management and raw portrait uploads and downloads to exact routes', async () => {
+    const identity = await import('./session');
+    const id = '12345678123442348234123456789abc';
+    const profile = `/app/v1/admin/characters/${id}`;
+    const portraitUpload = `${profile}/portrait?expectedRevision=12`;
+    const portraitRead = `${profile}/portrait?revision=12`;
+
+    for (const path of ['/app/v1/admin/characters', profile]) {
+      expect(identity.accountTransportResponseLimit(path, 'GET')).toBe(262144);
+    }
+    expect(identity.accountTransportResponseLimit(`/app/v1/admin/characters?after=${id}`, 'GET')).toBe(262144);
+    expect(identity.accountTransportBodyLimit(profile, 'PUT', 'application/json')).toBe(262144);
+    expect(identity.accountTransportResponseLimit(profile, 'PUT')).toBe(262144);
+    expect(identity.accountTransportBodyLimit(portraitUpload, 'PUT', 'image/png')).toBe(8 * 1024 * 1024);
+    expect(identity.accountTransportBodyLimit(portraitUpload, 'PUT', 'image/webp; charset=binary')).toBe(8 * 1024 * 1024);
+    expect(identity.accountTransportBodyLimit(portraitUpload, 'PUT', 'image/svg+xml')).toBe(262144);
+    expect(identity.accountTransportResponseLimit(portraitUpload, 'PUT')).toBe(262144);
+    expect(identity.accountTransportResponseLimit(portraitRead, 'GET')).toBe(8 * 1024 * 1024);
+    expect(identity.accountTransportResponseAllowed(portraitRead, 'GET', 8 * 1024 * 1024)).toBe(true);
+    expect(identity.accountTransportResponseAllowed(portraitRead, 'GET', 8 * 1024 * 1024 + 1)).toBe(false);
+
+    for (const path of [
+      '/app/v1/admin/characters?after=ABCDEF0123456789ABCDEF0123456789',
+      '/app/v1/admin/characters?after=not-a-cursor',
+      `/app/v1/admin/characters?after=${id}&extra=1`,
+      `/app/v1/admin/characters?after=${id}&after=${id}`,
+      '/app/v1/admin/characters?',
+      `${profile}?revision=12`, `${profile}/portrait?revision=12&extra=1`,
+      `${profile}/portrait?revision=0`, `${profile}/portrait?revision=01`,
+      `${profile}/portrait?expectedRevision=12&expectedRevision=13`,
+      `/app/v1/admin/characters/not-a-profile`, `/app/v1/admin/characters/${id}/portrait/../x`,
+      `/app/v1/admin/characters/${id}/portrait?revision=12 `,
+    ]) {
+      expect(identity.accountTransportResponseLimit(path, 'GET')).toBe(1024 * 1024);
+      expect(identity.accountTransportBodyLimit(path, 'PUT', 'image/png')).toBe(262144);
+    }
+  });
+});
+
 describe('native account data export', () => {
   const filename = 'customer-data-export.json';
   async function signedIn() {
