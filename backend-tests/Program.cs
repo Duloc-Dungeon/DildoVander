@@ -47,6 +47,7 @@ if (args is ["--mobile-game-progress"]) { GameProgressTests.Run(); return; }
 if (args is ["--mobile-game-yolo-live"]) { await GameYoloLiveTests.RunAsync(); return; }
 if (args is ["--dv01-consolidation"]) { GptLiveVoiceTests.Run(); await AutonomousLiveTests.RunVoiceFallbackAsync(); await PersonalityTests.RunAsync(); return; }
 if (args is ["--character-portraits"]) { await CharacterPortraitTests.RunAsync(); return; }
+if (args is ["--character-administration"]) { await CharacterAdministrationTests.RunAsync(); return; }
 if (args is ["--prelaunch-http"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(); return; }
 if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await AiObservabilityTests.RunAsync(); await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--observability-logs"]) { await ObservabilityLogTests.RunAsync(); return; }
@@ -142,6 +143,7 @@ if (args is ["--identity"])
 {
     await LaunchPolicyTests.RunAsync();
     await CharacterPortraitTests.RunAsync();
+    await CharacterAdministrationTests.RunAsync();
     await AccountIdentityTests.RunPrelaunchHttpAsync();
     await AccountIdentityTests.RunAsync();
     await CustomerProfileTests.RunAsync();

@@ -43,6 +43,7 @@ export const router = createRouter({
     { path: '/settings', name: 'settings', component: () => import('../features/identity/SettingsView.vue'), meta: { title: 'Nastavení', private: true, requiresAccount: true, lab: true } },
     { path: '/settings/admin', name: 'admin', component: () => import('../features/identity/AdminView.vue'), meta: { title: 'Správa', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/settings/admin/launch', name: 'launch-admin', component: () => import('../features/launch/LaunchManagementView.vue'), meta: { title: 'Večer a pozvánky', private: true, requiresAccount: true, administrator: true, staff: true } },
+    { path: '/settings/admin/characters', name: 'character-admin', component: () => import('../features/customer/CharacterAdminView.vue'), meta: { title: 'Postavy a portréty', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/admin/customer-sessions', name: 'customer-admin', component: () => import('../features/customer/CustomerAdminView.vue'), meta: { title: 'Zákaznické relace', private: true, requiresAccount: true, staff: true, operation: true } },
     { path: '/app/:pathMatch(.*)*', redirect: '/suitcase' },
     { path: '/companion/:pathMatch(.*)*', redirect: '/suitcase' },

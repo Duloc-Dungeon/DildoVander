@@ -5,6 +5,7 @@ import LaunchManagementPanel from './LaunchManagementPanel.vue';
 <template>
   <div class="page-stack launch-management-page">
     <RouterLink to="/settings/admin">← Zpět ke správě účtů a oprávnění</RouterLink>
+    <RouterLink to="/settings/admin/characters">Spravovat postavy a portréty</RouterLink>
     <header>
       <h1>Večer a pozvánky</h1>
       <p>Připravte skupinu, pozvěte účastníky a potvrďte odpočet do otevření večera.</p>
