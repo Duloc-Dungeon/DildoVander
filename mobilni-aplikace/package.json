@@ -28,7 +28,8 @@
     "test:character-entrance:browser": "node tests/character-entrance.browser.mjs",
     "preview:game": "node tests/game.preview.mjs",
     "test:game:browser": "node tests/game.browser.mjs",
-    "test:wand:browser": "node tests/wand-workshop.browser.mjs"
+    "test:wand:browser": "node tests/wand-workshop.browser.mjs",
+    "test:wand-upgrade-voice:browser": "node tests/wand-upgrade-voice.browser.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.3",

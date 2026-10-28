@@ -20,7 +20,8 @@ internal static class GameDisplayNameTests
         var match = Match(opponent);
         var lobby = new GameLobby(
             new GamePlayerView("u2", "Morgana", 5, 2, true, false),
-            [opponent], [match], [match], [match]);
+            [new GameLobbyOpponentView("u1", "Merlin", 8, 3, true, 1, false)],
+            [match], [match], [match]);
         var names = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["u1"] = "Merlin · Čaroděj",

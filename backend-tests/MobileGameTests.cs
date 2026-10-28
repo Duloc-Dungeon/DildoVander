@@ -829,6 +829,8 @@ internal static partial class MobileGameTests
         await fixture.LoginAsync(paused, fixture.PausedId);
 
         Check((await alice.GetAsync("/app/v1/game")).StatusCode == HttpStatusCode.OK, "active launch group reads game lobby");
+        Check((await alice.GetAsync("/app/v1/game/progress")).StatusCode == HttpStatusCode.OK,
+            "active participant can read saved game progress without a wand");
         var aliceProfile = (await fixture.Profiles.ReadAsync(fixture.AliceId))!;
         var bobProfile = (await fixture.Profiles.ReadAsync(fixture.BobId))!;
         await fixture.Profiles.WriteLabelAsync(fixture.AliceId, new(aliceProfile.ProfileId, "Petr"));
@@ -837,8 +839,58 @@ internal static partial class MobileGameTests
         Check(labeledLobby.GetProperty("player").GetProperty("displayName").GetString() == aliceProfile.UserInput.Name + " · Petr"
             && labeledLobby.GetProperty("opponents").EnumerateArray().Any(opponent =>
                 opponent.GetProperty("id").GetString() == fixture.BobId
-                && opponent.GetProperty("displayName").GetString() == bobProfile.UserInput.Name + " · Jana"),
+                && opponent.GetProperty("displayName").GetString() == bobProfile.UserInput.Name + " · Jana"
+                && opponent.GetProperty("hasWand").GetBoolean()
+                && opponent.GetProperty("wandTier").GetInt32() == 1
+                && !opponent.GetProperty("tacticalUnlocked").GetBoolean()),
             "lobby displays separate labels for self and challenge targets");
+        await fixture.SeedWandTierAsync(fixture.BobId, 2);
+        fixture.SetGameXp(fixture.BobId, 30);
+        var upgradedLobby = await alice.GetFromJsonAsync<JsonElement>("/app/v1/game");
+        var upgradedBob = upgradedLobby.GetProperty("opponents").EnumerateArray()
+            .Single(opponent => opponent.GetProperty("id").GetString() == fixture.BobId);
+        Check(upgradedBob.GetProperty("wandTier").GetInt32() == 2
+            && upgradedBob.GetProperty("tacticalUnlocked").GetBoolean(),
+            "opponent tactical eligibility reflects both the XP and tier-two wand gates");
+
+        // Exercise the real tier-two admission and customer conversation over HTTP.
+        // The background worker is intentionally not hosted in this fixture, so
+        // manufacture and selection use the registered offline provider/store
+        // after the durable HTTP finish transition.
+        fixture.SetGameXp(fixture.AliceId, 30);
+        await fixture.MarkCharacterPreparedAsync(fixture.AliceId);
+        alice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(alice));
+        const string upgradePath = "/app/v1/customer/wand/workshop/sessions";
+        var upgradeOperation = Guid.NewGuid().ToString("N");
+        using var upgradeStarted = await alice.PostAsJsonAsync(upgradePath,
+            new { operationId = upgradeOperation, upgrade = true });
+        Check(upgradeStarted.StatusCode == HttpStatusCode.OK
+            && (await upgradeStarted.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("session").GetProperty("tier").GetInt32() == 2,
+            "30 XP admits the existing tier-one wand owner to the tier-two HTTP workshop");
+        for (var turn = 0; turn < 4; turn++)
+        {
+            using var message = await alice.PostAsJsonAsync(upgradePath + "/" + upgradeOperation + "/messages",
+                new { messageId = Guid.NewGuid().ToString("N"), text = $"Vylepšení odpověď {turn + 1}." });
+            Check(message.StatusCode == HttpStatusCode.OK, $"tier-two workshop accepts offline conversation turn {turn + 1}");
+        }
+        using var upgradeFinished = await alice.PostAsJsonAsync(upgradePath + "/" + upgradeOperation + "/finish", new { });
+        Check(upgradeFinished.StatusCode == HttpStatusCode.OK
+            && fixture.Wands.PendingWorkshops().Any(job => job.AccountId == fixture.AliceId && job.OperationId == upgradeOperation),
+            "tier-two HTTP finish durably queues manufacture");
+        await fixture.RunWorkshopWorkerAsync(fixture.AliceId, upgradeOperation);
+        Check(fixture.Wands.MobileTier(fixture.AliceId, aliceProfile.ProfileId, aliceProfile.Revision) == 2
+            && fixture.Wands.ReadWorkshopState(fixture.AliceId, upgradeOperation).Status == "complete",
+            "the offline workshop worker generates, selects, and persists the tier-two wand");
+        var aliceAfterUpgrade = await alice.GetFromJsonAsync<JsonElement>("/app/v1/game");
+        Check(aliceAfterUpgrade.GetProperty("player").GetProperty("wandTier").GetInt32() == 2
+            && aliceAfterUpgrade.GetProperty("player").GetProperty("tacticalUnlocked").GetBoolean(),
+            "selected tier-two wand and 30 XP unlock tactical play in the account lobby");
+        var reloadedUpgrade = await alice.GetFromJsonAsync<JsonElement>(upgradePath + "/" + upgradeOperation);
+        Check(reloadedUpgrade.GetProperty("session").GetProperty("status").GetString() == "complete"
+            && !string.IsNullOrWhiteSpace(reloadedUpgrade.GetProperty("session").GetProperty("wand").GetProperty("wandId").GetString())
+            && (await fixture.Profiles.ReadAsync(fixture.AliceId))?.Revision == aliceProfile.Revision,
+            "reloading the completed workshop preserves its selected upgrade and profile binding");
+        alice.DefaultRequestHeaders.Remove("X-DV-CSRF");
         await fixture.Profiles.WriteLabelAsync(fixture.AliceId, new(aliceProfile.ProfileId, null, "Petr"));
         await fixture.Profiles.WriteLabelAsync(fixture.BobId, new(bobProfile.ProfileId, null, "Jana"));
         var pausedResponse = await paused.GetAsync("/app/v1/game");
@@ -858,6 +910,7 @@ internal static partial class MobileGameTests
             && fixture.Wands.MobileOperation(fixture.ForeignId, foreignProfile.ProfileId, foreignProfile.Revision, 1) is null,
             "saved but unfinished character preparation cannot create a workshop or reserve generation");
         await fixture.MarkForeignCharacterPreparedAsync();
+        var dialogueCallsBeforeForeign = fixture.TextDialogueCalls;
         using var workshopStarted = await foreign.PostAsJsonAsync(workshopPath,
             new { operationId = workshopOperation });
         Check(workshopStarted.StatusCode == HttpStatusCode.OK,
@@ -902,7 +955,8 @@ internal static partial class MobileGameTests
                     "two user turns do not auto-finish or start wand generation");
             }
         }
-        Check(fixture.TextDialogueCalls == 4, "text replies use the injected fake; no GPT Live socket or provider network call is opened");
+        Check(fixture.TextDialogueCalls == dialogueCallsBeforeForeign + 4,
+            "text replies use the injected fake; no GPT Live socket or provider network call is opened");
         var fourTurnState = await foreign.GetAsync(workshopPath + "/" + workshopOperation);
         var fourTurnBody = await fourTurnState.Content.ReadFromJsonAsync<JsonElement>();
         Check(fourTurnState.StatusCode == HttpStatusCode.OK
@@ -1016,6 +1070,8 @@ internal static partial class MobileGameTests
         Check((await foreign.GetAsync($"/app/v1/game/boss/attempts/{bossAttempt}")).StatusCode == HttpStatusCode.NotFound,
             "foreign launch group cannot read a boss attempt");
         await fixture.RemoveWandAsync();
+        Check((await alice.GetAsync("/app/v1/game/progress")).StatusCode == HttpStatusCode.OK,
+            "saved game progress remains readable after the participant loses their wand");
         var bossState = await (await alice.GetAsync($"/app/v1/game/boss/attempts/{bossAttempt}")).Content.ReadFromJsonAsync<JsonElement>();
         var bossChoice = await alice.PostAsJsonAsync($"/app/v1/game/boss/attempts/{bossAttempt}/choose", new {operationId=Guid.NewGuid().ToString("D"),expectedRevision=bossState.GetProperty("revision").GetInt64(),choice="strike"});
         Check(bossChoice.StatusCode == HttpStatusCode.OK,
@@ -1197,8 +1253,13 @@ internal static partial class MobileGameTests
 
         internal async Task MarkForeignCharacterPreparedAsync()
         {
-            var profile = await Profiles.ReadAsync(ForeignId)
-                ?? throw new InvalidOperationException("Foreign character fixture is missing.");
+            await MarkCharacterPreparedAsync(ForeignId);
+        }
+
+        internal async Task MarkCharacterPreparedAsync(string owner)
+        {
+            var profile = await Profiles.ReadAsync(owner)
+                ?? throw new InvalidOperationException("Character fixture is missing.");
             var enrichment = new CharacterEnrichment(profile.UserInput.Name, profile.UserInput.World,
                 "Syntetický ověřený profil pro zákaznický workshop.",
                 [new CharacterFact("Při nejistotě nejprve ověřuje mapu.", [])], [], [], false, [],
@@ -1211,11 +1272,28 @@ internal static partial class MobileGameTests
             command.CommandText = "UPDATE character_profiles SET status='ready',enrichment_json=$enrichment WHERE account_id=$account AND profile_id=$profile AND revision=$revision";
             command.Parameters.AddWithValue("$enrichment", JsonSerializer.Serialize(enrichment,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web)));
-            command.Parameters.AddWithValue("$account", ForeignId);
+            command.Parameters.AddWithValue("$account", owner);
             command.Parameters.AddWithValue("$profile", profile.ProfileId);
             command.Parameters.AddWithValue("$revision", profile.Revision);
             if (command.ExecuteNonQuery() != 1)
-                throw new InvalidOperationException("Foreign character preparation revision changed during test setup.");
+                throw new InvalidOperationException("Character preparation revision changed during test setup.");
+        }
+
+        internal async Task RunWorkshopWorkerAsync(string owner, string operationId)
+        {
+            var worker = new MobileWandWorkshopWorker(app.Services.GetRequiredService<IServiceScopeFactory>(),
+                Wands, new WandGenerationService(Wands, new SingleCandidateWorkshopProvider()),
+                app.Services.GetRequiredService<ILogger<MobileWandWorkshopWorker>>());
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            await worker.StartAsync(timeout.Token);
+            try
+            {
+                await WaitUntilAsync(() => Wands.ReadWorkshopState(owner, operationId).Status == "complete", timeout.Token);
+            }
+            finally
+            {
+                await worker.StopAsync(CancellationToken.None);
+            }
         }
 
         internal async Task<string> CsrfAsync(HttpClient client)
@@ -1247,6 +1325,24 @@ internal static partial class MobileGameTests
             var profile = (await app.Services.GetRequiredService<CharacterProfileStore>().ReadAsync(AliceId))!;
             app.Services.GetRequiredService<WandGenerationStore>().DeleteProfile(AliceId, profile.ProfileId);
         }
+        internal Task SeedWandTierAsync(string owner, int tier) =>
+            MobileWandTests.Seed(Profiles, Wands, owner, tier);
+        internal void SetGameXp(string owner, int xp)
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+                { DataSource = Path.Combine(root, "accounts", "mobile-game.sqlite") }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO game_players(group_id,user_id,xp,matches)
+                VALUES($group,$user,$xp,0)
+                ON CONFLICT(group_id,user_id) DO UPDATE SET xp=$xp
+                """;
+            command.Parameters.AddWithValue("$group", ActiveGroupId);
+            command.Parameters.AddWithValue("$user", owner);
+            command.Parameters.AddWithValue("$xp", xp);
+            command.ExecuteNonQuery();
+        }
         internal async Task<string> CreateBossAttemptAsync()
         {
             var store = app.Services.GetRequiredService<GameStore>();
@@ -1269,6 +1365,12 @@ internal static partial class MobileGameTests
         {
             await app.StopAsync(); await app.DisposeAsync(); certificate.Dispose(); SqliteConnection.ClearAllPools(); Directory.Delete(root, true);
         }
+    }
+
+    private sealed class SingleCandidateWorkshopProvider : IWandGenerationProvider
+    {
+        public Task<WandCandidateContent[]> GenerateAsync(WandGenerationJob job, CancellationToken cancellationToken) =>
+            Task.FromResult(MobileWandTests.Candidates().Take(1).ToArray());
     }
 
     private sealed class ScriptedLiveSocketFactory

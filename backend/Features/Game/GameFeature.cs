@@ -24,6 +24,8 @@ internal sealed record GameRoundView(int Index, string? PlayerChoice, string? Op
 internal sealed record GamePlayerView(string Id, string DisplayName, int Xp, int MatchesPlayed,
     bool TacticalUnlocked, bool YoloUnlocked, bool HasWand = false, int WandTier = 0);
 internal sealed record GameOpponentView(string Id, string DisplayName, int Xp, int MatchesPlayed);
+internal sealed record GameLobbyOpponentView(string Id, string DisplayName, int Xp, int MatchesPlayed,
+    bool HasWand, int WandTier, bool TacticalUnlocked);
 internal sealed record GamePartyTask(string Title, string Text, string Category, string Status, int ExchangeCount);
 internal sealed record GameYoloBeat(string Text, string[] DetailRefs);
 internal sealed record GameYoloView(string Status, IReadOnlyList<GameYoloBeat> Beats, string? Verdict,
@@ -38,7 +40,7 @@ internal sealed record GameMatchView(string Id, string Mode, string Status, long
     string? Result, int XpAwarded, GameYoloView? Yolo = null, string RulesVersion = "mobile-game-v0.3",
     bool LoadoutsEnabled = false, bool NeedsLoadout = false, bool OwnLoadoutLocked = false,
     bool OpponentLoadoutLocked = false, bool LoadoutsAvailable = false);
-internal sealed record GameLobby(GamePlayerView Player, IReadOnlyList<GameOpponentView> Opponents,
+internal sealed record GameLobby(GamePlayerView Player, IReadOnlyList<GameLobbyOpponentView> Opponents,
     IReadOnlyList<GameMatchView> Incoming, IReadOnlyList<GameMatchView> Active,
     IReadOnlyList<GameMatchView> History, GameBossView? Boss = null);
 
@@ -73,7 +75,7 @@ internal sealed partial class GameStore
         command.ExecuteNonQuery();
     }
 
-    internal GameLobby Lobby(string groupId, string userId, string displayName, IReadOnlyList<GameOpponentView> opponents)
+    internal GameLobby Lobby(string groupId, string userId, string displayName, IReadOnlyList<GameLobbyOpponentView> opponents)
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
@@ -619,10 +621,18 @@ internal static class GameEndpoints
                 .OrderByDescending(peer => activeOpponentIds.Contains(peer.Id)).ThenBy(peer => peer.DisplayName)
                 .Take(100).ToListAsync(h.RequestAborted);
             var name = await db.Users.AsNoTracking().Where(u => u.Id == id).Select(u => u.DisplayName).SingleAsync(h.RequestAborted);
-            var opponents = new List<GameOpponentView>();
+            var opponents = new List<GameLobbyOpponentView>();
             foreach (var peer in peers)
-                if (await MobileWandSessions.Tier(h.RequestServices, peer.Id, h.RequestAborted) > 0)
-                    opponents.Add(store.Stats(groupId, peer.Id, peer.DisplayName));
+            {
+                var peerTier = await MobileWandSessions.Tier(h.RequestServices, peer.Id, h.RequestAborted);
+                if (peerTier > 0)
+                {
+                    var stats = store.Stats(groupId, peer.Id, peer.DisplayName);
+                    opponents.Add(new(stats.Id, stats.DisplayName, stats.Xp, stats.MatchesPlayed,
+                        HasWand: true, WandTier: peerTier,
+                        TacticalUnlocked: stats.Xp >= 30 && peerTier >= 2));
+                }
+            }
             store.RetireIneligibleMatches(groupId, eligibleIds, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             var lobby = store.Lobby(groupId, id, name, opponents);
             var tier = await MobileWandSessions.Tier(h.RequestServices, id, h.RequestAborted);

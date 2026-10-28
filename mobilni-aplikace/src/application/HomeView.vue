@@ -174,7 +174,8 @@ onBeforeUnmount(() => {
       <CustomerJourneyCard v-if="isCustomer" :journey="customerJourney" prefer-game />
       <nav v-if="isCustomer" class="home-destinations" :aria-label="customerCopy.text('home.tasks-aria')">
         <RouterLink class="home-destination" to="/me/character"><span class="home-destination-icon" aria-hidden="true">✦</span><span><strong>{{ customerCopy.text('shell.nav-character') }}</strong><small>{{ customerCopy.text('home.character-path') }}</small></span></RouterLink>
-        <RouterLink class="home-destination" to="/play"><span class="home-destination-icon" aria-hidden="true">◇</span><span><strong>Hra</strong><small>{{ customerCopy.text('home.game-path') }}</small></span></RouterLink>
+        <RouterLink class="home-destination" to="/play"><span class="home-destination-icon" aria-hidden="true">⚔</span><span><strong>{{ customerCopy.text('home.duels-link') }}</strong><small>{{ customerCopy.text('home.duels-path') }}</small></span></RouterLink>
+        <RouterLink class="home-destination" to="/play/pod-peceti"><span class="home-destination-icon" aria-hidden="true">▣</span><span><strong>{{ customerCopy.text('home.sealed-case-link') }}</strong><small>{{ customerCopy.text('home.sealed-case-path') }}</small></span></RouterLink>
         <RouterLink class="home-destination" to="/me/keepsakes"><span class="home-destination-icon" aria-hidden="true">▤</span><span><strong>{{ customerCopy.text('shell.nav-keepsakes') }}</strong><small>{{ customerCopy.text('home.keepsakes-path') }}</small></span></RouterLink>
         <RouterLink class="home-destination" to="/me/account"><span class="home-destination-icon" aria-hidden="true">⚙</span><span><strong>{{ customerCopy.text('shell.nav-account') }}</strong><small>{{ customerCopy.text('home.account-path') }}</small></span></RouterLink>
       </nav>
