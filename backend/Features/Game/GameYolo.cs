@@ -297,8 +297,8 @@ internal sealed class GameYoloWorker(IServiceScopeFactory scopes, GameStore stor
             var frozen = store.ReadFrozenYoloProfiles(matchId, revision);
             if (frozen is null)
             {
-                var left = await ReadPublicProfile(work.ChallengerId, work.ChallengerName, profiles, wands, token);
-                var right = await ReadPublicProfile(work.OpponentId, work.OpponentName, profiles, wands, token);
+                var left = await ReadPublicProfile(work.ChallengerId, work.ChallengerName, profiles, wands, accountDb, token);
+                var right = await ReadPublicProfile(work.OpponentId, work.OpponentName, profiles, wands, accountDb, token);
                 frozen = store.FreezeYoloProfiles(matchId, revision, left, right);
             }
             if (frozen is null) return;
@@ -324,25 +324,25 @@ internal sealed class GameYoloWorker(IServiceScopeFactory scopes, GameStore stor
     {
         if (launch.ReadGroup(work.GroupId)?.OpenedAt is null) return false;
         var ids = new[] { work.ChallengerId, work.OpponentId };
-        var eligible = await (from user in db.Users.AsNoTracking()
-                              join membership in db.UserRoles on user.Id equals membership.UserId
-                              join role in db.Roles on membership.RoleId equals role.Id
-                              where ids.Contains(user.Id) && user.LaunchGroupId == work.GroupId && user.LaunchGroupRevokedAt == null
-                                  && !user.Disabled && role.Name == AccountRoles.Customer
-                                  && !db.DeletionRequests.Any(deletion => deletion.UserId == user.Id)
-                              select user.Id).Distinct().CountAsync(token);
+        var eligible = await GameParticipants.Members(db, work.GroupId)
+            .CountAsync(user => ids.Contains(user.Id), token);
         return eligible == 2;
     }
 
-    private static async Task<GameYoloProfile> ReadPublicProfile(string id, string fallbackName,
-        CharacterProfileStore profiles, WandGenerationStore wands, CancellationToken token)
+    internal static async Task<GameYoloProfile> ReadPublicProfile(string id, string fallbackName,
+        CharacterProfileStore profiles, WandGenerationStore wands, AccountDatabase accounts, CancellationToken token)
     {
+        var isOwner = await (from membership in accounts.UserRoles
+            join role in accounts.Roles on membership.RoleId equals role.Id
+            where membership.UserId == id && role.Name == AccountRoles.Owner
+            select membership.UserId).AnyAsync(token);
         var profile = await profiles.ReadAsync(id, token);
-        if (profile is null) return new(id, fallbackName, "", "", []);
+        var name = isOwner ? AccountRoles.OwnerDisplayName : Bound(profile?.UserInput.Name, fallbackName);
+        if (profile is null) return new(id, name, "", "", []);
         var wand = wands.LatestBonded(id, profile.ProfileId, profile.Revision);
         var traits = wand is null ? Array.Empty<string>() : new[] { wand.Temperament, wand.Affinity, wand.Weakness }
             .Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim()[..Math.Min(value!.Trim().Length, 90)]).ToArray();
-        return new(id, Bound(profile.UserInput.Name, fallbackName), Bound(profile.UserInput.World, ""),
+        return new(id, name, Bound(profile.UserInput.World, ""),
             Bound(wand?.Name, ""), traits);
     }
 

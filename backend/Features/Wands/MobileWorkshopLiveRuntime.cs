@@ -107,15 +107,14 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
         var services = scope.ServiceProvider;
         var accounts = services.GetRequiredService<AccountDatabase>();
         var user = await accounts.Users.AsNoTracking().SingleAsync(user => user.Id == admission.Owner, token);
-        if (!await MobileWandWorkshopAccess.IsAllowedAsync(user,
-                wands.MobileOperationTier(admission.Owner, admission.Operation), services, token)
-            || user.LaunchGroupId is null || !wands.WorkshopMatchesLaunchSnapshot(admission.Owner, admission.Operation,
-                user.LaunchGroupId, user.LaunchGroupAccessRevision))
+        if (!await MobileWandWorkshopAccess.IsAllowedForWorkshopAsync(user, admission.Operation, wands, services, token))
             throw new WandGenerationException("wand_session_unavailable", 403);
         if (await services.GetRequiredService<CharacterProfileStore>().CapturePreparedAsync(admission.Owner,
             admission.Profile.ProfileId, admission.Profile.Revision, token) is null)
             throw new WandGenerationException("wand_character_preparing", 409);
-        var boss = services.GetRequiredService<GameStore>().ReadBoss(user.LaunchGroupId, admission.Owner);
+        var launchSnapshot = wands.ReadWorkshopLaunchSnapshot(admission.Owner, admission.Operation)
+            ?? throw new WandGenerationException("wand_session_unavailable", 403);
+        var boss = services.GetRequiredService<GameStore>().ReadBoss(launchSnapshot.GroupId, admission.Owner);
         if (boss.Revealed && !boss.Rescued) {
             wands.PauseWorkshopForBoss(admission.Owner, admission.Operation);
             throw new WandGenerationException("wand_workshop_boss_captured", 409);

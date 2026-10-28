@@ -109,7 +109,7 @@ internal static partial class MobileWandWorkshopEndpoints
         CharacterProfileStore profiles, WandGenerationStore wands, GameStore games, bool allowFinished = false)
     {
         var owner = Owner(http);
-        await RequireAvailableAsync(http, games, owner, state.Tier == 2, allowCompleted: allowFinished && state.Status == "complete");
+        await RequireAvailableAsync(http, games, owner, state.Tier == 2, allowCompleted: allowFinished && state.Status == "complete", operationId: state.Id);
         await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
         await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, state.Id);
         if (!allowFinished && state.Status != "asking") throw new WandGenerationException("wand_conversation_closed", 409);

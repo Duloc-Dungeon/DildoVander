@@ -787,6 +787,21 @@ loopback simulaci včetně pozvánky, obnovy ověření, odpočtu a otevření v
 Transport přístupového klíče je testovací; nejde o ověření autentizátoru ani
 produkčního provozu. Kontrola je součástí webového CI.
 
+### Vlastník jako hráč
+
+Vlastník má pevné jméno **Olivander**. Přepínač „Hrát jako hráč“ otevře
+hráčské rozhraní; „Přejít do administrace“ vrátí správu. Režim nemění role
+ani serverová oprávnění a po odhlášení se neuchovává.
+
+Olivander má přístup do všech skupin. V hráčském režimu vybere aktuální
+skupinu; její změna znovu načte hráčskou stránku. Postavu a první hůlku může
+připravit i před otevřením večera. Pro hůlku musí existovat alespoň jedna
+skupina. Samotné hraní a vylepšení hůlky nadále respektují otevření skupiny
+a herní podmínky. Pro ostatní účty se pravidla spuštění nemění.
+
+`test:owner:browser` ověřuje také přepnutí obou režimů, výběr skupiny
+a formulář postavy před spuštěním na šířkách 320, 390 a 1280 CSS px.
+
 Rozhraní je české i při dříve uložené volbě angličtiny. Jazyk samotného
 rozhovoru zůstává samostatnou volbou. Náměty „Zadání pro AI“ v editoru postavy
 jsou místní inspirace; vložení námětu nespouští generování a nemění AI souhlas.

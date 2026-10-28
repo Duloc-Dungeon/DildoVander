@@ -190,7 +190,7 @@ internal static class GameProgressEndpoints
             var peers = await ProgressPeersAsync(db, groupId, context.RequestAborted);
             var progress = store.ReadProgress(groupId,
                 context.User.FindFirstValue(ClaimTypes.NameIdentifier)!, peers);
-            return Results.Ok(await GameDisplayNames.DecorateAsync(progress, profiles, context.RequestAborted));
+            return Results.Ok(await GameDisplayNames.DecorateAsync(progress, profiles, db, context.RequestAborted));
         });
         routes.MapPost("/ack", async (GameProgressCommand request, HttpContext context, AccountDatabase db, GameStore store) =>
         {
@@ -201,10 +201,6 @@ internal static class GameProgressEndpoints
         });
     }
     private static async Task<Dictionary<string, string>> ProgressPeersAsync(AccountDatabase db, string groupId, CancellationToken token) =>
-        await (from user in db.Users.AsNoTracking()
-            join member in db.UserRoles on user.Id equals member.UserId
-            join role in db.Roles on member.RoleId equals role.Id
-            where user.LaunchGroupId == groupId && user.LaunchGroupRevokedAt == null && !user.Disabled
-                && role.Name == AccountRoles.Customer && !db.DeletionRequests.Any(deletion => deletion.UserId == user.Id)
-            select new { user.Id, user.DisplayName }).ToDictionaryAsync(user => user.Id, user => user.DisplayName, token);
+        await GameParticipants.Members(db, groupId)
+            .ToDictionaryAsync(user => user.Id, user => user.DisplayName, token);
 }

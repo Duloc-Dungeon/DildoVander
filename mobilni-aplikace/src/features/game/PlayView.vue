@@ -62,7 +62,8 @@ const tableDuel = computed(() => practice.value || Boolean(match.value && match.
   && (match.value.status === 'active' || match.value.status === 'complete')));
 const roundCount = computed(() => practice.value ? 7 : match.value?.totalRounds ?? 0);
 const completedRoundCount = computed(() => practice.value ? practiceRounds.value.length : match.value?.completedRounds ?? 0);
-const playerName = computed(() => labeledPlayerName.value || account.value?.displayName || 'Ty');
+const playerName = computed(() => account.value?.roles?.includes('Owner') ? 'Olivander'
+  : labeledPlayerName.value || account.value?.displayName || 'Ty');
 const opponentName = computed(() => practice.value ? 'Cvičný mág' : match.value?.opponent.displayName || 'Soupeř');
 const spellTokens = { strike: strikeToken, trick: trickToken, shield: shieldToken };
 const selectedAction = computed(() => actions.find(action => action.id === selected.value));

@@ -1184,7 +1184,7 @@ internal static partial class MobileGameTests
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
-            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive();
+            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
             app.MapGet("/test/csrf", (HttpContext context, IAntiforgery antiforgery) => Results.Json(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
             app.MapPost("/test/login/{id}", async (string id, HttpContext context, AccountDatabase db, SignInManager<AccountUser> signIn) =>
@@ -1242,6 +1242,111 @@ internal static partial class MobileGameTests
             clientCookies.Add(client, cookies);
             return client;
         }
+
+        internal async Task MakeOwnerAsync(string id)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<AccountUser>>();
+            var user = await db.Users.SingleAsync(user => user.Id == id);
+            await users.RemoveFromRoleAsync(user, AccountRoles.Customer);
+            await users.AddToRoleAsync(user, AccountRoles.Owner);
+            user.LaunchGroupId = null;
+            user.LaunchGroupAccessRevision++;
+            await db.SaveChangesAsync();
+        }
+
+        internal async Task LabelCharacterAsync(string id)
+        {
+            var profile = await Profiles.ReadAsync(id) ?? throw new InvalidOperationException("Profile missing");
+            await Profiles.WriteLabelAsync(id, new(profile.ProfileId, "Kartograf", null));
+        }
+
+        internal async Task BondOwnerWandAsync(string id)
+        {
+            var profile = (await Profiles.ReadAsync(id))!;
+            var wand = MobileWandSessions.Current(Wands, id, profile.ProfileId, profile.Revision)
+                ?? throw new InvalidOperationException("Owner wand missing");
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var session = await db.Sessions.FirstAsync(session => session.UserId == id);
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Backend:DatabasePath"] = Path.Combine(root, "journal.sqlite"),
+                ["Keepsake:DataRoot"] = Path.Combine(root, "archives"),
+                ["Keepsake:DataProtectionRoot"] = Path.Combine(root, "keys")
+            }).Build();
+            var keepsakes = new Kufr.Backend.Features.Keepsakes.KeepsakeStore(configuration, TimeProvider.System);
+            keepsakes.Issue(MobileWandWorkshopWorker.ArtworkSnapshot(wand), new(id, session.Id));
+        }
+
+        internal async Task RequireWorkshopLiveAuthorityAsync(string ticketUrl, string operationId)
+        {
+            var token = new Uri(ticketUrl).Query["?ticket=".Length..];
+            var admission = app.Services.GetRequiredService<MobileWandRuntime>()
+                .Take(token, operationId, "https://localhost");
+            await LiveRuntime.RequireAuthorityAsync(admission, CancellationToken.None);
+        }
+
+        internal void SetBossCaptured(string groupId, bool captured)
+        {
+            app.Services.GetRequiredService<GameStore>().ReadBoss(groupId, ForeignId);
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Path.Combine(app.Services.GetRequiredService<AccountConfiguration>().DataRoot, "mobile-game.sqlite") }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO game_boss_groups(group_id,reference_xp,rescued,revision) VALUES($group,10,$rescued,1) ON CONFLICT(group_id) DO UPDATE SET rescued=$rescued,revision=revision+1";
+            command.Parameters.AddWithValue("$group", groupId);
+            command.Parameters.AddWithValue("$rescued", captured ? 0 : 1);
+            command.ExecuteNonQuery();
+        }
+
+        internal async Task<GameYoloProfile> ReadYoloProfileAsync(string id)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var user = await db.Users.SingleAsync(user => user.Id == id);
+            return await GameYoloWorker.ReadPublicProfile(id, user.DisplayName, Profiles, Wands, db, CancellationToken.None);
+        }
+
+        internal async Task<GameTeamView> SeedOwnerTeamAsync()
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var fourth = await db.Users.SingleAsync(user => user.Id == PausedId);
+            fourth.LaunchGroupId = ActiveGroupId;
+            fourth.LaunchGroupAccessRevision++;
+            await db.SaveChangesAsync();
+            var participants = new[] { AliceId, ForeignId, BobId, PausedId };
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Path.Combine(app.Services.GetRequiredService<AccountConfiguration>().DataRoot, "mobile-game.sqlite") }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO game_players(group_id,user_id,xp,matches) VALUES($group,$user,50,3) ON CONFLICT(group_id,user_id) DO UPDATE SET xp=50,matches=3";
+            command.Parameters.AddWithValue("$group", ActiveGroupId);
+            var userParameter = command.Parameters.Add("$user", SqliteType.Text);
+            foreach (var id in participants)
+            {
+                userParameter.Value = id;
+                command.ExecuteNonQuery();
+            }
+            var store = app.Services.GetRequiredService<GameStore>();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var team = store.CreateTeamMatch(ActiveGroupId, AliceId,
+                new(ForeignId, [BobId, PausedId], "owner-team-switch-create"), now);
+            foreach (var id in participants.Skip(1))
+            {
+                team = store.MutateTeam(team.Id, ActiveGroupId, id, "accept",
+                    new("owner-team-switch-accept-" + id, team.Revision), now);
+            }
+            return team;
+        }
+
+        internal string OtherActiveGroupId => app.Services.GetRequiredService<LaunchPolicyStore>()
+            .ReadGroups().Single(group => group.Name == "Mobile Game Foreign").Id;
+
+        internal string PausedGroupId => app.Services.GetRequiredService<LaunchPolicyStore>()
+            .ReadGroups().Single(group => group.Name == "Mobile Game Paused").Id;
 
         internal CookieContainer CookiesFor(HttpClient client) => clientCookies[client];
 

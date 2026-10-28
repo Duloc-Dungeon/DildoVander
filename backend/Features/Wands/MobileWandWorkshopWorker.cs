@@ -33,12 +33,11 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
     {
         var accounts = services.GetRequiredService<AccountDatabase>();
         var user = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == accountId
-            && !item.Disabled && item.LaunchGroupRevokedAt == null && item.LaunchGroupId == groupId
-            && item.LaunchGroupAccessRevision == accessRevision
+            && !item.Disabled
             && !accounts.DeletionRequests.Any(deletion => deletion.UserId == accountId), token);
         if (user is null || !AccountAiConsent.HasConsent(user)
             || !await HasActiveSessionAsync(accounts, accountId, token)) return false;
-        return await MobileWandWorkshopAccess.IsAllowedAsync(user, tier, services, token);
+        return await MobileWandWorkshopAccess.IsAllowedAsync(user, tier, services, token, groupId, accessRevision);
     }
 
     private async Task ProcessAsync(MobileWandWorkshopJob job, CancellationToken token)
@@ -70,15 +69,15 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             return;
         }
 
-        if (user.LaunchGroupId != job.LaunchGroupId
-            || user.LaunchGroupAccessRevision != job.LaunchAccessRevision)
+        if (!await MobileWandWorkshopAccess.IsAllowedAsync(user, job.Tier, services, token,
+            job.LaunchGroupId, job.LaunchAccessRevision))
         {
             store.FailWorkshop(job.AccountId, job.OperationId, "game_group_inactive");
             return;
         }
 
         var game = services.GetRequiredService<GameStore>();
-        var boss = game.ReadBoss(user.LaunchGroupId, job.AccountId);
+        var boss = game.ReadBoss(job.LaunchGroupId, job.AccountId);
         if (boss.Revealed && !boss.Rescued)
         {
             store.PauseWorkshopForBoss(job.AccountId, job.OperationId);

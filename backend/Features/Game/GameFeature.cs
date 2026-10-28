@@ -572,9 +572,10 @@ internal static class GameEndpoints
             if (id is null || !h.User.HasClaim(c => c.Type == AccountIdentity.SessionClaim)) return ApiProblem.Create(h, 401, "account_required");
             h.Response.Headers.CacheControl = "no-store";
             var db = h.RequestServices.GetRequiredService<AccountDatabase>();
+            await OwnerPlayerGroups.EnsureSelectionAsync(h, db, h.RequestServices.GetRequiredService<LaunchPolicyStore>());
             var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == id && !u.Disabled, h.RequestAborted);
             if (user?.LaunchGroupId is null || user.LaunchGroupRevokedAt is not null || await db.DeletionRequests.AnyAsync(x => x.UserId == id, h.RequestAborted)) return ApiProblem.Create(h, 403, "game_group_required");
-            if (!await (from m in db.UserRoles join r in db.Roles on m.RoleId equals r.Id where m.UserId == id && r.Name == AccountRoles.Customer select m.UserId).AnyAsync(h.RequestAborted)) return ApiProblem.Create(h, 403, "game_group_required");
+            if (!await (from m in db.UserRoles join r in db.Roles on m.RoleId equals r.Id where m.UserId == id && (r.Name == AccountRoles.Customer || r.Name == AccountRoles.Owner) select m.UserId).AnyAsync(h.RequestAborted)) return ApiProblem.Create(h, 403, "game_group_required");
             var launch = h.RequestServices.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId);
             if (launch?.OpenedAt is null) return ApiProblem.Create(h, 403, "game_group_inactive");
             var access = await h.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(h.User);
@@ -587,14 +588,8 @@ internal static class GameEndpoints
                     || id != match.Value.ChallengerId && id != match.Value.OpponentId)
                     return ApiProblem.Create(h, 404, "game_match_unavailable");
                 var participants = new[] { match.Value.ChallengerId, match.Value.OpponentId };
-                var eligible = await (from participant in db.Users.AsNoTracking()
-                                      join membership in db.UserRoles on participant.Id equals membership.UserId
-                                      join role in db.Roles on membership.RoleId equals role.Id
-                                      where participants.Contains(participant.Id) && participant.LaunchGroupId == user.LaunchGroupId
-                                          && participant.LaunchGroupRevokedAt == null && !participant.Disabled
-                                          && role.Name == AccountRoles.Customer
-                                          && !db.DeletionRequests.Any(deletion => deletion.UserId == participant.Id)
-                                      select participant.Id).Distinct().CountAsync(h.RequestAborted);
+                var eligible = await GameParticipants.Members(db, user.LaunchGroupId)
+                    .CountAsync(participant => participants.Contains(participant.Id), h.RequestAborted);
                 if (eligible != 2) return ApiProblem.Create(h, 404, "game_match_unavailable");
             }
             try
@@ -609,12 +604,7 @@ internal static class GameEndpoints
             CharacterProfileStore profiles) =>
         {
             var id = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!; var groupId = (string)h.Items["dv-game-group"]!;
-            var activePeerQuery = from u in db.Users.AsNoTracking()
-                                  join m in db.UserRoles on u.Id equals m.UserId
-                                  join r in db.Roles on m.RoleId equals r.Id
-                                  where u.LaunchGroupId == groupId && u.LaunchGroupRevokedAt == null && !u.Disabled && r.Name == AccountRoles.Customer && u.Id != id
-                                      && !db.DeletionRequests.Any(deletion => deletion.UserId == u.Id)
-                                  select u;
+            var activePeerQuery = GameParticipants.Members(db, groupId).Where(user => user.Id != id);
             var eligibleIds = (await activePeerQuery.Select(peer => peer.Id).Distinct().ToListAsync(h.RequestAborted)).Append(id).ToHashSet(StringComparer.Ordinal);
             var activeOpponentIds = store.ActiveOpponentIds(groupId, id);
             var peers = await activePeerQuery.Select(peer => new { peer.Id, peer.DisplayName }).Distinct()
@@ -644,21 +634,22 @@ internal static class GameEndpoints
                 History = lobby.History.Where(match => eligibleIds.Contains(match.Opponent.Id)).ToArray()
             };
             h.Response.Headers.CacheControl = "no-store";
-            return Results.Ok(await GameDisplayNames.DecorateAsync(safeLobby, profiles, h.RequestAborted));
+            return Results.Ok(await GameDisplayNames.DecorateAsync(safeLobby, profiles, h.RequestServices.GetRequiredService<AccountDatabase>(), h.RequestAborted));
         });
         group.MapPost("/matches", async (GameChallenge r, HttpContext h, AccountDatabase db, GameStore store,
             LaunchPolicyStore launch, CharacterProfileStore profiles) =>
         {
             var id = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!; var groupId = (string)h.Items["dv-game-group"]!;
             await MobileWandSessions.RequireForGame(h, id, r.Mode == "tactical");
-            var opponent = await (from u in db.Users join m in db.UserRoles on u.Id equals m.UserId join role in db.Roles on m.RoleId equals role.Id where u.Id == r.OpponentId && u.LaunchGroupId == groupId && u.LaunchGroupRevokedAt == null && !u.Disabled && role.Name == AccountRoles.Customer && !db.DeletionRequests.Any(deletion => deletion.UserId == u.Id) select new { u.Id, u.DisplayName }).SingleOrDefaultAsync(h.RequestAborted);
+            var opponent = await GameParticipants.Members(db, groupId).Where(user => user.Id == r.OpponentId)
+                .Select(user => new { user.Id, user.DisplayName }).SingleOrDefaultAsync(h.RequestAborted);
             if (opponent is null) return ApiProblem.Create(h, 404, "game_opponent_unavailable");
             await MobileWandSessions.RequireForGame(h, opponent.Id, r.Mode == "tactical");
             var challenger = await db.Users.AsNoTracking().Where(u => u.Id == id).Select(u => u.DisplayName).SingleAsync(h.RequestAborted);
             var groupSettings = launch.ReadGroup(groupId)!;
             var result = store.Challenge(groupId, id, challenger, opponent.Id, opponent.DisplayName, r,
                 DateTimeOffset.UtcNow.ToUnixTimeSeconds(), groupSettings.AdultContentEnabled, groupSettings.FlirtEnabled);
-            var decorated = await GameDisplayNames.DecorateAsync(result, profiles, h.RequestAborted);
+            var decorated = await GameDisplayNames.DecorateAsync(result, profiles, h.RequestServices.GetRequiredService<AccountDatabase>(), h.RequestAborted);
             return Results.Created($"/app/v1/game/matches/{result.Id}", decorated);
         });
         group.MapGet("/matches/{id}", async (string id, HttpContext h, GameStore store,
@@ -666,7 +657,7 @@ internal static class GameEndpoints
         {
             var match = store.Read(id, (string)h.Items["dv-game-group"]!,
                 h.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            return Results.Ok(await GameDisplayNames.DecorateAsync(match, profiles, h.RequestAborted));
+            return Results.Ok(await GameDisplayNames.DecorateAsync(match, profiles, h.RequestServices.GetRequiredService<AccountDatabase>(), h.RequestAborted));
         });
         foreach (var action in new[] { "accept", "decline", "cancel", "choose", "loadout", "task", "retry" })
             group.MapPost($"/matches/{{id}}/{action}", async (string id, GameCommand request, HttpContext h,
@@ -684,7 +675,7 @@ internal static class GameEndpoints
                 var result = store.Mutate(id, groupId, userId, action,
                     request, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), settings.AdultContentEnabled, settings.FlirtEnabled);
                 if (result.Yolo?.Status == "generating") yolo.Enqueue(id, result.Revision);
-                return Results.Ok(await GameDisplayNames.DecorateAsync(result, profiles, h.RequestAborted));
+                return Results.Ok(await GameDisplayNames.DecorateAsync(result, profiles, h.RequestServices.GetRequiredService<AccountDatabase>(), h.RequestAborted));
             });
     }
 }

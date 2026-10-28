@@ -24,6 +24,14 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('keeps the owner name Olivander even when the character has another label', async () => {
+    api.setAccount({ id: 'one', displayName: 'Old name', roles: ['Owner'] });
+    api.request.mockResolvedValue({ hasCharacter: true, wand: { wandId: 'saved' }, tier: 1, characterDisplayName: 'Jiná postava' });
+    api.transport.mockResolvedValue(Response.json(snapshot()));
+    const view = await render();
+    expect(view.get('.game-score--duel').text()).toContain('Olivander');
+    expect(view.get('.game-score--duel').text()).not.toContain('Jiná postava');
+  });
   it('shows saved rankings without a wand and exposes progress failures instead of an empty ranking', async () => {
     api.request.mockResolvedValue({ hasCharacter: true, wand: null, tier: 0 });
     const lobby = { player: { id: 'one', displayName: 'Mira', xp: 0, matchesPlayed: 0 }, opponents: [], incoming: [], active: [], history: [] };

@@ -210,6 +210,8 @@ final class NativeAccountRequestPolicy {
             "/app/v1/customer/enrollment/options".equals(path) || "/app/v1/customer/enrollment/complete".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/character".equals(path)) return Arrays.asList("GET", "PUT", "DELETE").contains(method);
         if ("/app/v1/customer/access".equals(path)) return "GET".equals(method);
+        if ("/app/v1/customer/groups".equals(path)) return "GET".equals(method);
+        if ("/app/v1/customer/groups/active".equals(path)) return "PUT".equals(method);
         if ("/app/v1/customer/conversation-preferences".equals(path)) return "GET".equals(method) || "PUT".equals(method);
         if ("/app/v1/customer/character/correction".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/sessions".equals(path) || "/app/v1/customer/duels".equals(path) ||

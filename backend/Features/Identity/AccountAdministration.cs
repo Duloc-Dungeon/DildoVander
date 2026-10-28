@@ -103,6 +103,7 @@ internal static partial class AccountEndpoints
                 return Error(context, "role_change_failed");
             }
         }
+        if (request.Role == AccountRoles.Owner) { user.DisplayName = AccountRoles.OwnerDisplayName; }
         user.Disabled = request.Disabled;
         if (!(await users.UpdateAsync(user)).Succeeded) { return Error(context, "account_change_failed"); }
         await db.Sessions.Where(x => x.UserId == id).ExecuteDeleteAsync();

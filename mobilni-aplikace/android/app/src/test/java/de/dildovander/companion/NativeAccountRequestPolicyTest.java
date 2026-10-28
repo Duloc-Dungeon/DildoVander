@@ -110,6 +110,12 @@ public final class NativeAccountRequestPolicyTest {
     }
 
     @Test public void consentAndWandWorkshopRoutesAreMethodBound() {
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/groups", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/groups/active", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/groups", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/groups/active", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/groups/active?account=other", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/groups/active/extra", "PUT"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "POST"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "GET"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/wand", "GET"));

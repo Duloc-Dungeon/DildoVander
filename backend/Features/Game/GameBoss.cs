@@ -402,15 +402,18 @@ internal static class GameBossEndpoints
     }
     private static string User(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
         ?? throw new GameFault(401, "account_required");
-    internal static async Task<string> ParticipantGroupAsync(HttpContext context, bool requireWand = true)
+    internal static async Task<string> ParticipantGroupAsync(HttpContext context, bool requireWand = true, bool allowOwnerPreparation = false)
     {
         var id = User(context);
         if (!context.User.HasClaim(claim => claim.Type == AccountIdentity.SessionClaim)) { throw new GameFault(401, "account_required"); }
         var db = context.RequestServices.GetRequiredService<AccountDatabase>();
+        await OwnerPlayerGroups.EnsureSelectionAsync(context, db, context.RequestServices.GetRequiredService<LaunchPolicyStore>());
         var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(user => user.Id == id && !user.Disabled
             && user.LaunchGroupRevokedAt == null && !db.DeletionRequests.Any(deletion => deletion.UserId == id), context.RequestAborted);
-        if (user?.LaunchGroupId is null || !context.User.IsInRole(AccountRoles.Customer)) { throw new GameFault(403, "game_group_required"); }
-        if (context.RequestServices.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId)?.OpenedAt is null)
+        if (user?.LaunchGroupId is null || !AccountRoles.IsPlayer(context.User)) { throw new GameFault(403, "game_group_required"); }
+        var launchGroup = context.RequestServices.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId);
+        if (launchGroup is null || launchGroup.OpenedAt is null
+            && !(allowOwnerPreparation && context.User.IsInRole(AccountRoles.Owner)))
         { throw new GameFault(403, "game_group_inactive"); }
         var access = await context.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(context.User);
         if (!access.Allowed) { throw new GameFault(403, "game_group_inactive"); }
@@ -445,10 +448,5 @@ internal static class GameBossEndpoints
         catch (GameFault fault) { return ApiProblem.Create(context, fault.Status, fault.Code); }
     }
     private static async Task<HashSet<string>> EligibleBossPlayersAsync(AccountDatabase db, string id, CancellationToken token) =>
-        await (from user in db.Users.AsNoTracking()
-            join member in db.UserRoles on user.Id equals member.UserId
-            join role in db.Roles on member.RoleId equals role.Id
-            where user.LaunchGroupId == id && user.LaunchGroupRevokedAt == null && !user.Disabled
-                && role.Name == AccountRoles.Customer && !db.DeletionRequests.Any(deletion => deletion.UserId == user.Id)
-            select user.Id).ToHashSetAsync(token);
+        await GameParticipants.Members(db, id).Select(user => user.Id).ToHashSetAsync(token);
 }

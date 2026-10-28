@@ -345,10 +345,7 @@ internal static class GameTeamEndpoints
                 var groupId = await ParticipantGroupAsync(context);
                 context.Items["team-group"] = groupId;
                 var db = context.RequestServices.GetRequiredService<AccountDatabase>();
-                var eligible = await db.Users.AsNoTracking().Where(user => user.LaunchGroupId == groupId
-                    && user.LaunchGroupRevokedAt == null && !user.Disabled
-                    && !db.DeletionRequests.Any(deletion => deletion.UserId == user.Id)
-                    && db.UserRoles.Any(member => member.UserId == user.Id && db.Roles.Any(role => role.Id == member.RoleId && role.Name == AccountRoles.Customer)))
+                var eligible = await GameParticipants.Members(db, groupId)
                     .Select(user => user.Id).ToHashSetAsync(context.RequestAborted);
                 context.Items["team-eligible"] = eligible;
                 context.RequestServices.GetRequiredService<GameStore>().RetireIneligibleTeams(groupId, eligible);
@@ -391,9 +388,7 @@ internal static class GameTeamEndpoints
         var ids = participants.Distinct(StringComparer.Ordinal).ToArray();
         if (ids.Length != 4) { throw new GameFault(404, "team_match_unavailable"); }
         var group = Group(context); var db = context.RequestServices.GetRequiredService<AccountDatabase>();
-        var live = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id) && u.LaunchGroupId == group
-            && !u.Disabled && u.LaunchGroupRevokedAt == null && !db.DeletionRequests.Any(d => d.UserId == u.Id)
-            && db.UserRoles.Any(m => m.UserId == u.Id && db.Roles.Any(r => r.Id == m.RoleId && r.Name == AccountRoles.Customer)))
+        var live = await GameParticipants.Members(db, group).Where(user => ids.Contains(user.Id))
             .Select(u => u.Id).ToListAsync(context.RequestAborted);
         if (live.Count != 4) { throw new GameFault(403, "team_participant_unavailable"); }
         if (context.Request.Method != "GET" && !context.Request.Path.Value!.EndsWith("/cancel", StringComparison.Ordinal)
@@ -404,9 +399,10 @@ internal static class GameTeamEndpoints
     {
         var id = User(context); if (!context.User.HasClaim(c => c.Type == AccountIdentity.SessionClaim)) { throw new GameFault(401, "account_required"); }
         var db = context.RequestServices.GetRequiredService<AccountDatabase>();
+        await OwnerPlayerGroups.EnsureSelectionAsync(context, db, context.RequestServices.GetRequiredService<LaunchPolicyStore>());
         var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == id && !u.Disabled && u.LaunchGroupRevokedAt == null
             && !db.DeletionRequests.Any(d => d.UserId == id), context.RequestAborted);
-        if (user?.LaunchGroupId is null || !context.User.IsInRole(AccountRoles.Customer)) { throw new GameFault(403, "game_group_required"); }
+        if (user?.LaunchGroupId is null || !AccountRoles.IsPlayer(context.User)) { throw new GameFault(403, "game_group_required"); }
         if (context.RequestServices.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId)?.OpenedAt is null)
         { throw new GameFault(403, "game_group_inactive"); }
         if (!(await context.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(context.User)).Allowed) { throw new GameFault(403, "game_group_inactive"); }
