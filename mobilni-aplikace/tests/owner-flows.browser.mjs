@@ -156,6 +156,8 @@ try {
     await capture(page, `owner-invitation-${width}`);
     await page.getByRole('link', { name: 'Nastavit odpočet a otevření večera' }).click();
     await page.locator('#waiting-room').waitFor();
+    await page.getByRole('region', { name: 'Připravenost večera', exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Časové pásmo', { exact: true }).isVisible(), false, 'global launch settings are secondary to group preparation');
     await page.getByText('Nastavení přístupu můžete dál upravovat.', { exact: false }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Potvrdit a spustit odpočet' }).isDisabled(), true);
     recent = false;
@@ -173,21 +175,38 @@ try {
     await page.getByText('Noc už je otevřená.').waitFor();
     assert.equal(reauthentications, 2);
     await capture(page, `owner-evening-${width}`);
-    await page.getByRole('button', { name: 'Hrát jako hráč', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Sekce aplikace', exact: true }).getByRole('link', { name: 'Účet', exact: true }).click();
+    await page.waitForURL(`${origin}/me/account`);
+    assert.equal(await page.getByRole('link', { name: 'Večer a pozvánky', exact: true }).getAttribute('href'), '/settings/admin/launch');
+    await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: 'Večer', exact: true }).click();
     await page.waitForURL(`${origin}/play`);
+    const sound = page.locator('.sound-toggle');
+    assert.equal(await sound.getAttribute('aria-pressed'), 'false');
+    await sound.click();
+    assert.equal(await sound.getAttribute('aria-pressed'), 'true');
+    assert.match(await sound.innerText(), /Zapnuto/);
+    assert(await sound.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return rect.width >= 44 && rect.height >= 44;
+    }));
+    await capture(page, `owner-sound-enabled-${width}`);
+    await sound.click();
+    assert.equal(await sound.getAttribute('aria-pressed'), 'false');
     await Promise.all([
       page.waitForResponse(response => response.url().endsWith('/app/v1/customer/groups/active') && response.request().method() === 'PUT'),
-      page.getByLabel('Skupina hráčů').selectOption('owner-saturday'),
+      page.getByRole('combobox', { name: /Skupina hráčů/ }).selectOption('owner-saturday'),
     ]);
     assert.equal(ownerGroupId, 'owner-saturday');
-    await page.getByRole('link', { name: 'Moje postava a hůlka', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: 'Postava', exact: true }).click();
     await page.waitForURL(`${origin}/me/character`);
     await page.locator('.customer-form').waitFor();
+    assert.equal(await page.locator('details.character-extra').evaluate(element => element.open), false);
     assert.equal(await page.locator('.application-sidebar').count(), 0);
     assert.equal(await page.locator('.wns-game-navigation').count(), 1);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await capture(page, `owner-player-${width}`);
-    await page.getByRole('button', { name: 'Přejít do administrace', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: 'Já', exact: true }).click();
+    await page.getByRole('link', { name: 'Účty a oprávnění', exact: true }).click();
     await page.waitForURL(`${origin}/settings/admin`);
     await context.close();
   }

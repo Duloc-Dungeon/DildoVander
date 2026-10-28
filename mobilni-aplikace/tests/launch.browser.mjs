@@ -216,7 +216,8 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();
-  await page.getByRole('heading', { name: 'Spuštění aplikace' }).waitFor();
+  await page.getByRole('heading', { name: 'Příprava večera' }).waitFor();
+  await page.getByText('Pokročilé: globální beta a produkční plán', { exact: true }).click();
   await page.getByLabel('Použít beta odpočítávání').check();
   await page.getByLabel('Časové pásmo').selectOption('Europe/Prague');
   await page.getByLabel('Otevření beta účastníkům').fill('2026-03-30T10:00');
@@ -224,8 +225,10 @@ try {
   assert(writes.some(write => write.expectedRevision === 4 && write.betaLaunchAt === Date.UTC(2026, 2, 30, 8)));
   const beforePreview = writes.length;
   assert.equal(beforePreview, 3);
+  await page.getByText('Zprávy a osobní věta', { exact: true }).click();
   await page.getByRole('button', { name: 'Vytvořit ukázku' }).click();
   await page.getByText(/Hvězdy se schovaly/).waitFor();
+  await page.locator('details.launch-admin__disclosure > summary').filter({ hasText: 'Příprava portrétů' }).click();
   await page.getByRole('button', { name: 'Opakovat přípravu' }).click();
   assert.equal(writes.length, 5);
   await page.evaluate(() => window.scrollTo(0, 0));

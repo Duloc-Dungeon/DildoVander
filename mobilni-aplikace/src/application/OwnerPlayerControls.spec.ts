@@ -1,6 +1,5 @@
 import { mount, flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMemoryHistory, createRouter } from 'vue-router';
 const api = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('../features/identity/session', async () => {
   const { ref } = await import('vue');
@@ -15,36 +14,24 @@ const groups = [{ id: 'friday', name: 'Pátek' }, { id: 'saturday', name: 'Sobot
 beforeEach(() => {
   setOwnerPlayer(null, false);
   account.value = { id: 'owner', displayName: 'Owner', roles: ['Owner'] } as never;
+  setOwnerPlayer(account.value, true);
   api.request.mockReset();
   api.request.mockResolvedValue({ groups, groupId: 'friday', accessRevision: 3 });
 });
 async function render() {
-  const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/', component: { template: '<div />' } },
-    { path: '/play', component: { template: '<div />' } },
-    { path: '/settings/admin', component: { template: '<div />' } },
-    { path: '/me/character', component: { template: '<div />' } },
-  ] });
-  await router.push('/');
-  const wrapper = mount(OwnerPlayerControls, { global: { plugins: [router] } });
+  const wrapper = mount(OwnerPlayerControls);
   await flushPromises();
-  return { wrapper, router };
+  return { wrapper };
 }
 
 describe('owner player mode', () => {
-  it('switches both ways without modifying roles or staff authorization', async () => {
-    const { wrapper, router } = await render();
-    expect(isCustomerAccount(account.value)).toBe(false);
-    await wrapper.get('button').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.path).toBe('/play');
+  it('keeps player display mode separate from server roles and staff authorization', async () => {
+    const { wrapper } = await render();
     expect(isCustomerAccount(account.value)).toBe(true);
     expect(canEnterStaffArea(account.value)).toBe(true);
     expect(account.value?.roles).toEqual(['Owner']);
-    await wrapper.get('button').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.path).toBe('/settings/admin');
-    expect(isCustomerAccount(account.value)).toBe(false);
+    expect(wrapper.find('button').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Skupina hráčů');
   });
 
   it('switches the selected server context with revision protection and invalidates player views', async () => {
@@ -75,6 +62,7 @@ describe('owner player mode', () => {
     expect(wrapper.find('section').exists()).toBe(false);
     expect(api.request).not.toHaveBeenCalled();
     setOwnerPlayer(account.value, true);
+    expect(isCustomerAccount(account.value)).toBe(true);
     account.value = { id: 'other-owner', displayName: 'Other', roles: ['Owner'] } as never;
     expect(isCustomerAccount(account.value)).toBe(false);
   });

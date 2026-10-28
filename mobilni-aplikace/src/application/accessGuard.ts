@@ -30,7 +30,7 @@ export function installAccessGuard(router: Router): void {
       return { path: '/signin', query: { return: safeReturnPath(to.fullPath) }, replace: true };
     }
     if (!account.value) {
-      if (to.meta.requiresAccount || to.path === '/signin') return to.path === '/signin' ? undefined : { path: '/signin', query: { return: safeReturnPath(to.fullPath) }, replace: true };
+      if (to.meta.requiresAccount) return { path: '/signin', query: { return: safeReturnPath(to.fullPath) }, replace: true };
       try {
         const launch = await accountRequest<{ allowed: boolean }>('/app/v1/launch');
         launchAllowed.value = launch.allowed === true;

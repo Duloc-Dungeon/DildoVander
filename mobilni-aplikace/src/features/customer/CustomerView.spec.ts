@@ -193,6 +193,7 @@ describe('customer conversation', () => {
     api.request.mockImplementation(async (path: string, method?: string, body?: Record<string, unknown>) =>
       path.endsWith('/character') ? { profile: method === 'PUT' ? { ...profile, revision: 2, userInput: body?.userInput } : profile } : { items: [] });
     const wrapper = mount(CustomerView, { global: { plugins: [await router('/me/character')] } }); await flushPromises();
+    expect(wrapper.get<HTMLDetailsElement>('details.character-extra').element.open).toBe(true);
     await wrapper.get('#character-name').setValue('Luna opravená'); await wrapper.get('form.customer-form').trigger('submit'); await flushPromises();
     expect(api.request).toHaveBeenCalledWith('/app/v1/customer/character', 'PUT', expect.objectContaining({
       expectedProfileId: profile.profileId, expectedRevision: profile.revision, openAiConsent: true, portraitConsent: true,
@@ -652,6 +653,30 @@ describe('customer conversation', () => {
     expect(initial).not.toHaveProperty('newCharacter'); expect(wrapper.find('#character-name').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('Nová postava'); expect(api.request.mock.calls.filter(call => call[1] === 'PUT')).toHaveLength(1); wrapper.unmount();
   });
+
+  it('starts first creation with optional details closed and preserves them when collapsed before saving', async () => {
+    api.request.mockImplementation(async (path: string, method?: string, body?: Record<string, unknown>) => {
+      if (path.endsWith('/character') && method === 'PUT') return { profile: { profileId: 'profile-1', revision: 1, userInput: body?.userInput, status: 'queued' } };
+      return path.endsWith('/character') ? { profile: null } : { items: [] };
+    });
+    const wrapper = mount(CustomerView, { global: { plugins: [await router('/me/character')] } });
+    await flushPromises();
+    const optionalDetails = wrapper.get<HTMLDetailsElement>('details.character-extra');
+    expect(optionalDetails.element.open).toBe(false);
+    optionalDetails.element.open = true;
+    await wrapper.get('#character-name').setValue('Luna');
+    await wrapper.get('#character-world').setValue('Moon Saga');
+    await wrapper.get('#character-version').setValue('První kniha');
+    await wrapper.get('#character-description').setValue('Sbírá příběhy.');
+    await wrapper.get('#character-language').setValue('Čeština');
+    optionalDetails.element.open = false;
+    await wrapper.get('form.customer-form').trigger('submit');
+    await flushPromises();
+    const saved = api.request.mock.calls.find(call => call[0].endsWith('/character') && call[1] === 'PUT')![2];
+    expect(saved.userInput).toMatchObject({ name: 'Luna', world: 'Moon Saga', version: 'První kniha', description: 'Sbírá příběhy.', language: 'Čeština' });
+    wrapper.unmount();
+  });
+
   it('does not create a character without recorded account consent', async () => {
     api.setAccount({ id: 'legacy', displayName: 'Guest', roles: ['Customer'], openAiConsent: false });
     api.request.mockImplementation(async (path: string) => path.endsWith('/character') ? { profile: null } : { items: [] });

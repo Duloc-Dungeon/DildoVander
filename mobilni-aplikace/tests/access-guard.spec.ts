@@ -12,8 +12,8 @@ vi.mock('../src/features/identity/session', async () => {
 const operator = { id: 'operator', displayName: 'Operator', roles: ['Operator'] };
 function guardedRouter() {
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/', component: {} }, { path: '/signin', component: {} },
-    { path: '/workshop', component: {} }, { path: '/archive', component: {} },
+    { path: '/', redirect: '/signin' }, { path: '/demo', redirect: '/' }, { path: '/signin', component: {} },
+    { path: '/workshop', component: {} }, { path: '/archive', component: {}, meta: { requiresAccount: true } },
     { path: '/suitcase', component: {}, meta: { requiresAccount: true, operation: true, offlineLocal: true } },
     { path: '/connections', component: {}, meta: { requiresAccount: true, operation: true, offlineLocal: true } },
     { path: '/suitcase/director', component: {}, meta: { requiresAccount: true, operation: true } },
@@ -38,9 +38,17 @@ describe('operational route authentication', () => {
     expect(router.currentRoute.value.path).toBe('/signin');
     expect(router.currentRoute.value.query.return).toBe(path + '?view=details');
   });
-  it('keeps public landing/models/archive independent of account availability', async () => {
+  it('sends entry, demo and archive through sign-in while launch-enabled workshop remains available', async () => {
     const router = guardedRouter();
-    for (const path of ['/', '/workshop', '/archive']) { await router.push(path); expect(router.currentRoute.value.path).toBe(path); }
+    await router.push('/');
+    expect(router.currentRoute.value.path).toBe('/signin');
+    await router.push('/demo');
+    expect(router.currentRoute.value.path).toBe('/signin');
+    await router.push('/archive');
+    expect(router.currentRoute.value.path).toBe('/signin');
+    expect(router.currentRoute.value.query.return).toBe('/archive');
+    await router.push('/workshop');
+    expect(router.currentRoute.value.path).toBe('/workshop');
     expect(refreshIdentity).toHaveBeenCalled();
   });
   it('accepts an operator but rejects a viewer and an operator opening administration', async () => {

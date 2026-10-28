@@ -466,7 +466,7 @@ export const customerCopyCs = {
   'settings.customer-aria': 'Zabezpečení účtu',
   'settings.eyebrow': 'Váš prostor',
   'settings.title': 'Nastavení',
-  'settings.intro': 'Vzhled aplikace a přístup k vašemu účtu.',
+  'settings.intro': 'Přístupové klíče, zařízení a správa účtu.',
   'settings.version-heading': 'Verze aplikace',
   'settings.diagnostics': 'Diagnostika připojení',
   'settings.diagnostics-help': 'Posledních 200 požadavků z tohoto spuštění: stav, délka a ID pro dohledání na serveru. Bez hesel, tokenů, textu rozhovorů a osobních údajů. Export se odešle jen tehdy, když jej sami předáte podpoře.',
