@@ -304,10 +304,13 @@ export async function accountRequest<T>(path: string, method = 'GET', body?: unk
     diagnostic.fail(cause);
     throw cause;
   }
+  // HTTP authentication rejection must invalidate even an HTML gateway response.
+  const rejectedGeneration = status === 401 && generation === authGeneration ? advanceAuthentication(true) : undefined;
   let value: unknown;
-  try { value = text ? JSON.parse(text) : undefined; } catch { throw new Error('Server nevrátil odpověď účtu.'); }
+  try { value = text ? JSON.parse(text) : undefined; } catch {
+    if (status >= 200 && status < 300) throw new Error('Server nevrátil odpověď účtu.');
+  }
   if (status < 200 || status >= 300) {
-    const rejectedGeneration = status === 401 && generation === authGeneration ? advanceAuthentication(true) : undefined;
     const code = (value as { code?: string } | undefined)?.code;
     if (code === 'customer_access_revoked' && typeof window !== 'undefined') {
       window.dispatchEvent(new Event('customer-access-revoked'));
@@ -397,7 +400,7 @@ export function refreshIdentity(): Promise<void> {
     if (generation !== authGeneration) return;
     const offline = native && session.offline === true;
     const expiry = Number(session.expiresAt) * 1000;
-    if (offline && (!session.account || !Number.isFinite(expiry) || expiry <= Date.now())) throw new Error('Offline přihlášení vypršelo. Připojte se a ověřte účet.');
+    if (offline && (!session.account || !Number.isFinite(expiry) || expiry <= Date.now())) throw new IdentityRequestError('Offline přihlášení vypršelo. Připojte se a ověřte účet.', 401);
     clearTimeout(offlineExpiryTimer); offlineExpiryTimer = undefined;
     offlineSession.value = offline;
     offlineSessionExpiresAt.value = offline ? expiry : 0;
@@ -415,9 +418,14 @@ export function refreshIdentity(): Promise<void> {
     // JavaScript. Its cancelled scope does not establish loss of authentication.
     if (error instanceof AccountContextChangedError && authenticationPending) return;
     if (generation !== authGeneration && !(error instanceof IdentityRequestError && error.rejectedGeneration === authGeneration)) return;
-    clearTimeout(offlineExpiryTimer); offlineExpiryTimer = undefined;
-    offlineSession.value = false; offlineSessionExpiresAt.value = 0;
-    account.value = null; csrfToken = ''; initialized.value = false; accountsEnabled.value = false;
+    // A failed connection is not proof that the server session ended. Retain
+    // the established context and its expiry; callers must still handle failure.
+    if (error instanceof AccountContextChangedError
+      || error instanceof IdentityRequestError && [401, 403].includes(error.status)) {
+      clearTimeout(offlineExpiryTimer); offlineExpiryTimer = undefined;
+      offlineSession.value = false; offlineSessionExpiresAt.value = 0;
+      account.value = null; csrfToken = ''; initialized.value = false; accountsEnabled.value = false;
+    }
     throw error;
   }).finally(() => { if (refreshPending === pending) { loading.value = false; refreshPending = null; } });
   refreshPending = pending;

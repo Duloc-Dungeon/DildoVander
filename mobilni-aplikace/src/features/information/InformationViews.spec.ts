@@ -8,6 +8,7 @@ import SupportView from './SupportView.vue';
 
 const global = {
   stubs: {
+    InformationBackLink: true,
     RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
   },
 };

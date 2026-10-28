@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMemoryHistory, createRouter } from 'vue-router';
+import { createMemoryHistory, createRouter, isNavigationFailure, NavigationFailureType } from 'vue-router';
 import { account, offlineSession, offlineSessionExpiresAt, refreshIdentity } from '../src/features/identity/session';
 import { installAccessGuard } from '../src/application/accessGuard';
 import { accessDenial } from '../src/application/access';
@@ -58,8 +58,11 @@ describe('operational route authentication', () => {
   });
   it('fails closed on session verification errors even with a remembered account', async () => {
     account.value = operator; vi.mocked(refreshIdentity).mockRejectedValue(new Error('offline'));
-    const router = guardedRouter(); await router.push('/suitcase');
-    expect(router.currentRoute.value.path).toBe('/signin');
+    const router = guardedRouter();
+    const failure = await router.push('/suitcase');
+    expect(isNavigationFailure(failure, NavigationFailureType.aborted)).toBe(true);
+    expect(router.currentRoute.value.path).toBe('/');
+    expect(account.value).toEqual(operator);
   });
   it('rejects active route rendering immediately after logout or role removal', () => {
     const meta = { requiresAccount: true, operation: true };

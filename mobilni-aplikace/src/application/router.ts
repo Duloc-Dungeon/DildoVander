@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteLocationNormalizedLoaded } from 'vue-router';
 import { watch } from 'vue';
 import { installAccessGuard } from './accessGuard';
+import { installInformationNavigation } from './informationNavigation';
 import { customerCopy, type CustomerCopyKey } from './customerCopy';
 
 export const router = createRouter({
@@ -99,4 +100,5 @@ router.afterEach(to => {
 
 watch(customerCopy.language, () => updateDocumentTitle(), { flush: 'sync' });
 
+installInformationNavigation(router);
 installAccessGuard(router);

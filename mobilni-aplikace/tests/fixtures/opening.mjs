@@ -36,7 +36,7 @@ export async function createOpeningFixtureServer(port = 0) {
       response.end();
       return;
     }
-    if (url.pathname === '/app/v1/session') return json({ enabled: true, account: ['A', 'B', 'C', 'fixed-universe', 'enrollment-error'].includes(state) ? null : account, csrfToken: 'synthetic-not-live', origin: `http://${request.headers.host}` });
+    if (url.pathname === '/app/v1/session') return json({ enabled: true, account: ['A', 'B', 'C', 'fixed-universe', 'enrollment-error'].includes(state) ? null : { ...account, openAiConsent: state !== 'consent' }, csrfToken: 'synthetic-not-live', origin: `http://${request.headers.host}` });
     if (url.pathname === '/app/v1/customer/access') return json({ state: state === 'revoked' ? 'revoked' : 'active', groupId: 'synthetic', accessRevision: 1, fixedUniverse: 'Za zrcadlem', launchAt });
     if (url.pathname === '/app/v1/enrollment/default') return state === 'enrollment-error' ? json({}, 503) : json({ available: true, fixedUniverse: 'Za zrcadlem' });
     if (url.pathname === '/app/v1/launch') {

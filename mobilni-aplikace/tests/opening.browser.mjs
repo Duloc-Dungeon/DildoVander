@@ -68,7 +68,11 @@ try {
     await page.getByRole('button', { name: 'Vstoupit', exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Vstoupit', exact: true }).isEnabled(), true);
     await inspect(page, 'F-optional-motion', { state: 'F', width: 390, reducedMotion: false });
-    await page.getByRole('button', { name: 'Přeskočit animaci', exact: true }).click();
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
+    await page.locator('[data-entrance]').waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Přeskočit animaci', exact: true }).count(), 0);
+    await page.getByRole('button', { name: 'Pokračovat', exact: true }).waitFor({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Pokračovat', exact: true }).click();
     await page.waitForURL('**/me/character');
     await context.close();
   }

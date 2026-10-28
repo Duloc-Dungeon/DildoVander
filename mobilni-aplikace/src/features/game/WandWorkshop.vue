@@ -217,7 +217,14 @@ async function artworkAction(repair = false) {
   finally { if (scope === controller) busy.value = false; }
 }
 function visibility() { if (document.hidden) stopMedia(); }
-watch(() => [account.value?.id, account.value?.openAiConsent, props.upgrade], () => { controller.abort(); controller = new AbortController(); refreshInFlight = null; syncFailures = 0; syncError.value = ''; error.value = ''; stopMedia(); releaseArtwork(); session.value = null; entry.value = undefined; operation = ''; draft.value = ''; busy.value = false; void refresh(); });
+watch([() => account.value?.id, () => account.value?.openAiConsent, () => props.upgrade], () => {
+  controller.abort(); controller = new AbortController(); refreshInFlight = null;
+  syncFailures = 0; syncError.value = ''; error.value = ''; artworkError.value = '';
+  stopMedia(); releaseArtwork(); session.value = null; entry.value = undefined;
+  operation = ''; messageId = ''; retryId = ''; draft.value = ''; partial.value = ''; partialRole = '';
+  correction.value = null; correctionText.value = ''; mode.value = 'voice'; busy.value = false;
+  void refresh();
+});
 onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); });
 onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); releaseArtwork(); document.removeEventListener('visibilitychange', visibility); });
 </script>

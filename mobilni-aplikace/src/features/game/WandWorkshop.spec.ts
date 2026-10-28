@@ -2,15 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 const api = vi.hoisted(() => ({ request: vi.fn(), transport: vi.fn(), connect: vi.fn(), dispose: vi.fn(), interrupt: vi.fn(), play: vi.fn(), observer: null as any }));
 vi.mock('../identity/session', async () => { const { ref } = await import('vue'); return { account: ref({ id: 'alice', openAiConsent: true }), accountOrigin: ref('https://example.test'), accountRequest: api.request, accountTransport: api.transport }; });
-vi.mock('../persona-lab/voice', () => ({ LabVoice: class { constructor(observer: unknown) { api.observer = observer; } connect = api.connect; dispose = api.dispose; interrupt = api.interrupt; setMuted = vi.fn(); end = vi.fn(); } }));
+vi.mock('../persona-lab/voice', () => ({ LabVoice: class { constructor(observer: unknown) { api.observer = observer; } connect = api.connect; dispose = api.dispose; interrupt = api.interrupt; setMuted = vi.fn(); end() { api.observer.phase('ended'); } } }));
 vi.mock('./workshopVoice', () => ({ WorkshopVoice: class { constructor(private observer: { phase(value: string): void }) {} unlock = vi.fn(); async play() { api.play(); this.observer.phase('speaking'); } stop() { this.observer.phase('off'); } } }));
 import WandWorkshop from './WandWorkshop.vue';
+import { account } from '../identity/session';
 const base = '/app/v1/customer/wand/workshop'; const id = 'b'.repeat(32);
 let session: any; let reason: string | null; let view: VueWrapper | undefined;
 const saved = () => ({ id, profileId: 'profile', profileRevision: 1, tier: 1, status: 'asking', question: null, steps: [], messages: [], wand: null, artwork: null });
 const render = async () => { view = mount(WandWorkshop, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); await flushPromises(); return view; };
 const click = async (text: string) => { await view!.findAll('button').find(button => button.text() === text)!.trigger('click'); await flushPromises(); };
 beforeEach(() => {
+  account.value = { ...account.value!, id: 'alice', openAiConsent: true };
   vi.clearAllMocks(); reason = null; session = null;
   api.request.mockImplementation(async (path: string, method = 'GET', body?: any) => {
     if (path === base) return { eligible: !reason, reason, tier: 0, profile: { profileId: 'profile', revision: 1, name: 'Sever', world: 'Přístav', status: reason ? 'running' : 'ready' }, session: structuredClone(session) };
@@ -101,6 +103,30 @@ describe('customer Live workshop', () => {
     await flushPromises();
     expect(view!.text()).toContain('Hůlka dostává tvar');
     expect(view!.text()).not.toContain('Pokračovat hlasem');
+  });
+  it('keeps Live and its subtitle when the same account is successfully reconciled', async () => {
+    await render(); await click('Promluvit s kufrem');
+    api.observer.transcript('assistant', 'Ještě tě poslouchám.'); await flushPromises();
+    const disposed = api.dispose.mock.calls.length; const reads = api.request.mock.calls.length;
+    account.value = { ...account.value!, displayName: 'Aktualizované jméno' };
+    await flushPromises();
+    expect(api.dispose).toHaveBeenCalledTimes(disposed);
+    expect(api.request).toHaveBeenCalledTimes(reads);
+    expect(view!.text()).toContain('Ještě tě poslouchám.');
+    expect(view!.text()).toContain('Ztlumit mikrofon');
+    expect(api.connect).toHaveBeenCalledOnce();
+  });
+  it.each(['owner', 'consent'])('releases Live and clears captions when %s actually changes', async changed => {
+    await render(); await click('Promluvit s kufrem');
+    api.observer.transcript('assistant', 'Soukromá předchozí replika.'); await flushPromises();
+    const disposed = api.dispose.mock.calls.length;
+    session = null;
+    account.value = changed === 'owner' ? { ...account.value!, id: 'bob' } : { ...account.value!, openAiConsent: false };
+    await flushPromises();
+    expect(api.dispose.mock.calls.length).toBeGreaterThan(disposed);
+    expect(view!.text()).not.toContain('Soukromá předchozí replika.');
+    expect(view!.text()).not.toContain('Ztlumit mikrofon');
+    expect(api.connect).toHaveBeenCalledOnce();
   });
   it('cancels a pending final verdict and cannot replay its late audio response', async () => {
     session = { ...saved(), status: 'complete', verdict: 'Uložená hůlka.', wand: { wandId: 'f'.repeat(32), name: 'Modrá nit', material: 'Jasan', core: 'Jiskra', temperament: 'Klidná', lore: 'Příběh', designDescription: 'Modrá nit.', affinity: 'Mosty', weakness: 'Spěch', combatArchetype: 'balanced', combatRulesVersion: 'wand-archetypes-v1', spells: ['strike', 'trick', 'shield'].map(action => ({ action, name: action, description: 'Kouzlo' })) } };
