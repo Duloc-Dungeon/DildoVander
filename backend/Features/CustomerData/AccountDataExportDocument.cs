@@ -23,6 +23,7 @@ internal static class AccountDataExportDocument
     private static readonly string[] ExcludedSections =
     [
         "credentials_and_authentication_sessions",
+        "push_delivery_credentials_and_notification_queue",
         "security_stamps_and_authority_proofs",
         "other_guests_and_linked_viewer_private_data",
         "full_stories_photos_and_media",

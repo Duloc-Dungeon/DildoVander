@@ -508,6 +508,7 @@ internal static class LaunchEndpoints
         || path.Equals("/twin", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsPrelaunchSafe(PathString path) =>
+        path.StartsWithSegments("/app/v1/push", StringComparison.OrdinalIgnoreCase) ||
         path.Equals("/app/v1/session", StringComparison.OrdinalIgnoreCase)
         || path.Equals("/app/v1/account/ai-consent", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/app/v1/customer/wand", StringComparison.OrdinalIgnoreCase)
@@ -525,6 +526,7 @@ internal static class LaunchEndpoints
         || path.StartsWithSegments("/app/v1/admin/launch", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsRevokedSafe(PathString path) =>
+        path.StartsWithSegments("/app/v1/push", StringComparison.OrdinalIgnoreCase) ||
         path.Equals("/app/v1/session", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/app/v1/passkeys", StringComparison.OrdinalIgnoreCase)
         || path.Equals("/app/v1/account", StringComparison.OrdinalIgnoreCase)

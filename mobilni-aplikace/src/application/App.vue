@@ -6,6 +6,8 @@ import { useRoute, useRouter } from 'vue-router';
 import AwButton from '../components/AwButton.vue';
 import AwNotice from '../components/AwNotice.vue';
 import { notifications, dismissNotice, notify } from './notifications';
+import { startPushRuntime } from './pushRuntime';
+import { focusRouteContent } from './routeFocus';
 import { account, accountDeletionRequested, offlineSession, refreshIdentity } from '../features/identity/session';
 import AccountAiConsent from '../features/identity/AccountAiConsent.vue';
 import { deviceSession } from '../features/suitcase/deviceSession';
@@ -24,6 +26,7 @@ import { applicationUpdates } from './nativeApplicationUpdates';
 
 const route = useRoute();
 const router = useRouter();
+startPushRuntime(router);
 const gameExperience = computed(() => route.path === '/play' || route.path.startsWith('/play/'));
 const launchExperience = computed(() => route.path === '/launch' || route.path === '/signin'
   || customerMembershipState.value === 'revoked'
@@ -120,7 +123,7 @@ watch(customerMembershipState, state => {
 watch(() => route.path, () => {
   viewError.value = '';
   // Announce route changes while leaving same-route form/telemetry focus intact.
-  requestAnimationFrame(() => main.value?.focus({ preventScroll: true }));
+  requestAnimationFrame(() => focusRouteContent(main.value));
 });
 const removeRouterError = router.onError(() => { viewError.value = customerCopy.text('shell.page-error'); });
 // The native version gate mounts the shell after the root's mounted hook.

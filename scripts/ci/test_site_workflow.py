@@ -16,7 +16,8 @@ class PublicWorkflowTests(unittest.TestCase):
                                   'IOS_P12_PASSWORD', 'IOS_KEYCHAIN_PASSWORD'},
             'kufr-ios-app-store.yml': {'IOS_APP_STORE_CERTIFICATE_BASE64', 'IOS_APP_STORE_PROFILE_BASE64',
                                       'IOS_APP_STORE_P12_PASSWORD', 'IOS_APP_STORE_KEYCHAIN_PASSWORD'},
-            'kufr-android-release.yml': {'ANDROID_RELEASE_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD'},
+            'kufr-android-release.yml': {'ANDROID_RELEASE_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD',
+                                       'ANDROID_GOOGLE_SERVICES_JSON_BASE64'},
         }
         for path in WORKFLOWS.glob('*.yml'):
             with self.subTest(workflow=path.name):
