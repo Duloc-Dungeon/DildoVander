@@ -1,6 +1,8 @@
 import copy
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -11,6 +13,17 @@ from select_projects import changed_paths, check_results, main, PROJECTS, select
 
 
 class ProjectSelectionTests(unittest.TestCase):
+    def test_verified_release_selects_payload_builds_and_omits_pr_only_native_checks(self):
+        script = Path(__file__).with_name("select_projects.py")
+        result = subprocess.run([sys.executable, str(script), "select", "--project", "all", "--release-artifacts"],
+                                capture_output=True, text=True, check=True, env={**os.environ, "GITHUB_OUTPUT": ""})
+        selected = json.loads(result.stdout)
+        self.assertEqual({name for name, enabled in selected.items() if enabled},
+                         {"repository", "backend", "firmware", "web", "site"})
+        invalid = subprocess.run([sys.executable, str(script), "select", "--project", "backend", "--release-artifacts"],
+                                 capture_output=True, text=True)
+        self.assertNotEqual(invalid.returncode, 0)
+
     def selected(self, *paths):
         return {name for name, enabled in select_projects(paths).items() if enabled}
 

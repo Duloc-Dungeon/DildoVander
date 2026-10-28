@@ -22,6 +22,11 @@ uveď původní licenci a zachovej jejich oznámení.
 5. V PR uveď problém, změnu chování, skutečně provedené příkazy a výsledky.
    Rozlišuj fake/simulaci, hardware, iPhone a živý provider. Chybějící hardware
    nebo Apple identita nebrání příspěvku do nezávislého softwaru.
+   Ještě před založením nebo aktualizací PR spusť
+   `python scripts/ci/preflight.py --scope local`. Návod
+   [lokálních kontrol](docs/local-preflight.md) popisuje reporty, instalaci
+   připnutých závislostí a zbývající ověření pro Linux, macOS a nativní buildy.
+   Lokální chyby oprav před odesláním; nedostupné platformy v PR výslovně uveď.
 6. U dokumentace zkontroluj místní odkazy, správnost příkazů a
    `git diff --check`. Po změně generátoru CAD použij skutečný postup
    [regenerace F2](mechanika/final/README.md), ne ruční úpravu exportů.

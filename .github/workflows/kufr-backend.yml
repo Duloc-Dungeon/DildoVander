@@ -2,6 +2,11 @@ name: Build Kufr backend
 
 on:
   workflow_call:
+    inputs:
+      reuse-validation:
+        description: Internal verified same-tree PR test reuse; default runs every test
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,6 +39,7 @@ jobs:
       - name: Build backend and tests once in Release
         run: dotnet build backend-tests/BackendTests.csproj -c Release -r linux-x64 -p:SelfContained=true --no-restore
       - name: Backend tests
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         env:
           KUFR_TWIN_TEST_NATIVE: ${{ runner.temp }}/native-twin
         run: |
@@ -51,6 +57,7 @@ jobs:
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --persona-lab
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --persona-lab-transport
       - name: Mobile game authority and recovery (offline providers)
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-http
@@ -61,24 +68,29 @@ jobs:
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-teams
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-progress
       - name: Sealed case privacy, plans and timing (offline providers)
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --sealed-case-runtime
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --account-deletion
       - name: Build the shared application for real account journeys
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |
           npm ci --prefix contracts
           npm ci --prefix mobilni-aplikace
           npm run build --prefix mobilni-aplikace
           npx --prefix mobilni-aplikace playwright install --with-deps chromium
       - name: Real HTTPS passkey and invitation browser journeys
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         env:
           KUFR_TESTS_DLL: backend-tests/bin/Release/net10.0/linux-x64/BackendTests.dll
         run: npm run test:accounts:fixture --prefix mobilni-aplikace
       - name: Mobile game browser journeys with synthetic data
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: npm run test:game:browser --prefix mobilni-aplikace
       - name: Publish self-contained Linux binary
         run: dotnet publish backend/backend.csproj -c Release -r linux-x64 --self-contained true --no-build --no-restore -o "$RUNNER_TEMP/kufr-publish"
       - name: Test offline server lifecycle and fixture diagnostics
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: node --test backend/tests/child-process-lifecycle.test.mjs backend/tests/sqlite-startup-diagnostic.test.mjs
       - name: HTTP smoke tests
         env:
@@ -90,10 +102,12 @@ jobs:
           KUFR_TESTS_DLL: backend-tests/bin/Release/net10.0/linux-x64/BackendTests.dll
         run: node backend/tests/keepsake-http.mjs
       - name: Interactive client offline tests
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |
           python3 -m unittest discover -s backend/tests -p 'test_*.py'
           python3 -m unittest discover -s scripts -p 'test_provision_dv01_voice.py'
       - name: Deployment configuration tests
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |
           python3 -m unittest discover -s backend/deploy -p 'test_*.py'
           python3 -m unittest discover -s backend/deploy/twin -p 'test_twin_release.py'

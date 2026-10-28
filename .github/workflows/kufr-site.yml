@@ -3,6 +3,10 @@ name: Build DildoVander application
 on:
   workflow_call:
     inputs:
+      reuse-validation:
+        description: Internal verified same-tree PR test reuse; default runs every test
+        type: boolean
+        default: false
       reuse-web-dist:
         type: boolean
         default: false
@@ -40,6 +44,7 @@ jobs:
       - name: Guard application and viewer CI independence
         run: python scripts/ci/ui_boundary.py
       - name: Validate application packaging and viewer fixtures
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |
           python scripts/generate_design_tokens.py --check
           npm test --prefix design-system
@@ -75,6 +80,7 @@ jobs:
           npm test
           npm run build
       - name: Verify shared application browser journeys
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         working-directory: mobilni-aplikace
         run: |
           npx playwright install --with-deps chromium

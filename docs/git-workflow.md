@@ -48,6 +48,14 @@ nespouští vydání. `main` zůstává výchozí větví repozitáře kvůli d�
 Starší PR přímo do `main` přesměruj do `development`; jejich dosavadní CI
 zůstává během přechodu dostupné. Ruční recovery buildy na `main` zůstávají.
 
+Úplné PR CI ukládá doklad o provedených kontrolách. Pokud release nezávisle
+prokáže shodu tohoto dokladu s výsledným merge commitem, na `main` už znovu
+nespouští stejné testovací sady. Znovu sestaví distribuční balíčky, ověří novou
+binárku a zachová kontrolu historie na tajné údaje. Chybějící, neúplný nebo
+zastaralý doklad znamená plné testy. Podrobnosti jsou v
+[ověření vydání](release-validation.md). Před PR platí
+[lokální preflight](local-preflight.md).
+
 ## První aktivace
 
 Samotné soubory v pracovní větvi nemění serverová pravidla GitHubu.

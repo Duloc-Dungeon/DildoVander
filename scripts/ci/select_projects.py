@@ -218,6 +218,8 @@ def main():
     parser.add_argument("--base")
     parser.add_argument("--head")
     parser.add_argument("--project", choices=("all",) + PROJECTS)
+    parser.add_argument("--release-artifacts", action="store_true",
+                        help="Build direct-main payloads after independently verified complete PR tests")
     parser.add_argument("--stack-pr", type=int)
     parser.add_argument("--stack-number", type=int)
     parser.add_argument("--stack-position", type=int)
@@ -226,6 +228,8 @@ def main():
     parser.add_argument("--stack-base-sha")
     parser.add_argument("--stack-head-ref")
     args = parser.parse_args()
+    if args.release_artifacts and args.project != "all":
+        parser.error("--release-artifacts requires --project all")
     if args.mode == "check":
         selected = json.loads(os.environ["SELECTED_PROJECTS"])
         results = json.loads(os.environ["RESULTS"])
@@ -237,6 +241,9 @@ def main():
     native_stack = None
     if args.project:
         selected = select_recovery_projects(args.project)
+        if args.release_artifacts:
+            for name in ("ios", "android", "ai-eval"):
+                selected[name] = False
     else:
         if args.stack_pr is not None:
             native_stack = verify_native_stack(

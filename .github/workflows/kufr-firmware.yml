@@ -2,12 +2,18 @@ name: Build Kufr firmware
 
 on:
   workflow_call:
+    inputs:
+      reuse-validation:
+        description: Internal verified same-tree PR test reuse; default runs every test
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   host-tests:
+    if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -527,6 +533,7 @@ jobs:
           cp firmware/.pio/build/production/*.bin "$RUNNER_TEMP/firmware/esp32-s3-idf/"
           cp firmware/.pio/build/production/firmware.elf "$RUNNER_TEMP/firmware/esp32-s3-idf/"
       - name: Secured BLE adapter with pinned managed cJSON
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         working-directory: firmware
         shell: bash
         run: |
