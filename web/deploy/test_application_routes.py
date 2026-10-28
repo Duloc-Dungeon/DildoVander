@@ -8,7 +8,7 @@ import keepsake_proxy as proxy
 class ApplicationRoutingTests(unittest.TestCase):
     def test_mobile_game_paths_are_private_and_bounded(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
-        for route in ('/play', '/play/challenge', '/play/practice', '/play/chronicle', '/play/boss', '/play/keeper', '/play/ranking', '/play/messages', '/play/teams'):
+        for route in ('/play', '/play/challenge', '/play/practice', '/play/chronicle', '/play/boss', '/play/keeper', '/play/ranking', '/play/messages', '/play/teams', '/play/pod-peceti'):
             block = config.split('location = ' + route + ' {', 1)[1].split('\n}', 1)[0]
             for directive in ('GET|HEAD', 'no-store', 'no-referrer', 'noindex, nofollow', 'access_log off;'):
                 self.assertIn(directive, block)
@@ -18,6 +18,21 @@ class ApplicationRoutingTests(unittest.TestCase):
             self.assertRegex('/play/' + prefix + '/' + 'a' * 32, pattern)
         for invalid in ('/play/match/../admin', '/play/match/' + 'a' * 32 + '/extra', '/play/unknown', '/play/match/not-an-id'):
             self.assertIsNone(re.fullmatch(pattern, invalid))
+    def test_sealed_case_detail_is_an_exact_private_get_only_page(self):
+        config = proxy.render_compatibility('keepsake.example.invalid')
+        pattern = r'^/play/pod-peceti/sc_[0-9a-f]{32}$'
+        block = config.split('location ~ "' + pattern + '" {', 1)[1].split('\n}', 1)[0]
+        for directive in ('GET|HEAD', 'no-store', 'no-referrer', 'noindex, nofollow', 'access_log off;', 'try_files /index.html =404;'):
+            self.assertIn(directive, block)
+        valid = '/play/pod-peceti/sc_' + 'a' * 32
+        self.assertIsNotNone(re.fullmatch(pattern, valid))
+        raw_pattern = re.search(r'if \(\$request_uri !~ "([^"]+)"', block).group(1)
+        self.assertIsNotNone(re.search(raw_pattern, valid + '?return=%2F'))
+        for invalid in ('/play/pod-peceti/not-a-case', valid + '/extra', valid + '/../../admin',
+                        '/play/pod-peceti/sc_bad', valid.replace('/play/', '/%70lay/'), '/' + valid):
+            self.assertIsNone(re.fullmatch(pattern, invalid), invalid)
+            self.assertIsNone(re.search(raw_pattern, invalid), invalid)
+
     def test_account_api_supports_duplex_persona_lab_streams(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
         block = config.split('location ^~ /app/v1/ {', 1)[1].split('\n}', 1)[0]
