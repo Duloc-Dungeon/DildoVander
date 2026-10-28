@@ -63,7 +63,7 @@ try {
     accessKind: null, canReadPrivate: false, canManage: false, canUnlink: false,
   };
   const ownerAccount = { id: 'browser-owner', displayName: 'Testovací vlastník', roles: ['Owner'], openAiConsent: true };
-  const homeHeading = () => sessionAccount ? sessionAccount.displayName : 'Tvoje dobrodružství začíná tady.';
+  const homeHeading = () => 'Moje postava';
   await context.route('**/*', async route => {
     const request = route.request(); const url = new URL(request.url());
     if (url.origin !== origin) { await route.abort(); return; }
@@ -71,6 +71,7 @@ try {
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session') return json({ enabled: true, account: sessionAccount, csrfToken: 'isolated-browser-csrf' });
     if (sessionAccount?.roles?.includes('Customer') && url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'browser-beta', groupName: 'Interní beta', joinedAt: Math.floor(Date.now() / 1000), accessRevision: 1, fixedUniverse: null, recruitmentOpen: false, launchAt: null });
+    if (url.pathname === '/app/v1/enrollment/default') return json({ available: true, fixedUniverse: null });
     if (url.pathname === '/app/v1/launch') return json({ allowed: true, audience: 'production', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false });
     if (sessionAccount && url.pathname === '/app/v1/account') return json({ sessions: [{ id: 'browser-session', installationName: 'Tento prohlížeč', current: true, trusted: false, expiresAt: 1900000000 }], grants: [], associations: [], passkeyCount: 1, passkeys: [{ id: 'browser-passkey', name: 'Můj klíč', createdAt: '2026-10-20T00:00:00Z', isBackedUp: true }], devices: [] });
     if (sessionAccount && url.pathname === '/app/v1/customer/character') {
@@ -137,12 +138,6 @@ try {
     await route.continue();
   });
   const hasHeading = title => page.getByRole('heading', { name: title, exact: true }).waitFor();
-  const selectShellPreference = async (label, value) => {
-    const disclosure = page.locator('.shell-preferences');
-    if (!(await disclosure.evaluate(element => element.open))) await disclosure.locator('summary').click();
-    await page.getByLabel(label, { exact: true }).selectOption(value);
-    await disclosure.locator('summary').click();
-  };
   const fits = async () => {
     await page.evaluate(async () => {
       await document.fonts.ready;
@@ -154,67 +149,65 @@ try {
     assert.equal(overflow.length, 0, `layout has no horizontal page overflow: ${JSON.stringify(overflow)}`);
   };
 
-  // The public walkthrough is synthetic even for authenticated customer/staff
-  // visitors. App-wide session refresh may read identity; demo actions may not
-  // read private content or issue any request/command.
-  const demoIdentities = [null, { id: 'demo-customer', displayName: 'Ukázkový host', roles: ['Customer'], openAiConsent: true }, ownerAccount];
-  const demoCases = demoIdentities.flatMap(identity =>
-    ['/demo', '/demo/', '/DEMO'].map(demoPath => ({ identity, demoPath })));
-  for (const { identity, demoPath } of demoCases) {
-    sessionAccount = identity;
-    const beforeDemo = requests.length;
-    await page.goto(origin + demoPath);
-    await hasHeading('Příběh bez připojení');
-    assert.equal(new URL(page.url()).pathname, demoPath);
-    assert.equal(await page.getByRole('region', { name: 'Režim vlastníka' }).count(), 0,
-      'demo does not mount private owner group controls');
-    const demo = page.locator('.customer-demo');
-    assert.match(await demo.innerText(), /Syntetická ukázka/);
-    await hasHeading('Poznejte postavu');
-    const next = demo.getByRole('button', { name: 'Další krok', exact: true });
-    await next.focus();
-    await page.keyboard.press('Enter');
-    await hasHeading('Ukázka rozhovoru');
-    await next.click();
-    await hasHeading('Ilustrativní návrh hůlky');
-    assert.equal(await demo.locator('dt').count(), 5);
-    await next.click();
-    await hasHeading('Náhled památky');
-    assert(await next.isDisabled());
-    await demo.getByRole('button', { name: 'Začít ukázku znovu', exact: true }).click();
-    await hasHeading('Poznejte postavu');
-    for (const theme of ['lord-voldemort', 'olivander']) {
-      await selectShellPreference('Vzhled aplikace', theme);
-      await page.setViewportSize({ width: 320, height: 844 });
-      await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
-      await fits();
-      assert(await next.isVisible());
-      await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
-    }
-    assert(requests.slice(beforeDemo).every(request => request.method === 'GET'), 'demo never issues mutations');
-    assert(requests.slice(beforeDemo).filter(request => request.path.startsWith('/app/v1/')).every(request => ['/app/v1/session', '/app/v1/launch', '/app/v1/customer/access'].includes(request.path)), 'demo never reads private customer/account content');
-    assert(requests.slice(beforeDemo).every(request => !/^\/(?:guest\/v1|v1)\//.test(request.path)), 'demo never accesses guest or device APIs');
+  // Launch is already open in this fixture: anonymous entry must still use
+  // onboarding and never revive the retired home/demo/archive shell.
+  for (const entry of ['/', '/demo', '/demo/', '/DEMO']) {
+    await page.goto(origin + entry);
+    await page.waitForURL(url => url.pathname === '/signin');
+    await hasHeading('Vstup na vlastní pověst.');
+    assert.equal(await page.locator('.home-layout, .customer-demo, .primary-navigation, .shell-preferences').count(), 0);
   }
-  sessionAccount = null;
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(origin + '/demo'); await hasHeading('Příběh bez připojení');
-  await page.screenshot({ path: path.join(screenshots, 'customer-demo-390.png'), fullPage: true });
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto(origin); await hasHeading(homeHeading());
-  assert.equal(await page.locator('.home-layout').evaluate(element => getComputedStyle(element).animationName), 'none', 'reduced motion disables page entrances');
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  assert.equal(await page.locator('.home-layout').evaluate(element => getComputedStyle(element).animationName), 'application-arrive');
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await fits(); await page.screenshot({ path: path.join(screenshots, 'home-desktop.png'), fullPage: true });
-  await selectShellPreference('Vzhled aplikace', 'olivander'); assert.equal(await page.locator('html').getAttribute('data-theme'), 'olivander');
-  await page.reload(); await hasHeading(homeHeading()); assert.equal(await page.locator('html').getAttribute('data-theme'), 'olivander');
-  await selectShellPreference('Vzhled aplikace', 'lord-voldemort');
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
+    await page.goto(origin);
+    await hasHeading('Vstup na vlastní pověst.');
+    const titleLayout = () => page.locator('h1').evaluate(element => ({
+      left: element.getBoundingClientRect().left,
+      width: element.getBoundingClientRect().width,
+      size: getComputedStyle(element).fontSize,
+      align: getComputedStyle(element).textAlign,
+    }));
+    const arrivalTitle = await titleLayout();
+    const artSize = await page.locator('.signin-art').boundingBox();
+    const artFits = async () => {
+      assert(await page.locator('.signin-art img').evaluate(image => {
+        const art = image.parentElement.getBoundingClientRect();
+        const rect = image.getBoundingClientRect();
+        const style = getComputedStyle(image);
+        return rect.left >= art.left && rect.top >= art.top
+          && rect.right <= art.right + 1 && rect.bottom <= art.bottom + 1
+          && style.objectFit === 'contain' && parseFloat(style.paddingTop) >= 16;
+      }), 'the whole illustration fits inside its panel with space around it');
+    };
+    await artFits();
     await fits();
-    assert(await page.locator('.home-destinations a[href="/demo"]').isVisible(), 'public home offers the demo as its primary path');
-    assert.equal(await page.locator('.home-readiness').count(), 0, 'public landing has no device status panel');
-    await page.screenshot({ path: path.join(screenshots, `public-landing-${width}.png`), fullPage: true });
+    await page.screenshot({ path: path.join(screenshots, `entry-arrival-${width}.png`), fullPage: true });
+    await page.getByRole('button', { name: 'Už mám přístup', exact: true }).click();
+    await hasHeading('Zpátky na scénu.');
+    assert.deepEqual(await titleLayout(), arrivalTitle, 'returning sign-in shares the arrival grid and type');
+    const signInArt = await page.locator('.signin-art').boundingBox();
+    assert.equal(signInArt.width, artSize.width);
+    assert.equal(signInArt.height, artSize.height);
+    await artFits();
+    await fits();
+    await page.screenshot({ path: path.join(screenshots, `entry-signin-${width}.png`), fullPage: true });
+    await page.getByRole('button', { name: 'Zpět', exact: true }).click();
+    await page.getByRole('button', { name: 'Začít', exact: true }).click();
+    await hasHeading('Jak ti budou říkat?');
+    assert.deepEqual(await titleLayout(), arrivalTitle, 'registration shares the same content width and title scale');
+    assert.equal(await page.locator('.paper-surface, .signin-language').count(), 0);
+    assert(await page.locator('button[type="submit"]').isDisabled(), 'registration requires explicit consent');
+    await page.getByLabel('Jméno postavy', { exact: true }).fill('Hermiona Grangerová');
+    await page.getByLabel('Univerzum', { exact: true }).fill('Harry Potter');
+    await page.locator('.consent-fieldset input').check();
+    assert(await page.locator('button[type="submit"]').isEnabled());
+    await fits();
+    await page.screenshot({ path: path.join(screenshots, `entry-registration-${width}.png`), fullPage: true });
+    if (width === 320) {
+      await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+      await fits();
+      await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+    }
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   for (const [route, title] of [['/support', 'S čím potřebujete pomoct?'], ['/privacy', 'Ochrana soukromí']]) {
@@ -229,17 +222,11 @@ try {
     }
   }
   await page.goto(origin);
-  await hasHeading(homeHeading());
+  await hasHeading('Vstup na vlastní pověst.');
   await page.setViewportSize({ width: 1440, height: 1000 });
-  // Anonymous deep links must not render pairing or operational controls.
-  assert.equal(await page.locator('.home-readiness').count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
-  const publicNavigation = page.getByRole('navigation', { name: 'Sekce aplikace' });
-  assert.deepEqual(await publicNavigation.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/', '/demo', '/archive', '/signin']);
-  for (const removedEntry of ['Dílna', 'Připojení', 'Testovací relace', 'AI laboratoř', 'Zařízení']) {
-    assert.equal(await publicNavigation.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not part of public navigation`);
-  }
-  for (const protectedPath of ['/suitcase', '/connections', '/suitcase/diagnostics', '/suitcase/director', '/settings/admin', '/play', '/play/match/' + 'a'.repeat(32)]) {
+  assert.equal(await page.locator('.primary-navigation, .shell-preferences').count(), 0);
+  for (const protectedPath of ['/archive', '/suitcase', '/connections', '/suitcase/diagnostics', '/suitcase/director', '/settings/admin', '/play', '/play/match/' + 'a'.repeat(32)]) {
     await page.goto(origin + protectedPath);
     await page.waitForURL(url => url.pathname === '/signin');
     assert.equal(new URL(page.url()).searchParams.get('return'), protectedPath);
@@ -266,7 +253,7 @@ try {
   await page.goto(origin + '/signin');
   await page.getByRole('button', { name: 'Už mám přístup', exact: true }).click();
   const customerEnrollmentAction = page.getByRole('button', { name: 'Vytvořit zákaznický účet', exact: true });
-  const keyArt = page.locator('.signin-access-key');
+  const keyArt = page.locator('.signin-art--violet');
   const artHeightBeforeFocus = await keyArt.evaluate(image => image.getBoundingClientRect().height);
   await customerEnrollmentAction.focus();
   assert.equal(await keyArt.evaluate(image => image.getBoundingClientRect().height), artHeightBeforeFocus,
@@ -351,6 +338,8 @@ try {
   });
   await fallbackPage.goto(origin + '/me/character');
   await fallbackPage.getByRole('heading', { name: 'Moje postava', exact: true }).waitFor();
+  assert.equal(await fallbackPage.locator('details.character-extra').evaluate(element => element.open), false);
+  assert.equal(await fallbackPage.locator('#character-description').isVisible(), false, 'first creation starts with only the essential fields');
   await fallbackPage.locator('#character-name').fill('Mira');
   await fallbackPage.locator('#character-world').fill('Star Book');
   for (const width of [1440, 390, 320]) {
@@ -364,6 +353,12 @@ try {
   assert(await fallbackPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await fallbackPage.screenshot({ path: path.join(screenshots, 'customer-first-character-320-text-200.png'), fullPage: true });
   await fallbackPage.evaluate(() => { document.documentElement.style.fontSize = ''; });
+  const optionalCharacterDetails = fallbackPage.locator('details.character-extra > summary');
+  await optionalCharacterDetails.press('Enter');
+  await fallbackPage.locator('#character-description').fill('Rozepsaný nepovinný příběh.');
+  await optionalCharacterDetails.press('Enter');
+  assert.equal(await fallbackPage.locator('#character-description').isVisible(), false);
+  assert.equal(await fallbackPage.locator('#character-description').inputValue(), 'Rozepsaný nepovinný příběh.', 'collapsing optional detail preserves the draft');
   await fallbackPage.getByRole('button', { name: 'Vytvořit postavu', exact: true }).click();
   await fallbackPage.getByRole('heading', { name: 'Mira', exact: true }).waitFor();
   assert.equal(characterWrites.length, 2);
@@ -381,7 +376,8 @@ try {
   sessionAccount = customerAccount;
   customerProfile = originalCustomerProfile;
   await page.goto(origin);
-  await page.locator('.customer-journey-card a[href="/play"]').waitFor();
+  await hasHeading('Moje postava');
+  await page.getByRole('link', { name: 'Pokračovat do hry', exact: true }).waitFor();
   assert(await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: /Památky/ }).isVisible());
   const customerNav = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
   assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/play', '/me/character', '/me/keepsakes', '/me/account']);
@@ -433,10 +429,6 @@ try {
   await refreshResult.click();
   await page.getByText('Památka je připravená.', { exact: true }).waitFor();
   assert.equal(await page.getByRole('link', { name: 'Otevřít památku', exact: true }).getAttribute('href'), `/keepsake/?account=1&k=${resultLocator}`);
-  await page.goto(origin);
-  const latestResultLink = page.getByRole('link', { name: 'Otevřít poslední památku', exact: true });
-  await latestResultLink.waitFor();
-  assert.equal(await latestResultLink.getAttribute('href'), `/keepsake/?account=1&k=${resultLocator}`);
   await page.goto(origin + '/me/conversation');
   await page.getByText('Památka je připravená.', { exact: true }).waitFor();
   sessionResult = {
@@ -469,8 +461,7 @@ try {
   await page.getByRole('heading', { name: 'Rozhovor podle tebe', exact: true }).waitFor();
   assert.equal(await page.getByLabel('Jazyk rozhovoru', { exact: true }).count(), 0);
   assert.equal(await page.getByLabel('Styl rozhovoru', { exact: true }).inputValue(), 'gentle');
-  for (const theme of ['lord-voldemort', 'olivander']) {
-    await selectShellPreference('Vzhled aplikace', theme);
+  for (const theme of ['v2']) {
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
       await fits();
@@ -492,7 +483,6 @@ try {
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize), '32px', 'enlarged preference text is actually 200%');
   await page.screenshot({ path: path.join(screenshots, 'customer-preferences-cs-320-large-text.png'), fullPage: true });
   await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
-  await selectShellPreference('Vzhled aplikace', 'lord-voldemort');
   await customerNav.getByRole('link', { name: 'Já', exact: true }).click();
   await page.getByRole('heading', { name: 'Přístupové klíče' }).waitFor();
   assert.equal(await page.getByLabel('Název přístupového klíče 1').count(), 1);
@@ -508,23 +498,30 @@ try {
   // The remainder exercises existing operations with a labelled synthetic owner.
   sessionAccount = ownerAccount;
   await page.goto(origin); await hasHeading(homeHeading());
+  assert.equal(new URL(page.url()).pathname, '/me/character');
+  assert.equal(await page.locator('.primary-navigation, .owner-player-controls').count(), 0);
+  await page.goto(origin + '/me/account');
+  const administrationEntry = page.getByRole('link', { name: 'Večer a pozvánky', exact: true });
+  await administrationEntry.click();
+  await page.waitForURL(url => url.pathname === '/settings/admin/launch');
+  await hasHeading('Večer a pozvánky');
+  await page.goto(origin + '/me/account');
+  await page.getByRole('link', { name: 'Účty a oprávnění', exact: true }).click();
+  await page.waitForURL(url => url.pathname === '/settings/admin');
   await page.goto(origin + '/admin/customer-sessions'); await hasHeading('Zákaznické relace');
   await page.getByRole('heading', { name: 'Příprava postav' }).waitFor();
   assert.equal(await page.getByText('Žádná příprava postavy není v evidenci.').count(), 1);
-  const preferenceTab = await context.newPage();
-  await preferenceTab.goto(origin + '/settings');
-  await preferenceTab.getByLabel('Barevné téma', { exact: true }).selectOption('olivander');
-  assert.equal(await preferenceTab.getByLabel('Vzhled aplikace').inputValue(), 'olivander', 'settings and header synchronize in the same tab');
-  await page.waitForFunction(() => document.documentElement.dataset.theme === 'olivander');
-  assert.equal(await page.getByLabel('Vzhled aplikace').inputValue(), 'olivander', 'a second tab receives the stored preference');
-  await preferenceTab.close();
-  await selectShellPreference('Vzhled aplikace', 'lord-voldemort');
+  await page.goto(origin + '/settings');
+  assert.equal(await page.getByLabel('Barevné téma', { exact: true }).count(), 0);
+  assert.equal(await page.locator('.shell-preferences, .interface-language-select').count(), 0);
   const nav = page.getByRole('navigation', { name: 'Sekce aplikace' });
-  assert.deepEqual(await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/', '/play', '/settings/admin/launch', '/settings']);
+  assert.deepEqual(await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/', '/play', '/settings/admin/launch', '/me/account']);
   for (const removedEntry of ['Kufr', 'Dílna', 'Archiv', 'Správa', 'Připojení', 'Zařízení']) {
     assert.equal(await nav.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not in staff primary navigation`);
   }
   for (const [label, heading] of [['Domů', homeHeading()], ['Večer', 'Večer a pozvánky']]) {
+    await page.goto(origin + '/settings');
+    await hasHeading('Nastavení');
     await nav.getByRole('link', { name: label, exact: true }).click(); await hasHeading(heading);
     assert.equal(await page.locator('.application-shell').count(), 1);
   }
@@ -574,14 +571,12 @@ try {
   await page.waitForURL(/\?k=/); assert.equal(claimCount(), before + 1);
   assert(requests.every(request => !request.url.includes('a'.repeat(40))), 'claim capability never appears in a request URL');
 
-  for (const theme of ['lord-voldemort', 'olivander']) {
+  for (const theme of ['v2']) {
     await page.goto(origin);
-    await selectShellPreference('Vzhled aplikace', theme);
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
       for (const route of ['/', '/connections', '/suitcase', '/suitcase/diagnostics', '/suitcase/director', '/workshop', '/archive', '/archive/duel', '/archive/chronicle', '/keepsake/', '/signin', '/settings', '/settings/admin', '/unavailable-page']) {
         await page.goto(origin + route); await page.getByRole('main').waitFor(); await page.waitForTimeout(100); await fits();
-        assert.equal(await page.locator('html').getAttribute('data-theme'), theme);
         if (new URL(page.url()).pathname === '/signin') {
           assert.equal(await page.locator('.application-header, .primary-navigation, .application-footer, .shell-preferences').count(), 0, 'prelaunch sign-in does not expose ordinary feature navigation');
           continue;
@@ -591,33 +586,13 @@ try {
           assert(await page.locator('.primary-navigation a').evaluateAll(links => links.every(link => {
             const rect = link.getBoundingClientRect();
             return rect.width >= 44 && rect.height >= 44;
-          })), 'mobile navigation retains 44px targets in both dimensions');
+          })), 'staff mobile navigation retains 44px targets in both dimensions');
           const selected = page.locator('.primary-navigation a.selected');
           if (await selected.count()) assert(await selected.evaluate(link => {
             const rect = link.getBoundingClientRect();
             const nav = link.closest('nav').getBoundingClientRect();
             return rect.left >= nav.left - 2 && rect.right <= nav.right + 2;
           }), 'deep-linked navigation stays visible in the scrolling bar');
-          if (route === '/') {
-            const disclosure = page.locator('.shell-preferences');
-            const summary = disclosure.locator('summary');
-            await summary.focus();
-            await page.keyboard.press('Enter');
-            assert(await page.locator('.interface-language-select__value').getByText('Čeština', { exact: true }).isVisible());
-            assert(await page.locator('.shell-preferences-panel').evaluate(panel => {
-              const rect = panel.getBoundingClientRect();
-              const nav = document.querySelector('.primary-navigation').getBoundingClientRect();
-              return rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= nav.top;
-            }), 'preferences fit above navigation without covering Stop');
-            await page.keyboard.press('Tab');
-            assert.equal(await page.locator(':focus').getAttribute('aria-label'), 'Vzhled aplikace', 'theme control follows the disclosure; Czech language is a static indicator');
-            await page.keyboard.press('Escape');
-            assert.equal(await disclosure.evaluate(element => element.open), false);
-            assert(await summary.evaluate(element => document.activeElement === element), 'Escape returns focus to the disclosure');
-            await summary.click();
-            await page.locator('.connection-context').click();
-            assert.equal(await disclosure.evaluate(element => element.open), false, 'outside interaction dismisses preferences');
-          }
         }
         if (new URL(page.url()).pathname === '/signin') {
           assert.equal(await page.locator('.application-header, .primary-navigation, .application-footer').count(), 0, 'sign-in hides ordinary navigation and feature links');
@@ -626,11 +601,6 @@ try {
           assert.equal(await installer.getAttribute('href'), '/ios/');
           assert(await installer.isVisible(), 'the iPhone distribution link remains visible');
           assert(await installer.evaluate(link => link.getBoundingClientRect().height >= 44), 'the iPhone link retains a 44px touch target');
-        }
-        if (route === '/') {
-          const homeGame = page.locator('.home-destinations a[href="/play"]');
-          assert(await homeGame.isVisible(), 'home keeps the main play action visible');
-          assert(await homeGame.evaluate(link => link.getBoundingClientRect().height >= 44), 'the main home action retains a 44px touch target');
         }
         const name = route.replace(/^\/|\/$/g, '').replaceAll('/', '-') || 'home';
         await page.screenshot({ path: path.join(screenshots, `${theme}-${name}-${width}.png`), fullPage: true });
@@ -641,12 +611,15 @@ try {
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
     await fits();
     await page.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector('.application-shell')).paddingBottom)
-      >= document.querySelector('.primary-navigation').getBoundingClientRect().height - 1);
+      >= document.querySelector('.wns-game-navigation').getBoundingClientRect().height - 1);
     assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0, 'idle home does not display an equipment Stop control');
     await page.screenshot({ path: path.join(screenshots, `${theme}-home-320-text-200.png`), fullPage: true });
     await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
   }
-  await page.goto(origin); await page.keyboard.press('Tab'); assert.equal(await page.locator(':focus').textContent(), 'Přejít na obsah');
+  await page.goto(origin); await hasHeading(homeHeading());
+  await page.getByRole('link', { name: 'Přejít na obsah', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await page.locator(':focus').getAttribute('id'), 'main-content', 'the keyboard skip link reaches the customer content');
 
   // Synthetic owner UI evidence only. This does not authenticate against a
   // backend, create a passkey or permit any management mutation.
@@ -676,22 +649,19 @@ try {
     });
     return route.fallback();
   });
-  for (const theme of ['lord-voldemort', 'olivander']) {
+  for (const theme of ['v2']) {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
       await page.goto(origin + '/settings');
       await page.getByLabel('Název přístupového klíče 1', { exact: true }).waitFor();
-      await selectShellPreference('Vzhled aplikace', theme);
       await fits();
       await page.screenshot({ path: path.join(screenshots, `${theme}-synthetic-owner-settings-${width}.png`), fullPage: true });
       await page.goto(origin + '/settings/admin');
       const resource = page.getByLabel('Identifikátor prostředku', { exact: true });
       await resource.fill('synthetic-unsaved-grant');
       const original = await resource.elementHandle();
-      await selectShellPreference('Vzhled aplikace', theme === 'olivander' ? 'lord-voldemort' : 'olivander');
-      assert.equal(await resource.inputValue(), 'synthetic-unsaved-grant', 'theme switching preserves an unsaved management draft');
-      assert(await resource.evaluate((element, previous) => element === previous, original), 'theme switching retains the management control');
-      await selectShellPreference('Vzhled aplikace', theme);
+      assert.equal(await resource.inputValue(), 'synthetic-unsaved-grant', 'inspection preserves an unsaved management draft');
+      assert(await resource.evaluate((element, previous) => element === previous, original), 'inspection retains the management control');
       await fits();
       await page.screenshot({ path: path.join(screenshots, `${theme}-synthetic-owner-admin-${width}.png`), fullPage: true });
     }
@@ -707,17 +677,17 @@ try {
   const mobileNavigation = page.locator('.primary-navigation');
   assert(await mobileNavigation.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight - 32), 'Android SystemBars bottom inset lifts the floating navigation');
   await mobileNavigation.getByRole('link', { name: 'Domů', exact: true }).click();
-  await hasHeading('SYNTETICKÝ VLASTNÍK · UI FIXTURE');
-  const finalHomeLink = page.locator('.home-destinations a').last();
-  await finalHomeLink.scrollIntoViewIfNeeded();
-  assert(await finalHomeLink.evaluate(link => link.getBoundingClientRect().bottom <= document.querySelector('.primary-navigation').getBoundingClientRect().top), 'the final home action can scroll above the floating navigation');
+  await hasHeading('Moje postava');
+  assert.equal(await page.locator('.primary-navigation, .owner-player-controls').count(), 0, 'owner home uses the customer shell without an administration banner');
+  const customerBottomNavigation = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
+  assert(await customerBottomNavigation.getByRole('link').evaluateAll(links => links.every(link => link.getBoundingClientRect().bottom <= innerHeight - 32)), 'customer navigation controls remain above the bottom safe area');
   await fits();
   await page.screenshot({ path: path.join(screenshots, 'android-system-insets-390.png'), fullPage: true });
   await page.evaluate(() => {
     document.documentElement.style.removeProperty('--safe-area-inset-top');
     document.documentElement.style.removeProperty('--safe-area-inset-bottom');
   });
-  assert(ownerRequests.every(request => request.method === 'GET'), 'theme checks never send a management mutation');
+  assert(ownerRequests.every(request => request.method === 'GET'), 'UI checks never send a management mutation');
   await page.goto(origin + '/connections');
   await hasHeading('Připojení kufru');
   sessionAccount = null;
@@ -728,7 +698,7 @@ try {
   await page.goBack();
   assert.notEqual(new URL(page.url()).pathname, '/connections', 'history cannot reopen logged-out operations');
   assert.deepEqual(errors, [], 'no uncaught application errors');
-  console.log(`PASS compiled application: all 14 route views (including unauthenticated/invalid-capability gates), synthetic owner settings/admin, management draft preservation with no writes, iPhone links, navigation, deep links, compatibility, claim capture, demo isolation, focus, both themes, keyboard, 1440/390/320 layouts and 200% text. Screenshots: ${screenshots}`);
+  console.log(`PASS compiled application: all 14 route views (including unauthenticated/invalid-capability gates), synthetic owner settings/admin, management draft preservation with no writes, iPhone links, navigation, deep links, compatibility, claim capture, retired guest entry, consistent onboarding, focus, fixed design, keyboard, 1440/390/320 layouts and 200% text. Screenshots: ${screenshots}`);
   await context.close();
 } catch (error) {
   console.error('Application errors:', errors);

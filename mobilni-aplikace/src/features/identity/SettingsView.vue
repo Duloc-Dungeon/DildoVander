@@ -7,24 +7,14 @@ import CustomerDataPanel from '../customer/CustomerDataPanel.vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import { customerCopy, type CustomerCopyKey } from '../../application/customerCopy';
-import { usePreferences } from '../../application/preferences';
 import { isCustomerAccount } from '../../application/access';
 import { account, accountDeletionRequested, accountRequest, refreshIdentity, authenticatePasskey, signOut, hasRole, type AccountDetails, type AccountSession } from './session';
 const props = withDefaults(defineProps<{ customerSurface?: boolean }>(), { customerSurface: false });
-const preferences = usePreferences();
 const showCustomerData = computed(() => props.customerSurface && isCustomerAccount(account.value) && !accountDeletionRequested.value);
 const details = ref<AccountDetails | null>(null);
 const keyNames = ref<Record<string, string>>({});
 const error = ref<CustomerCopyKey | ''>(''); const message = ref<CustomerCopyKey | ''>(''); const busy = ref(false);
 const dateLocale = computed(() => customerCopy.language.value === 'en' ? 'en-GB' : 'cs-CZ');
-const themeLabels: Record<string, CustomerCopyKey> = {
-  'lord-voldemort': 'settings.theme-voldemort',
-  olivander: 'settings.theme-olivander',
-};
-function themeLabel(theme: { id: string; label: string }): string {
-  const key = themeLabels[theme.id];
-  return key ? customerCopy.text(key) : theme.label;
-}
 function errorKey(value: unknown): CustomerCopyKey {
   return value instanceof DOMException && value.name === 'NotAllowedError'
     ? 'settings.error-cancelled'
@@ -62,9 +52,16 @@ function trust(session: AccountSession) {
   <section class="page-stack" :aria-label="customerSurface ? customerCopy.text('settings.customer-aria') : undefined" :aria-labelledby="customerSurface ? undefined : 'settings-title'">
     <header v-if="!customerSurface"><p class="eyebrow">{{ customerCopy.text('settings.eyebrow') }}</p><h1 id="settings-title">{{ customerCopy.text('settings.title') }}</h1><p>{{ customerCopy.text('settings.intro') }}</p></header>
     <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice><AwNotice v-if="message" tone="success" role="status">{{ customerCopy.text(message) }}</AwNotice>
-    <section v-if="!customerSurface" class="aw-card"><h2>{{ customerCopy.text('settings.appearance') }}</h2><label for="account-theme">{{ customerCopy.text('settings.theme') }}</label><select id="account-theme" v-model="preferences.theme" class="aw-select"><option v-for="theme in preferences.themes" :key="theme.id" :value="theme.id">{{ themeLabel(theme) }}</option></select></section>
     <section v-if="!account" class="aw-card"><h2>{{ customerCopy.text('settings.signin-heading') }}</h2><p>{{ customerCopy.text('settings.signin-intro') }}</p><RouterLink to="/signin" class="aw-button aw-button--primary">{{ customerCopy.text('settings.signin-link') }}</RouterLink></section>
     <template v-else>
+      <section v-if="customerSurface && isCustomerAccount(account) && account.roles.includes('Owner')" class="aw-card owner-administration-entry">
+        <h2>Administrace večera</h2>
+        <p>Připrav skupinu, pozvánky a otevření večera.</p>
+        <div class="button-row">
+          <RouterLink to="/settings/admin/launch" class="aw-button aw-button--primary">Večer a pozvánky</RouterLink>
+          <RouterLink to="/settings/admin" class="aw-button aw-button--secondary">Účty a oprávnění</RouterLink>
+        </div>
+      </section>
       <PushNotifications v-if="!accountDeletionRequested" />
       <section class="aw-card"><h2>{{ account.displayName }}</h2><p v-if="details">{{ customerCopy.text('settings.passkey-count', { count: details.passkeyCount }) }}</p><AwButton :busy="busy" @click="action(() => authenticatePasskey('add'), 'settings.passkey-added')">{{ customerCopy.text('settings.add-passkey') }}</AwButton><p v-if="!customerSurface && hasRole('Administrator')"><RouterLink to="/settings/admin/launch">Večer a pozvánky</RouterLink></p></section>
       <section v-if="details" class="aw-card">

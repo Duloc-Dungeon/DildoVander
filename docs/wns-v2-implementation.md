@@ -19,6 +19,42 @@
 | D — Pod pečetí | Serverový rules/projection základ, SQLite journal, revize/idempotence/uzávěrka, plán variant, hlasovací validace a pause/resume; skutečné autorizované HTTP založení/čtení čekárny a připravenost se souhlasem. Focused C# harnessy procházejí. | Propojení úložiště s enginem, kompletní scénářové adaptéry/pravidla, start, UI, finální runoff integrace a plná přejímka tajných projekcí. Start a akce výslovně vracejí 422, funkce je defaultně vypnutá. Není to hotová hra. |
 | E — hostitel/provoz | Původní capability a skupinový launch zůstávají; sdílený vzhled. Ověřeno existující oddělení návrhu, potvrzení odpočtu a otevření skupiny v `BetaAdmissionPanel.vue`. | Úplná vizuální shoda cílové hostitelské cesty a mobilní přejímka. Není potřeba znovu vytvářet už existující skupinové API. |
 
+## Oprava vstupu a oddělení administrace — 28. října 2026
+
+- `/` a historická `/demo` vedou přes přihlašovací scénu. Starý domov a
+  syntetická ukázka byly odstraněny; archiv vyžaduje účet. Sdílené odkazy
+  na památky a souboje si zachovávají původní ověření oprávnění.
+- Uvítání, přihlášení a registrace sdílejí šířku, typografii a ovládání bez
+  vnořených panelů. Ilustrace hůlky i klíče se celé vejdou do barevné plochy.
+- Vlastník po přihlášení otevírá zákaznickou postavu. Administraci otevře
+  z účtu; serverové role a oprávnění se změnou zobrazení nemění. Výběr hráčské
+  skupiny zůstává ve hře a účtu, bez trvalého přepínače režimu na všech stránkách.
+- Předvolby a výběr vzhledu či jazyka zmizely ze společného rozhraní.
+  Zvuk zůstává dobrovolný; ovládání ukazuje ikonu, textový stav a `aria-pressed`.
+- Lokální Windows ověření: build, 157 Node testů, 1 233 Vitest testů,
+  `test:browser` a `test:owner:browser`. Syntetické browser průchody pokrývají
+  320/390/1440 px, 200% text, vstup, souhlas, návratové adresy, zákaznickou
+  navigaci, administraci, skupiny a zvuk. Není to přejímka na fyzickém iPhonu
+  ani nasazení.
+
+### Doplnění podle kritiky rozhraní — 28. října 2026
+
+- Účet vlastníka nabízí přímo `Večer a pozvánky` a zvlášť `Účty a oprávnění`.
+- Ruční první postava začíná jménem a předlohou; další údaje jsou pod
+  `Doplnit postavu`. Sbalení zachovává návrh, při úpravě existující postavy
+  jsou podrobnosti otevřené.
+- Správa večera shrnuje skutečně načtenou skupinu, čekající hosty, přijímání
+  hostů a otevření. Po neúspěšném obnovení uvádí neověřený stav. Odpočet
+  a otevření jsou přímo dostupné, pokročilá nastavení jsou rozbalovací.
+- Oddíl zpráv má vlastní dostupné uložení s výslovným upozorněním, že uloží
+  i rozepsaný globální plán; zachovává společný revizní kontrakt. Chyba otevře
+  příslušný oddíl a opětovné ověření samo neopakuje změnu.
+- Prošel build, 157 Node testů, 1 239 Vitest testů a průchody
+  `test:browser`, `test:owner:browser`, `test:launch:browser` v lokálním Brave
+  přes stávající Playwright scénáře. Ověřeny byly syntetické stavy na
+  320/390/1280/1440 px, u hlavního průchodu také 200% text; nejde o nativní
+  přejímku telefonu. Mechanický designový sken změněných obrazovek byl čistý.
+
 ## Ověřené průchody
 
 Prostředí: izolovaný Linux ARM64 VPS, Node 24.21.0, .NET SDK 10.0.303,

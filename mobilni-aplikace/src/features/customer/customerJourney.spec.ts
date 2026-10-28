@@ -4,12 +4,14 @@ import { defaultSignedInDestination, getCustomerJourneyAction } from './customer
 const customer = { id: 'customer', displayName: 'Zákazník', roles: ['Customer'] };
 const staff = { id: 'staff', displayName: 'Obsluha', roles: ['Operator'] };
 const mixed = { id: 'mixed', displayName: 'Obsluha', roles: ['Customer', 'Operator'] };
+const owner = { id: 'owner', displayName: 'Vlastník', roles: ['Owner'] };
 const completed = 'completed';
 const locator = 'e513a7ce-1f2a-4320-9ca2-463fb179b0f4';
 
 describe('customer journey actions', () => {
   it('defaults a new customer to creating their character and a returning customer to conversation', () => {
     expect(defaultSignedInDestination(customer)).toBe('/me/character');
+    expect(defaultSignedInDestination(owner)).toBe('/me/character');
     expect(getCustomerJourneyAction({ account: customer })).toMatchObject({
       key: 'create-character',
       label: 'Vytvořit postavu',
