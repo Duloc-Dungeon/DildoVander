@@ -21,7 +21,7 @@ internal sealed record WandDecisionResult(WandDecisionStatus Status, int? Compar
     int AvailabilityRevision, long CostMicroUsd = 0, string OperationState = "proposal_only");
 
 // Independent from the legacy comedian. A result is facts and evidence, never a
-// spoken script. Only this narrow task can use Luna; text/legacy stay on Sol.
+// spoken script. This narrow task defaults to Luna; authored text defaults to Terra.
 internal sealed class WandDecisionService : IDisposable
 {
     private readonly HttpClient? http;
