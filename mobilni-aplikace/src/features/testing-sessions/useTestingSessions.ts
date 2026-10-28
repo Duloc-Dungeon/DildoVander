@@ -223,6 +223,15 @@ export function useTestingSessions() {
     });
     return savedSuccessfully;
   }
+  async function labelCharacter(character: TestCharacter, label: string): Promise<boolean> {
+    let savedSuccessfully = false;
+    await run(async () => {
+      await client.labelCharacter(character.id, label.trim(), character.label ?? null);
+      savedSuccessfully = true;
+      await refreshAfterCommand();
+    });
+    return savedSuccessfully;
+  }
   async function selectCharacter(characterId: string): Promise<void> {
     if (!selected.value) return;
     await run(async () => {
@@ -385,6 +394,6 @@ export function useTestingSessions() {
   onBeforeUnmount(() => { disposed = true; invalidate(); clearInterval(refreshTimer); clearInterval(activeOperationTimer); clearInterval(progressTimer); clearInterval(clockTimer); document.removeEventListener('visibilitychange', hidden); window.removeEventListener('online', online); });
   const retrySeconds = computed(() => Math.ceil(Math.max(0, client.cooldownUntil() - clock.value) / 1000));
   return { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, inputMode, consent,
-    text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, turnPhase, uncertainTurn, open, client, run, refresh, refreshAfterCommand, resume, start, saveCharacter, selectCharacter,
+    text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, turnPhase, uncertainTurn, open, client, run, refresh, refreshAfterCommand, resume, start, saveCharacter, labelCharacter, selectCharacter,
     enrich, send, selectWand, generate, fault, startVoice, startSpokenText, stopVoice, changeMode, end, cancel, remove, interrupt: () => voice.interrupt() };
 }

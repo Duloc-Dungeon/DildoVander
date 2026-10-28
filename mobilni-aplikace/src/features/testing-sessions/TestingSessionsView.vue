@@ -18,6 +18,7 @@ import { requestDiagnostics } from '../../application/requestDiagnostics';
 import { diagnosticExportHistory, exportDiagnosticReport } from '../../application/diagnosticExport';
 import { applicationBuild } from '../../application/buildIdentity';
 import type { CharacterInput, InputMode } from './contracts';
+import { characterDisplayName } from './characterDisplayName';
 const test = useTestingSessions();
 const { account, permitted, sessions, characters, selected, error, errorRequestId, errorRejected, retrySeconds, notice, busy, loading, stale, inputMode, consent,
   text, outputEnabled, captureEnabled, spokenBusy, providerConfirmed, voicePhase, voiceActive, partial, turnPhase, uncertainTurn, open } = test;
@@ -26,6 +27,7 @@ const characterDeleteConfirmed = ref(false);
 const longTermConsent = ref(false); const photoConsent = ref(false); const photoFile = ref<File | null>(null); const photoKeepsake = ref('');
 const diagnosticExportStatus = ref(''); const diagnosticExportError = ref(''); const characterCopyStatus = ref('');
 const showCharacterForm = ref(false); const editingCharacter = ref(false); const deleteConfirmed = ref(false);
+const characterLabelDraft = ref('');
 const draft = reactive<CharacterInput>({ name: '', world: '', version: '', description: '', language: 'cs' });
 const selectedCharacter = computed(() => {
   const detail = selected.value;
@@ -37,6 +39,8 @@ const selectedCharacter = computed(() => {
 const latestCharacter = computed(() => selected.value?.latestCharacter
   ?? characters.value.find(character => character.id === selected.value?.session.characterId)
   ?? selected.value?.character ?? null);
+const selectedCharacterDisplayName = computed(() => selectedCharacter.value
+  ? characterDisplayName({ ...selectedCharacter.value, label: latestCharacter.value?.label ?? null }) : '');
 const conversationSnapshot = computed(() => selected.value?.characterSnapshot ?? null);
 const snapshotExcludesLatest = computed(() => !!latestCharacter.value && !!conversationSnapshot.value
   && (latestCharacter.value.profile.revision > conversationSnapshot.value.revision
@@ -125,11 +129,18 @@ async function saveCharacter(): Promise<void> {
 }
 function switchMode(event: Event): void { test.changeMode((event.target as HTMLSelectElement).value as InputMode); }
 function selectCharacter(event: Event): void { const id = (event.target as HTMLSelectElement).value; if (id) void test.selectCharacter(id); }
+async function saveCharacterLabel(): Promise<void> {
+  const character = latestCharacter.value ?? selectedCharacter.value;
+  if (character) await test.labelCharacter(character, characterLabelDraft.value);
+}
 watch(() => selected.value?.session.id, () => { photoFile.value = null; photoConsent.value = false; photoKeepsake.value = ''; diagnosticExportStatus.value=''; diagnosticExportError.value=''; characterCopyStatus.value=''; showCharacterForm.value = false; deleteConfirmed.value = false; });
 watch(() => selected.value?.session.id, () => {
   step.value = selected.value ? (open.value && !selected.value.conversation.turns.length ? 2 : 3) : 1;
   if (selected.value && !selected.value.character) beginCharacter();
 });
+watch(() => [latestCharacter.value?.id, latestCharacter.value?.label], () => {
+  characterLabelDraft.value = (latestCharacter.value ?? selectedCharacter.value)?.label ?? '';
+}, { immediate: true });
 async function portrait(): Promise<void> {
   if(!selected.value || !photoFile.value || !photoConsent.value || !consent.value)return;
   await test.run(async()=>{
@@ -208,7 +219,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
           <p v-if="!sessions.length && !loading" class="aw-muted">Zatím žádné testy. Nové sezení připraví virtuální kufr automaticky.</p>
           <ul><li v-for="session in sessions" :key="session.id">
             <button type="button" :class="['testing-session-button', { 'is-current': selected?.session.id === session.id }]" :disabled="busy || voiceActive" :aria-current="selected?.session.id === session.id ? 'true' : undefined" @click="test.resume(session.id)">
-              <strong>{{ session.status === 'open' ? 'Pokračovat v testu' : 'Prohlédnout dokončený test' }}</strong><span>{{ localTime(session.createdAt) }}</span><small>{{ session.engine }} · {{ session.status }}</small>
+              <strong>{{ session.status === 'open' ? 'Pokračovat v testu' : 'Prohlédnout dokončený test' }}</strong><span>{{ localTime(session.createdAt) }}</span><small v-if="characters.find(character => character.id === session.characterId)">{{ characterDisplayName(characters.find(character => character.id === session.characterId)!) }}</small><small>{{ session.engine }} · {{ session.status }}</small>
             </button>
           </li></ul>
           </details>
@@ -217,12 +228,12 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
         </aside>
         <div v-if="selected" v-show="step !== 1" class="testing-main">
           <section v-show="step === 2" class="testing-character" aria-labelledby="testing-character-title">
-            <div class="testing-section-heading"><h2 id="testing-character-title">{{ selectedCharacter?.profile.userInput.name ?? 'Vyberte nebo vytvořte postavu' }}</h2>
+            <div class="testing-section-heading"><h2 id="testing-character-title">{{ selectedCharacterDisplayName || 'Vyberte nebo vytvořte postavu' }}</h2>
               <AwStatus v-if="selectedCharacter">{{ selectedCharacter.profile.status }}</AwStatus>
             </div>
             <div v-if="open" class="testing-actions">
               <AwField id="testing-character-choice" label="Testovací postava"><select id="testing-character-choice" :value="selected.session.characterId ?? ''" class="aw-select" :disabled="busy || voiceActive" @change="selectCharacter">
-                <option value="" disabled>Vybrat uloženou postavu</option><option v-for="character in characters" :key="character.id" :value="character.id">{{ character.profile.userInput.name }} · {{ character.profile.userInput.world }}</option>
+                <option value="" disabled>Vybrat uloženou postavu</option><option v-for="character in characters" :key="character.id" :value="character.id">{{ characterDisplayName(character) }} · {{ character.profile.userInput.world }}</option>
               </select></AwField>
               <AwButton :disabled="busy || voiceActive" @click="beginCharacter()">Nová postava</AwButton>
               <AwButton v-if="selectedCharacter" :disabled="busy || voiceActive" @click="beginCharacter(true)">Upravit postavu</AwButton>
@@ -239,6 +250,10 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
               <div class="testing-actions"><AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">Uložit a dohledat postavu</AwButton><AwButton :disabled="busy" @click="showCharacterForm = false">Zrušit úpravu</AwButton></div>
             </form>
             <template v-if="selectedCharacter">
+              <form class="testing-character-label-form" @submit.prevent="saveCharacterLabel">
+                <AwField id="testing-character-label" label="Rozlišovací popisek (nepovinný)"><input id="testing-character-label" v-model="characterLabelDraft" class="aw-input" maxlength="80" :disabled="busy" placeholder="Například moje verze nebo účastník" /></AwField>
+                <AwButton type="submit" :busy="busy" :disabled="busy">Uložit popisek</AwButton>
+              </form>
               <p>{{ selectedCharacter.profile.userInput.description }}</p>
               <p v-if="characterPending" role="status">AI dohledává postavu podle jména a světa. Můžete počkat zde; stav se průběžně obnovuje.</p>
               <p v-if="selectedCharacter.profile.enrichment">{{ selectedCharacter.profile.enrichment.summary }}</p>
@@ -322,7 +337,7 @@ function localTime(value: string): string { return new Date(value).toLocaleStrin
             <div class="testing-actions"><AwButton v-if="open" variant="danger" @click="test.cancel">Stop / zrušit probíhající operaci</AwButton><AwButton v-if="open" :disabled="busy" @click="test.end">Ukončit a uložit sezení</AwButton><AwButton :disabled="busy" @click="test.refresh">Obnovit stav</AwButton></div>
             <details><summary>Smazat testovací data tohoto sezení</summary><label class="testing-consent"><input v-model="deleteConfirmed" type="checkbox" /> Trvale smazat toto testovací sezení. Produkční data nejsou cílem této akce.</label><AwButton variant="danger" :disabled="!deleteConfirmed || busy || voiceActive" @click="test.remove">Smazat testovací sezení</AwButton></details>
           </section>
-          <details v-if="selectedCharacter"><summary>Smazat tuto testovací postavu a její testovací paměť</summary><label class="testing-consent"><input v-model="characterDeleteConfirmed" type="checkbox" /> Smazat postavu {{ selectedCharacter.profile.userInput.name }} a její izolovanou paměť. Propojená testovací sezení se ukončí.</label><AwButton variant="danger" :disabled="!characterDeleteConfirmed || busy || voiceActive" @click="deleteCharacter">Smazat testovací postavu</AwButton></details>
+          <details v-if="selectedCharacter"><summary>Smazat tuto testovací postavu a její testovací paměť</summary><label class="testing-consent"><input v-model="characterDeleteConfirmed" type="checkbox" /> Smazat postavu {{ selectedCharacterDisplayName }} a její izolovanou paměť. Propojená testovací sezení se ukončí.</label><AwButton variant="danger" :disabled="!characterDeleteConfirmed || busy || voiceActive" @click="deleteCharacter">Smazat testovací postavu</AwButton></details>
           <details class="testing-diagnostics"><summary>Diagnostika skutečných služeb a virtuálního hardwaru</summary>
             <div class="testing-state-strip" aria-label="Zdroje stavu">
               <div><span>Backend / API</span><strong>{{ stale ? 'Nedostupný — historická data' : 'Odpověď skutečného backendu' }}</strong></div>

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Kufr.Backend.Features.Identity;
+using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.SealedCase;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
@@ -112,7 +113,18 @@ internal static partial class SealedCaseHttpTests
             fixture.FreezeClock();
             var start = await clients[0].PostAsJsonAsync(prefix + "/start", new { operationId = "play-start", expectedRevision = count + 1 });
             Equal(HttpStatusCode.OK, start.StatusCode);
+            var profiles = fixture.Services.GetRequiredService<CharacterProfileStore>();
+            var ownProfile = (await profiles.ReadAsync("p1"))!;
+            await profiles.WriteLabelAsync("p1", new(ownProfile.ProfileId, "U okna"));
+            var labeledView = await clients[0].GetFromJsonAsync<JsonElement>(prefix + "/play");
+            Check(labeledView.GetProperty("players").EnumerateArray().Any(player =>
+                player.GetProperty("name").GetString() == ownProfile.UserInput.Name + " · U okna"),
+                "display label added after roster freeze appears in the live case view");
+            await profiles.WriteLabelAsync("p1", new(ownProfile.ProfileId, null, "U okna"));
             var introduction = await clients[0].GetFromJsonAsync<JsonElement>(prefix + "/play");
+            Check(introduction.GetProperty("players").EnumerateArray().All(player =>
+                !player.GetProperty("name").GetString()!.Contains("U okna", StringComparison.Ordinal)),
+                "clearing a label updates the case view without replacing its frozen character");
             Equal("introduction", introduction.GetProperty("phase").GetString());
             Check(!introduction.TryGetProperty("revision", out _), "no global case revision in play projection");
             var schedule = SealedCaseRules.Schedule(variant, count);

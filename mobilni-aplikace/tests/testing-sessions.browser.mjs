@@ -50,6 +50,11 @@ try{
     if(m==='POST'){const input=body();assert.equal(input.engine,'gpt-live-1');assert.equal(input.inputMode,'text');assert.equal(input.openAiConsent,true);const s={id:`session-${list.length+1}`,ownerId:owner.id,virtualDeviceId:`test-${list.length+1}`,labSessionId:`lab-${list.length+1}`,engine:input.engine,inputMode:input.inputMode,status:'open',characterId:null,createdAt,endedAt:null,revision:1};list.push(s);detail={session:s,conversation:conversation(s.labSessionId),character:null,hardware:hardware(),wand:null,keepsakes:[],memory:{status:'empty',records:[]}};return json(s);}return json(list);
   }
   if(p==='/app/v1/testing-sessions/session-1')return json(detail);
+  if(p==='/app/v1/testing-sessions/characters/character-1/label' && m==='PUT'){
+    const input=body();assert(!('userInput' in input));assert.equal(input.expectedLabel,characters[0].label??null);
+    characters[0]={...characters[0],label:input.label.trim()||null};detail.latestCharacter=characters[0];
+    return json({character:characters[0]});
+  }
   if(p==='/app/v1/testing-sessions/session-1/character'){const c=characters.find(c=>c.id===body().characterId);assert(c);detail.character=c;detail.latestCharacter=c;detail.characterSnapshot={profileId:c.profile.profileId,revision:c.profile.revision,userInput:c.profile.userInput,enrichment:c.profile.enrichment,capturedAt:1792836000,context:JSON.stringify({userInput:c.profile.userInput,enrichment:c.profile.enrichment})};detail.session.characterId=c.id;detail.session.revision++;return json(detail);}
   if(p==='/app/v1/testing-sessions/session-1/mode'){detail.session.inputMode=body().inputMode;detail.session.revision++;return json(detail.session);}
   if(p==='/app/v1/testing-sessions/session-1/duels')return json([]);
@@ -93,6 +98,11 @@ try{
  await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(button=>button.textContent.trim()==='Obnovit stav')?.disabled);
  await page.getByRole('button',{name:'Uložit a dohledat postavu'}).click();await page.getByRole('heading',{name:'Alena',exact:true}).waitFor();assert.equal(characters[0].profile.userInput.description,'');
  assert.equal(calls.filter(call=>call.path==='/app/v1/testing-sessions/characters' && call.method==='POST').length,2);
+ await page.locator('#testing-character-label').fill('Petr');
+ await page.getByRole('button',{name:'Uložit popisek',exact:true}).click();
+ await page.getByRole('heading',{name:'Alena · Petr',exact:true}).waitFor();
+ assert.equal(characters[0].profile.userInput.name,'Alena');
+ assert(!detail.characterSnapshot.context.includes('Petr'));
  await page.locator('.testing-character details summary').filter({hasText:'Kontext a AI obohacení postavy'}).click();
  await page.getByText('Řízená syntetická odpověď integračního testu.',{exact:true}).waitFor();
  await page.getByText('Profil profile-1, revize 1',{exact:false}).waitFor();
@@ -105,7 +115,7 @@ try{
  rejectStatus=true;
  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
  await page.getByText('ID požadavku: 01234567-89ab-4cde-8f01-23456789abcd',{exact:true}).first().waitFor();
- await page.getByRole('heading',{name:'Alena',exact:true}).waitFor();
+ await page.getByRole('heading',{name:'Alena · Petr',exact:true}).waitFor();
  await page.setViewportSize({width:390,height:844});
  await page.screenshot({path:path.join(captures,'mobile-status-failure.png'),fullPage:true});
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));

@@ -157,7 +157,7 @@ internal static class PrelaunchCharacterEndpoints
         return new
         {
             character = profile is null ? null : new { profile.ProfileId, profile.Revision,
-                name = profile.UserInput.Name, universe = profile.UserInput.World, profile.Status },
+                name = profile.UserInput.Name, universe = profile.UserInput.World, profile.Status, profile.Label },
             artwork = portrait is null ? null : new { portrait.Status,
                 loadingMessage = PortraitContentPolicy.ValidLoadingMessage(portrait.LoadingMessage) ? portrait.LoadingMessage : null,
                 portrait.ErrorCode,

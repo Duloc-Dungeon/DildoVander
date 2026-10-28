@@ -78,7 +78,7 @@ it('reconciles a lost save response without a second registration or PUT', async
     await view.get('#character-name').setValue('Raven'); await view.get('#character-universe').setValue('Fiction');
     await view.get('form').trigger('submit'); await flushPromises();
     expect(view.text()).toContain('Raven'); expect(view.text()).toContain('Do otevření');
-    expect(view.text()).not.toContain('Response lost'); expect(view.find('form').exists()).toBe(false);
+    expect(view.text()).not.toContain('Response lost'); expect(view.find('#character-name').exists()).toBe(false);
     expect(api.request.mock.calls.filter(([, method]) => method === 'PUT')).toHaveLength(1);
   } finally { view.unmount(); }
 });

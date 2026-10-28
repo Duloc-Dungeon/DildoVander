@@ -28,6 +28,7 @@ const milestoneDismissed = ref(false);
 const rankingDiscipline = ref('combat');
 const showEntireRanking = ref(false);
 const match = ref<Match>();
+const labeledPlayerName = ref<string | null>(null);
 const busy = ref(false);
 const loading = ref(true);
 const error = ref('');
@@ -66,7 +67,7 @@ const tableDuel = computed(() => practice.value || Boolean(match.value && match.
   && (match.value.status === 'active' || match.value.status === 'complete')));
 const roundCount = computed(() => practice.value ? 7 : match.value?.totalRounds ?? 0);
 const completedRoundCount = computed(() => practice.value ? practiceRounds.value.length : match.value?.completedRounds ?? 0);
-const playerName = computed(() => account.value?.displayName || 'Ty');
+const playerName = computed(() => labeledPlayerName.value || account.value?.displayName || 'Ty');
 const opponentName = computed(() => practice.value ? 'Cvičný mág' : match.value?.opponent.displayName || 'Soupeř');
 const spellTokens = { strike: strikeToken, trick: trickToken, shield: shieldToken };
 const selectedAction = computed(() => actions.find(action => action.id === selected.value));
@@ -117,8 +118,9 @@ async function refresh() {
   refreshing = true;
   const token = generation;
   try {
-    const currentWand = await accountRequest<{hasCharacter: boolean; wand: unknown; tier: number}>('/app/v1/customer/wand', 'GET', undefined, controller.signal);
+    const currentWand = await accountRequest<{hasCharacter: boolean; wand: unknown; tier: number; characterDisplayName?: string | null}>('/app/v1/customer/wand', 'GET', undefined, controller.signal);
     if (token !== generation) return;
+    labeledPlayerName.value = currentWand.characterDisplayName ?? null;
     wandStatus.value = currentWand;
     if ((!currentWand.wand && !bossSetup.value && !bossAttempt.value) || practice.value) {
       if (!currentWand.wand && matchId.value) {
@@ -249,6 +251,7 @@ watch(() => account.value?.id, (value, previous) => {
   if (value === previous) return;
   generation++; controller.abort(); controller = new AbortController(); wandStatus.value = undefined;
   match.value = undefined; lobby.value = undefined; bossProfile.value = undefined; progress.value = undefined; refreshing = false;
+  labeledPlayerName.value = null;
   busy.value = false; uncertain.value = false; selected.value = undefined;
   taskOutcome.value = undefined;
   void refresh();

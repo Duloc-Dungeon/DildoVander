@@ -93,6 +93,7 @@ internal sealed partial class TestingSessionService
         {
             var latest=store.TryRead<TestingCharacter>(owner,"character",id);
             if(latest is not null&&latest.Profile.Revision>value.Profile.Revision)return latest;
+            value = value with { Label = latest?.Label };
             store.Put(owner,"character",id,value);
             if(old?.LongTermConsent==true&&!request.LongTermConsent)
             {
@@ -113,6 +114,26 @@ internal sealed partial class TestingSessionService
             }
         }
         return value;
+    }
+    internal TestingCharacter LabelCharacter(string owner, string id, TestingCharacterLabelRequest request)
+    {
+        if (request.Label is { Length: > 80 } || request.Label?.Any(char.IsControl) == true)
+        {
+            throw new TestingException(400, "invalid_test_character_label");
+        }
+        var label = string.IsNullOrWhiteSpace(request.Label) ? null : request.Label.Trim();
+        lock (gate)
+        {
+            var current = store.Read<TestingCharacter>(owner, "character", id);
+            if (current.Label != request.ExpectedLabel)
+            {
+                throw new TestingException(409, "test_character_label_conflict");
+            }
+            // UI metadata stays outside the profile, enrichment jobs and frozen AI context.
+            var updated = current with { Label = label };
+            store.Put(owner, "character", id, updated);
+            return updated;
+        }
     }
     internal async Task<TestingCharacter> EnrichAsync(string owner,string id,bool consent,CancellationToken token)
     {
@@ -310,7 +331,8 @@ internal sealed partial class TestingSessionService
     {
         if(s.CharacterId is not {} id||s.CharacterSnapshot is not {} captured)return null;
         return new(id,s.OwnerId,new(captured.ProfileId,captured.Revision,captured.UserInput,
-            captured.Enrichment is null?"saved":"ready",captured.Enrichment,null,captured.CapturedAt),s.LongTermConsent);
+            captured.Enrichment is null?"saved":"ready",captured.Enrichment,null,captured.CapturedAt),s.LongTermConsent)
+        { Label = store.TryRead<TestingCharacter>(s.OwnerId, "character", id)?.Label };
     }
     private static string MemoryDevice(string owner)=>"test-memory-"+TestingSessionStore.OwnerKey(owner);
     private MemoryAccess Access(TestingSession s)

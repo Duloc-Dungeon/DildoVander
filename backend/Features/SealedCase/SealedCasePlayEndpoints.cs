@@ -19,10 +19,11 @@ internal static partial class SealedCaseEndpoints
         CustomerAdmissionGuard Admit(HttpContext h) => AuthorizeLobbyWrite(h);
         object Ack(string operationId, bool replayed) => new { operationId, accepted = true, replayed };
         routes.MapGet("/current", (HttpContext h, SealedCaseStore store) => Results.Ok(new { id = store.LatestCase(Group(h)) })).WithMetadata(new SealedCaseOwnerControl());
-        routes.MapGet("/{id}/play", (string id, HttpContext h, SealedCaseStore store, ISealedCaseAiPlayers ai) =>
+        routes.MapGet("/{id}/play", (string id, HttpContext h, SealedCaseStore store, ISealedCaseAiPlayers ai,
+            CharacterProfileStore profiles) =>
         {
             store.AdvancePlayableCase(id, Group(h), Actor(h), () => Admit(h));
-            var view = store.ReadPlay(id, Group(h), Actor(h), () => Admit(h));
+            var view = store.ReadPlayWithLabels(id, Group(h), Actor(h), () => Admit(h), profiles);
             return Results.Ok(view with { AiAvailable = view.CanManageAi && ai.Available });
         }).WithMetadata(new SealedCaseOwnerControl());
         routes.MapGet("/{id}/context", (string id, HttpContext h, SealedCaseStore store) =>

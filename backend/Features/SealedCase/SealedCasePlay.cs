@@ -156,10 +156,15 @@ internal sealed partial class SealedCaseStore
     internal SealedPlayView ReadPlay(string caseId, string groupId, string actor, Func<CustomerAdmissionGuard> authorize)
         => ReadPlayCore(caseId, groupId, actor, () => authorize(), null);
 
+    internal SealedPlayView ReadPlayWithLabels(string caseId, string groupId, string actor,
+        Func<CustomerAdmissionGuard> authorize, CharacterProfileStore profiles)
+        => ReadPlayCore(caseId, groupId, actor, () => authorize(), null, profiles);
+
     internal SealedPlayView ReadAiPlay(string caseId, string groupId, string bot, Func<CustomerAccountAdmission> authorize)
         => ReadPlayCore(caseId, groupId, bot, () => authorize(), bot);
 
-    private SealedPlayView ReadPlayCore(string caseId, string groupId, string actor, Func<IDisposable> authorize, string? aiPlayer)
+    private SealedPlayView ReadPlayCore(string caseId, string groupId, string actor, Func<IDisposable> authorize,
+        string? aiPlayer, CharacterProfileStore? displayProfiles = null)
     {
         using var connection = Open(); using var transaction = connection.BeginTransaction(deferred: true);
         IDisposable? playerAdmission = null;
@@ -197,7 +202,12 @@ internal sealed partial class SealedCaseStore
         {
             while (reader.Read())
             {
-                names[reader.GetString(0)] = JsonSerializer.Deserialize<CharacterProfile>(reader.GetString(1), Json)!.UserInput.Name;
+                var accountId = reader.GetString(0);
+                var profile = JsonSerializer.Deserialize<CharacterProfile>(reader.GetString(1), Json)!;
+                // UI labels remain live while both frozen identity and bot AI context retain the original name.
+                names[accountId] = aiPlayer is not null ? profile.UserInput.Name
+                    : CharacterLabel.DisplayName(profile.UserInput.Name,
+                        displayProfiles is null ? profile.Label : displayProfiles.ReadDisplayLabel(accountId, profile.ProfileId));
                 if (reader.GetBoolean(2)) { portraits.Add(reader.GetString(0)); }
             }
         }
