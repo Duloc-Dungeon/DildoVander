@@ -40,7 +40,8 @@ class ProxyTests(unittest.TestCase):
     def test_raw_path_escapes_are_rejected_only_inside_api_locations(self):
         config = proxy.render_compatibility("keepsake.example.invalid")
         guard = '    if ($request_uri ~ "^[^?]*%") { return 404; }'
-        locations = re.findall(r'location ~ "\^[^\n]+\n(.*?)\n}', config, re.DOTALL)
+        # Nested account upload exceptions have their own canonical path checks.
+        locations = re.findall(r'^location ~ "\^[^\n]+\n(.*?)\n}', config, re.DOTALL | re.MULTILINE)
         locations = [block for block in locations if "proxy_pass " in block]
         expected_locations = len(proxy.ROUTES) + len({route for method, route, source in proxy.CONTRACT["routes"]})
         self.assertEqual(expected_locations, len(locations))
