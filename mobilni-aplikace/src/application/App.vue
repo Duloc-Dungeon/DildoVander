@@ -201,7 +201,7 @@ onBeforeUnmount(() => {
       </header>
       <div v-if="!launchExperience" class="notification-stack" :aria-label="customerCopy.text('shell.notifications')"><AwNotice v-for="notice in notifications" :key="notice.id" :tone="notice.tone"><div class="notification-content">{{ notice.message }}<button :aria-label="customerCopy.text('shell.close-notice')" @click="dismissNotice(notice.id)">×</button></div></AwNotice></div>
       <main id="main-content" ref="main" class="application-main" tabindex="-1">
-        <OwnerPlayerControls @context-changed="groupContextRevision++" />
+        <OwnerPlayerControls v-if="route.matched.length > 0 && route.name !== 'customer-demo'" @context-changed="groupContextRevision++" />
         <AwNotice v-if="offlineSession && !launchExperience" tone="warning">{{ customerCopy.text('shell.offline') }}</AwNotice>
         <AwNotice v-if="viewError" tone="danger"><p>{{ viewError }}</p><AwButton @click="router.go(0)">{{ customerCopy.text('shell.reload') }}</AwButton></AwNotice>
         <AccountAiConsent v-else-if="account?.openAiConsent === false && !['/privacy', '/support', '/account-deletion'].includes(route.path)" />
