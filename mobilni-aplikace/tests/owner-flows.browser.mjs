@@ -76,7 +76,10 @@ try {
           groupAttempts++;
           if (!recent) return rejected();
           assert.equal(request.postDataJSON().name, 'Páteční večer');
-          group = { id: 'fixture-group', name: 'Páteční večer', revision: 1, launchAt: null, countdownDurationSeconds: null, forceStartAtEnd: false, countdownConfirmedAt: null, openedAt: null };
+          assert.equal(request.postDataJSON().adultContentEnabled, width !== 390);
+          assert.equal(request.postDataJSON().flirtEnabled, true);
+          group = { id: 'fixture-group', name: 'Páteční večer', revision: 1, launchAt: null, countdownDurationSeconds: null, forceStartAtEnd: false, countdownConfirmedAt: null, openedAt: null,
+            adultContentEnabled: request.postDataJSON().adultContentEnabled, flirtEnabled: request.postDataJSON().flirtEnabled };
           return json({ group });
         }
         return json({ groups: group ? [group] : [] });
@@ -121,6 +124,9 @@ try {
     await page.locator('#invitations').waitFor();
     await page.getByRole('combobox', { name: 'Role nového účtu' }).selectOption('Customer');
     await page.locator('.invitation-group summary').click();
+    assert.equal(await page.getByRole('checkbox', { name: 'Dvojsmysly 18+', exact: true }).isChecked(), true);
+    assert.equal(await page.getByRole('checkbox', { name: 'Flirt', exact: true }).isChecked(), true);
+    if (width === 390) await page.getByRole('checkbox', { name: 'Dvojsmysly 18+', exact: true }).uncheck();
     await page.getByLabel('Název skupiny').fill('Páteční večer');
     await page.getByRole('button', { name: 'Vytvořit skupinu', exact: true }).click();
     await page.getByRole('button', { name: 'Ověřit totožnost přístupovým klíčem', exact: true }).click();
@@ -128,6 +134,8 @@ try {
     assert.equal(groupAttempts, 1, 'reauthentication must not replay group creation');
     await page.getByRole('button', { name: 'Vytvořit skupinu', exact: true }).click();
     await page.getByText('Skupina je uložená.', { exact: false }).waitFor();
+    assert.equal(await page.getByRole('checkbox', { name: 'Dvojsmysly 18+', exact: true }).isChecked(), width !== 390);
+    assert.equal(await page.getByRole('checkbox', { name: 'Flirt', exact: true }).isChecked(), true);
     await page.getByRole('button', { name: 'Vytvořit pozvánku', exact: true }).click();
     await page.locator('#invitation-link').waitFor();
     assert.equal(invitationWrites, 1);

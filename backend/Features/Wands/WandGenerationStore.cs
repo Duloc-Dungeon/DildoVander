@@ -8,7 +8,7 @@ namespace Kufr.Backend.Features.Wands;
 
 // A write transaction protects the operation, lease and immutable selection across
 // instances. No transaction spans provider or identity-store calls.
-internal sealed class WandGenerationStore
+internal sealed partial class WandGenerationStore
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly string connectionString;
@@ -273,6 +273,7 @@ internal sealed class WandGenerationStore
     private void Revoke(string accountId, string profileId)
     {
         using var connection = Open();
+        EnsureMobile(connection);
         using var transaction = connection.BeginTransaction();
         Execute(connection, transaction,
             "INSERT OR IGNORE INTO wand_generation_revocations VALUES($account,$profile)",
@@ -282,6 +283,9 @@ internal sealed class WandGenerationStore
                 selected_json=NULL,lease_token=NULL,lease_until=0,error_code=NULL
                 WHERE account_id=$account AND ($profile='*' OR profile_id=$profile)
             """, ("$account", accountId), ("$profile", profileId));
+        Execute(connection, transaction, "DELETE FROM mobile_wand_crafts WHERE account_id=$account AND ($profile='*' OR profile_id=$profile)",
+            ("$account", accountId), ("$profile", profileId));
+        Execute(connection, transaction, "DELETE FROM mobile_wand_voice_leases WHERE account_id=$account", ("$account", accountId));
         transaction.Commit();
     }
 

@@ -64,6 +64,11 @@ internal static class CharacterEndpoints
                         return ApiProblem.Create(http, 409, "invitation_universe_required");
                     }
                 }
+                if (http.Request.Method is "PUT" or "POST")
+                {
+                    var consentError = await AccountAiConsent.RequireAsync(http);
+                    if (consentError is not null) { return consentError; }
+                }
                 return await next(invocation);
             }
             catch (CharacterException error) { return ApiProblem.Create(http, error.Status, error.Code); }
@@ -73,16 +78,18 @@ internal static class CharacterEndpoints
         {
             var owner = AccountId(http);
             var profile = await store.ReadAsync(owner, http.RequestAborted);
-            var wand = profile is null ? null : http.RequestServices.GetService<Kufr.Backend.Features.Wands.WandGenerationStore>()
-                ?.LatestBonded(owner, profile.ProfileId, profile.Revision);
+            var wand = profile is not null && http.RequestServices.GetService<Kufr.Backend.Features.Wands.WandGenerationStore>() is { } wandStore
+                    ? Kufr.Backend.Features.Wands.MobileWandSessions.Current(wandStore, owner, profile.ProfileId, profile.Revision) : null;
             var artwork = wand is null ? null : http.RequestServices.GetService<KeepsakeStore>()
                 ?.FindOwnedWandArtwork(owner, wand.WandId);
             return Results.Ok(new { profile, generatedWand = wand?.ToPublic(), artwork });
         });
         group.MapPut("", async (CharacterWriteRequest request, HttpContext http, CharacterProfileStore store) =>
-            Results.Ok(new { profile = await store.SaveAsync(AccountId(http), request, http.RequestAborted) }));
+            Results.Ok(new { profile = await store.SaveAsync(AccountId(http), request with { OpenAiConsent = true, PortraitConsent = true }, http.RequestAborted, canEditExisting: AccountRoles.IsAdmin(http.User)) }));
         group.MapPost("/correction", async (CharacterCorrectionRequest request, HttpContext http, CharacterProfileStore store) =>
-            Results.Ok(new { profile = await store.CorrectAsync(AccountId(http), request, http.RequestAborted) }));
+            AccountRoles.IsAdmin(http.User)
+                ? Results.Ok(new { profile = await store.CorrectAsync(AccountId(http), request with { OpenAiConsent = true }, http.RequestAborted) })
+                : ApiProblem.Create(http, 403, "account_admin_required"));
         group.MapDelete("", async (long expectedRevision, string expectedProfileId, HttpContext http, CharacterProfileStore store) =>
         {
             await store.DeleteAsync(AccountId(http), expectedRevision, expectedProfileId, http.RequestAborted);

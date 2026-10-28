@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Identity;
 
-internal sealed record CustomerEnrollmentRequest(string DisplayName);
+internal sealed record CustomerEnrollmentRequest(string DisplayName, bool OpenAiConsent = false);
 
 internal static partial class AccountEndpoints
 {
@@ -33,6 +33,7 @@ internal static partial class AccountEndpoints
         {
             return ApiProblem.Create(context, 503, "customer_registration_unavailable");
         }
+        if (!request.OpenAiConsent) { return ApiProblem.Create(context, 409, "ai_consent_required"); }
         var launchStore = context.RequestServices.GetService<LaunchPolicyStore>();
         if (launchStore is null || !launchStore.TryReadOpenBetaAdmission(out var admission, out _))
         {
@@ -48,7 +49,7 @@ internal static partial class AccountEndpoints
         var label = PasskeyLabels.Account(name, [AccountRoles.Customer]);
         var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = id, Name = label, DisplayName = label });
         await SaveCeremonyAsync(context, db, "customer-enroll", id, name, null,
-            admission.GroupId, admission.Revision);
+            admission.GroupId, admission.Revision, openAiConsent: true);
         return Results.Content(options, "application/json");
     }
 
@@ -65,6 +66,8 @@ internal static partial class AccountEndpoints
         }
         var ceremony = await ConsumeCeremonyAsync(context, db, "customer-enroll");
         if (ceremony is null) { return Error(context, "ceremony_expired_or_used"); }
+        if (!AccountAiConsent.HasConsent(ceremony))
+        { return ApiProblem.Create(context, 409, "ai_consent_required"); }
         var attestation = await signIn.PerformPasskeyAttestationAsync(request.Credential.GetRawText());
         if (!attestation.Succeeded || attestation.UserEntity.Id != ceremony.UserId)
         {
@@ -87,6 +90,7 @@ internal static partial class AccountEndpoints
         {
             Id = ceremony.UserId, UserName = ceremony.UserId,
             DisplayName = ceremony.DisplayName, CreatedAt = Now(),
+            OpenAiConsentAt = ceremony.OpenAiConsentAt, OpenAiConsentVersion = ceremony.OpenAiConsentVersion,
             LaunchGroupId = enrollment.Admission.GroupId, LaunchGroupJoinedAt = Now(),
             LaunchGroupAccessRevision = 1, AdmissionUniverse = enrollment.Admission.FixedUniverse
         };

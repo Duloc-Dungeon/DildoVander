@@ -350,7 +350,7 @@ internal static partial class SealedCaseHttpTests
             var profile = await store.ReadAsync(id) ?? throw new InvalidOperationException("fixture profile missing");
             await store.SaveAsync(id, new CharacterWriteRequest(profile.Revision,
                 new CharacterUserInput(profile.UserInput.Name + " aktualizace", profile.UserInput.World, profile.UserInput.Version),
-                ExpectedProfileId: profile.ProfileId, OpenAiConsent: true, PortraitConsent: true));
+                ExpectedProfileId: profile.ProfileId, OpenAiConsent: true, PortraitConsent: true), canEditExisting: true);
         }
         internal Task WatchWrite(string path) { var clock = (LobbyProbeClock)app.Services.GetRequiredService<TimeProvider>(); clock.ObservedPath = path; return clock.Observed.Task; }
         internal HttpClient Client() => new(new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true, UseProxy = false, ServerCertificateCustomValidationCallback = (_, _, _, _) => true }) { BaseAddress = new Uri(app.Urls.Single()) };

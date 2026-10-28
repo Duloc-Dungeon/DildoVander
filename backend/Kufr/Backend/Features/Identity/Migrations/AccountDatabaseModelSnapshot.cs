@@ -108,6 +108,12 @@ namespace Kufr.Backend.Features.Identity.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("OpenAiConsentAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("OpenAiConsentVersion")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -325,6 +331,12 @@ namespace Kufr.Backend.Features.Identity.Migrations
                     b.Property<string>("NormalizedUserName")
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
+
+                    b.Property<long?>("OpenAiConsentAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("OpenAiConsentVersion")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("PasswordHash")
                         .HasColumnType("TEXT");

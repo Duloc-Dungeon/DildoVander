@@ -33,7 +33,7 @@ enum AccountTransportPolicy {
     }
 
     static func accountResponseLimit(path: String, method: String) -> Int {
-        if prelaunchPortrait(path: path, method: method) { return 8 * 1024 * 1024 }
+        if prelaunchPortrait(path: path, method: method) || sealedCasePortrait(path: path, method: method) { return 8 * 1024 * 1024 }
         if method == "GET", path.contains("/keepsakes/"), path.contains("/assets/"),
            testingSessions(path: path, method: method) { return 32 * 1024 * 1024 }
         if method == "GET" && (path == "/app/v1/customer/memory" || accountDataExportDownload(path: path, method: method)) {
@@ -58,8 +58,9 @@ enum AccountTransportPolicy {
         size >= 0 && size <= accountResponseLimit(path: path, method: method)
     }
 
-    static func accountResponseContentTypeAllowed(path: String, method: String, contentType: String?) -> Bool {
-        guard prelaunchPortrait(path: path, method: method) else { return true }
+    static func accountResponseContentTypeAllowed(path: String, method: String, contentType: String?, status: Int = 200) -> Bool {
+        if !(200..<300).contains(status) { return true }
+        guard prelaunchPortrait(path: path, method: method) || sealedCasePortrait(path: path, method: method) else { return true }
         guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
         return ["image/png", "image/jpeg", "image/webp"].contains(value)
@@ -543,6 +544,9 @@ enum AccountTransportPolicy {
     }
 
     static func account(path: String, method: String) -> Bool {
+        if path == "/app/v1/customer/wand" { return method == "GET" }
+        if path == "/app/v1/customer/wand/sessions" { return method == "POST" }
+        if path.range(of: "^/app/v1/customer/wand/sessions/[0-9a-f]{32}/ticket\\z", options: .regularExpression) != nil { return method == "POST" }
         if path == "/app/v1/game" { return method == "GET" }
         if path == "/app/v1/game/matches" { return method == "POST" }
         if path == "/app/v1/game/progress" { return method == "GET" }
@@ -601,6 +605,7 @@ enum AccountTransportPolicy {
         let exact: [String: Set<String>] = [
             "/app/v1/session": ["GET", "DELETE"], "/app/v1/account": ["GET", "DELETE"],
             "/app/v1/account/deletion": ["GET"],
+            "/app/v1/account/ai-consent": ["POST"],
             "/app/v1/passkeys/request-options": ["POST"], "/app/v1/passkeys/sign-in": ["POST"],
             "/app/v1/passkeys/reauthentication-options": ["POST"], "/app/v1/passkeys/reauthenticate": ["POST"],
             "/app/v1/enrollment/options": ["POST"], "/app/v1/enrollment/complete": ["POST"],
@@ -674,7 +679,23 @@ enum AccountTransportPolicy {
         return true
     }
 
+    private static func sealedCasePortrait(path: String, method: String) -> Bool {
+        method == "GET" && path.range(of: "^/app/v1/sealed-cases/sc_[a-f0-9]{32}/portraits/[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil
+    }
+
+    private static func sealedCase(path: String, method: String) -> Bool {
+        if path == "/app/v1/sealed-cases" { return method == "POST" }
+        if path == "/app/v1/sealed-cases/current" { return method == "GET" }
+        if sealedCasePortrait(path: path, method: method) { return true }
+        guard path.range(of: "^/app/v1/sealed-cases/sc_[a-f0-9]{32}(/[a-z-]+)?$", options: .regularExpression) != nil else { return false }
+        let parts = path.split(separator: "/").map(String.init)
+        if parts.count == 4 { return method == "GET" }
+        return method == "GET" ? ["play", "context", "moderator"].contains(parts[4])
+            : method == "POST" && ["lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent"].contains(parts[4])
+    }
+
     private static func prelaunchAccount(path: String, method: String, query: [URLQueryItem]) -> Bool {
+        if query.isEmpty && sealedCase(path: path, method: method) { return true }
         if path == "/app/v1/launch" { return method == "GET" && query.isEmpty }
         if path == "/app/v1/prelaunch/character" { return query.isEmpty && ["GET", "PUT"].contains(method) }
         if path == "/app/v1/prelaunch/character/retry" { return method == "POST" && query.isEmpty }

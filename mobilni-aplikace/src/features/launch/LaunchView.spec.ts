@@ -13,7 +13,7 @@ vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', pr
 vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
-  const account = ref({ id: 'guest', displayName: 'Guest', roles: ['Customer'] });
+  const account = ref({ id: 'guest', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
   api.setAccount.mockImplementation(value => { account.value = value; });
   return { account, accountDeletionRequested: ref(false), accountRequest: api.request, accountTransport: vi.fn() };
 });
@@ -35,10 +35,11 @@ function savedCreation(status: 'saving' | 'uncertain' | 'confirmed' = 'confirmed
 beforeEach(() => {
   vi.useFakeTimers(); localStorage.clear(); sessionStorage.clear(); invitationRegistration.value = null;
   selectInvitationPresentation(); presentationForeground.value = true;
-  api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'] });
+  api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
   image = ref(''); failed = ref(false);
   api.portrait.mockReturnValue({ url: image, failed, pending: ref(false), clear: vi.fn(() => { image.value = ''; }), retry: vi.fn(), fail: vi.fn() });
   persisted = false; allowed = false; revokedAudience = false; artworkStatus = 'queued';
+  character.status = 'queued';
   memberState = 'active'; memberUniverse = null; customerMembershipState.value = null; customerFixedUniverse.value = null;
   api.request.mockImplementation(async (path: string, method?: string) => {
     if (path === '/app/v1/launch') return { allowed, audience: revokedAudience ? 'revoked' : 'beta', launchAt: Date.now() + 86400000, serverNow: Date.now() };
@@ -55,10 +56,22 @@ it('reconciles a lost save response without a second registration or PUT', async
   try {
     await flushPromises();
     await view.get('#character-name').setValue('Raven'); await view.get('#character-universe').setValue('Fiction');
-    await view.get('input[type="checkbox"]').setValue(true); await view.get('form').trigger('submit'); await flushPromises();
+    await view.get('form').trigger('submit'); await flushPromises();
     expect(view.text()).toContain('Raven'); expect(view.text()).toContain('Do otevření');
     expect(view.text()).not.toContain('Response lost'); expect(view.find('form').exists()).toBe(false);
     expect(api.request.mock.calls.filter(([, method]) => method === 'PUT')).toHaveLength(1);
+  } finally { view.unmount(); }
+});
+it('does not mark an independently queued portrait as failed when research failed', async () => {
+  persisted = true; character.status = 'failed'; artworkStatus = 'queued';
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    image.value = 'blob:prepared-without-research';
+    await flushPromises();
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    expect(view.findComponent({ name: 'PortraitCurtain' }).props('image')).toBe('blob:prepared-without-research');
   } finally { view.unmount(); }
 });
 it('A: starts the reveal at decoded image time 4s, cancelling the remaining introduction', async () => {
@@ -98,9 +111,9 @@ it('E: pauses at 3 seconds and restores only five seconds on remount', async () 
   try { await flushPromises(); await vi.advanceTimersByTimeAsync(4900); expect(view.get('.launch-status').text()).toBe('Chvíli strpení…'); await vi.advanceTimersByTimeAsync(200); expect(view.text()).toContain('Postava je uložená.'); }
   finally { view.unmount(); }
 });
-it('J: an account draft is not a character and never writes before explicit consent', async () => {
+it('J: an account draft waits for explicit creation and does not ask for registration consent again', async () => {
   setInvitationDraft('guest', 'Raven', 'Fiction'); const view = entry();
-  try { await flushPromises(); expect(view.text()).toContain('Přístup je připravený.'); expect(view.find('#character-name').exists()).toBe(false); expect(view.get<HTMLInputElement>('input[type="checkbox"]').element.checked).toBe(false); expect(api.request.mock.calls.some(([, method]) => method === 'PUT')).toBe(false); expect(getInvitationRegistration('guest')?.status).toBe('draft'); }
+  try { await flushPromises(); expect(view.text()).toContain('Přístup je připravený.'); expect(view.find('#character-name').exists()).toBe(false); expect(view.find('input[type="checkbox"]').exists()).toBe(false); expect(api.request.mock.calls.some(([, method]) => method === 'PUT')).toBe(false); expect(getInvitationRegistration('guest')?.status).toBe('draft'); }
   finally { view.unmount(); }
 });
 it('K: an already seen server-authorized opening sends returning guests straight to their destination', async () => {
@@ -168,7 +181,7 @@ it('preserves an unfinished same-account draft and clears it from another accoun
   try {
     await flushPromises(); await view.get('#character-name').setValue('Noční archivář'); await view.get('#character-universe').setValue('Město');
     expect(getInvitationRegistration('guest')?.name).toBe('Noční archivář');
-    api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'] }); await flushPromises();
+    api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'], openAiConsent: true }); await flushPromises();
     expect(view.get<HTMLInputElement>('#character-name').element.value).toBe(''); expect(view.text()).not.toContain('Noční archivář');
   } finally { view.unmount(); }
 });

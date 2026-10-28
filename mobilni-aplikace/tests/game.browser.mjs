@@ -11,16 +11,45 @@ const browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_CHANNEL ? { c
 const errors = [];
 let captures = 0;
 try {
-  for (const width of [320, 375, 390, 430]) {
-    const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+  for (const width of [320, 375, 390, 430, 1280]) {
+    const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: width < 500, hasTouch: width < 500, reducedMotion: 'reduce' });
+    await context.addInitScript(theme => localStorage.setItem('dildovander.theme', theme), width < 390 ? 'lord-voldemort' : 'olivander');
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
-    for (const state of ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'adult', 'yolo', 'error', 'empty', 'long','tactical','loadout','boss','boss-setup','captured','rescue','teams','team-choice','team-half','messages','ranking']) {
+    for (const state of ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'task-without-wand', 'yolo', 'error', 'empty', 'long','tactical','loadout','boss','boss-setup','captured','rescue','teams','team-choice','team-half','messages','ranking','first-wand','upgrade-wand']) {
       await page.goto(`${origin}/__game/${state}`); await page.locator('.game-content').waitFor();
       await page.locator('h1, [role="alert"]').first().waitFor();
       await page.evaluate(() => document.fonts.ready);
       assert.ok(await page.locator('.game-content').evaluate(element => getComputedStyle(element).fontFamily.includes('Manrope')), `${state}: Manrope font`);
+      assert.equal(await page.locator('.scene-shell').evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(8, 9, 9)', `${state}: shared WNS charcoal background`);
+      if (['choice', 'incoming', 'adult', 'result', 'challenge'].includes(state)) {
+        assert.equal(await page.locator('.game-content .aw-button--primary').first().evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(184, 243, 212)', `${state}: shared mint primary action`);
+      }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${state} ${width}: horizontal overflow`);
-      if (state === 'incoming') assert.equal(await page.getByLabel('Chci po prohře krátký úkol').isChecked(), false);
+      if (state === 'incoming' || state === 'challenge') assert.equal(await page.getByLabel('Chci po prohře krátký úkol').count(), 0);
+      if (state === 'early-result') {
+        assert.equal(await page.locator('.game-round-dots > .done').count(), 4);
+        assert.equal(await page.getByRole('button', { name: 'Potvrdit tah' }).count(), 0);
+        await page.getByRole('heading', { name: 'Tohle bylo tvoje.' }).waitFor();
+      }
+      if (state === 'adult' || state === 'task-without-wand') {
+        await page.screenshot({ path: path.join(output, `${state}-pending-${width}.png`), fullPage: true }); captures++;
+        const confirm = page.getByRole('button', { name: 'Potvrdit výsledek úkolu' });
+        assert.equal(await confirm.isDisabled(), true);
+        assert.equal(await page.getByRole('link', { name: 'Odveta', exact: true }).count(), 0);
+        const count = requests.length;
+        const outcome = width < 390 ? 'done' : 'skip';
+        await page.getByRole('radio', { name: outcome === 'done' ? 'Splněno' : 'Nesplněno', exact: true }).check();
+        assert.equal(requests.length, count, 'task selection must remain local until confirmed');
+        await confirm.click();
+        const saved = outcome === 'done' ? 'Uloženo: úkol splněn.' : 'Uloženo: úkol nesplněn.';
+        await page.getByText(saved, { exact: true }).waitFor();
+        assert.equal(requests.at(-1).body.taskAction, outcome);
+        await page.reload();
+        await page.getByText(saved, { exact: true }).waitFor();
+        assert.equal(await page.getByRole('link', { name: 'Odveta', exact: true }).count(), 1);
+      }
+      if (state === 'first-wand') { assert.equal(await page.getByRole('button', {name:'Mluvit s Olivanderem'}).count(), 1); assert.equal(await page.getByRole('radio').count(), 0); }
+      if (state === 'upgrade-wand') assert.equal(await page.getByRole('heading', {name:'Vylepšit hůlku s Olivanderem'}).count(), 1);
       if (state === 'choice') {
         const count = requests.length;
         await page.getByRole('radio', { name: /Lest/ }).check();
@@ -43,9 +72,11 @@ try {
       await page.screenshot({ path: path.join(output, `${state}-${width}.png`), fullPage: true }); captures++;
     }
     await page.goto(`${origin}/play/practice`);
-    for (let round = 0; round < 7; round++) {
+    await page.getByRole('button', { name: 'Potvrdit tah' }).waitFor();
+    for (let round = 0; round < 7 && await page.getByRole('button', { name: 'Potvrdit tah' }).count(); round++) {
       await page.getByRole('radio', { name: /Úder/ }).check();
       await page.getByRole('button', { name: 'Potvrdit tah' }).click();
+      await page.waitForFunction(count => document.querySelectorAll('.game-round-dots > .done').length === count, round + 1);
     }
     await page.getByText('Trénink dokončen', { exact: true }).waitFor();
     await page.goto(`${origin}/__game/challenge`); await page.getByRole('heading', { name: 'Koho vyzveš?' }).waitFor();
@@ -55,5 +86,5 @@ try {
     await context.close();
   }
   assert.deepEqual(errors, []);
-  console.log(`Game browser checks passed: ${captures} captures, four widths, reduced motion, 200% text, selection/commit, practice, YOLO reveal. ${output}`);
+  console.log(`Game browser checks passed: ${captures} captures, five widths, shared WNS colors, both persisted themes, reduced motion, 200% text, selection/commit, task confirmation/reload, practice, YOLO reveal. ${output}`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

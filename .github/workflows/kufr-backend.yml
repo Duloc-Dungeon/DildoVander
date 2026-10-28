@@ -71,8 +71,8 @@ jobs:
         run: npm run test:game:browser --prefix mobilni-aplikace
       - name: Publish self-contained Linux binary
         run: dotnet publish backend/backend.csproj -c Release -r linux-x64 --self-contained true --no-build --no-restore -o "$RUNNER_TEMP/kufr-publish"
-      - name: Test offline server process cleanup
-        run: node --test backend/tests/child-process-lifecycle.test.mjs
+      - name: Test offline server lifecycle and fixture diagnostics
+        run: node --test backend/tests/child-process-lifecycle.test.mjs backend/tests/sqlite-startup-diagnostic.test.mjs
       - name: HTTP smoke tests
         env:
           KUFR_BACKEND_DLL: ${{ runner.temp }}/kufr-publish/backend.dll

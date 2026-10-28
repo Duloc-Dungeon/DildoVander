@@ -29,7 +29,7 @@ const state = ref<PrelaunchState | null>(null);
 const characterVerified = ref(false);
 const name = ref('');
 const universe = ref('');
-const consent = ref(false);
+const consent = computed(() => account.value?.openAiConsent === true);
 const betaEnrollmentAvailable = ref<boolean | null>(null);
 const membershipRequestMessage = ref('');
 const draftProvided = ref(false);
@@ -64,7 +64,7 @@ const portrait = usePrivateCharacterPortrait(() => {
     ? { accountId: account.value.id, profileId: character.profileId, revision: character.revision } : null;
 });
 const phase = computed(() => {
-  if (portrait.failed.value || state.value?.artwork?.status === 'failed' || state.value?.character?.status === 'failed') return 'failed';
+  if (portrait.failed.value || state.value?.artwork?.status === 'failed') return 'failed';
   if (hasPortrait.value) return 'ready';
   return state.value?.character ? 'preparing' : 'entry';
 });
@@ -92,7 +92,6 @@ watch(() => account.value?.id, id => {
   portrait.clear();
   state.value = null;
   characterVerified.value = false;
-  consent.value = false;
   busy.value = false;
   error.value = '';
   revealed.value = false;
@@ -115,7 +114,7 @@ watch(() => registration.value?.status, status => {
   if (status === 'confirmed' && controller) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
 });
 watch(hasPortrait, ready => { if (ready) finishInvitationPresentation(); });
-watch(() => state.value?.character?.profileId, () => { consent.value = false; revealed.value = false; }, { flush: 'sync' });
+watch(() => state.value?.character?.profileId, () => { revealed.value = false; }, { flush: 'sync' });
 function rememberDraft(): void {
   if (account.value && !state.value?.character && !writing.value && !uncertain.value) setInvitationDraft(account.value.id, name.value, universe.value);
 }
@@ -194,7 +193,7 @@ async function refreshCharacter(signal?: AbortSignal): Promise<void> {
   if (!value.character) {
     if (previous || registration.value?.status === 'confirmed') {
       clearInvitationRegistration(owner);
-      name.value = ''; universe.value = ''; consent.value = false; draftProvided.value = false;
+      name.value = ''; universe.value = ''; draftProvided.value = false;
       portrait.clear(); selectInvitationPresentation();
     }
     return;
@@ -230,7 +229,7 @@ async function prepareExistingPortrait(): Promise<void> {
   const epoch = accountEpoch;
   busy.value = true; error.value = '';
   try {
-    await accountRequest('/app/v1/prelaunch/character', 'PUT', { expectedRevision: existing.revision, expectedProfileId: existing.profileId, name: existing.name, universe: existing.universe, openAiConsent: true });
+    await accountRequest('/app/v1/prelaunch/character/retry', 'POST', { expectedRevision: existing.revision, expectedProfileId: existing.profileId });
     if (epoch !== accountEpoch) return;
     await refreshCharacter(controller?.signal); beginPolling();
   } catch {
@@ -245,7 +244,9 @@ async function retryPortrait(): Promise<void> {
   busy.value = true; error.value = '';
   try {
     if (state.value?.artwork?.status === 'ready') { await portrait.retry(); return; }
-    await accountRequest('/app/v1/prelaunch/character/retry', 'POST', {});
+    await accountRequest('/app/v1/prelaunch/character/retry', 'POST', {
+      expectedProfileId: state.value?.character?.profileId, expectedRevision: state.value?.character?.revision,
+    });
     if (epoch === accountEpoch) { await refreshCharacter(controller?.signal); beginPolling(); }
   } catch { if (epoch === accountEpoch) error.value = copy.value.failed; }
   finally { if (epoch === accountEpoch) busy.value = false; }
@@ -411,14 +412,10 @@ onBeforeUnmount(() => {
             <div v-if="customerFixedUniverse" class="fixed-universe"><span>{{ copy.universe }}</span><strong>{{ customerFixedUniverse }}</strong><p>{{ language === 'en' ? 'Set by your invitation group.' : 'Určeno skupinou, která tě pozvala.' }}</p></div>
             <AwField v-else id="character-universe" :label="copy.universe" :hint="copy.universeHint"><input id="character-universe" aria-describedby="character-universe-hint" v-model="universe" class="aw-input" maxlength="160" autocomplete="off" required @input="rememberDraft" /></AwField>
           </template>
-          <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
-          <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></details>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
         <form v-else-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait" @focusin="formFocused = true" @focusout="formFocusOut">
           <p>{{ copy.missingPortrait }}</p>
-          <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
-          <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></details>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
         <CharacterCountdown v-if="state?.character" class="countdown" heading-id="launch-title" :name="state.character.name" :universe="state.character.universe" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
@@ -508,7 +505,7 @@ onBeforeUnmount(() => {
 .launch-copy :deep(h1) { color: var(--wns-text, #f5f5f0); font: 800 clamp(2.25rem, 8vw, 3.5rem)/1 var(--wns-display); letter-spacing: -.065em; }
 .launch-status, .launch-text .launch-status { color: var(--wns-muted, #b2b9b6); }
 .launch-final { text-align: left; }
-.launch-joke { color: var(--wns-text, #f5f5f0); font: 700 clamp(1.5rem, 6vw, 2.5rem)/1.2 var(--wns-display); letter-spacing: -.035em; }
+.launch-joke { color: var(--wns-text, #f5f5f0); font: 700 clamp(1.5rem, 6vw, 2.5rem)/1.35 var(--wns-display); letter-spacing: -.035em; }
 .launch-identity { color: var(--wns-muted, #b2b9b6); font: 500 1rem/1.55 var(--wns-display); }
 .launch-teaser, .launch-generic { color: var(--wns-muted, #b2b9b6); }
 .launch-art { overflow: visible; border-radius: 30px; background: var(--wns-violet, #c8b9fc); }
@@ -525,5 +522,5 @@ onBeforeUnmount(() => {
 .group-opening-copy h1 { color: var(--wns-text, #f5f5f0); text-shadow: none; font-family: var(--wns-display); font-weight: 800; letter-spacing: -.06em; }
 .launch-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
 @media (min-width: 760px) { .launch-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, .85fr); align-items: center; gap: 2rem; } .launch-copy { order: 1; } .launch-art { order: 2; } .launch-text { grid-column: 1 / -1; } }
-@media (max-width: 759px) { .launch-copy { border-radius: 24px; } .launch-art { max-height: 56vh; } }
+@media (max-width: 759px) { .launch-copy { border-radius: 24px; } .launch-art { max-width: min(100%, 44.8vh); margin-inline: auto; } }
 </style>

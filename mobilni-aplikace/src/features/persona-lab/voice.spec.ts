@@ -31,6 +31,7 @@ describe('bounded audio playback', () => {
   let observer: VoiceObserver;
   let context: { currentTime: number; state: string; onstatechange: (() => void) | null };
   let message: (data: unknown) => void;
+  let remoteClose: () => void;
   let capture: (samples: Float32Array) => void;
   let send: ReturnType<typeof vi.fn>;
   let socketClose: ReturnType<typeof vi.fn>;
@@ -89,9 +90,9 @@ describe('bounded audio playback', () => {
     }
     class FakeSocket {
       static OPEN = 1; readyState = 1; binaryType = ''; bufferedAmount = 0;
-      onmessage: ((event: { data: unknown }) => void) | null = null; onclose = null; onerror = null;
+      onmessage: ((event: { data: unknown }) => void) | null = null; onclose: ((event: {code: number}) => void) | null = null; onerror = null;
       send = vi.fn(); close = vi.fn();
-      constructor(address: string) { connectedAddress = address; send = this.send; socketClose = this.close; message = data => this.onmessage?.({ data }); }
+      constructor(address: string) { connectedAddress = address; send = this.send; socketClose = this.close; message = data => this.onmessage?.({ data }); remoteClose = () => this.onclose?.({code:1000}); }
     }
     vi.stubGlobal('AudioContext', FakeContext); vi.stubGlobal('WebSocket', FakeSocket);
     vi.stubGlobal('AudioWorkletNode', class {
@@ -105,6 +106,31 @@ describe('bounded audio playback', () => {
   });
   afterEach(() => { voice.dispose(); meta.remove(); vi.unstubAllGlobals(); vi.useRealTimers(); });
   const ready = (playbackMode = 'acknowledged') => event({ type: 'ready', playbackMode });
+  it('allows bounded candidate preparation without claiming the microphone is listening', async () => {
+    await voice.connect(async () => ({url:'wss://lab.example/app/v1/customer/wand/sessions/test/live?ticket=one',path:'',expiresAt:''}), 'test', 'https://lab.example', {purpose:'wand'});
+    observer.error = vi.fn(); observer.phase = vi.fn();
+    event({type:'preparing'}); vi.advanceTimersByTime(20000);
+    expect(observer.error).not.toHaveBeenCalled(); expect(observer.phase).not.toHaveBeenCalled();
+    event({type:'connecting'}); vi.advanceTimersByTime(14999);
+    expect(observer.error).not.toHaveBeenCalled(); ready('stream');
+    expect(observer.phase).toHaveBeenLastCalledWith('listening');
+  });
+  it('drains a confirmed wand finale after server closure before releasing audio', async () => {
+    await voice.connect(async () => ({url:'wss://lab.example/app/v1/customer/wand/sessions/test/live?ticket=one',path:'',expiresAt:''}), 'test', 'https://lab.example', {purpose:'wand'});
+    stopTrack.mockClear(); observer.closed = vi.fn();
+    ready('stream'); message(new Int16Array(4800).fill(100).buffer);
+    event({type:'ended'}); remoteClose();
+    expect(observer.closed).not.toHaveBeenCalled(); expect(stopTrack).not.toHaveBeenCalled();
+    advance(.2);
+    expect(observer.closed).toHaveBeenCalledOnce(); expect(observer.phase).toHaveBeenLastCalledWith('ended');
+    expect(stopTrack).toHaveBeenCalledOnce();
+  });
+  it('shows listening after a real wand audio pause once queued speech drains', async () => {
+    await voice.connect(async () => ({url:'wss://lab.example/app/v1/customer/wand/sessions/test/live?ticket=one',path:'',expiresAt:''}), 'test', 'https://lab.example', {purpose:'wand'});
+    ready('stream'); message(new Int16Array(4800).buffer); event({type:'audio_pause'});
+    expect(observer.phase).toHaveBeenLastCalledWith('speaking'); advance(.2);
+    expect(observer.phase).toHaveBeenLastCalledWith('listening');
+  });
   it('waits for actual typed PCM drain after text_ready before returning to listening',()=>{
     event({type:'ready',playbackMode:'stream',inputMode:'text'});
     expect(voice.sendText('Psaná zpráva')).toBe(true);expect(observer.phase).toHaveBeenLastCalledWith('waiting');
@@ -350,7 +376,7 @@ describe('voice lifecycle', () => {
     }
     class FakeSocket {
       static OPEN = 1; readyState = 1; binaryType = ''; bufferedAmount = 0;
-      onmessage: ((event: { data: unknown }) => void) | null = null; onclose = null; onerror = null;
+      onmessage: ((event: { data: unknown }) => void) | null = null; onclose: ((event: {code: number}) => void) | null = null; onerror = null;
       send = vi.fn(); close = vi.fn(); constructor() { socket = this; }
     }
     vi.stubGlobal('AudioContext', FakeContext); vi.stubGlobal('WebSocket', FakeSocket);

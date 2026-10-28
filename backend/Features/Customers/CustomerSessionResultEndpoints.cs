@@ -1,6 +1,7 @@
 using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.Keepsakes;
+using Kufr.Backend.Features.Identity;
 
 namespace Kufr.Backend.Features.Customers;
 
@@ -9,10 +10,12 @@ internal static class CustomerSessionResultEndpoints
     internal sealed record WandPublicationRequest(bool Approved, string EditionId, int Revision);
     internal static void MapCustomerSessionResult(this RouteGroupBuilder accounts)
     {
-        accounts.MapPost("/keepsakes/{id:guid}/wand-artwork/retry", (string id, HttpContext http, KeepsakeStore keepsakes) =>
+        accounts.MapPost("/keepsakes/{id:guid}/wand-artwork/retry", async (string id, HttpContext http, KeepsakeStore keepsakes) =>
         {
             try
             {
+                var consentError = await AccountAiConsent.RequireAsync(http);
+                if (consentError is not null) return consentError;
                 var key = http.Request.Headers["Idempotency-Key"].ToString();
                 return Results.Ok(keepsakes.RetryWandArtwork(id, AccountOwnedArchives.Actor(http), key));
             }

@@ -91,7 +91,22 @@ internal static class LaunchPolicyTests
             var nightOne = store.CreateGroup("admin-1", new("Night one", null), 3_000);
             var nightTwo = store.CreateGroup("admin-1", new("Night two", null), 3_000);
             var noLaunchTime = store.CreateGroup("admin-1", new("Unscheduled", null), 3_000);
-            Check(store.ReadGroups().Length == 3 && new LaunchPolicyStore(root).ReadGroup(nightOne.Id) == nightOne,
+            Check(noLaunchTime.AdultContentEnabled && noLaunchTime.FlirtEnabled,
+                "new groups default to enabled adult and flirt task categories");
+            var configured = store.CreateGroup("admin-1", new("Configured content", null, false, true), 3_000);
+            Check(!configured.AdultContentEnabled && configured.FlirtEnabled
+                && new LaunchPolicyStore(root).ReadGroup(configured.Id) == configured,
+                "group content settings persist across store reopen");
+            configured = store.UpdateGroup("admin-1", configured.Id,
+                new(configured.Revision, configured.Name, null), 3_000);
+            Check(!configured.AdultContentEnabled && configured.FlirtEnabled,
+                "omitted update fields preserve the stored group settings");
+            configured = store.UpdateGroup("admin-1", configured.Id,
+                new(configured.Revision, configured.Name, null, true, false), 3_001);
+            Check(configured.AdultContentEnabled && !configured.FlirtEnabled
+                && new LaunchPolicyStore(root).ReadGroup(configured.Id) == configured,
+                "group content settings update and persist independently");
+            Check(store.ReadGroups().Length == 4 && new LaunchPolicyStore(root).ReadGroup(nightOne.Id) == nightOne,
                 "group names and closed countdown states persist independently");
             nightOne = store.SaveCountdown("admin-1", nightOne.Id, new(nightOne.Revision, 2, true), 3_000);
             nightTwo = store.SaveCountdown("admin-1", nightTwo.Id, new(nightTwo.Revision, 3, false), 3_000);
@@ -195,8 +210,8 @@ internal static class LaunchPolicyTests
         var migrated = new LaunchPolicyStore(root).ReadGroup("legacy")!;
         Check(migrated.LaunchAt is null && migrated.CountdownDurationSeconds == 10
             && migrated.CountdownConfirmedAt is null && migrated.OpenedAt is null
-            && !migrated.ForceStartAtEnd,
-            "legacy schedule is preserved as a closed, unconfirmed duration draft");
+            && !migrated.ForceStartAtEnd && migrated.AdultContentEnabled && migrated.FlirtEnabled,
+            "legacy schedule closes safely and legacy groups receive enabled content defaults");
         var restarted = new LaunchPolicyStore(root).ReadGroup("legacy")!;
         Check(restarted == migrated,
             "countdown schema migration is idempotent and leaves legacy groups closed after restart");

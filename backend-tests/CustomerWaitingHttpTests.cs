@@ -28,7 +28,7 @@ internal static partial class AccountIdentityTests
         await CsrfAsync(owner);
 
         await CsrfAsync(customer);
-        using (var optionsResponse = await customer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Waiting customer" }))
+        using (var optionsResponse = await customer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Waiting customer", openAiConsent = true }))
         {
             Check(optionsResponse.IsSuccessStatusCode, "waiting HTTPS customer enrollment options");
             var options = await JsonAsync(optionsResponse);
@@ -242,9 +242,21 @@ internal static partial class AccountIdentityTests
         Check(sessions.GetProperty("items").EnumerateArray().Any(item => item.GetProperty("id").GetString() == sessionId),
             "ticket redemption persists a real account-bound customer session");
 
-        var editedProfile = await PutCharacterWithCsrfAsync(customer,
-            new CharacterWriteRequest(profileRevision, new("Edited while session is active", "Fixture world"), profileId, OpenAiConsent: true));
-        var editedRevision = editedProfile.GetProperty("profile").GetProperty("revision").GetInt64();
+        var editRequest = new CharacterWriteRequest(profileRevision,
+            new("Edited while session is active", "Fixture world"), profileId, OpenAiConsent: true);
+        await CsrfAsync(customer);
+        using (var deniedEdit = await customer.PutAsJsonAsync("/app/v1/customer/character", editRequest))
+        {
+            Check(deniedEdit.StatusCode == HttpStatusCode.Forbidden,
+                "a customer cannot edit the character while its immutable session is active");
+        }
+        // Trusted administrative fixture: HTTP ownership remains customer-scoped,
+        // while an administrator can change its current revision behind an active session.
+        var profiles = fixture.App.Services.GetRequiredService<CharacterProfileStore>();
+        var editedProfile = await profiles.SaveAsync(customerId, editRequest, canEditExisting: true);
+        var editedRevision = editedProfile.Revision;
+        Check(editedProfile.ProfileId == profileId && editedRevision == profileRevision + 1,
+            "administrative edit retains the account's only character identity");
         var issuedReplay = await PostAsJsonWithCsrfAsync(customer, "/app/v1/customer/start-tickets", ticketRequest);
         Check(issuedReplay.GetProperty("ticket").GetString() == ticket
             && issuedReplay.GetProperty("sessionId").GetString() == sessionId,
@@ -297,7 +309,7 @@ internal static partial class AccountIdentityTests
         using var secondCustomer = fixture.Client();
         using var secondCustomerKey = new VirtualPasskey();
         await CsrfAsync(secondCustomer);
-        using (var optionsResponse = await secondCustomer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Second waiting customer" }))
+        using (var optionsResponse = await secondCustomer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Second waiting customer", openAiConsent = true }))
         {
             var options = await JsonAsync(optionsResponse);
             using var complete = await secondCustomer.PostAsJsonAsync("/app/v1/customer/enrollment/complete",
@@ -382,9 +394,13 @@ internal static partial class AccountIdentityTests
         var eventBackOnAId = eventBackOnA.GetProperty("event").GetProperty("id").GetString()!;
         Check(eventBackOnAId != eventBId && eventBackOnA.GetProperty("event").GetProperty("eveningId").GetString() == eveningId,
             "A-to-B-to-A requires a new event bound to the newly advanced A activation");
+        Check(await profiles.ReadAsync(customerId) is null,
+            "explicit deletion left the account without an active character before recreation");
         var replacementProfileEnvelope = await PutCharacterWithCsrfAsync(customer,
-            new CharacterWriteRequest(0, new("Replacement character", "Fixture world"), OpenAiConsent: true));
+            new CharacterWriteRequest(0, new("Recreated character", "Fixture world"), OpenAiConsent: true));
         var replacementProfileId = replacementProfileEnvelope.GetProperty("profile").GetProperty("profileId").GetString()!;
+        Check(replacementProfileId != profileId && (await profiles.ReadAsync(customerId))?.ProfileId == replacementProfileId,
+            "manual deletion permits one new active character without restoring the deleted identity");
         await PostAsJsonWithCsrfAsync(customer, customerPath + "/join",
             new { schemaVersion = 1, requestId = Guid.NewGuid().ToString("D"), eventId, profileId = replacementProfileId,
                 bootId = secondBoot, challenge = secondChallenge }, HttpStatusCode.Conflict);

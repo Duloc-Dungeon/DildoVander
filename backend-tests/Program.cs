@@ -32,6 +32,7 @@ if (args is ["--sealed-case-runtime"])
     SealedCaseTimingTests.Run(); SealedCasePlanTests.Run();
     await SealedCaseHttpTests.RunAsync(); await SealedCaseHttpTests.PlayableCasesAsync(); return;
 }
+if (args is ["--mobile-wands"]) { await MobileWandTests.RunAsync(); return; }
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); return; }
 if (args is ["--mobile-game-http"]) { await MobileGameTests.RunHttpAsync(); return; }
 if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); return; }
@@ -217,6 +218,7 @@ ChronicleTests.Run();
 OfflineOutcomeTests.Run();
 await DuelTests.RunAsync();
 await WandGenerationTests.RunAsync();
+await MobileWandTests.RunAsync();
 await GeneratedWandFlowTests.RunAsync();
 await WandArtworkTests.RunAsync();
 await KeepsakeCoreTests.RunAsync();

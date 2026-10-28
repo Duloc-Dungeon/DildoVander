@@ -104,6 +104,7 @@ describe('customer journey actions', () => {
   it('shows profile review and preparation guidance without claiming readiness', () => {
     expect(getCustomerJourneyAction({ account: customer, profile: { status: 'needs_clarification' } })).toMatchObject({
       key: 'review-character',
+      label: 'Zkontrolovat postavu',
       route: '/me/character',
       canStartConversation: false,
     });

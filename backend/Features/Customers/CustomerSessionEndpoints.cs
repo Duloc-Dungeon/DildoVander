@@ -92,7 +92,9 @@ internal static partial class CustomerSessionEndpoints
                 || request.ProfileRevision < 1 || !Opaque(request.DeviceId, 1, 128)
                 || !Opaque(request.Challenge, 16, 128))
             { throw new CustomerSessionException(400, "invalid_start_request"); }
-            if (!request.OpenAiConsent) { throw new CustomerSessionException(409, "openai_consent_required"); }
+            if (!await AccountAiConsent.HasConsentAsync(http))
+            { throw new CustomerSessionException(409, "ai_consent_required"); }
+            request = request with { OpenAiConsent = true };
             if (http.Request.Headers.ContainsKey("Authorization"))
             { throw new CustomerSessionException(401, "account_required"); }
             authority.ValidateDatabasePaths(journal.CustomerDataDatabasePath, evenings.CustomerMemoryDatabasePath);

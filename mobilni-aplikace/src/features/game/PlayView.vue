@@ -11,9 +11,9 @@ import strikeToken from '../../assets/brand/responsive-table/token-strike.webp';
 import trickToken from '../../assets/brand/responsive-table/token-trick.webp';
 import shieldToken from '../../assets/brand/responsive-table/token-shield.webp';
 import GameCharacter from './GameCharacter.vue';
-import GameConsent from './GameConsent.vue';
 import GameLoadouts from './GameLoadouts.vue';
-import { account } from '../identity/session';
+import WandWorkshop from './WandWorkshop.vue';
+import { account, accountRequest } from '../identity/session';
 import { actions, actionName, modeName, gameRequest, gameErrorText, GameError, operation, practiceRound,
   type Choice, type GameMode, type Lobby, type Match, type Round, type BossProfile, type Progress, type Milestone } from './game';
 import './game.css';
@@ -22,6 +22,9 @@ import { wnsSound } from '../../application/wnsSound';
 const route = useRoute();
 const router = useRouter();
 const lobby = ref<Lobby>();
+const crafting = ref(false);
+const upgrading = ref(false);
+const wandStatus = ref<{hasCharacter: boolean; wand: unknown; tier: number}>();
 const bossProfile = ref<BossProfile>();
 const progress = ref<Progress>();
 const milestoneDismissed = ref(false);
@@ -36,9 +39,7 @@ const uncertain = ref(false);
 const opponentId = ref(typeof route.query.opponent === 'string' ? route.query.opponent : '');
 const mode = ref<GameMode>(route.query.mode === 'yolo' ? 'yolo' : route.query.mode === 'tactical' ? 'tactical' : 'quick');
 const useLoadouts = ref(false);
-const tasksEnabled = ref(false);
-const adultConsent = ref(false);
-const flirtConsent = ref(false);
+const taskOutcome = ref<'done' | 'skip'>();
 const selected = ref<Choice>();
 const spark = ref(false);
 const showAllStory = ref(false);
@@ -59,9 +60,10 @@ const visibleRankings = computed(() => {
 });
 const matchId = computed(() => typeof route.params.id === 'string' ? route.params.id : '');
 const practiceRounds = ref<Round[]>([]);
-const practiceDone = computed(() => practiceRounds.value.length === 7);
 const playerScore = computed(() => practice.value ? practiceRounds.value.filter(round => round.winner === 'player').length : match.value?.playerScore ?? 0);
 const opponentScore = computed(() => practice.value ? practiceRounds.value.filter(round => round.winner === 'opponent').length : match.value?.opponentScore ?? 0);
+const practiceDone = computed(() => practiceRounds.value.length >= 7
+  || Math.abs(playerScore.value - opponentScore.value) > 7 - practiceRounds.value.length);
 const completed = computed(() => practice.value ? practiceDone.value : match.value?.status === 'complete');
 const tableDuel = computed(() => practice.value || Boolean(match.value && match.value.mode !== 'yolo'
   && (match.value.status === 'active' || match.value.status === 'complete')));
@@ -72,6 +74,8 @@ const opponentName = computed(() => practice.value ? 'Cvičný mág' : match.val
 const spellTokens = { strike: strikeToken, trick: trickToken, shield: shieldToken };
 const selectedAction = computed(() => actions.find(action => action.id === selected.value));
 const lastRound = computed(() => practice.value ? practiceRounds.value.at(-1) : match.value?.rounds.at(-1));
+const pendingTasks = computed(() => lobby.value?.history.filter(item => item.partyTask?.status === 'pending') ?? []);
+const canReviewTask = computed(() => match.value?.status === 'complete' && Boolean(match.value.partyTask));
 const selectedOpponent = computed(() => lobby.value?.opponents.find(opponent => opponent.id === opponentId.value));
 const advanced = computed(() => mode.value === 'tactical' && lobby.value?.player.tacticalUnlocked && (selectedOpponent.value?.xp ?? 0) >= 30);
 const canStart = computed(() => Boolean(opponentId.value) && (mode.value === 'quick' || mode.value === 'tactical' && advanced.value || mode.value === 'yolo' && lobby.value?.player.yoloUnlocked && (selectedOpponent.value?.matchesPlayed ?? 0) >= 3));
@@ -95,7 +99,6 @@ const liveMessage = computed(() => {
   if (completed.value) return resultTitle.value;
   return '';
 });
-const consent = () => ({ tasksEnabled: tasksEnabled.value, adultConsent: tasksEnabled.value && adultConsent.value, flirtConsent: tasksEnabled.value && adultConsent.value && flirtConsent.value, useLoadouts: useLoadouts.value });
 let controller = new AbortController();
 let generation = 0;
 let refreshing = false;
@@ -107,14 +110,29 @@ function updateMatch(value: Match) {
   if (match.value?.id !== value.id || match.value?.completedRounds !== value.completedRounds) {
     selected.value = undefined; spark.value = false;
   }
+  if (match.value?.id !== value.id || match.value?.partyTask?.status !== value.partyTask?.status) {
+    taskOutcome.value = undefined;
+  }
   match.value = value;
 }
 async function refresh() {
-  if (practice.value) { loading.value = false; return; }
   if (refreshing || busy.value) return;
   refreshing = true;
   const token = generation;
   try {
+    const currentWand = await accountRequest<{hasCharacter: boolean; wand: unknown; tier: number}>('/app/v1/customer/wand', 'GET', undefined, controller.signal);
+    if (token !== generation) return;
+    wandStatus.value = currentWand;
+    if (!currentWand.wand || practice.value) {
+      if (!currentWand.wand && matchId.value) {
+        const current = await gameRequest<Match>(`${bossAttempt.value ? '/boss/attempts' : '/matches'}/${encodeURIComponent(matchId.value)}`, undefined, controller.signal);
+        if (token === generation) updateMatch(current);
+      } else if (!currentWand.wand && !practice.value) {
+        const currentLobby = await gameRequest<Lobby>('', undefined, controller.signal);
+        if (token === generation) lobby.value = currentLobby;
+      }
+      error.value = ''; uncertain.value = false; return;
+    }
     if (matchId.value) {
       const value = await gameRequest<Match>(`${bossAttempt.value ? '/boss/attempts' : '/matches'}/${encodeURIComponent(matchId.value)}`, undefined, controller.signal);
       if (token === generation) updateMatch(value);
@@ -161,6 +179,7 @@ async function mutate(action: string, fields: Record<string, unknown> = {}) {
   busy.value = true; error.value = ''; notice.value = '';
   const token = generation;
   const current = match.value;
+  if (current.id !== matchId.value) { busy.value = false; return; }
   try {
     const value = await gameRequest<Match>(`${current.mode === 'boss' ? '/boss/attempts' : '/matches'}/${current.id}/${action}`, {
       operationId: operation(), expectedRevision: current.revision, ...fields,
@@ -194,7 +213,7 @@ async function start() {
   busy.value = true; error.value = '';
   const token = generation;
   try {
-    const value = await gameRequest<Match>('/matches', { opponentId: opponentId.value, mode: mode.value, operationId: operation(), ...consent() }, controller.signal);
+    const value = await gameRequest<Match>('/matches', { opponentId: opponentId.value, mode: mode.value, operationId: operation(), useLoadouts: useLoadouts.value }, controller.signal);
     if (token === generation) await router.push(`/play/match/${value.id}`);
   } catch (cause) {
     if (token === generation && !controller.signal.aborted) {
@@ -223,12 +242,18 @@ function available(choice: Choice) {
   return practice.value || match.value?.exhibition || match.value?.mode !== 'tactical' && match.value?.mode !== 'boss' || (match.value?.playerInventory?.[choice] ?? 2) > 0;
 }
 function onVisible() { if (!document.hidden) void refresh(); }
+watch(matchId, () => {
+  generation++; controller.abort(); controller = new AbortController();
+  match.value = undefined; taskOutcome.value = undefined; selected.value = undefined;
+  busy.value = false; uncertain.value = false; loading.value = true; refreshing = false;
+  void refresh();
+});
 watch(() => account.value?.id, (value, previous) => {
   if (value === previous) return;
-  generation++; controller.abort(); controller = new AbortController();
+  generation++; controller.abort(); controller = new AbortController(); wandStatus.value = undefined; crafting.value = false; upgrading.value = false;
   match.value = undefined; lobby.value = undefined; bossProfile.value = undefined; progress.value = undefined; refreshing = false;
   busy.value = false; uncertain.value = false; selected.value = undefined;
-  tasksEnabled.value = false; adultConsent.value = false; flirtConsent.value = false;
+  taskOutcome.value = undefined;
   void refresh();
 });
 onMounted(() => {
@@ -254,7 +279,16 @@ onBeforeUnmount(() => {
       <p v-if="loading && !match && !lobby && !practice" role="status">Připravujeme tvé místo u stolu…</p>
       <p class="game-sr" role="status" aria-live="polite">{{ liveMessage }}</p>
 
-      <template v-if="practice || match">
+      <template v-if="!wandStatus">
+        <p v-if="!loading" role="status">Nejdřív potřebujeme ověřit tvoji hůlku. Obnov stav a zkus to znovu.</p>
+      </template>
+      <template v-else-if="(!wandStatus.wand && !canReviewTask) || crafting">
+        <h1 id="game-title">Nejdřív vlastní hůlku.</h1>
+        <AwButton v-if="match && ['incoming', 'active', 'generating'].includes(match.status)" :busy="busy" @click="mutate(match.canAccept ? 'decline' : 'cancel')">Zrušit rozehranou hru</AwButton>
+        <PaperSurface class="game-paper"><WandWorkshop v-if="wandStatus.hasCharacter" @active-change="crafting = $event" @created="refresh" /><template v-else><p>Pro výrobu hůlky nejdřív ulož svoji postavu.</p><RouterLink class="aw-button aw-button--primary" to="/me/character">Připravit postavu</RouterLink></template></PaperSurface>
+        <section v-if="pendingTasks.length" class="game-open-matches"><h2>Úkoly k potvrzení</h2><RouterLink v-for="item in pendingTasks" :key="item.id" class="game-match-link" :to="`/play/match/${item.id}`"><span>{{ item.partyTask!.title }}<small>Po duelu s {{ item.opponent.displayName }}</small></span><span>Potvrdit výsledek →</span></RouterLink></section>
+      </template>
+      <template v-else-if="practice || match">
         <div class="game-match-heading" :class="{ 'game-sr': tableDuel }">
           <p class="game-eyebrow">{{ practice ? 'Trénink · bez XP' : modeName(match!.mode) }}</p>
           <h1 id="game-title">{{ practice ? 'Zkus kouzlo.' : match!.opponent.displayName }}</h1>
@@ -262,12 +296,12 @@ onBeforeUnmount(() => {
         <PaperSurface v-if="!practice && match?.status === 'incoming'" class="game-paper">
           <p class="game-eyebrow">Výzva u stolu</p>
           <h2>{{ modeName(match.mode) }}</h2>
-          <p>{{ match.mode === 'tactical' ? 'Osm výměn, omezená zásoba kouzel. Přibližně 2–3 minuty.' : match.mode === 'yolo' ? 'Vítěze vymýšlí AI. Hrajeme o historku a slávu, bez bojových XP.' : 'Sedm tajných výměn. Přibližně minuta a půl.' }}</p>
-          <p v-if="match.mode === 'yolo'">OpenAI použije herní jméno, svět, název hůlky a nejvýše tři herní rysy každé postavy.</p>
-          <GameConsent v-if="match.canAccept" v-model:tasks-enabled="tasksEnabled" v-model:adult-consent="adultConsent" v-model:flirt-consent="flirtConsent" />
+          <p>{{ match.mode === 'tactical' ? 'Osm výměn, omezená zásoba kouzel. Přibližně 2–3 minuty.' : match.mode === 'yolo' ? 'Vítěze vymýšlí AI. Hrajeme o historku a slávu, bez bojových XP.' : 'Nejvýše sedm tajných výměn. Jakmile už soupeř nemůže výsledek zvrátit, duel končí.' }}</p>
+          <p v-if="match.mode === 'yolo'">Příběh použije herní jméno, svět, název hůlky a nejvýše tři herní rysy každé postavy.</p>
+          <p>Po prohře se zobrazí úkol podle pravidel skupiny. Potvrdíš, zda byl splněn.</p>
           <label v-if="match.canAccept && match.loadoutsAvailable" class="game-spark"><input v-model="useLoadouts" type="checkbox" /> Chci v tomto zápase volit vlastní sestavu</label>
           <div class="game-stack">
-            <AwButton v-if="match.canAccept" variant="primary" :busy="busy" @click="mutate('accept', consent())">Přijmout výzvu</AwButton>
+            <AwButton v-if="match.canAccept" variant="primary" :busy="busy" @click="mutate('accept', { useLoadouts })">Přijmout výzvu</AwButton>
             <AwButton v-if="match.canAccept" :busy="busy" @click="mutate('decline')">Odmítnout</AwButton>
             <p v-if="match.canCancel" role="status">Výzva odeslána. Čekáme na souhlas soupeře.</p>
             <AwButton v-if="match.canCancel" :busy="busy" @click="mutate('cancel')">Zrušit výzvu</AwButton>
@@ -289,7 +323,7 @@ onBeforeUnmount(() => {
               <p>YOLO fikce · bez bojových XP</p>
               <AwButton v-if="match.yolo?.status === 'failed'" :busy="busy" @click="mutate('retry')">Opakovat přenos</AwButton>
               <AwButton v-if="match.yolo?.status === 'generating' || match.yolo?.status === 'failed'" :busy="busy" @click="mutate('cancel')">Zrušit přenos bez výsledku</AwButton>
-              <RouterLink v-if="match.yolo?.status === 'complete'" class="aw-button aw-button--primary" :to="{path: '/play/challenge', query: {mode: 'yolo', opponent: match.opponent.id}}">Odveta</RouterLink>
+              <RouterLink v-if="match.yolo?.status === 'complete' && match.partyTask?.status !== 'pending'" class="aw-button aw-button--primary" :to="{path: '/play/challenge', query: {mode: 'yolo', opponent: match.opponent.id}}">Odveta</RouterLink>
             </PaperSurface>
           </div>
           <template v-else>
@@ -309,7 +343,7 @@ onBeforeUnmount(() => {
             </div>
             <p class="game-round-label">{{ completed ? 'Dohráno' : `Výměna ${Math.min((practice ? practiceRounds.length : match!.completedRounds) + 1, practice ? 7 : match!.totalRounds)} ze ${practice ? 7 : match!.totalRounds}` }}<span v-if="match?.mode === 'tactical'"> · blok {{ match.block }}</span></p>
             <div class="game-round-dots" aria-hidden="true"><span v-for="round in roundCount" :key="round" :class="{ done: round <= completedRoundCount, current: !completed && round === completedRoundCount + 1 }" /></div>
-            <div class="game-table-stage">
+            <div class="game-table-stage" :class="{ 'game-table-stage--complete': completed }">
             <div class="game-clash-stage" :key="`clash-${completedRoundCount}`" :class="{ 'game-clash-stage--revealed': lastRound, 'game-clash-stage--locked': match?.ownChoiceLocked }" aria-hidden="true"><span v-if="match?.ownChoiceLocked">Tah uzamčený<span>Čekáme na soupeře</span></span></div>
             <PaperSurface v-if="lastRound" class="game-paper game-reveal" :key="completedRoundCount" aria-live="polite" aria-atomic="true">
               <p class="game-eyebrow">{{ lastRound ? 'Poslední odhalení' : 'Tři kouzla. Jedna volba.' }}</p>
@@ -320,8 +354,9 @@ onBeforeUnmount(() => {
             <PaperSurface v-if="completed" class="game-paper game-result">
               <p class="game-eyebrow">{{ practice ? 'Trénink dokončen' : 'Výsledek' }}</p><h2>{{ resultTitle }}</h2>
               <p v-if="!practice" class="game-xp">+{{ match!.xpAwarded }} XP</p><p v-else>Teď znáš všechny tři akce. Trénink nepřidává XP ani úkoly.</p>
-              <RouterLink v-if="!practice" class="aw-button aw-button--primary" :to="match?.mode === 'boss' ? '/play/boss' : { path: '/play/challenge', query: { opponent: match!.opponent.id, mode: match!.mode } }">Odveta</RouterLink>
-              <AwButton v-else variant="primary" @click="resetPractice">Ještě jeden trénink</AwButton>
+              <RouterLink v-if="!practice && match?.partyTask?.status !== 'pending'" class="aw-button aw-button--primary" :to="match?.mode === 'boss' ? '/play/boss' : { path: '/play/challenge', query: { opponent: match!.opponent.id, mode: match!.mode } }">Odveta</RouterLink>
+              <AwButton v-if="practice" variant="primary" @click="resetPractice">Ještě jeden trénink</AwButton>
+              <p v-else-if="match?.partyTask?.status === 'pending'">Ještě potvrď výsledek úkolu níže.</p>
               <RouterLink to="/play">Zpět ke stolu</RouterLink>
             </PaperSurface>
             <PaperSurface v-else class="game-paper game-controls">
@@ -345,12 +380,18 @@ onBeforeUnmount(() => {
           <AwButton v-if="match?.mode === 'boss' && match.status === 'active'" :busy="busy" @click="mutate('cancel')">Ukončit pokus bez výsledku</AwButton>
           <AwButton v-if="match?.canCancel && match.status === 'active' && match.mode !== 'boss'" :busy="busy" @click="mutate('cancel')">Ukončit zápas bez výsledku</AwButton>
           <PaperSurface v-if="match?.partyTask" class="game-paper game-task">
-            <p class="game-eyebrow">Dobrovolný úkol · {{ match.partyTask.category === 'classic' ? 'Klasika' : match.partyTask.category === 'adult' ? 'Dvojsmysly 18+' : 'Flirt 18+' }}</p><h2>{{ match.partyTask.title }}</h2><p>{{ match.partyTask.text }}</p>
-            <div v-if="match.result === 'loss' && match.partyTask.status === 'pending'" class="game-stack"><AwButton :busy="busy" @click="mutate('task', { taskAction: 'done' })">Hotovo</AwButton><AwButton :busy="busy" @click="mutate('task', { taskAction: 'swap', taskCategory: match!.partyTask!.category })">Jiný úkol</AwButton><AwButton v-if="match.flirtConsent && match.partyTask.category !== 'flirt'" :busy="busy" @click="mutate('task', { taskAction: 'swap', taskCategory: 'flirt' })">Vybrat Flirt 18+</AwButton><AwButton :busy="busy" @click="mutate('task', { taskAction: 'skip' })">Přeskočit</AwButton></div>
-            <p v-else>V pořádku. Pokračujeme.</p>
+            <p class="game-eyebrow">Úkol po prohře · {{ match.partyTask.category === 'classic' ? 'Klasika' : match.partyTask.category === 'adult' ? 'Dvojsmysly 18+' : 'Flirt' }}</p><h2>{{ match.partyTask.title }}</h2><p>{{ match.partyTask.text }}</p>
+            <template v-if="match.result === 'loss' && match.partyTask.status === 'pending'">
+              <p>Úkol můžeš odmítnout. V obou případech potvrď výsledek, aby se uložil.</p>
+              <fieldset class="game-task-outcome" :disabled="busy || uncertain">
+                <legend>Jak úkol dopadl?</legend>
+                <label><input v-model="taskOutcome" type="radio" name="task-outcome" value="done" /> Splněno</label>
+                <label><input v-model="taskOutcome" type="radio" name="task-outcome" value="skip" /> Nesplněno</label>
+              </fieldset>
+              <AwButton variant="primary" :busy="busy" :disabled="!taskOutcome || uncertain" @click="mutate('task', { taskAction: taskOutcome })">Potvrdit výsledek úkolu</AwButton>
+            </template>
+            <p v-else role="status">{{ match.partyTask.status === 'done' ? 'Uloženo: úkol splněn.' : 'Uloženo: úkol nesplněn.' }}</p>
           </PaperSurface>
-          <AwButton v-if="match?.adultConsent" :busy="busy" @click="mutate('task', { taskAction: 'revoke' })">Odvolat souhlas s Adult</AwButton>
-          <p v-if="match?.tasksEnabled" class="game-helper">Úkoly: {{ match.adultConsent ? match.flirtConsent ? '18+ dvojsmysly a Flirt' : '18+ dvojsmysly' : 'klasické' }} · vždy dobrovolné</p>
           <details v-if="lastRound" class="game-history"><summary>Průběh zápasu</summary><ol><li v-for="round in practice ? practiceRounds : match!.rounds" :key="round.index">{{ roundText(round) }}</li></ol></details>
         </template>
         <PaperSurface v-else class="game-paper"><h2>Zápas byl {{ match?.status === 'declined' ? 'odmítnut' : 'ukončen' }}.</h2><p>Bez vítěze a bez XP. Můžeš poslat novou výzvu.</p><RouterLink to="/play">Zpět ke stolu</RouterLink></PaperSurface>
@@ -358,6 +399,7 @@ onBeforeUnmount(() => {
 
       <template v-else-if="lobby">
         <template v-if="keeper">
+          <WandWorkshop v-if="lobby.player.xp >= 30 && ((wandStatus?.tier ?? 0) < 2 || upgrading)" upgrade @active-change="upgrading = $event" @created="refresh" />
           <template v-if="progress?.keeperState === 'captured'">
             <p class="game-eyebrow">Ollivander je v zajetí.</p><h1 id="game-title">Dílnu převzal Baron.</h1><GameCharacter class="game-boss-portrait" character="boss" />
             <PaperSurface class="game-paper"><p>„Osobní obsluha? Zrušena. Reklamace? Zamítnuta. Další otázky po mém vítězství.“</p><RouterLink class="aw-button aw-button--primary" to="/play/boss">Vyzvat bosse</RouterLink><p v-if="lobby.player.xp >= 30">Tvoje hůlka II zůstává dostupná ze samoobslužné zásuvky. O své XP ani nárok nepřicházíš.</p></PaperSurface>
@@ -390,12 +432,12 @@ onBeforeUnmount(() => {
             <label class="game-field">Soupeř<select v-model="opponentId" required><option v-for="opponent in lobby.opponents" :key="opponent.id" :value="opponent.id">{{ opponent.displayName }} · {{ opponent.xp }} XP</option></select></label>
             <p v-if="!lobby.opponents.length">Zatím není koho vyzvat. Zkus krátký trénink bez XP.</p>
             <fieldset class="game-modes"><legend>Jak se dnes hraje?</legend>
-              <label><input v-model="mode" type="radio" value="quick" /> <span><strong>Rychlý duel</strong><small>7 výměn · přibližně 90 sekund</small></span></label>
+              <label><input v-model="mode" type="radio" value="quick" /> <span><strong>Rychlý duel</strong><small>Nejvýše 7 výměn · končí po rozhodnutí výsledku</small></span></label>
               <label v-if="lobby.player.tacticalUnlocked"><input v-model="mode" type="radio" value="tactical" :disabled="(selectedOpponent?.xp ?? 0) < 30" /><span><strong>Taktický duel</strong><small>8 výměn · omezená zásoba · oba potřebují 30 XP</small></span></label>
               <label v-if="lobby.player.yoloUnlocked"><input v-model="mode" type="radio" value="yolo" :disabled="(selectedOpponent?.matchesPlayed ?? 0) < 3" /><span><strong>YOLO lóže</strong><small>AI vymyslí příběh i vítěze. Bez bojových XP.</small></span></label>
             </fieldset>
-            <p v-if="mode === 'yolo'">OpenAI použije herní jméno, svět, název hůlky a nejvýše tři herní rysy každé postavy.</p>
-            <GameConsent v-model:tasks-enabled="tasksEnabled" v-model:adult-consent="adultConsent" v-model:flirt-consent="flirtConsent" />
+            <p v-if="mode === 'yolo'">Příběh použije herní jméno, svět, název hůlky a nejvýše tři herní rysy každé postavy.</p>
+            <p>Po prohře se vždy zobrazí úkol. Obsah 18+ a flirt nastavuje pořadatel pro celou skupinu. Výsledek úkolu potvrdíš a uložíš.</p>
             <label v-if="mode === 'tactical' && (progress?.tacticalMatches ?? 0) >= 2" class="game-spark"><input v-model="useLoadouts" type="checkbox" /> Chci vlastní sestavy, pokud je známe oba</label>
             <AwButton type="submit" variant="primary" :busy="busy" :disabled="!canStart || uncertain">Poslat výzvu</AwButton>
           </form></PaperSurface>
@@ -413,10 +455,10 @@ onBeforeUnmount(() => {
             <RouterLink class="aw-button aw-button--primary" to="/play/challenge">{{ lobby.opponents.length ? 'Vybrat soupeře' : 'Zatím není koho vyzvat' }}</RouterLink><RouterLink class="game-secondary-link" to="/play/practice">Krátký trénink bez XP</RouterLink>
           </PaperSurface>
           <section v-if="lobby.active.length || lobby.incoming.length" class="game-open-matches"><h2>U tvého stolu</h2><RouterLink v-for="item in [...lobby.active, ...lobby.incoming]" :key="item.id" class="game-match-link" :to="`/play/match/${item.id}`"><span>{{ item.opponent.displayName }}<small>{{ modeName(item.mode) }}</small></span><span>{{ item.status === 'active' ? 'Pokračovat →' : 'Výzva →' }}</span></RouterLink></section>
+          <section v-if="pendingTasks.length" class="game-open-matches"><h2>Úkoly k potvrzení</h2><RouterLink v-for="item in pendingTasks" :key="item.id" class="game-match-link" :to="`/play/match/${item.id}`"><span>{{ item.partyTask!.title }}<small>Po duelu s {{ item.opponent.displayName }}</small></span><span>Potvrdit výsledek →</span></RouterLink></section>
           <div v-if="lobby.player.yoloUnlocked" class="game-commentator-invite"><GameCharacter character="commentator" /><div><p class="game-eyebrow">Bohumil Křivopísk</p><h2>Pravidla? Ta se poddají.</h2><p>Rozhodčí bez licence tě zve do YOLO lóže. Historku i vítěze vymýšlí AI.</p><RouterLink :to="{path: '/play/challenge', query: {mode: 'yolo'}}">Vstoupit do lóže →</RouterLink></div></div>
           <p v-if="progress?.titles?.length">Tvé tituly: {{ progress.titles.join(' · ') }}</p>
-          <nav class="game-side-links" aria-label="Další cesty">
-          <RouterLink to="/play/pod-peceti">Pod pečetí · společný případ →</RouterLink><RouterLink to="/play/chronicle">Moje kronika →</RouterLink><RouterLink to="/play/ranking">Pořadí večera →</RouterLink><RouterLink v-if="lobby.player.tacticalUnlocked" to="/play/keeper">{{ progress?.keeperState === 'captured' ? 'Dílnu převzal Baron →' : 'Navštívit Ollivandera →' }}</RouterLink><RouterLink v-if="progress?.messages?.length" to="/play/messages">Zprávy z dílny →</RouterLink><RouterLink v-if="(progress?.tacticalMatches ?? 0) >= 3" to="/play/teams">Najít spojence →</RouterLink><RouterLink v-if="lobby.boss?.revealed" to="/play/boss">{{ lobby.boss.rescued ? 'Odveta s Baronem' : 'Ollivander je v zajetí. Vyzvat bosse →' }}</RouterLink></nav>
+          <nav class="game-side-links" aria-label="Další cesty"><RouterLink to="/play/pod-peceti">Pod pečetí</RouterLink><RouterLink to="/play/chronicle">Moje kronika →</RouterLink><RouterLink to="/play/ranking">Pořadí večera →</RouterLink><RouterLink v-if="lobby.player.xp >= 30" to="/play/keeper">{{ progress?.keeperState === 'captured' ? 'Dílnu převzal Baron →' : 'Navštívit Ollivandera →' }}</RouterLink><RouterLink v-if="progress?.messages?.length" to="/play/messages">Zprávy z dílny →</RouterLink><RouterLink v-if="(progress?.tacticalMatches ?? 0) >= 3" to="/play/teams">Najít spojence →</RouterLink><RouterLink v-if="lobby.boss?.revealed" to="/play/boss">{{ lobby.boss.rescued ? 'Odveta s Baronem' : 'Ollivander je v zajetí. Vyzvat bosse →' }}</RouterLink></nav>
         </template>
       </template>
     </div>
