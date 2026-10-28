@@ -1,0 +1,62 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Wand Night Stand sealed case rewards API",
+    "version": "1.0.0",
+    "description": "Read-only, account-scoped summaries for the authenticated participant's released sealed cases. No private case actions or other participant data are included."
+  },
+  "paths": {
+    "/app/v1/sealed-cases/rewards": {
+      "get": {
+        "summary": "Read personal released case rewards",
+        "x-source": "Features/SealedCase/SealedCaseRewards.cs",
+        "security": [{ "AccountSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Released cases for which the current account is a rostered participant",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SealedCaseRewardCollection" }
+              }
+            }
+          },
+          "401": { "description": "Session unavailable" },
+          "403": { "description": "Inactive or ineligible launch group" },
+          "429": { "description": "Account rate limit reached" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "AccountSession": { "type": "apiKey", "in": "cookie", "name": "dv-account" }
+    },
+    "schemas": {
+      "SealedCaseRewardCollection": {
+        "type": "object",
+        "required": ["schemaVersion", "items"],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": { "$ref": "#/components/schemas/SealedCaseReward" }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SealedCaseReward": {
+        "type": "object",
+        "required": ["caseId", "releasedAt", "team", "confirmedPlans", "successfulPlans"],
+        "properties": {
+          "caseId": { "type": "string", "pattern": "^sc_[0-9a-f]{32}$" },
+          "releasedAt": { "type": "string", "format": "date-time" },
+          "team": { "type": "string", "enum": ["Guardian", "Conspirator"] },
+          "confirmedPlans": { "type": "integer", "minimum": 0 },
+          "successfulPlans": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

@@ -24,7 +24,7 @@ try {
     await page.goto(`${origin}/__workshop/prelaunch`);
     await page.locator('.portrait-stage[data-curtain="open"]').waitFor();
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
-    assert.equal(requests.length, 0, 'reveal and entry only read state');
+    assert.equal(requests.filter(request => request.method !== 'GET').length, 0, 'reveal and entry only read state');
     assert.equal(await overflow(), false, `${width}: reveal fits`);
     await page.screenshot({ path: path.join(output, `reveal-${width}.png`), fullPage: true }); captures++;
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).focus();

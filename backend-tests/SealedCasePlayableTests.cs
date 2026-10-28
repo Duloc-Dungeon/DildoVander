@@ -178,6 +178,8 @@ internal static partial class SealedCaseHttpTests
             }
             var final = await clients[0].GetFromJsonAsync<JsonElement>(prefix + "/play");
             Equal("finale", final.GetProperty("phase").GetString());
+            var unreleasedRewards = await clients[0].GetFromJsonAsync<JsonElement>("/app/v1/sealed-cases/rewards");
+            Equal(0, unreleasedRewards.GetProperty("items").GetArrayLength());
             Check(final.GetProperty("finale").GetProperty("conspirators").ValueKind == JsonValueKind.Null, "truth remains withheld before final ballot closes");
             await Task.WhenAll(clients.Select(async client =>
             {
@@ -198,6 +200,55 @@ internal static partial class SealedCaseHttpTests
             Equal("released", released.GetProperty("finale").GetProperty("phase").GetString());
             Equal(schedule.Chapters * count, released.GetProperty("finale").GetProperty("reconstruction").GetArrayLength());
             Equal(SealedCaseRules.Conspirators(count), released.GetProperty("finale").GetProperty("conspirators").GetArrayLength());
+            var rewards = await clients[0].GetFromJsonAsync<JsonElement>("/app/v1/sealed-cases/rewards");
+            Check(HasExactProperties(rewards, "schemaVersion", "items")
+                && rewards.GetProperty("schemaVersion").GetInt32() == 1
+                && rewards.GetProperty("items").GetArrayLength() == 1,
+                "personal reward collection has a stable, bounded schema and includes the released case");
+            var reward = rewards.GetProperty("items")[0];
+            var ownOutcomeRows = released.GetProperty("ownOutcomes").EnumerateArray().ToArray();
+            var ownPlayerId = ownOutcomeRows[0].GetProperty("actor").GetString()!;
+            var confirmedPlanChapters = ownOutcomeRows.Select(outcome => outcome.GetProperty("chapter").GetInt32()).ToHashSet();
+            var expectedSuccessfulPlans = released.GetProperty("finale").GetProperty("reconstruction")
+                .EnumerateArray()
+                .Where(outcome => outcome.GetProperty("actor").GetString() == ownPlayerId
+                    && outcome.GetProperty("result").GetString() == nameof(SealedResult.Success)
+                    && confirmedPlanChapters.Contains(outcome.GetProperty("chapter").GetInt32()))
+                .Select(outcome => outcome.GetProperty("chapter").GetInt32())
+                .Distinct()
+                .Count();
+            Check(HasExactProperties(reward, "caseId", "releasedAt", "team", "confirmedPlans", "successfulPlans")
+                && reward.GetProperty("caseId").GetString() == id
+                && DateTimeOffset.TryParse(reward.GetProperty("releasedAt").GetString(), out _)
+                && reward.GetProperty("team").GetString() is "Guardian" or "Conspirator"
+                && reward.GetProperty("confirmedPlans").GetInt32() == confirmedPlanChapters.Count
+                && reward.GetProperty("successfulPlans").GetInt32() == expectedSuccessfulPlans,
+                "reward counts derive from this participant's confirmed plans and released reconstruction");
+            Check(!rewards.GetRawText().Contains("reconstruction", StringComparison.OrdinalIgnoreCase)
+                && !rewards.GetRawText().Contains("p2", StringComparison.Ordinal),
+                "personal reward projection omits reconstructed actions and other player identities");
+            var reloadedRewards = await clients[0].GetFromJsonAsync<JsonElement>("/test/reopened-sealed-case-rewards");
+            Equal(rewards.GetRawText(), reloadedRewards.GetRawText());
+            if (variant == "first")
+            {
+                fixture.AddUnreleasedRewardCandidates(id, 101);
+                var olderReleasedReward = await clients[0].GetFromJsonAsync<JsonElement>("/app/v1/sealed-cases/rewards");
+                Check(olderReleasedReward.GetProperty("items").GetArrayLength() == 1
+                    && olderReleasedReward.GetProperty("items")[0].GetProperty("caseId").GetString() == id,
+                    "more than 100 newer unreleased cases cannot hide a completed keepsake");
+            }
+            using (var bystander = fixture.Client())
+            {
+                await fixture.LoginAsync(bystander, "p31");
+                var bystanderRewards = await bystander.GetFromJsonAsync<JsonElement>("/app/v1/sealed-cases/rewards");
+                Equal(0, bystanderRewards.GetProperty("items").GetArrayLength());
+            }
+            using (var foreign = fixture.Client())
+            {
+                await fixture.LoginAsync(foreign, "foreign");
+                var foreignRewards = await foreign.GetFromJsonAsync<JsonElement>("/app/v1/sealed-cases/rewards");
+                Equal(0, foreignRewards.GetProperty("items").GetArrayLength());
+            }
             Check(!released.GetRawText().Contains("private-only-", StringComparison.Ordinal) || released.GetProperty("statements").GetArrayLength() > 0, "private chat is not reconstruction data");
             Check(!released.GetProperty("finale").GetRawText().Contains("private-only-", StringComparison.Ordinal), "no automatic private chat release");
             Console.WriteLine($"PASS {variant}: {count} HTTPS clients, {schedule.Chapters} chapters, runoff and final reconstruction");

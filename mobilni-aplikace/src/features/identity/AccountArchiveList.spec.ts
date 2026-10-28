@@ -87,9 +87,13 @@ describe('account archive collection', () => {
     expect(cards[0].text()).toContain('Moje památka');
     expect(cards[0].text()).toContain('Vaše památka');
     expect(cards[0].text()).toContain('Eliška');
+    expect(cards[0].get('.collection-status-pill').attributes('data-state')).toBe('ready');
+    expect(cards[0].get('.collection-status-pill').text()).toBe('Připraveno');
     expect(cards[0].text()).toContain('Výsledek obrazu je k dispozici');
     expect(cards[0].findAll('button').some(button => button.text() === 'Odpojit od účtu')).toBe(false);
     expect(cards[1].text()).toContain('Propojeno s účtem · pouze ke čtení');
+    expect(cards[1].get('.collection-status-pill').attributes('data-state')).toBe('processing');
+    expect(cards[1].get('.collection-status-pill').text()).toBe('Probíhá');
     expect(cards[1].findAll('button').some(button => button.text() === 'Odpojit od účtu')).toBe(true);
     expect(JSON.parse(cards[0].get('a').attributes('data-to')!)).toEqual({ path: '/keepsake/', query: { account: '1', k: ownerLocator } });
     expect(cards[0].get('time').attributes('datetime')).toBe(new Date(owner.linkedAt * 1000).toISOString());

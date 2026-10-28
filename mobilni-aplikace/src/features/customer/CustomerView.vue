@@ -23,6 +23,8 @@ import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
 import CustomerWaiting from './CustomerWaiting.vue';
 import CustomerDuelHistory from './CustomerDuelHistory.vue';
 import CustomerCompletionUpdates from './CustomerCompletionUpdates.vue';
+import CustomerGameTitles from './CustomerGameTitles.vue';
+import CustomerSealedCaseRewards from './CustomerSealedCaseRewards.vue';
 import ConversationPreferences from './ConversationPreferences.vue';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { customerCopy, type CustomerCopyKey } from '../../application/customerCopy';
@@ -573,6 +575,8 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else-if="pane === 'keepsakes'" class="page-stack">
+      <CustomerGameTitles :locale="interfaceLanguage" />
+      <CustomerSealedCaseRewards :locale="interfaceLanguage" />
       <CustomerCompletionUpdates :locale="interfaceLanguage" />
       <AccountArchiveList :locale="interfaceLanguage" />
       <CustomerDuelHistory />
