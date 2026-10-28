@@ -477,9 +477,19 @@ internal sealed class KeepsakeWorker(KeepsakeStore store, IKeepsakeProvider prov
             {
                 Kufr.Backend.Features.Observability.BackendTelemetry.Failed(activity, exception, stoppingToken);
                 // Technical diagnostics never contain prompts, names, photos or provider bodies.
-                store.MarkAmbiguous(job, exception is OperationCanceledException ? "provider_timeout" : "provider_attempt_unknown");
-                logger.LogWarning("Keepsake job {JobId} requires reconciliation ({ExceptionType})", job.Id, exception.GetType().Name);
+                var failureCode = ProviderFailureCode(exception);
+                store.MarkAmbiguous(job, failureCode);
+                logger.LogWarning("Keepsake job {JobId} requires reconciliation ({ExceptionType}, {FailureCode})",
+                    job.Id, exception.GetType().Name, failureCode);
             }
         }
     }
+
+    internal static string ProviderFailureCode(Exception error) => error switch
+    {
+        System.ClientModel.ClientResultException { Status: >= 400 and <= 599 } response =>
+            "provider_http_" + response.Status.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        OperationCanceledException => "provider_timeout",
+        _ => "provider_attempt_unknown"
+    };
 }

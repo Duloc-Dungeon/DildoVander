@@ -1,4 +1,5 @@
 using System.Net;
+using System.ClientModel;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -330,13 +331,14 @@ internal static class WandArtworkTests
     private static async Task ProviderBoundaries()
     {
         Check(OpenAiKeepsakeProvider.SupportsTransparentWandArtwork("gpt-image-1.5")
+            && OpenAiKeepsakeProvider.SupportsTransparentWandArtwork("gpt-image-2.5-flare")
             && !OpenAiKeepsakeProvider.SupportsTransparentWandArtwork("dall-e-3"),
             "only configured models with documented alpha output enter the wand-artwork branch");
         var wand = new GeneratedWandPublicSnapshot("canonical-wand", 1, "Astra", "Meteorite wood", "Tidal thread", "Cautiously sarcastic",
             "A fictional relic of a drowned observatory.", "Forked tip, carved lunar handle, silver inlaid rings", "Tides", "Static air",
             [new("strike", "Tidal lash", "A wave of light"), new("trick", "Moon lie", "A decoy"), new("shield", "Quiet harbor", "A barrier")]);
         var handler = new Handler(DifferentPng());
-        using var provider = new OpenAiKeepsakeProvider(new HttpClient(handler), "synthetic-key-never-sent-to-network", "synthetic-story-model", "gpt-image-1.5");
+        using var provider = new OpenAiKeepsakeProvider(new HttpClient(handler), "synthetic-key-never-sent-to-network", "synthetic-story-model", "gpt-image-2.5-flare");
         var snapshot = new KeepsakeIssueSnapshot("private-outcome", "private-device", 1, wand.WandId, wand.Name, wand.Lore, "synthetic", GeneratedWand: wand);
         var request = new KeepsakeProviderRequest(Guid.NewGuid().ToString("D"), snapshot, new(), Guid.NewGuid().ToString("D"), null, null, null, null, null)
             { GenerationKind = "wand_artwork" };
@@ -362,10 +364,15 @@ internal static class WandArtworkTests
         {
             var payload = parsed.RootElement;
             var prompt = payload.GetProperty("prompt").GetString()!;
-            Check(payload.GetProperty("model").GetString() == "gpt-image-1.5" && !payload.TryGetProperty("image", out _),
+            Check(payload.GetProperty("model").GetString() == "gpt-image-2.5-flare" && !payload.TryGetProperty("image", out _),
                 "image uses configured SDK generation model without another image pipeline");
             Check(payload.GetProperty("background").GetString() == "transparent" && payload.GetProperty("output_format").GetString() == "png",
                 "serialized SDK request asks for a true transparent PNG background");
+            Check(!payload.TryGetProperty("response_format", out _),
+                "GPT Image requests omit the unsupported legacy response_format parameter");
+            Check(payload.GetProperty("moderation").GetString() == "low"
+                && image.GenerationParameters?.Contains("\"moderation\":\"low\"", StringComparison.Ordinal) == true,
+                "the actual SDK image request and saved provenance both use low moderation");
             Check(image.GenerationParameters?.Contains("\"background\":\"transparent\"", StringComparison.Ordinal) == true,
                 "saved generation provenance records actual image parameters");
             Check(new[] { wand.Name, wand.Material, wand.Core, wand.Temperament, wand.DesignDescription, wand.Affinity, wand.Weakness, wand.Lore }.All(prompt.Contains),
@@ -379,6 +386,19 @@ internal static class WandArtworkTests
         try { await provider.GenerateAsync(request, default); throw new InvalidOperationException("Synthetic provider failure unexpectedly succeeded"); }
         catch (Exception exception) when (exception is not InvalidOperationException) { }
         Check(handler.Requests.Count == 3, "SDK performs no uncontrolled retry on ambiguous image failure");
+        handler.FailStatus = HttpStatusCode.BadRequest;
+        try
+        {
+            await provider.GenerateAsync(request, default);
+            throw new InvalidOperationException("Rejected image request unexpectedly succeeded");
+        }
+        catch (ClientResultException error)
+        {
+            Check(KeepsakeWorker.ProviderFailureCode(error) == "provider_http_400"
+                && !error.Message.Contains("synthetic failure", StringComparison.Ordinal),
+                "image rejection retains its HTTP classification without exposing provider bodies");
+        }
+        Check(handler.Requests.Count == 4, "a rejected image request is not silently retried or regenerated");
     }
 
     private static byte[] DifferentPng()
@@ -421,11 +441,12 @@ internal static class WandArtworkTests
     {
         internal List<(string Path, string Body)> Requests { get; } = [];
         internal bool Fail;
+        internal HttpStatusCode FailStatus = HttpStatusCode.InternalServerError;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
             Requests.Add((path, await request.Content!.ReadAsStringAsync(cancellationToken)));
-            if (Fail) return new(HttpStatusCode.InternalServerError) { Content = new StringContent("{\"error\":{\"message\":\"synthetic failure\"}}") };
+            if (Fail) return new(FailStatus) { Content = new StringContent("{\"error\":{\"message\":\"synthetic failure\"}}") };
             object body = path.EndsWith("/responses") ? new
             {
                 id = "resp_synthetic", status = "completed", model = "synthetic-story-model", output = new[] { new

@@ -1054,6 +1054,39 @@ location = /archive/chronicle {
     add_header X-Content-Type-Options "nosniff" always;
 }
 
+# Push bootstrap files contain no account data and must work before launch.
+# Keep the unversioned worker revalidated when application releases change.
+location = /push-sw.js {
+    if ($request_uri !~ "^/push-sw[.]js(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files $uri =404;
+    types { }
+    default_type application/javascript;
+    add_header Cache-Control "no-cache" always;
+    add_header Service-Worker-Allowed "/" always;
+    add_header X-Content-Type-Options "nosniff" always;
+}
+location = /manifest.webmanifest {
+    if ($request_uri !~ "^/manifest[.]webmanifest(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files $uri =404;
+    types { }
+    default_type application/manifest+json;
+    add_header Cache-Control "no-cache" always;
+    add_header X-Content-Type-Options "nosniff" always;
+}
+location = /push-icon.png {
+    if ($request_uri !~ "^/push-icon[.]png(?:[?]|$)") { return 404; }
+    if ($request_method !~ "^(GET|HEAD)$") { return 405; }
+    root /var/www/dildovander/current;
+    try_files $uri =404;
+    types { }
+    default_type image/png;
+    add_header Cache-Control "no-cache" always;
+    add_header X-Content-Type-Options "nosniff" always;
+}
 location = /site-manifest.json {
     root /var/www/dildovander/current;
     try_files $uri =404;

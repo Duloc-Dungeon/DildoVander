@@ -64,8 +64,10 @@ internal static class AccountDataExportDocumentTests
             "owned keepsake metadata is ordinally sorted");
         Check(root.GetProperty("memoryFacts")[0].GetProperty("id").GetString() == "memory-a",
             "personal memory facts are ordinally sorted");
-        Check(root.GetProperty("included").GetArrayLength() == 5 && root.GetProperty("excluded").GetArrayLength() == 5,
+        Check(root.GetProperty("included").GetArrayLength() == 5 && root.GetProperty("excluded").GetArrayLength() == 6,
             "the document explicitly identifies included and excluded data categories");
+        Check(root.GetProperty("excluded").EnumerateArray().Any(item => item.GetString() == "push_delivery_credentials_and_notification_queue"),
+            "push endpoint credentials and transient notification queue are explicitly excluded");
         Check(root.GetProperty("history").GetProperty("sessions")[0].TryGetProperty("snapshotAvailable", out _)
             && !root.GetProperty("history").GetProperty("sessions")[0].TryGetProperty("expectedGuestId", out _),
             "history exposes approved availability metadata without guest identifiers");

@@ -5,28 +5,29 @@ namespace Kufr.Backend.Features.Conversations;
 
 internal static class ResponsesTextDialogBudget
 {
-    internal const string Model = "gpt-6.1-sol";
+    internal const string Model = "gpt-6.1-terra";
+    internal const string LegacyModel = "gpt-6.1-sol";
     internal const int MinimumQuestions = 4;
     internal const int MaxRequestBytes = 14_000;
 
     // The 14 kB serialized request cap bounds input below 14,000 tokens;
-    // 1,200 output tokens fit under $0.05 at Standard Sol rates. Reserve
-    // twice that amount so an unexpected Fast response can retain its full cost.
+    // reserve enough for a Fast response at either the Terra default or
+    // explicitly configured legacy Sol rates.
     internal const long ReservedMicroUsd = 100_000;
 
     internal static int RequestByteLimit(string context, string personalityId = PersonalityCatalog.DefaultId) =>
         MaxRequestBytes + ContextBytes(context) + PersonalityCatalog.ExtraRequestBytes(personalityId);
 
-    internal static bool IsSupportedModel(string model) => model == Model;
+    internal static bool IsSupportedModel(string model) => model is Model or LegacyModel;
 
     internal static long ReserveForContext(string context, string model = Model, string personalityId = PersonalityCatalog.DefaultId)
     {
-        var solReservation = checked(ReservedMicroUsd + (ContextBytes(context) + PersonalityCatalog.ExtraRequestBytes(personalityId)) * 5L);
-        return model switch
+        if (!IsSupportedModel(model))
         {
-            Model => solReservation,
-            _ => throw new InvalidOperationException("Only Sol is supported.")
-        };
+            throw new InvalidOperationException("Unsupported text dialog model.");
+        }
+        var extraBytes = ContextBytes(context) + PersonalityCatalog.ExtraRequestBytes(personalityId);
+        return checked(ReservedMicroUsd + extraBytes * 5L);
     }
 
     private static int ContextBytes(string context) => context.Length == 0
@@ -49,12 +50,14 @@ internal static class ResponsesTextDialogBudget
         }
 
         // This is a conservative list-price estimate, not verified account billing.
-        // Standard processing: cache writes cost $2.50 and output costs $10
-        // per million tokens. Charging all input at the cache-write rate is
-        // conservative even when the provider reports cached input tokens.
+        // Charge all input at the cache-write rate, even when the provider
+        // reports cached tokens; round up fractional microdollars once.
         return expectedModel switch
         {
-            Model => checked((inputTokens * 5L + 1) / 2 + outputTokens * 10L),
+            // Terra Standard: cache writes $1.25/M, output $5/M.
+            Model => checked((inputTokens * 5L + 3) / 4 + outputTokens * 5L),
+            // Explicit legacy Sol Standard: cache writes $2.50/M, output $10/M.
+            LegacyModel => checked((inputTokens * 5L + 1) / 2 + outputTokens * 10L),
             _ => throw new TextDialogUnavailableException("Provider model cannot be priced.")
         };
     }

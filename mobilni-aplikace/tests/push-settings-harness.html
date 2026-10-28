@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="cs" data-theme="lord-voldemort">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Push settings fixture</title></head>
+  <body>
+    <main id="app" class="page-stack" style="max-width: 48rem; margin: 2rem auto; padding: 1rem;"></main>
+    <script type="module">
+      // Offline browser fixture: no real account, permissions, provider or messages.
+      import { createApp } from 'vue';
+      import PushSettings from '../src/features/identity/PushNotifications.vue';
+      import { refreshIdentity } from '../src/features/identity/session';
+      import '../src/application/application.css';
+      const scenario = new URL(location.href).searchParams.get('scenario');
+      let enabled = false;
+      let permission = scenario === 'denied' ? 'denied' : 'default';
+      const key = Uint8Array.from({length: 65}, (_, index) => index === 0 ? 4 : index);
+      const publicKey = btoa(String.fromCharCode(...key)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+      let subscribed = false;
+      const subscription = { options: { applicationServerKey: key.buffer },
+        toJSON: () => ({ endpoint: 'https://fcm.googleapis.com/fcm/send/fixture', keys: { p256dh: 'fixture', auth: 'fixture' } }),
+        unsubscribe: async () => { subscribed = false; return true; } };
+      const worker = { active: {}, pushManager: { getSubscription: async () => subscribed ? subscription : null,
+        subscribe: async () => { subscribed = true; return subscription; } } };
+      Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { register: async () => worker, getRegistration: async () => worker } });
+      window.PushManager = class {};
+      Object.defineProperty(window, 'Notification', { configurable: true, value: {
+        get permission() { return permission; }, requestPermission: async () => permission = scenario === 'denied' ? 'denied' : 'granted',
+      } });
+      window.fetch = async (path, init) => {
+        if (path === '/app/v1/session') return Response.json({ enabled: true, account: { id: 'fixture', displayName: 'Host', roles: ['Customer'] }, csrfToken: 'fixture' });
+        if (path === '/app/v1/push' && (init?.method ?? 'GET') === 'GET') return Response.json({ web: scenario !== 'unavailable', android: false, ios: false, publicKey, enabled });
+        if (path === '/app/v1/push' && init.method === 'PUT') { enabled = true; return new Response(null, { status: 204 }); }
+        if (path === '/app/v1/push' && init.method === 'DELETE') { enabled = false; return new Response(null, { status: 204 }); }
+        if (path === '/app/v1/push/test' && init.method === 'POST') return new Response(null, { status: 202 });
+        throw new Error(`Unexpected fixture request: ${path}`);
+      };
+      await refreshIdentity();
+      createApp(PushSettings).mount('#app');
+    </script>
+  </body>
+</html>

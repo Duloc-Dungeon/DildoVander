@@ -89,7 +89,7 @@ internal static class TextDialogRuntimeTests
         Require(result?.Decision == "ask" && result.Proposal is null
             && result.Reply == "Jaký průšvih má hůlka napravit?",
             "first-turn clarification comes from the provider");
-        Require(journal.SettleCost(operationId, 2573)
+        Require(journal.SettleCost(operationId, 1287)
             && !journal.SettleCost(operationId, 0),
             "provider token usage was settled exactly once");
     }
@@ -280,7 +280,7 @@ internal static class TextDialogRuntimeTests
         runner.Release();
         Require(store.GetOperation("device-a", operationId).Operation?.Status == "cancelled",
             "late provider result was not published after cancellation");
-        Require(journal.SettleCost(operationId, 2573),
+        Require(journal.SettleCost(operationId, 1287),
             "late provider usage was charged despite cancellation");
     }
 

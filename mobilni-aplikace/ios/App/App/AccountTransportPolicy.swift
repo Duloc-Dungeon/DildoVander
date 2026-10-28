@@ -664,6 +664,7 @@ enum AccountTransportPolicy {
         let evening = path.split(separator: "/").map(String.init)
         if evening.count == 4, evening[0] == "v1", evening[1] == "evenings", UUID(uuidString: evening[2]) != nil, evening[3] == "active" { return method == "PUT" }
         let exact: [String: Set<String>] = [
+            "/app/v1/push": ["GET", "PUT", "DELETE"], "/app/v1/push/test": ["POST"],
             "/app/v1/session": ["GET", "DELETE"], "/app/v1/account": ["GET", "DELETE"],
             "/app/v1/account/deletion": ["GET"],
             "/app/v1/account/ai-consent": ["POST"],

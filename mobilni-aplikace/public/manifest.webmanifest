@@ -1,0 +1,12 @@
+{
+  "id": "/",
+  "name": "Wand Night Stand",
+  "short_name": "Wand Night Stand",
+  "lang": "cs",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#100f0e",
+  "theme_color": "#100f0e",
+  "icons": [{ "src": "/push-icon.png", "sizes": "1024x1024", "type": "image/png" }]
+}

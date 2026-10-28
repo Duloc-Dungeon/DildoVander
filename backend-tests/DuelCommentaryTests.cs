@@ -22,7 +22,7 @@ internal static class DuelCommentaryTests
             "provider request excludes device/evening/seed and strips control characters");
         using var valid = JsonDocument.Parse(Response(view));
         var accepted = DuelCommentaryService.Parse(valid.RootElement, view);
-        Check(accepted.Commentary?.Rounds.Count == 3 && accepted.Audit is { Status: "accepted", EstimatedMicroUsd: 750 },
+        Check(accepted.Commentary?.Rounds.Count == 3 && accepted.Audit is { Status: "accepted", EstimatedMicroUsd: 375 },
             "verified structured composition keeps estimated usage audit");
         Check(accepted.Commentary!.Rounds[0].Quip == DuelRules.ApprovedQuips[0], "AI selects approved Czech words only");
         foreach (var response in new[]
@@ -32,7 +32,7 @@ internal static class DuelCommentaryTests
         {
             using var invalid = JsonDocument.Parse(response);
             var rejected = DuelCommentaryService.Parse(invalid.RootElement, view);
-            Check(rejected.Commentary is null && rejected.Audit.EstimatedMicroUsd == 750,
+            Check(rejected.Commentary is null && rejected.Audit.EstimatedMicroUsd == 375,
                 "model cannot change immutable scores or narrative vocabulary; rejected usage is still audited");
         }
         using var malformed = JsonDocument.Parse("{}");
