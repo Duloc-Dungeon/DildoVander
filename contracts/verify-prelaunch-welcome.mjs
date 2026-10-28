@@ -1,5 +1,17 @@
 import assert from 'node:assert/strict';
-import { validatePrelaunchWelcome } from './generated/prelaunch-welcome-validator.mjs';
+import { validatePrelaunchArtwork, validatePrelaunchArtworkSource, validatePrelaunchWelcome } from './generated/prelaunch-welcome-validator.mjs';
+
+const source = { url: 'https://commons.wikimedia.org/wiki/File:Portrait.jpg', title: 'Portrait', author: 'Artist', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/' };
+assert.equal(validatePrelaunchArtworkSource(source), true);
+assert.equal(validatePrelaunchArtwork({ status: 'ready' }), true);
+assert.equal(validatePrelaunchArtwork({ status: 'ready', source: null }), true);
+assert.equal(validatePrelaunchArtwork({ status: 'ready', source }), true);
+for (const invalidSource of [null, { ...source, url: 'javascript:alert(1)' }, { ...source, licenseUrl: 'https://example.com/license' }, { ...source, title: 'x'.repeat(301) }, { ...source, extra: true }, { ...source, author: '<img src=x>' },
+  { ...source, author: '' }, { ...source, title: 'bad\ntext' }, { ...source, license: 'All rights reserved' },
+  { ...source, url: source.url + '?tracking=1' }, { ...source, licenseUrl: source.licenseUrl + '#fragment' }]) {
+  assert.equal(validatePrelaunchArtworkSource(invalidSource), false);
+}
+assert.equal(validatePrelaunchArtwork({ status: 'ready', source: { ...source, url: 'javascript:alert(1)' } }), false);
 
 for (const welcome of [
   { joke: 'Učebnice máš nastudované.', identity: 'Bystrá čarodějka.', teaser: 'Některé věci tu mají vlastní vůli.' },

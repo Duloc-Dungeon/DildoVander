@@ -309,7 +309,8 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
         {
             var response = await client.GenerateImageAsync(prompt, new ImageGenerationOptions
             {
-                Size = GeneratedImageSize.W1024xH1536, OutputFileFormat = GeneratedImageFileFormat.Png
+                Size = GeneratedImageSize.W1024xH1536, OutputFileFormat = GeneratedImageFileFormat.Png,
+                ModerationLevel = "low"
             }, token);
             telemetry.ReadUsage(response.GetRawResponse().Content);
             return response;

@@ -299,9 +299,11 @@ internal static partial class AccountIdentityTests
             && saved.GetProperty("artwork").GetProperty("welcome").GetProperty("identity").GetString() == "",
             "failed welcome text uses stable fallback, omits unverified identity and preserves the portrait");
         Check(!text.Contains("enrichment", StringComparison.OrdinalIgnoreCase) && !text.Contains("conversation", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains("generatedWand", StringComparison.OrdinalIgnoreCase) && !text.Contains("source", StringComparison.OrdinalIgnoreCase)
+            && !text.Contains("generatedWand", StringComparison.OrdinalIgnoreCase) && !text.Contains("sources", StringComparison.OrdinalIgnoreCase)
             && !text.Contains("usedFactIds", StringComparison.Ordinal) && !text.Contains("teaserId", StringComparison.Ordinal),
             "minimal user API contains no enrichment or protected product data");
+        Check(saved.GetProperty("artwork").GetProperty("source").ValueKind == JsonValueKind.Null,
+            "generated portrait has no internet attribution");
         var image = await customer.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}");
         Check(image.IsSuccessStatusCode && image.Content.Headers.ContentType?.MediaType == "image/webp", "owner gets private artwork");
         Check(image.Headers.CacheControl?.NoStore == true, "private artwork cannot be reused from shared cache");

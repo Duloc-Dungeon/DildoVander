@@ -81,6 +81,21 @@ const statusMessage = computed(() => {
   return copy.value.saved;
 });
 const finalMessage = computed(() => state.value?.artwork?.finalMessage || copy.value.finalFallback);
+const portraitSource = computed(() => {
+  const source = state.value?.artwork?.source;
+  if (!source) return null;
+  try {
+    const url = new URL(source.url);
+    const licenseUrl = new URL(source.licenseUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'commons.wikimedia.org' || url.port || url.username || url.password || !url.pathname.startsWith('/wiki/File:')
+      || licenseUrl.protocol !== 'https:' || licenseUrl.port || licenseUrl.username || licenseUrl.password
+      || !(licenseUrl.hostname === 'commons.wikimedia.org' && licenseUrl.pathname.startsWith('/wiki/File:')
+        || licenseUrl.hostname === 'creativecommons.org' && licenseUrl.pathname.startsWith('/licenses/'))) return null;
+    return source;
+  } catch {
+    return null;
+  }
+});
 const timeParts = computed(() => {
   const total = Math.max(0, Math.floor(remaining.value / 1000));
   return [Math.floor(total / 86400), Math.floor(total / 3600) % 24, Math.floor(total / 60) % 60, total % 60];
@@ -426,6 +441,7 @@ onBeforeUnmount(() => {
         <div v-if="revealed && hasPortrait" class="launch-final">
           <template v-if="state?.artwork?.welcome"><p class="launch-joke">{{ state.artwork.welcome.joke }}</p><p v-if="state.artwork.welcome.identity" class="launch-identity">{{ state.artwork.welcome.identity }}</p><p v-if="state.artwork.welcome.teaser" class="launch-teaser">{{ state.artwork.welcome.teaser }}</p></template>
           <p v-else class="launch-joke">{{ finalMessage }}</p>
+          <p v-if="portraitSource" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
         </div>
         <p v-else class="launch-generic">{{ copy.loading }}</p>
       </div>
@@ -454,6 +470,8 @@ onBeforeUnmount(() => {
 .launch-joke { font-family: var(--aw-font-display); font-size: clamp(1.6rem, 6.5vw, 2rem); line-height: 1.3; font-weight: 500; }
 .launch-identity { font-family: var(--aw-font-display); font-size: 1.2rem; line-height: 1.6; }
 .launch-teaser { color: var(--aw-muted); font-size: .875rem; line-height: 1.6; }
+.launch-attribution { margin-top: 1.25rem; color: var(--wns-muted, #b2b9b6); font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
+.launch-attribution a { min-height: 44px; display: inline-flex; align-items: center; color: inherit; text-decoration: underline; text-underline-offset: .15em; }
 .launch-form { display: grid; gap: 1rem; margin-block: 1rem 1.5rem; }
 .launch-form p { margin: 0; }
 .launch-form .aw-input { min-height: 48px; font-size: 1rem; }

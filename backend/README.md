@@ -314,5 +314,17 @@ Prelaunch artwork vrací volitelné `welcome:{joke,identity,teaser}` vedle
 kompatibilního `finalMessage`. ID ověřených faktů, zdroje a povolené téma
 zůstávají interní. Text i ilustrace používají stávající souhlas, budgety a
 omezené retries; chyba textu ukládá stabilní fallback a nebrání obrázku.
+Generování portrétu používá `moderation=low`. Když obrázek selže, worker zkusí
+Wikimedia Commons bez dalšího placeného AI požadavku nebo nového API klíče.
+Vyhledává jen fikční jméno, svět a případnou verzi; osobní popis ani údaje účtu
+neodesílá. Přijímá pouze odpovídající obrázky s CC0, public domain nebo CC BY/CC BY-SA
+licencí. Stažení má limit 8 MiB, kontrolu veřejných Wikimedia adres a dekódovaných
+rozměrů; výstup se ořízne do portrétu a znovu zakóduje jako WebP.
+Obrázek zůstává za stávající autentizovanou URL. Volitelné
+`artwork.source:{url,title,author,license,licenseUrl}` ukládá nullable `source_json`
+vedle obrázku v SQLite a aplikace zobrazí zdroj, autora, licenci a údaj o úpravě.
+Starší portréty zůstávají beze změny. Hledání má vlastní 20s limit v rámci
+240s lease a respektuje změnu revize, smazání a zrušení práce účtu. Bez vhodného
+nálezu zůstává dosavadní stav chyby a ruční opakování.
 Cílené kontroly: `--customer-profiles`, `--character-portraits`,
 `--prelaunch-http`, `--launch-policy` v konzolovém `backend-tests` executable.
