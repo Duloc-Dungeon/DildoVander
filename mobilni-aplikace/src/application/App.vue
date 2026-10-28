@@ -20,6 +20,8 @@ import WnsNavigation from './WnsNavigation.vue';
 import { wnsSound } from './wnsSound';
 import { customerCopy } from './customerCopy';
 import { customerMembershipState, launchAllowed, refreshCustomerMembership, refreshLaunchAccess } from './launchAccess';
+import ApplicationUpdateGate from './ApplicationUpdateGate.vue';
+import { applicationUpdates } from './nativeApplicationUpdates';
 
 const route = useRoute();
 const router = useRouter();
@@ -123,6 +125,22 @@ watch(() => route.path, () => {
   requestAnimationFrame(() => main.value?.focus({ preventScroll: true }));
 });
 const removeRouterError = router.onError(() => { viewError.value = customerCopy.text('shell.page-error'); });
+// The native version gate mounts the shell after the root's mounted hook.
+watch(navigationElement, element => {
+  navigationObserver?.disconnect();
+  if (typeof ResizeObserver !== 'undefined' && element) {
+    navigationObserver = new ResizeObserver(() => {
+      navigationHeight.value = `${element.getBoundingClientRect().height}px`;
+      revealActiveNavigation();
+    });
+    navigationObserver.observe(element);
+  }
+}, { flush: 'post' });
+watch(applicationUpdates.required, required => {
+  if (required && (deviceCanStop.value || phoneActive.value || directorCanStop.value || servoBench.connected.value)) {
+    void stop();
+  }
+});
 function refreshSession(): void {
   wnsSound.visible(!document.hidden);
   if (!document.hidden) {
@@ -137,13 +155,6 @@ function refreshSession(): void {
 }
 onMounted(() => {
   refreshSession();
-  if (typeof ResizeObserver !== 'undefined' && navigationElement.value) {
-    navigationObserver = new ResizeObserver(() => {
-      navigationHeight.value = `${navigationElement.value?.getBoundingClientRect().height ?? 0}px`;
-      revealActiveNavigation();
-    });
-    navigationObserver.observe(navigationElement.value);
-  }
   document.addEventListener('visibilitychange', refreshSession);
   void document.fonts?.ready.then(revealActiveNavigation);
   window.addEventListener('online', refreshSession);
@@ -158,8 +169,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <AwButton v-if="(applicationUpdates.blocked.value || launchExperience || gameExperience) && (deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" class="launch-emergency-stop" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>
+  <ApplicationUpdateGate :updates="applicationUpdates">
   <a class="skip-link" href="#main-content">{{ customerCopy.text('shell.skip') }}</a>
-  <AwButton v-if="(launchExperience || gameExperience) && (deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" class="launch-emergency-stop" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>
   <div class="application-shell" :class="{ 'launch-mode': launchExperience, 'game-mode': gameExperience, 'customer-mode': customerAccount, 'has-customer-navigation': showCustomerNavigation }" :style="{ '--application-navigation-height': navigationHeight, '--application-navigation-count': navigation.length }">
     <aside v-if="!customerAccount && !launchExperience && !gameExperience" class="application-sidebar" :aria-label="customerCopy.text('shell.navigation')">
       <RouterLink class="application-brand" to="/" :aria-label="customerCopy.text('shell.brand-home')"><img class="brand-mark" src="../assets/brand/emblem-small.webp" alt="" width="44" height="44" /><span>Wand Night Stand<small>{{ customerCopy.text('shell.brand-tagline') }}</small></span></RouterLink>
@@ -193,4 +205,5 @@ onBeforeUnmount(() => {
       <footer v-if="!launchExperience && !gameExperience" class="application-footer"><span>Wand Night Stand</span><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink><a v-if="browserMode" class="application-install-link" href="/ios/">{{ customerCopy.text('shell.iphone') }}</a><span>{{ customerCopy.text('shell.verification') }}</span></footer>
     </div>
   </div>
+  </ApplicationUpdateGate>
 </template>

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 // Paid provider diagnostic is explicit and never part of normal offline CI.
 if (args is ["--push"]) { await PushTests.RunAsync(); return; }
 if (args is ["--push-http"]) { await AccountIdentityTests.RunPushHttpAsync(); return; }
+if (args is ["--application-updates"]) { await ApplicationUpdateTests.RunAsync(); return; }
 if (args is ["--sealed-case-context-persistence"]) { SealedCaseContextPersistenceTests.Run(); return; }
 if (args is ["--sealed-case-projections"]) { SealedCaseProjectionTests.Run(); return; }
 if (args is ["--sealed-case"]) { SealedCaseTests.Run(); SealedCaseProjectionTests.Run(); SealedCaseContextPersistenceTests.Run(); Console.WriteLine("SealedCase foundation checks passed."); return; }
@@ -253,6 +254,7 @@ CharacterOperationTests.Run();
 await AutonomousLiveTests.RunCharacterAsync();
 await CostumeImageTests.RunAsync();
 await BoundedSdkTransportTests.RunAsync();
+await ApplicationUpdateTests.RunAsync();
 await RealtimeTests.RunAsync();
 GptLiveVoiceTests.Run();
 await AutonomousLiveTests.RunVoiceFallbackAsync();

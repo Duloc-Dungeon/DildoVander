@@ -26,10 +26,12 @@ using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.Game;
 using Kufr.Backend.Features.SealedCase;
 using Kufr.Backend.Features.Push;
+using Kufr.Backend.Features.ApplicationUpdates;
 
 var provisioning = args.Contains("--memory-provision");
 var accountProvisioning = AccountProvisioning.IsCommand(args);
 var builder = WebApplication.CreateBuilder(accountProvisioning ? [] : args.Where(a => a is not ("--memory-provision" or "--execute" or "--create")).ToArray());
+builder.Services.AddApplicationUpdateSettings(builder.Configuration);
 var twinConfiguration = Environment.GetEnvironmentVariable("KUFR_TWIN_CONFIG");
 if (twinConfiguration is not null)
 {
@@ -200,6 +202,7 @@ app.UseLaunchAccessPolicy();
 app.MapAccountEndpoints();
 app.MapLaunchEndpoints();
 app.MapPushEndpoints();
+app.MapApplicationUpdateEndpoints();
 Kufr.Backend.Features.Wands.MobileWandEndpoints.MapMobileWands(app);
 Kufr.Backend.Features.Wands.MobileWandWorkshopEndpoints.MapWorkshopLive(app);
 app.MapMobileGame();
