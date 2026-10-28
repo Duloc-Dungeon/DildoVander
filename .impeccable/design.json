@@ -1,0 +1,418 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-28T12:29:23.467Z",
+  "title": "Wand Night Stand — schválený design v2",
+  "extensions": {
+    "colorMeta": {
+      "mint": {
+        "role": "primary",
+        "displayName": "Mint",
+        "tonalRamp": [
+          "oklch(0.15 0.073246 161.581)",
+          "oklch(0.25 0.073246 161.581)",
+          "oklch(0.35 0.073246 161.581)",
+          "oklch(0.45 0.073246 161.581)",
+          "oklch(0.55 0.073246 161.581)",
+          "oklch(0.65 0.073246 161.581)",
+          "oklch(0.8 0.073246 161.581)",
+          "oklch(0.95 0.073246 161.581)"
+        ]
+      },
+      "on-mint": {
+        "role": "primary",
+        "displayName": "Text na mintové",
+        "tonalRamp": [
+          "oklch(0.15 0.0338551 158.371)",
+          "oklch(0.25 0.0338551 158.371)",
+          "oklch(0.35 0.0338551 158.371)",
+          "oklch(0.45 0.0338551 158.371)",
+          "oklch(0.55 0.0338551 158.371)",
+          "oklch(0.65 0.0338551 158.371)",
+          "oklch(0.8 0.0338551 158.371)",
+          "oklch(0.95 0.0338551 158.371)"
+        ]
+      },
+      "amber": {
+        "role": "secondary",
+        "displayName": "Jantar",
+        "tonalRamp": [
+          "oklch(0.15 0.133564 79.3942)",
+          "oklch(0.25 0.133564 79.3942)",
+          "oklch(0.35 0.133564 79.3942)",
+          "oklch(0.45 0.133564 79.3942)",
+          "oklch(0.55 0.133564 79.3942)",
+          "oklch(0.65 0.133564 79.3942)",
+          "oklch(0.8 0.133564 79.3942)",
+          "oklch(0.95 0.133564 79.3942)"
+        ]
+      },
+      "on-amber": {
+        "role": "secondary",
+        "displayName": "Text na jantarové",
+        "tonalRamp": [
+          "oklch(0.15 0.0315275 73.6857)",
+          "oklch(0.25 0.0315275 73.6857)",
+          "oklch(0.35 0.0315275 73.6857)",
+          "oklch(0.45 0.0315275 73.6857)",
+          "oklch(0.55 0.0315275 73.6857)",
+          "oklch(0.65 0.0315275 73.6857)",
+          "oklch(0.8 0.0315275 73.6857)",
+          "oklch(0.95 0.0315275 73.6857)"
+        ]
+      },
+      "violet": {
+        "role": "tertiary",
+        "displayName": "Fialová",
+        "tonalRamp": [
+          "oklch(0.15 0.0941555 294.531)",
+          "oklch(0.25 0.0941555 294.531)",
+          "oklch(0.35 0.0941555 294.531)",
+          "oklch(0.45 0.0941555 294.531)",
+          "oklch(0.55 0.0941555 294.531)",
+          "oklch(0.65 0.0941555 294.531)",
+          "oklch(0.8 0.0941555 294.531)",
+          "oklch(0.95 0.0941555 294.531)"
+        ]
+      },
+      "on-violet": {
+        "role": "tertiary",
+        "displayName": "Text na fialové",
+        "tonalRamp": [
+          "oklch(0.15 0.0547449 298.185)",
+          "oklch(0.25 0.0547449 298.185)",
+          "oklch(0.35 0.0547449 298.185)",
+          "oklch(0.45 0.0547449 298.185)",
+          "oklch(0.55 0.0547449 298.185)",
+          "oklch(0.65 0.0547449 298.185)",
+          "oklch(0.8 0.0547449 298.185)",
+          "oklch(0.95 0.0547449 298.185)"
+        ]
+      },
+      "peach": {
+        "role": "tertiary",
+        "displayName": "Broskvová",
+        "tonalRamp": [
+          "oklch(0.15 0.0818409 33.8591)",
+          "oklch(0.25 0.0818409 33.8591)",
+          "oklch(0.35 0.0818409 33.8591)",
+          "oklch(0.45 0.0818409 33.8591)",
+          "oklch(0.55 0.0818409 33.8591)",
+          "oklch(0.65 0.0818409 33.8591)",
+          "oklch(0.8 0.0818409 33.8591)",
+          "oklch(0.95 0.0818409 33.8591)"
+        ]
+      },
+      "on-peach": {
+        "role": "tertiary",
+        "displayName": "Text na broskvové",
+        "tonalRamp": [
+          "oklch(0.15 0.0397324 30.3182)",
+          "oklch(0.25 0.0397324 30.3182)",
+          "oklch(0.35 0.0397324 30.3182)",
+          "oklch(0.45 0.0397324 30.3182)",
+          "oklch(0.55 0.0397324 30.3182)",
+          "oklch(0.65 0.0397324 30.3182)",
+          "oklch(0.8 0.0397324 30.3182)",
+          "oklch(0.95 0.0397324 30.3182)"
+        ]
+      },
+      "blue": {
+        "role": "tertiary",
+        "displayName": "Modrá",
+        "tonalRamp": [
+          "oklch(0.15 0.0527023 235.242)",
+          "oklch(0.25 0.0527023 235.242)",
+          "oklch(0.35 0.0527023 235.242)",
+          "oklch(0.45 0.0527023 235.242)",
+          "oklch(0.55 0.0527023 235.242)",
+          "oklch(0.65 0.0527023 235.242)",
+          "oklch(0.8 0.0527023 235.242)",
+          "oklch(0.95 0.0527023 235.242)"
+        ]
+      },
+      "bg": {
+        "role": "neutral",
+        "displayName": "Pozadí",
+        "tonalRamp": [
+          "oklch(0.15 0.0018839 196.914)",
+          "oklch(0.25 0.0018839 196.914)",
+          "oklch(0.35 0.0018839 196.914)",
+          "oklch(0.45 0.0018839 196.914)",
+          "oklch(0.55 0.0018839 196.914)",
+          "oklch(0.65 0.0018839 196.914)",
+          "oklch(0.8 0.0018839 196.914)",
+          "oklch(0.95 0.0018839 196.914)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Plocha",
+        "tonalRamp": [
+          "oklch(0.15 0.00304685 196.911)",
+          "oklch(0.25 0.00304685 196.911)",
+          "oklch(0.35 0.00304685 196.911)",
+          "oklch(0.45 0.00304685 196.911)",
+          "oklch(0.55 0.00304685 196.911)",
+          "oklch(0.65 0.00304685 196.911)",
+          "oklch(0.8 0.00304685 196.911)",
+          "oklch(0.95 0.00304685 196.911)"
+        ]
+      },
+      "surface-raised": {
+        "role": "neutral",
+        "displayName": "Zvýšená plocha",
+        "tonalRamp": [
+          "oklch(0.15 0.00578208 196.793)",
+          "oklch(0.25 0.00578208 196.793)",
+          "oklch(0.35 0.00578208 196.793)",
+          "oklch(0.45 0.00578208 196.793)",
+          "oklch(0.55 0.00578208 196.793)",
+          "oklch(0.65 0.00578208 196.793)",
+          "oklch(0.8 0.00578208 196.793)",
+          "oklch(0.95 0.00578208 196.793)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Linka",
+        "tonalRamp": [
+          "oklch(0.15 0.0068001 196.821)",
+          "oklch(0.25 0.0068001 196.821)",
+          "oklch(0.35 0.0068001 196.821)",
+          "oklch(0.45 0.0068001 196.821)",
+          "oklch(0.55 0.0068001 196.821)",
+          "oklch(0.65 0.0068001 196.821)",
+          "oklch(0.8 0.0068001 196.821)",
+          "oklch(0.95 0.0068001 196.821)"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Hlavní text",
+        "tonalRamp": [
+          "oklch(0.15 0.0066176 106.108)",
+          "oklch(0.25 0.0066176 106.108)",
+          "oklch(0.35 0.0066176 106.108)",
+          "oklch(0.45 0.0066176 106.108)",
+          "oklch(0.55 0.0066176 106.108)",
+          "oklch(0.65 0.0066176 106.108)",
+          "oklch(0.8 0.0066176 106.108)",
+          "oklch(0.95 0.0066176 106.108)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Podpůrný text",
+        "tonalRamp": [
+          "oklch(0.15 0.00881875 168.535)",
+          "oklch(0.25 0.00881875 168.535)",
+          "oklch(0.35 0.00881875 168.535)",
+          "oklch(0.45 0.00881875 168.535)",
+          "oklch(0.55 0.00881875 168.535)",
+          "oklch(0.65 0.00881875 168.535)",
+          "oklch(0.8 0.00881875 168.535)",
+          "oklch(0.95 0.00881875 168.535)"
+        ]
+      },
+      "input-bg": {
+        "role": "neutral",
+        "displayName": "Pole",
+        "tonalRamp": [
+          "oklch(0.15 0.00811341 169.647)",
+          "oklch(0.25 0.00811341 169.647)",
+          "oklch(0.35 0.00811341 169.647)",
+          "oklch(0.45 0.00811341 169.647)",
+          "oklch(0.55 0.00811341 169.647)",
+          "oklch(0.65 0.00811341 169.647)",
+          "oklch(0.8 0.00811341 169.647)",
+          "oklch(0.95 0.00811341 169.647)"
+        ]
+      },
+      "input-border": {
+        "role": "neutral",
+        "displayName": "Okraj pole",
+        "tonalRamp": [
+          "oklch(0.15 0.0135911 158.189)",
+          "oklch(0.25 0.0135911 158.189)",
+          "oklch(0.35 0.0135911 158.189)",
+          "oklch(0.45 0.0135911 158.189)",
+          "oklch(0.55 0.0135911 158.189)",
+          "oklch(0.65 0.0135911 158.189)",
+          "oklch(0.8 0.0135911 158.189)",
+          "oklch(0.95 0.0135911 158.189)"
+        ]
+      },
+      "placeholder": {
+        "role": "neutral",
+        "displayName": "Nápověda pole",
+        "tonalRamp": [
+          "oklch(0.15 0.0168736 154.247)",
+          "oklch(0.25 0.0168736 154.247)",
+          "oklch(0.35 0.0168736 154.247)",
+          "oklch(0.45 0.0168736 154.247)",
+          "oklch(0.55 0.0168736 154.247)",
+          "oklch(0.65 0.0168736 154.247)",
+          "oklch(0.8 0.0168736 154.247)",
+          "oklch(0.95 0.0168736 154.247)"
+        ]
+      },
+      "navigation-bg": {
+        "role": "neutral",
+        "displayName": "Podklad navigace",
+        "tonalRamp": [
+          "oklch(0.15 0.00511477 173.718)",
+          "oklch(0.25 0.00511477 173.718)",
+          "oklch(0.35 0.00511477 173.718)",
+          "oklch(0.45 0.00511477 173.718)",
+          "oklch(0.55 0.00511477 173.718)",
+          "oklch(0.65 0.00511477 173.718)",
+          "oklch(0.8 0.00511477 173.718)",
+          "oklch(0.95 0.00511477 173.718)"
+        ]
+      },
+      "navigation-muted": {
+        "role": "neutral",
+        "displayName": "Neaktivní navigace",
+        "tonalRamp": [
+          "oklch(0.15 0.0159248 158.008)",
+          "oklch(0.25 0.0159248 158.008)",
+          "oklch(0.35 0.0159248 158.008)",
+          "oklch(0.45 0.0159248 158.008)",
+          "oklch(0.55 0.0159248 158.008)",
+          "oklch(0.65 0.0159248 158.008)",
+          "oklch(0.8 0.0159248 158.008)",
+          "oklch(0.95 0.0159248 158.008)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Nadpis",
+        "purpose": "Sdílený nadpis obsahu; konkrétní stránky mají lokální výjimky."
+      },
+      "title": {
+        "displayName": "Nadpis sekce",
+        "purpose": "Nadpis karty nebo části obsahu."
+      },
+      "body": {
+        "displayName": "Text",
+        "purpose": "Běžný obsah hlavní oblasti."
+      },
+      "label": {
+        "displayName": "Ovládání",
+        "purpose": "Tučné popisky sdílených tlačítek."
+      }
+    },
+    "shadows": [
+      {
+        "name": "flat",
+        "value": "none",
+        "purpose": "Karty, hlavní tlačítka a dialogy adaptéru v2."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control-feedback",
+        "value": "160ms ease",
+        "purpose": "Zachovaná odezva ovládání při změně stavu."
+      },
+      {
+        "name": "entrance-curtain",
+        "value": "1.2s cubic-bezier(.16,1,.3,1)",
+        "purpose": "Místní slavnostní odhalení v CharacterEntrance; nejde o obecnou délku animace."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "0s",
+        "purpose": "Aplikační adaptér v2 vypne přesuny a přechody při omezeném pohybu."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "360px"
+      },
+      {
+        "name": "mobile",
+        "value": "720px"
+      },
+      {
+        "name": "shell",
+        "value": "1100px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Hlavní tlačítko",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Sdílený základ v2; lokální pilulkové varianty zůstávají u své obrazovky.",
+      "html": "<button class=\"ds-button\" type=\"button\">Pokračovat</button>",
+      "css": ".ds-button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 14px;border:1px solid transparent;border-radius:var(--wns-radius-button,16px);background:var(--wns-mint,#b8f3d4);color:var(--wns-on-mint,#102419);font-family:var(--wns-font-family,'Manrope Variable',sans-serif);font-size:1rem;font-weight:800;line-height:1.45;letter-spacing:-.01em;box-shadow:none;cursor:pointer}.ds-button:hover:not(:disabled){filter:brightness(1.06)}.ds-button:disabled{opacity:.48;cursor:not-allowed;filter:none}.ds-button:focus-visible{outline:3px solid var(--wns-mint,#b8f3d4);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}"
+    },
+    {
+      "name": "Vedlejší tlačítko",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Vedlejší akce na zvýšené tmavé ploše.",
+      "html": "<button class=\"ds-button ds-secondary\" type=\"button\">Zkusit znovu</button>",
+      "css": ".ds-button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 14px;border:1px solid transparent;border-radius:var(--wns-radius-button,16px);background:var(--wns-mint,#b8f3d4);color:var(--wns-on-mint,#102419);font-family:var(--wns-font-family,'Manrope Variable',sans-serif);font-size:1rem;font-weight:800;line-height:1.45;letter-spacing:-.01em;box-shadow:none;cursor:pointer}.ds-button:hover:not(:disabled){filter:brightness(1.06)}.ds-button:disabled{opacity:.48;cursor:not-allowed;filter:none}.ds-button:focus-visible{outline:3px solid var(--wns-mint,#b8f3d4);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}.ds-secondary{background:var(--wns-surface-raised,#222626);color:var(--wns-text,#f5f5f0);border-color:var(--wns-line,#343939)}"
+    },
+    {
+      "name": "Nebezpečná akce",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Nebezpečná varianta AwButton; samotný náhled nic neprovádí.",
+      "html": "<button class=\"ds-button ds-danger\" type=\"button\">Odstranit</button>",
+      "css": ".ds-button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 14px;border:1px solid transparent;border-radius:var(--wns-radius-button,16px);background:var(--wns-mint,#b8f3d4);color:var(--wns-on-mint,#102419);font-family:var(--wns-font-family,'Manrope Variable',sans-serif);font-size:1rem;font-weight:800;line-height:1.45;letter-spacing:-.01em;box-shadow:none;cursor:pointer}.ds-button:hover:not(:disabled){filter:brightness(1.06)}.ds-button:disabled{opacity:.48;cursor:not-allowed;filter:none}.ds-button:focus-visible{outline:3px solid var(--wns-mint,#b8f3d4);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}.ds-danger{background:var(--wns-peach,#f8b5a5);color:var(--wns-on-peach,#301814);border-color:var(--wns-danger,#f3a59b)}"
+    },
+    {
+      "name": "Textové pole",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Popisek, pole, nápověda a stav chyby propojené identifikátory.",
+      "html": "<label class=\"ds-label\" for=\"ds-name\">Jméno postavy</label><input class=\"ds-input\" id=\"ds-name\" placeholder=\"Jméno postavy\" aria-describedby=\"ds-name-hint\" /><p class=\"ds-hint\" id=\"ds-name-hint\">Použij jméno své fiktivní postavy.</p>",
+      "css": ".ds-label,.ds-input,.ds-hint{box-sizing:border-box;font-family:var(--wns-font-family,'Manrope Variable',sans-serif);}.ds-label{display:block;margin-bottom:8px;color:var(--wns-text,#f5f5f0);font-size:.8125rem;font-weight:600}.ds-input{width:100%;min-height:54px;padding:8px 12px;border:1px solid var(--wns-input-border,#38403b);border-radius:var(--wns-radius-field,14px);background:var(--wns-input-bg,#202523);color:var(--wns-text,#f5f5f0);font-size:1rem}.ds-input::placeholder{color:var(--wns-placeholder,#9ba69e);opacity:.8}.ds-input:focus{border-color:var(--wns-mint,#b8f3d4)}.ds-input:focus-visible{outline:3px solid var(--wns-mint,#b8f3d4);outline-offset:3px}.ds-input[aria-invalid=true]{border-color:var(--wns-danger,#f3a59b)}.ds-input:disabled{cursor:not-allowed}.ds-hint{margin:8px 0 0;color:var(--wns-muted,#b2b9b6);font-size:.8125rem;line-height:1.65}"
+    },
+    {
+      "name": "Karta",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Plochá sdílená karta s 22px rohy; zákaznická stránka má lokální 24px variantu.",
+      "html": "<section class=\"ds-card\"><h2>Moje postava</h2><p>Postava je uložená.</p></section>",
+      "css": ".ds-card{box-sizing:border-box;min-width:0;padding:20px;border:1px solid var(--wns-line,#343939);border-radius:var(--wns-radius-card,22px);background:var(--wns-surface,#191b1b);color:var(--wns-text,#f5f5f0);font-family:var(--wns-font-family,'Manrope Variable',sans-serif);box-shadow:none}.ds-card h2{margin:0 0 16px;font-size:1.35rem;font-weight:760;line-height:1.18;letter-spacing:-.025em}.ds-card p{margin:0;font-size:15px;font-weight:400;line-height:1.65}"
+    },
+    {
+      "name": "Spodní navigace",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "Statický náhled skutečných čtyř zákaznických destinací; umístění je v náhledu relativní, v aplikaci pevné u spodního okraje.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Hlavní navigace\"><a href=\"#design-0\" aria-current=\"page\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\" fill=\"currentColor\"><path d=\"M219.31,108.68l-80-80a16,16,0,0,0-22.62,0l-80,80A15.87,15.87,0,0,0,32,120v96a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V160h32v56a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V120A15.87,15.87,0,0,0,219.31,108.68ZM208,208H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48V120l80-80,80,80Z\"/></svg><span>Večer</span></a><a href=\"#design-1\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\" fill=\"currentColor\"><path d=\"M230.92,212c-15.23-26.33-38.7-45.21-66.09-54.16a72,72,0,1,0-73.66,0C63.78,166.78,40.31,185.66,25.08,212a8,8,0,1,0,13.85,8c18.84-32.56,52.14-52,89.07-52s70.23,19.44,89.07,52a8,8,0,1,0,13.85-8ZM72,96a56,56,0,1,1,56,56A56.06,56.06,0,0,1,72,96Z\"/></svg><span>Postava</span></a><a href=\"#design-2\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\" fill=\"currentColor\"><path d=\"M225.86,102.82c-3.77-3.94-7.67-8-9.14-11.57-1.36-3.27-1.44-8.69-1.52-13.94-.15-9.76-.31-20.82-8-28.51s-18.75-7.85-28.51-8c-5.25-.08-10.67-.16-13.94-1.52-3.56-1.47-7.63-5.37-11.57-9.14C146.28,23.51,138.44,16,128,16s-18.27,7.51-25.18,14.14c-3.94,3.77-8,7.67-11.57,9.14C88,40.64,82.56,40.72,77.31,40.8c-9.76.15-20.82.31-28.51,8S41,67.55,40.8,77.31c-.08,5.25-.16,10.67-1.52,13.94-1.47,3.56-5.37,7.63-9.14,11.57C23.51,109.72,16,117.56,16,128s7.51,18.27,14.14,25.18c3.77,3.94,7.67,8,9.14,11.57,1.36,3.27,1.44,8.69,1.52,13.94.15,9.76.31,20.82,8,28.51s18.75,7.85,28.51,8c5.25.08,10.67.16,13.94,1.52,3.56,1.47,7.63,5.37,11.57,9.14C109.72,232.49,117.56,240,128,240s18.27-7.51,25.18-14.14c3.94-3.77,8-7.67,11.57-9.14,3.27-1.36,8.69-1.44,13.94-1.52,9.76-.15,20.82-.31,28.51-8s7.85-18.75,8-28.51c.08-5.25.16-10.67,1.52-13.94,1.47-3.56,5.37-7.63,9.14-11.57C232.49,146.28,240,138.44,240,128S232.49,109.73,225.86,102.82Zm-11.55,39.29c-4.79,5-9.75,10.17-12.38,16.52-2.52,6.1-2.63,13.07-2.73,19.82-.1,7-.21,14.33-3.32,17.43s-10.39,3.22-17.43,3.32c-6.75.1-13.72.21-19.82,2.73-6.35,2.63-11.52,7.59-16.52,12.38S132,224,128,224s-9.15-4.92-14.11-9.69-10.17-9.75-16.52-12.38c-6.1-2.52-13.07-2.63-19.82-2.73-7-.1-14.33-.21-17.43-3.32s-3.22-10.39-3.32-17.43c-.1-6.75-.21-13.72-2.73-19.82-2.63-6.35-7.59-11.52-12.38-16.52S32,132,32,128s4.92-9.15,9.69-14.11,9.75-10.17,12.38-16.52c2.52-6.1,2.63-13.07,2.73-19.82.1-7,.21-14.33,3.32-17.43S70.51,56.9,77.55,56.8c6.75-.1,13.72-.21,19.82-2.73,6.35-2.63,11.52-7.59,16.52-12.38S124,32,128,32s9.15,4.92,14.11,9.69,10.17,9.75,16.52,12.38c6.1,2.52,13.07,2.63,19.82,2.73,7,.1,14.33.21,17.43,3.32s3.22,10.39,3.32,17.43c.1,6.75.21,13.72,2.73,19.82,2.63,6.35,7.59,11.52,12.38,16.52S224,124,224,128,219.08,137.15,214.31,142.11ZM173.66,98.34a8,8,0,0,1,0,11.32l-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35A8,8,0,0,1,173.66,98.34Z\"/></svg><span>Památky</span></a><a href=\"#design-3\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\" fill=\"currentColor\"><path d=\"M216.57,39.43A80,80,0,0,0,83.91,120.78L28.69,176A15.86,15.86,0,0,0,24,187.31V216a16,16,0,0,0,16,16H72a8,8,0,0,0,8-8V208H96a8,8,0,0,0,8-8V184h16a8,8,0,0,0,5.66-2.34l9.56-9.57A79.73,79.73,0,0,0,160,176h.1A80,80,0,0,0,216.57,39.43ZM224,98.1c-1.09,34.09-29.75,61.86-63.89,61.9H160a63.7,63.7,0,0,1-23.65-4.51,8,8,0,0,0-8.84,1.68L116.69,168H96a8,8,0,0,0-8,8v16H72a8,8,0,0,0-8,8v16H40V187.31l58.83-58.82a8,8,0,0,0,1.68-8.84A63.72,63.72,0,0,1,96,95.92c0-34.14,27.81-62.8,61.9-63.89A64,64,0,0,1,224,98.1ZM192,76a12,12,0,1,1-12-12A12,12,0,0,1,192,76Z\"/></svg><span>Já</span></a></nav>",
+      "css": ".ds-nav{box-sizing:border-box;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--wns-line,#343939);background:var(--wns-navigation-bg,#111413);font-family:var(--wns-font-family,'Manrope Variable',sans-serif);}.ds-nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:58px;text-align:center;text-decoration:none;color:var(--wns-navigation-muted,#9ca7a0);font-size:.7rem;line-height:1.55}.ds-nav a[aria-current=page]{color:var(--wns-mint,#b8f3d4)}.ds-nav svg{width:23px;height:23px;color:var(--wns-text,#f5f5f0);opacity:.7}.ds-nav a[aria-current=page] svg{opacity:1}.ds-nav span{max-width:100%;overflow-wrap:anywhere;hyphens:auto;line-height:1.35}.ds-nav a:focus-visible{outline:3px solid var(--wns-mint,#b8f3d4);outline-offset:4px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Wand Night Stand — design v2",
+    "overview": "Téměř černé pozadí, místní Manrope s českou diakritikou, velké samostatné\nobjekty a ploché jantarové, mintové a fialové karty. Jedna dominantní scéna,\nčitelná hlavní akce; žádný trvalý ambient ani povinné dekorativní částice.\nToto je záznam schváleného systému a současné implementace, nikoli nový návrh.",
+    "keyCharacteristics": [
+      "Jedna výrazná postava nebo objekt místo dekorativní výplně.",
+      "Plošné barevné plochy a tonální oddělení na tmavém podkladu.",
+      "Stejná rodina písma pro nadpisy, text a ovládání.",
+      "Výrazná hlavní akce, klidné vedlejší ovládání a viditelný fokus."
+    ],
+    "rules": [],
+    "dos": [
+      "**Do** používej existující tokeny, místní Manrope a sdílené Vue komponenty.",
+      "**Do** zachovej jednu dominantní scénu a jasně pojmenovanou hlavní akci.",
+      "**Do** ověř lokální styly, bezpečné okraje, klávesnici, 200% text a omezený pohyb.",
+      "**Do** používej skutečné autorizované údaje a správnou revizi soukromého portrétu."
+    ],
+    "donts": [
+      "**Don't** zaměňuj ukázkový portrét, zvuk nebo stav za produkční výsledek.",
+      "**Don't** zaváděj trvalý ambient, povinné částice nebo nový font místo Manrope.",
+      "**Don't** nech herní výsledek nebo oprávnění záviset na doběhu animace.",
+      "**Don't** přenášej lokální oblouk, pilulku nebo časovou výjimku na celý systém."
+    ]
+  }
+}

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { customerCopy } from '../../application/customerCopy';
 import { launchAllowed } from '../../application/launchAccess';
+import InformationBackLink from './InformationBackLink.vue';
 </script>
 
 <template>
   <article class="page-stack information-page" aria-labelledby="support-title">
+    <InformationBackLink />
     <template v-if="launchAllowed !== true">
       <p class="eyebrow">Wand Night Stand</p>
       <h1 id="support-title">Pomoc s pozvánkou a účtem</h1>
