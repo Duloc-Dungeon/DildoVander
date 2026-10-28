@@ -16,7 +16,6 @@ import { directorStop, clearDirectorStop } from '../features/director/directorSt
 import { servoBench } from '../features/suitcase/servoBench';
 import { accessDenial, canEnterStaffArea, isCustomerAccount } from './access';
 import { accessRedirect } from './accessGuard';
-import ShellPreferences from './ShellPreferences.vue';
 import WnsNavigation from './WnsNavigation.vue';
 import { wnsSound } from './wnsSound';
 import { customerCopy } from './customerCopy';
@@ -31,6 +30,7 @@ const router = useRouter();
 startPushRuntime(router);
 const gameExperience = computed(() => route.path === '/play' || route.path.startsWith('/play/'));
 const launchExperience = computed(() => route.path === '/launch' || route.path === '/signin'
+  || !account.value
   || customerMembershipState.value === 'revoked'
   || (customerAccount.value && !isOwnerPlayer(account.value) && customerMembershipState.value !== 'active')
   || (launchAllowed.value !== true && (['/privacy', '/support', '/account-deletion'].includes(route.path)
@@ -49,18 +49,24 @@ const navigation = computed(() => canEnterStaffArea(account.value) || account.va
   { to: '/', label: 'Domů', symbol: '⌂' },
   { to: '/play', label: 'Hra', symbol: '◇' },
   ...(account.value?.roles.some(role => ['Owner', 'Administrator'].includes(role)) ? [{ to: '/settings/admin/launch', label: 'Večer', symbol: '✦' }] : []),
-  { to: '/settings', label: customerCopy.text('shell.nav-account'), symbol: '⚙' },
-] : [
-  { to: '/', label: customerCopy.text('shell.nav-home'), symbol: '⌂' },
-  { to: '/demo', label: 'Ukázka', symbol: '◇' },
-  { to: '/archive', label: customerCopy.text('shell.nav-archive'), symbol: '▤' },
-  { to: '/signin', label: customerCopy.text('shell.nav-account'), symbol: '⚙' },
-]);
+  { to: account.value?.roles.includes('Owner') ? '/me/account' : '/settings', label: customerCopy.text('shell.nav-account'), symbol: '⚙' },
+] : []);
 const identityKey = computed(() => account.value ? `${account.value.id}:${account.value.roles.join(',')}` : 'public');
-watch(() => account.value?.id, () => setOwnerPlayer(null, false));
-watch(() => route.meta.staff, staff => {
-  if (staff && isOwnerPlayer(account.value)) setOwnerPlayer(account.value, false);
-});
+watch(
+  [
+    () => route.meta.staff || route.meta.lab || route.meta.administrator || route.meta.operation,
+    () => account.value?.id,
+    () => account.value?.roles.join(','),
+  ],
+  ([staff]) => {
+    if (!account.value?.roles.includes('Owner')) {
+      setOwnerPlayer(null, false);
+      return;
+    }
+    setOwnerPlayer(account.value, !staff);
+  },
+  { immediate: true },
+);
 const activeNavigationPath = computed(() => navigation.value
   .filter(item => item.to === '/' ? route.path === '/' : route.path === item.to || route.path.startsWith(`${item.to}/`))
   .sort((left, right) => right.to.length - left.to.length)[0]?.to);
@@ -194,14 +200,13 @@ onBeforeUnmount(() => {
       <header v-if="!launchExperience && !gameExperience" class="application-header">
         <p class="connection-context">{{ customerAccount ? customerCopy.text('shell.customer-area') : account ? 'Hostitelský prostor' : customerCopy.text('shell.public') }}</p>
         <div class="header-actions">
-          <ShellPreferences :account-id="account?.id" />
-          <RouterLink v-if="!account" class="account-link" to="/signin">{{ customerCopy.text('shell.sign-in') }}</RouterLink><RouterLink v-else class="account-link" :to="customerAccount ? '/me/account' : '/settings'">{{ account.displayName }}</RouterLink>
+          <RouterLink v-if="!account" class="account-link" to="/signin">{{ customerCopy.text('shell.sign-in') }}</RouterLink><RouterLink v-else class="account-link" :to="customerAccount || account.roles.includes('Owner') ? '/me/account' : '/settings'">{{ account.displayName }}</RouterLink>
           <AwButton v-if="!launchExperience && !gameExperience && (deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>
         </div>
       </header>
       <div v-if="!launchExperience" class="notification-stack" :aria-label="customerCopy.text('shell.notifications')"><AwNotice v-for="notice in notifications" :key="notice.id" :tone="notice.tone"><div class="notification-content">{{ notice.message }}<button :aria-label="customerCopy.text('shell.close-notice')" @click="dismissNotice(notice.id)">×</button></div></AwNotice></div>
       <main id="main-content" ref="main" class="application-main" tabindex="-1">
-        <OwnerPlayerControls v-if="route.matched.length > 0 && route.name !== 'customer-demo'" @context-changed="groupContextRevision++" />
+        <OwnerPlayerControls v-if="isOwnerPlayer(account) && ['/play', '/me/account'].includes(route.path)" @context-changed="groupContextRevision++" />
         <AwNotice v-if="offlineSession && !launchExperience" tone="warning">{{ customerCopy.text('shell.offline') }}</AwNotice>
         <AwNotice v-if="viewError" tone="danger"><p>{{ viewError }}</p><AwButton @click="router.go(0)">{{ customerCopy.text('shell.reload') }}</AwButton></AwNotice>
         <AccountAiConsent v-else-if="account?.openAiConsent === false && !['/privacy', '/support', '/account-deletion'].includes(route.path)" />

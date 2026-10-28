@@ -55,7 +55,7 @@ export interface CustomerJourneyInput {
   resultPending?: boolean;
 }
 
-/** Customer sign-in has a character-first default; staff keep the established settings default. */
+/** Customer and Owner accounts start with their character; other staff keep account settings. */
 export function defaultSignedInDestination(account: Account | null, explicitReturn?: unknown): string {
   if (!account) return '/signin';
 
@@ -64,7 +64,7 @@ export function defaultSignedInDestination(account: Account | null, explicitRetu
     if (safePath !== '/' || explicitReturn === '/') return safePath;
     if (isAccountKeepsakeReturn(explicitReturn)) return explicitReturn;
   }
-  return isCustomerAccount(account) ? '/me/character' : '/settings';
+  return isCustomerAccount(account) || account.roles.includes('Owner') ? '/me/character' : '/settings';
 }
 
 /** Selects a safe next action from already-loaded account data; this function performs no I/O. */

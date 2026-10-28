@@ -523,10 +523,15 @@ onBeforeUnmount(() => {
     <form class="customer-form" @submit.prevent="saveCharacter">
       <AwField id="character-name" :label="customerCopy.text('profile.name')"><input id="character-name" v-model="form.name" class="aw-input" maxlength="120" required /></AwField>
       <AwField id="character-world" :label="customerCopy.text('profile.world')"><input id="character-world" v-model="form.world" class="aw-input" maxlength="160" required /></AwField>
-      <AwField id="character-version" :label="customerCopy.text('profile.version')"><input id="character-version" v-model="form.version" class="aw-input" maxlength="120" /></AwField>
-      <AwField id="character-description" :label="customerCopy.text('profile.description')"><textarea id="character-description" v-model="form.description" class="aw-input" maxlength="1200" rows="4" /></AwField>
-      <CharacterBriefAssistant v-model="form.description" :disabled="busy" />
-      <AwField id="character-language" :label="customerCopy.text('new-character.language')"><input id="character-language" v-model="form.language" class="aw-input" maxlength="35" /></AwField>
+      <details class="character-extra" :open="!!profile">
+        <summary>Doplnit postavu <span class="aw-muted">(nepovinné)</span></summary>
+        <div class="character-extra-fields">
+          <AwField id="character-version" :label="customerCopy.text('profile.version')"><input id="character-version" v-model="form.version" class="aw-input" maxlength="120" /></AwField>
+          <AwField id="character-description" :label="customerCopy.text('profile.description')"><textarea id="character-description" v-model="form.description" class="aw-input" maxlength="1200" rows="4" /></AwField>
+          <CharacterBriefAssistant v-model="form.description" :disabled="busy" />
+          <AwField id="character-language" label="Jazyk postavy (nepovinné)"><input id="character-language" v-model="form.language" class="aw-input" maxlength="35" /></AwField>
+        </div>
+      </details>
       <p v-if="profile" class="aw-muted">{{ customerCopy.text('customer.preparation-status') }}: {{ customerCopy.text(profileStatusKeys[profile.status] ?? 'customer.status-unknown') }}</p>
       <AwNotice v-if="profile && clarificationText" tone="info">{{ customerCopy.text('customer.clarification', { text: clarificationText }) }}</AwNotice>
       <details v-if="enrichmentText || evidenceSections.length">
@@ -601,6 +606,8 @@ onBeforeUnmount(() => {
 .customer-page :deep(.aw-button--primary) { min-height: 54px; color: #111513; background: var(--wns-mint, #b8f3d4); border-radius: 999px; font-weight: 750; }
 .customer-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
 .customer-form { display: grid; gap: 1rem; }
+.character-extra > summary { min-height: 44px; padding-block: .65rem; cursor: pointer; }
+.character-extra-fields { display: grid; gap: 1rem; padding-top: .5rem; }
 .customer-actions { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
 .character-enrichment { white-space: pre-line; padding: 1rem; border-left: 2px solid var(--wns-violet, #c8b9fc); background: var(--wns-surface-raised, #222626); }
 @media (max-width: 720px) { .customer-actions { display: grid; grid-template-columns: minmax(0, 1fr); } }

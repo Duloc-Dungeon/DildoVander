@@ -7,8 +7,8 @@ import { customerCopy, type CustomerCopyKey } from './customerCopy';
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', name: 'home', component: () => import('./HomeView.vue'), meta: { title: 'Domov' } },
-    { path: '/demo', name: 'customer-demo', component: () => import('../features/demo/CustomerDemo.vue'), meta: { title: 'Ukázkový příběh' } },
+    { path: '/', name: 'home', redirect: to => ({ path: to.hash === '#director' ? '/suitcase/director' : '/signin', query: to.query, hash: to.hash === '#director' ? '' : to.hash }) },
+    { path: '/demo', redirect: '/' },
     { path: '/support', name: 'support', component: () => import('../features/information/SupportView.vue'), meta: { title: 'Podpora' } },
     { path: '/privacy', name: 'privacy', component: () => import('../features/information/PrivacyView.vue'), meta: { title: 'Ochrana soukromí' } },
     { path: '/launch', name: 'launch', component: () => import('../features/launch/LaunchView.vue'), meta: { title: 'Brzy', private: true, requiresAccount: true } },
@@ -33,7 +33,7 @@ export const router = createRouter({
     { path: '/suitcase/diagnostics', name: 'diagnostics', component: () => import('../features/suitcase/DiagnosticsView.vue'), meta: { title: 'Diagnostika', keepAlive: true, requiresAccount: true, operation: true, offlineLocal: true, private: true, staff: true } },
     { path: '/suitcase/director', name: 'director', component: () => import('../features/director/DirectorPanel.vue'), meta: { title: 'Režie', private: true, requiresAccount: true, operation: true, staff: true } },
     { path: '/workshop', name: 'workshop', component: () => import('../features/workshop/WorkshopView.vue'), meta: { title: 'Dílna' } },
-    { path: '/archive', name: 'archive', component: () => import('../features/archive/ArchiveView.vue'), meta: { title: 'Archiv' } },
+    { path: '/archive', name: 'archive', component: () => import('../features/archive/ArchiveView.vue'), meta: { title: 'Archiv', private: true, requiresAccount: true } },
     { path: '/archive/duel', name: 'duel', component: () => import('../features/archive/DuelView.vue'), meta: { title: 'Souboj', private: true } },
     { path: '/archive/chronicle', name: 'chronicle', component: () => import('../features/archive/ChronicleView.vue'), meta: { title: 'Kronika' } },
     { path: '/keepsake/duel.html', redirect: to => ({ path: '/archive/duel', query: to.query }) },
@@ -62,7 +62,6 @@ export const router = createRouter({
 
 const localizedRouteTitles: Partial<Record<string, CustomerCopyKey>> = {
   home: 'home.title',
-  'customer-demo': 'route.title-demo',
   support: 'support.title',
   privacy: 'privacy.title',
   'account-deletion': 'deletion.title',

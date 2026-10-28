@@ -17,6 +17,7 @@ import { account, accountRequest } from '../identity/session';
 import { actions, actionName, modeName, gameRequest, gameErrorText, GameError, operation, practiceRound,
   type Choice, type GameMode, type Lobby, type Match, type Round, type BossProfile, type Progress, type Milestone } from './game';
 import './game.css';
+import SoundToggle from '../../application/SoundToggle.vue';
 import { wnsSound } from '../../application/wnsSound';
 
 const route = useRoute();
@@ -281,7 +282,7 @@ onBeforeUnmount(() => {
   <SceneShell class="game-scene" :class="{ 'responsive-table': tableDuel }" labelled-by="game-title">
     <div class="game-content">
       <header class="game-header">
-        <button type="button" class="aw-button aw-button--secondary" :aria-pressed="wnsSound.enabled.value" @click="wnsSound.enable(!wnsSound.enabled.value)">{{ wnsSound.enabled.value ? 'Ztišit' : 'Zvuk' }}</button>
+        <SoundToggle />
         <RouterLink :to="route.path === '/play' ? '/me/character' : { path: '/play', query: { browse: '1' } }">← {{ route.path === '/play' ? 'Moje postava' : 'Ke hře' }}</RouterLink>
         <span class="game-eyebrow">{{ tableDuel ? practice ? 'Trénink · bez XP' : modeName(match!.mode) : 'Wand Night Stand' }}</span>
         <details v-if="tableDuel" class="game-rules"><summary aria-label="Pravidla duelu">?</summary><div><strong>Tři kouzla. Jedna volba.</strong><p>Úder přeruší lest. Lest obejde štít. Štít zastaví úder.</p><p>Vyber kouzlo a potvrď tah. Volby zůstanou tajné až do společného odhalení.</p><p v-if="!practice">Jiskru přisadíš před potvrzením. Když prohraješ, její bod získá soupeř. Při shodě se přisazené jiskry spotřebují bez bodu.</p></div></details>

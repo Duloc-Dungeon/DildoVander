@@ -33,6 +33,44 @@ beforeEach(() => {
 });
 
 describe('owner waiting room and group countdown', () => {
+  it('marks previous readiness unverified after a failed refresh instead of presenting stale counts', async () => {
+    const view = mount(BetaAdmissionPanel);
+    try {
+      await flushPromises();
+      expect(view.get('.evening-readiness').text()).toContain('Interní beta');
+      const original = api.request.getMockImplementation()!;
+      api.request.mockImplementation(async (path: string, ...args: unknown[]) => {
+        if (path === '/app/v1/admin/launch/waiting-room') throw new Error('Network unavailable');
+        return original(path, ...args);
+      });
+      await view.findAll('button').find(button => button.text() === 'Obnovit čekárnu')!.trigger('click');
+      await flushPromises();
+      expect(view.get('.evening-readiness').findAll('dd').map(item => item.text())).toEqual(Array(4).fill('Stav není ověřený'));
+      expect(view.get('#management-group').attributes('disabled')).toBeDefined();
+      expect(view.text()).toContain('Obnovit stav');
+    } finally { view.unmount(); }
+  });
+
+  it('shows verified group readiness and keeps secondary lists collapsed', async () => {
+    const view = mount(BetaAdmissionPanel);
+    try {
+      await flushPromises();
+      const readiness = view.get('.evening-readiness');
+      expect(readiness.attributes('aria-label')).toBe('Připravenost večera');
+      expect(readiness.text()).toContain('Interní beta');
+      expect(readiness.text()).toContain('Čekající hosté');
+      expect(readiness.text()).toContain('1');
+      expect(readiness.text()).toContain('Přijímání hostů');
+      expect(readiness.text()).toContain('Otevřené');
+      expect(readiness.text()).toContain('Odpočet není potvrzený');
+      expect(view.find('#waiting-room').exists()).toBe(true);
+      expect(view.find('#countdown-minutes').exists()).toBe(true);
+      expect(view.find<HTMLDetailsElement>('details[aria-labelledby="waiting-room-title"]').element.open).toBe(false);
+      expect(view.find<HTMLDetailsElement>('details[aria-labelledby="beta-admission-settings-title"]').element.open).toBe(false);
+      expect(view.get('#beta-admission-group').element.closest('details')?.getAttribute('aria-labelledby')).toBe('beta-admission-settings-title');
+    } finally { view.unmount(); }
+  });
+
   it('requires saving an initial countdown draft before confirming a new group', async () => {
     effectiveGroups[0] = group(groupId, 'Interní beta', { countdownDurationSeconds: null });
     const view = mount(BetaAdmissionPanel);

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import GameBossControl from '../game/GameBossControl.vue';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AdminReauthentication from '../identity/AdminReauthentication.vue';
@@ -45,8 +45,18 @@ const mutationBlocked = ref(false);
 const error = ref('');
 const reauthenticationRequired = ref(false);
 const message = ref('');
+const lastActionSection = ref<'members' | 'admission' | null>(null);
+const membersDisclosure = ref<HTMLDetailsElement>();
+const admissionDisclosure = ref<HTMLDetailsElement>();
 const currentGroup = computed(() => groups.value.find(group => group.id === admission.value?.groupId) ?? null);
 const managedGroup = computed(() => groups.value.find(group => group.id === managementGroupId.value) ?? null);
+const managedWaitingCount = computed(() => members.value.filter(member =>
+  member.groupId === managedGroup.value?.id && member.state === 'waiting').length);
+const waitingMemberCount = computed(() => members.value.filter(member => member.state === 'waiting').length);
+const invitationStatus = computed(() => {
+  if (!admission.value?.groupId) return 'Uzavřeno · skupina není nastavena';
+  return admission.value.recruitmentOpen ? 'Otevřené' : 'Uzavřené';
+});
 const countdownDraftChanged = computed(() => managedGroup.value != null
   && (managedGroup.value.countdownDurationSeconds == null
     || durationMinutes.value * 60 !== managedGroup.value.countdownDurationSeconds
@@ -70,6 +80,12 @@ const countdownStatus = computed(() => {
   const remaining = `${days ? `${days} d ` : ''}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   return `Odpočet běží: ${remaining} · konec ${new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' }).format(managedGroup.value.launchAt)}${managedGroup.value.forceStartAtEnd ? ' · po skončení se noc otevře automaticky' : ''}.`;
 });
+
+watch([error, reauthenticationRequired], ([currentError, needsReauthentication]) => {
+  if (!currentError && !needsReauthentication) return;
+  if (lastActionSection.value === 'members' && membersDisclosure.value) membersDisclosure.value.open = true;
+  if (lastActionSection.value === 'admission' && admissionDisclosure.value) admissionDisclosure.value.open = true;
+}, { flush: 'post' });
 
 async function loadWaitingRoom(): Promise<WaitingMember[]> {
   const roster = new Map<string, WaitingMember>();
@@ -134,6 +150,7 @@ async function reconcile(failureMessage: string, cause: unknown): Promise<void> 
 }
 async function saveConfiguration(): Promise<void> {
   if (!admission.value || busy.value) return;
+  lastActionSection.value = 'admission';
   busy.value = true; error.value = ''; message.value = '';
   try {
     admission.value = await accountRequest<Admission>('/app/v1/admin/launch/beta-admission', 'PUT', {
@@ -148,6 +165,7 @@ async function saveConfiguration(): Promise<void> {
 }
 async function chooseDefault(groupId?: string): Promise<void> {
   if (busy.value) return;
+  lastActionSection.value = 'admission';
   busy.value = true; error.value = ''; message.value = '';
   try {
     const result = await accountRequest<Admission>('/app/v1/admin/launch/beta-admission/group', 'POST', {
@@ -162,6 +180,7 @@ async function chooseDefault(groupId?: string): Promise<void> {
 }
 async function setMemberAccess(member: WaitingMember): Promise<void> {
   if (!member.groupId || busy.value) return;
+  lastActionSection.value = 'members';
   const active = member.state === 'revoked';
   busy.value = true; error.value = ''; message.value = '';
   try {
@@ -177,6 +196,7 @@ async function assignGroup(member: WaitingMember): Promise<void> {
   if (busy.value) return;
   const targetGroupId = assignmentTargets.value[member.userId] || null;
   if (targetGroupId === member.groupId) return;
+  lastActionSection.value = 'members';
   const targetName = groups.value.find(group => group.id === targetGroupId)?.name ?? 'bez skupiny';
   const targetGroup = groups.value.find(group => group.id === targetGroupId);
   const mayEnterImmediately = member.state !== 'revoked' && (targetGroup?.openedAt != null
@@ -196,6 +216,7 @@ async function assignGroup(member: WaitingMember): Promise<void> {
 async function saveCountdownDraft(): Promise<void> {
   const group = managedGroup.value;
   if (!group || busy.value || !Number.isInteger(durationMinutes.value) || durationMinutes.value < 1 || durationMinutes.value > 10080) return;
+  lastActionSection.value = null;
   busy.value = true; error.value = ''; message.value = '';
   try {
     await accountRequest(`/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}/countdown`, 'PUT', {
@@ -211,6 +232,7 @@ async function saveCountdownDraft(): Promise<void> {
 async function confirmCountdown(): Promise<void> {
   const group = managedGroup.value;
   if (!group || busy.value || countdownDraftChanged.value || !Number.isInteger(durationMinutes.value) || durationMinutes.value < 1 || durationMinutes.value > 10080) return;
+  lastActionSection.value = null;
   busy.value = true; error.value = ''; message.value = '';
   try {
     await accountRequest(`/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}/countdown/confirm`, 'POST', {
@@ -224,6 +246,7 @@ async function confirmCountdown(): Promise<void> {
 async function startNight(): Promise<void> {
   const group = managedGroup.value;
   if (!group || busy.value) return;
+  lastActionSection.value = null;
   busy.value = true; error.value = ''; message.value = '';
   try {
     await accountRequest(`/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}/start`, 'POST', {
@@ -247,12 +270,16 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
 <template>
   <section id="waiting-room" class="aw-card beta-admission" aria-labelledby="beta-admission-title">
     <h3 id="beta-admission-title">Pozvaní a otevření večera</h3>
-    <p>Účastníci čekající na otevření noci jsou zobrazeni napříč všemi skupinami. Změna výchozí skupiny ovlivňuje jen nové přijetí.</p>
-    <ol>
-      <li>Vyberte nebo vytvořte skupinu v náboru. <RouterLink v-if="account?.roles.includes('Owner')" to="/settings/admin#invitations">Vytvořit osobní pozvánku</RouterLink></li>
-      <li>Uložte délku odpočtu a potom potvrďte jeho spuštění.</li>
-      <li>Po skončení odpočtu spusťte noc. Pro automatické otevření předem zapněte volbu níže.</li>
-    </ol>
+    <p>Nastavte skupinu a potvrďte otevření. Nábor nových beta účtů se spravuje zvlášť.</p>
+    <section class="evening-readiness" aria-label="Připravenost večera">
+      <h4>Připravenost</h4>
+      <dl>
+        <div><dt>Skupina</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading ? 'Načítám stav…' : managedGroup?.name ?? (groups.length ? 'Vyberte skupinu' : 'Skupina není dostupná') }}</dd></div>
+        <div><dt>Čekající hosté</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : managedWaitingCount }}</dd></div>
+        <div><dt>Přijímání hostů</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !admission ? 'Stav není načtený' : `${invitationStatus}${groupName ? ` · ${groupName}` : ''}` }}</dd></div>
+        <div><dt>Otevření</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : managedGroup.openedAt ? 'Večer je otevřený' : managedGroup.launchAt === null ? 'Odpočet není potvrzený' : countdownStatus }}</dd></div>
+      </dl>
+    </section>
     <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
     <AdminReauthentication v-if="reauthenticationRequired" @verified="reauthenticationRequired = false; error = ''; message = 'Totožnost byla ověřena. Původní změnu nyní odešlete znovu.'" />
     <AwButton v-if="mutationBlocked" variant="secondary" :disabled="busy" @click="load">Obnovit stav</AwButton>
@@ -260,28 +287,8 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
     <p v-if="message" role="status">{{ message }}</p>
     <p v-if="loading" role="status">Načítání čekárny…</p>
     <template v-else-if="admission">
-      <section class="waiting-room__section" aria-labelledby="waiting-room-title">
-        <h4 id="waiting-room-title">Účastníci v čekárně</h4>
-        <p v-if="!members.length">Čekárna je zatím prázdná.</p>
-        <ul v-else class="beta-admission__members">
-          <li v-for="member in members" :key="member.userId">
-            <div class="waiting-room__identity"><strong>{{ member.displayName }}</strong><small>Účet {{ member.userId.slice(0, 8) }} · přijat {{ joinedDate(member.joinedAt) }}<template v-if="member.fixedUniverse"> · {{ member.fixedUniverse }}</template></small><span>{{ member.groupName || 'Bez skupiny' }} · {{ member.state === 'waiting' ? 'Čeká' : 'Přístup odebrán' }}</span></div>
-            <div class="waiting-room__actions">
-              <label :for="`member-group-${member.userId}`">Skupina</label>
-              <select :id="`member-group-${member.userId}`" v-model="assignmentTargets[member.userId]" class="aw-select" :disabled="busy || mutationBlocked" :aria-label="`Skupina pro ${member.displayName}`">
-                <option v-if="!member.groupId" value="">Bez skupiny</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
-              </select>
-              <AwButton :disabled="busy || mutationBlocked || !(assignmentTargets[member.userId] || '') || (assignmentTargets[member.userId] || '') === (member.groupId || '')" @click="assignGroup(member)">Přesunout</AwButton>
-              <AwButton v-if="member.state === 'revoked' && member.groupId" variant="secondary" :disabled="busy || mutationBlocked" @click="setMemberAccess(member)">Obnovit přístup</AwButton>
-              <span v-else-if="member.state === 'revoked'">Nejdříve přiřaďte skupinu, potom samostatně obnovte přístup.</span>
-              <AwButton v-if="member.state === 'waiting' && member.groupId" variant="danger" :disabled="busy || mutationBlocked" @click="setMemberAccess(member)">Odebrat přístup</AwButton>
-            </div>
-          </li>
-        </ul>
-      </section>
-
       <section class="waiting-room__section" aria-labelledby="group-countdown-title">
-        <h4 id="group-countdown-title">Odpočet skupiny</h4>
+        <h4 id="group-countdown-title">Skupina a otevření</h4>
         <label for="management-group">Spravovaná skupina</label>
         <select id="management-group" v-model="managementGroupId" class="aw-select" :disabled="busy || mutationBlocked" @change="durationMinutes = Math.max(1, Math.round((managedGroup?.countdownDurationSeconds ?? 600) / 60)); forceStartAtEnd = managedGroup?.forceStartAtEnd === true">
           <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
@@ -300,8 +307,32 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
         </template>
       </section>
 
+      <details ref="membersDisclosure" class="waiting-room__disclosure" aria-labelledby="waiting-room-title">
+        <summary id="waiting-room-title">Účastníci v čekárně ({{ waitingMemberCount }} čekají)</summary>
+        <section class="waiting-room__section" aria-label="Účastníci v čekárně">
+        <p v-if="!members.length">Čekárna je zatím prázdná.</p>
+        <ul v-else class="beta-admission__members">
+          <li v-for="member in members" :key="member.userId">
+            <div class="waiting-room__identity"><strong>{{ member.displayName }}</strong><small>Účet {{ member.userId.slice(0, 8) }} · přijat {{ joinedDate(member.joinedAt) }}<template v-if="member.fixedUniverse"> · {{ member.fixedUniverse }}</template></small><span>{{ member.groupName || 'Bez skupiny' }} · {{ member.state === 'waiting' ? 'Čeká' : 'Přístup odebrán' }}</span></div>
+            <div class="waiting-room__actions">
+              <label :for="`member-group-${member.userId}`">Skupina</label>
+              <select :id="`member-group-${member.userId}`" v-model="assignmentTargets[member.userId]" class="aw-select" :disabled="busy || mutationBlocked" :aria-label="`Skupina pro ${member.displayName}`">
+                <option v-if="!member.groupId" value="">Bez skupiny</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
+              </select>
+              <AwButton :disabled="busy || mutationBlocked || !(assignmentTargets[member.userId] || '') || (assignmentTargets[member.userId] || '') === (member.groupId || '')" @click="assignGroup(member)">Přesunout</AwButton>
+              <AwButton v-if="member.state === 'revoked' && member.groupId" variant="secondary" :disabled="busy || mutationBlocked" @click="setMemberAccess(member)">Obnovit přístup</AwButton>
+              <span v-else-if="member.state === 'revoked'">Nejdříve přiřaďte skupinu, potom samostatně obnovte přístup.</span>
+              <AwButton v-if="member.state === 'waiting' && member.groupId" variant="danger" :disabled="busy || mutationBlocked" @click="setMemberAccess(member)">Odebrat přístup</AwButton>
+            </div>
+          </li>
+        </ul>
+        </section>
+      </details>
+
+      <details ref="admissionDisclosure" class="waiting-room__disclosure" aria-labelledby="beta-admission-settings-title">
+        <summary id="beta-admission-settings-title">Nastavení nových přijetí</summary>
       <section class="waiting-room__section" aria-labelledby="beta-admission-config-title">
-        <h4 id="beta-admission-config-title">Nábor nových účastníků</h4>
+        <h4 id="beta-admission-config-title">Výchozí skupina pro pozvánky</h4>
         <p v-if="admission.groupId"><strong>{{ groupName }}</strong> · {{ groupLaunchLabel }}</p>
         <p v-else>Výchozí beta skupina zatím není nastavena. Nové přijetí zůstává uzavřené.</p>
         <div class="beta-admission__group-controls">
@@ -310,6 +341,8 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
           <AwButton :disabled="busy || mutationBlocked || !selectedGroup || selectedGroup === admission.groupId" @click="chooseDefault(selectedGroup)">Nastavit jako výchozí</AwButton>
           <AwButton variant="secondary" :disabled="busy || mutationBlocked || !!admission.groupId" @click="chooseDefault()">Vytvořit Interní beta</AwButton>
         </div>
+      </section>
+
         <fieldset class="beta-admission__settings" :disabled="busy || mutationBlocked || !admission.groupId">
           <legend>Nové přijetí</legend>
           <label><input v-model="recruitmentOpen" type="checkbox" /> Přijímat nové účastníky</label>
@@ -317,7 +350,7 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
           <input id="beta-fixed-universe" v-model="fixedUniverse" class="aw-input" maxlength="160" />
           <AwButton :busy="busy" @click="saveConfiguration">Uložit přístup a univerzum</AwButton>
         </fieldset>
-      </section>
+      </details>
     </template>
   </section>
 </template>
@@ -326,6 +359,15 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
 .beta-admission { display: grid; gap: 1rem; }
 .beta-admission h3, .beta-admission h4, .beta-admission p { margin: 0; }
 .waiting-room__section { display: grid; gap: .75rem; border-top: 1px solid var(--aw-border-subtle); padding-top: 1rem; }
+.evening-readiness { display: grid; gap: .5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--aw-border-subtle); }
+.evening-readiness h4, .evening-readiness dl, .evening-readiness p { margin: 0; }
+.evening-readiness dl { display: grid; gap: .65rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
+.evening-readiness dl > div { min-width: 0; display: grid; gap: .2rem; }
+.evening-readiness dt { color: var(--aw-muted); font-size: .8rem; }
+.evening-readiness dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
+.waiting-room__disclosure { border-top: 1px solid var(--aw-border-subtle); padding-top: 1rem; }
+.waiting-room__disclosure > summary { min-height: 44px; display: list-item; list-style-position: inside; padding-block: .65rem; cursor: pointer; font-weight: 650; }
+.waiting-room__disclosure[open] > section { margin-top: .75rem; }
 .beta-admission__group-controls, .beta-admission__settings { display: grid; gap: .75rem; }
 .beta-admission__settings { border: 1px solid var(--aw-border-subtle); border-radius: .65rem; padding: 1rem; }
 .beta-admission__settings legend { font-weight: 650; padding-inline: .4rem; }

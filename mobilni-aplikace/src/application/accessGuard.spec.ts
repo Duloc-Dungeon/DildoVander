@@ -22,7 +22,11 @@ function createGuardedRouter() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/', component: { template: '<div />' } },
+      { path: '/', component: { template: '<div />' }, meta: { requiresAccount: true } },
+      { path: '/demo', redirect: '/' },
+      { path: '/archive', component: { template: '<div />' }, meta: { requiresAccount: true } },
+      { path: '/keepsake/', component: { template: '<div />' } },
+      { path: '/archive/duel', component: { template: '<div />' } },
       { path: '/signin', component: { template: '<div />' } },
       { path: '/privacy', component: { template: '<div />' } },
       { path: '/support', component: { template: '<div />' } },
@@ -80,11 +84,18 @@ describe('launch access navigation', () => {
     expect(router.currentRoute.value.query.return).toBe('/');
   });
 
-  it('preserves public feature routes for signed-out visitors after production launch', async () => {
+  it.each(['/', '/demo', '/archive'])('requires sign-in at %s even after production launch', async path => {
     state.launchAllowed = true;
     const router = createGuardedRouter();
-    await router.push('/');
-    expect(router.currentRoute.value.path).toBe('/');
+    await router.push(path);
+    expect(router.currentRoute.value.path).toBe('/signin');
+  });
+
+  it.each(['/keepsake/', '/archive/duel'])('preserves guest capability entry at %s after launch', async path => {
+    state.launchAllowed = true;
+    const router = createGuardedRouter();
+    await router.push(path);
+    expect(router.currentRoute.value.path).toBe(path);
   });
 
   it('still requires authentication for account routes after production launch', async () => {
