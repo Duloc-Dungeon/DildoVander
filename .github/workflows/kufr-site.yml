@@ -82,6 +82,7 @@ jobs:
           npm run test:launch:browser
           npm run test:owner:browser
           npm run test:persona-lab:browser
+          npm run test:updates:browser
           node tests/debug.browser.mjs
           node tests/director.browser.mjs
           node scripts/archive-show.browser.mjs

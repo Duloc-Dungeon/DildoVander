@@ -40,7 +40,7 @@ function fixture({ backend = true, native = false } = {}) {
   if (native) headFiles.set(`${MOBILE}/package.json`, manifest('2.0.0'));
   const pr = { number: 7, state: 'open', draft: false, user: { login: 'dependabot[bot]' },
     head: { sha: sha('a'), ref: 'dependabot/group', repo: { full_name: 'owner/repo' } },
-    base: { sha: sha('b'), ref: 'main', repo: { full_name: 'owner/repo' } } };
+    base: { sha: sha('b'), ref: 'development', repo: { full_name: 'owner/repo' } } };
   const files = new Map([[sha('b'), baseFiles], [sha('a'), headFiles]]);
   const messages = new Map();
   const parents = new Map();

@@ -1,5 +1,12 @@
 import Foundation
 
+require(AccountTransportPolicy.account(path: "/app/v1/application-version", method: "GET"), "application version policy unavailable")
+for method in ["POST", "PUT", "DELETE"] {
+    require(!AccountTransportPolicy.account(path: "/app/v1/application-version", method: method), "application version policy became mutable")
+}
+require(!AccountTransportPolicy.account(path: "/app/v1/application-version?platform=ios", method: "GET"), "application version query accepted")
+require(!AccountTransportPolicy.account(path: "/app/v1/application-version/extra", method: "GET"), "application version subpath accepted")
+
 let ambientPreviewId = "7fc470e2-e25e-46a2-b51b-97d50275ae77"
 let traceparent = AccountTransportPolicy.newTraceparent()
 require(AccountTransportPolicy.validTraceparent(traceparent), "generated traceparent invalid")
