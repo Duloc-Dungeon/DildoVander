@@ -222,7 +222,7 @@ it('announces offline immediately during the presentation and reconnects with re
   } finally { view.unmount(); }
 });
 
-it('K: a server grant opens the static group scene with immediate authorized entry', async () => {
+it('K: entering starts the character presentation and only continuing completes entry', async () => {
   const deadline=Date.now()+4000;
   persisted=true; savedCreation();
   const original=api.request.getMockImplementation()!;
@@ -235,9 +235,48 @@ it('K: a server grant opens the static group scene with immediate authorized ent
     expect(api.replace).not.toHaveBeenCalled();
     expect(view.text()).toContain('Večer začíná.');
     await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
+    expect(view.find('[data-entrance]').exists()).toBe(true);
+    expect(api.replace).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBeNull();
+    expect(view.text()).not.toContain('Přeskočit animaci');
+    expect(view.find('.entrance-continue').exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(10000); await flushPromises();
+    await view.get('.entrance-continue').trigger('click'); await flushPromises();
     expect(api.replace).toHaveBeenCalledWith('/me/character');
     expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBe('seen');
   } finally {view.unmount();}
+});
+it('polls for a not-yet-available character during the entrance without generating anything again', async () => {
+  allowed = true;
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
+    expect(view.text()).toContain('Slavná osoba se ještě hledá');
+    persisted = true;
+    await vi.advanceTimersByTimeAsync(5000); await flushPromises();
+    expect(view.findComponent({ name: 'CharacterEntrance' }).props('character')?.name).toBe('Raven');
+    expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/prelaunch/character').length).toBeGreaterThanOrEqual(2);
+    expect(api.request.mock.calls.some(([, method]) => method && method !== 'GET')).toBe(false);
+    await vi.advanceTimersByTimeAsync(5000); await flushPromises();
+    await view.get('.entrance-continue').trigger('click'); await flushPromises();
+    expect(api.replace).toHaveBeenCalledWith('/me/character');
+  } finally { view.unmount(); }
+});
+it('does not mark a cancelled entry as seen and removes the presentation immediately on account change', async () => {
+  allowed = true; persisted = true;
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
+    api.replace.mockResolvedValueOnce({ type: 4 });
+    await vi.advanceTimersByTimeAsync(10000); await flushPromises();
+    await view.get('.entrance-continue').trigger('click'); await flushPromises();
+    expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBeNull();
+    api.setAccount(null); await flushPromises();
+    expect(view.find('[data-entrance]').exists()).toBe(false);
+    expect(view.text()).not.toContain('Raven');
+  } finally { view.unmount(); }
 });
 it('rechecks server authorization when entering and closes the scene if access was revoked', async () => {
   allowed = true;

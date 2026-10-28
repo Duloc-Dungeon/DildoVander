@@ -1,9 +1,87 @@
 # Wand Night Stand — závazný profil aplikace
 
+<!-- impeccable:product-schema 1 -->
+
 Aktuální rozhodnutí vlastníka, 26. října 2026. Tento dokument je zdroj pravdy
 pro zaměření, jazyk, humor a vzhled mobilní aplikace a jejího webového protějšku.
 Při rozporu nahrazuje starší produktové a vizuální pokyny. Technické kontrakty,
 oprávnění, souhlasy a pravdivost stavů zůstávají závazné.
+
+Struktura profilu doplněna 28. října 2026 podle stávajících podkladů a rozhodnutí
+vlastníka v této úloze. Podrobná pravidla níže zůstávají součástí profilu.
+
+## Platform
+
+web
+
+## Users
+
+Hlavním uživatelem je dospělý host soukromého společného večera, který na telefonu
+přijme pozvánku, připraví fiktivní postavu, zapojí se do her a vrací se k památkám.
+Vlastník připravuje skupinu, pozvánky a otevření večera. Servisní a provozní role
+mají vlastní oprávnění a nejsou běžnou zákaznickou cestou.
+
+## Product Purpose
+
+Propojit osobní fiktivní roli hosta se společným večerem: od pozvánky a představení
+postavy přes hru a souboje až po uchované památky. Účet a další krok mají zůstat
+srozumitelné také při čekání na přípravu nebo při chybě spojení.
+
+## Positioning
+
+Zážitek spojuje pozvánkovou skupinu, vlastní fiktivní postavu, osobní suchý roast,
+portrét a společné hraní. Osobní text vychází z ověřeného podkladu zvolené role;
+bez něj nastupuje původní vypravěčský humor, nikoli vymyšlené vlastnosti hosta.
+
+## Operating Context
+
+Přednost má ovládání na telefonu během přípravy a společného večera. Sdílené
+Vue rozhraní běží na webu a v Capacitor obalech pro iOS a Android; označení `web`
+popisuje společný jazyk rozhraní, nikoli omezení distribuce na prohlížeč.
+Data účtu, přístupu a přípravy dodává backend. Lokální náhledy používají
+syntetická data a nepotvrzují živou AI ani chování fyzického zařízení.
+
+## Capabilities and Constraints
+
+Závazné cesty a technické hranice rozvádějí oddíly „Produkt a hlavní cesta“,
+„Platforma a neměnné hranice“ a „AI a odhalení“. Vývoj fyzického kufru je
+pozastavený; uložené hardwarové kontrakty a bezpečné ukončení se zachovávají.
+Změna vzhledu ani test neopravňují placená modelová volání, nasazení či publikaci.
+
+## Brand Commitments
+
+Název je Wand Night Stand. Rozhraní je české; hlasem je klidný obřadný vypravěč
+s osobním suchým humorem. Podrobný jazyk a hranice humoru určují oddíly níže.
+Současný vizuální systém zaznamenává [DESIGN.md](DESIGN.md); tato aktualizace
+nevybírá nový výtvarný směr ani nemění jeho tokeny.
+
+## Evidence on Hand
+
+- [README.md](README.md) popisuje účel a hranice rozpracovaného prototypu 18+.
+- [DESIGN.md](DESIGN.md), [tokeny v2](mobilni-aplikace/src/assets/wns-v2/design/tokens.css)
+  a [manifest zdrojů](mobilni-aplikace/src/assets/wns-v2/source-manifest.json)
+  dokládají současné vizuální zdroje; manifest není inventář produkčních účtů.
+- [Stav implementace](docs/wns-v2-implementation.md) odděluje ověřené části
+  od nedokončených a od nativní či živé přejímky.
+- [Browser scénáře a fixtures](mobilni-aplikace/tests) jsou syntetická evidence
+  chování a rozložení. Nejsou referencí reálných hostů, výsledků AI ani cen.
+- Historicky uvedený soubor `design-system/reference/responsive-table.png`
+  v tomto checkoutu chybí; není dostupným důkazem současné vizuální shody.
+
+## Product Principles
+
+1. Zákaznická cesta vede od pozvánky přes postavu ke společnému večeru a památkám.
+2. Oprávnění, souhlasy a skutečný stav vlastní serverové kontrakty, nikoli animace.
+3. Osobní humor používá podloženou fiktivní roli; bez podkladu zůstává neosobní.
+4. Chyba přípravy nabídne pravdivý stav a další krok; nesmí předstírat hotový výsledek.
+5. Sdílené české rozhraní chrání soukromé údaje a odděluje hosta od servisních nástrojů.
+
+## Accessibility & Inclusion
+
+Ověřuj 320 a 390 px, širší obrazovku, 200% text, klávesnici a viditelný fokus,
+kontrast a bezpečné okraje telefonu. Omezený pohyb má plnohodnotný statický stav.
+Funkční význam nesmí záviset na zvuku, barvě nebo dokončení animace. Vtip není
+náhradou za srozumitelný souhlas, chybu ani pojmenování dalšího kroku.
 
 ## Produkt a hlavní cesta
 
@@ -91,16 +169,19 @@ v editoru je výslovně místní námět, nikoli vydávaný výsledek AI. Výbě
 neuděluje souhlas a nic neposílá poskytovateli. Příprava, její výsledek a chyba
 vždy vycházejí ze skutečného stavu.
 
-## Vzhled: The Responsive Table
+## Vzhled a historický podklad The Responsive Table
 
-Aktuální předlohou je vlastníkem dodaný prototyp **The Responsive Table**,
-Preview 2 z 26. října 2026; [uložená předloha](design-system/reference/responsive-table.png).
+Starší profil uváděl vlastníkem dodaný prototyp **The Responsive Table**,
+Preview 2 z 26. října 2026. Uvedená cesta `design-system/reference/responsive-table.png`
+v tomto checkoutu chybí. Následující popis historického podkladu není novým
+schválením předlohy; současný design v2 a jeho doložené zdroje popisuje `DESIGN.md`.
 Tmavě zelený stůl, slonová kost, hmatově působící mosazné akce, čistá bezpatková
 typografie a skutečné herní postavy tvoří jednotný profesionální celek.
 
 - Barvy a typografii definuje [DESIGN.md](DESIGN.md), implementaci
-  `mobilni-aplikace/src/application/consumer-brand.css`. Používej existující
-  sémantické tokeny, lokální Inter a sdílené Vue komponenty. Žádný nový framework.
+  `mobilni-aplikace/src/application/wns-v2.css`. Starší `consumer-brand.css` zůstává
+  importovaný před adaptérem v2. Používej existující sémantické tokeny, lokální
+  Manrope podle `DESIGN.md` a sdílené Vue komponenty. Žádný nový framework.
 - Na telefonu jedna zřetelná hlavní akce a přehledná spodní navigace.
   Rozložení se přizpůsobuje šířce; desktop není obří roztažený telefon.
 - Herní stůl a žetony tvoří ilustrativní vrstvu. Skóre, jména, zásoby, počet
@@ -109,9 +190,14 @@ typografie a skutečné herní postavy tvoří jednotný profesionální celek.
 - Jemné rychlé odezvy při výběru, potvrzení a výsledku; žádné blokující intro,
   náhodné konfety, přetékání nebo pohyb funkčního textu. Omezený pohyb má
   plnohodnotný statický stav. Výsledek není závislý na `animationend`.
+  Výslovná výjimka vlastníka z 28. října 2026: při představení postavy po
+  „Vstoupit“ se „Pokračovat“ zobrazí až po alespoň 10 sekundách představení
+  v popředí. Potom lze pokračovat i bez portrétu; tato výjimka se nerozšiřuje
+  na jiné funkční akce ani herní výsledky.
 - Pozvánka si zachovává skutečnou dvoukřídlou oponu. Pevný rám se nenatahuje,
   správný portrét je dekódovaný pod látkou. Hotový obraz, chyba a povolený
-  vstup mají přednost před úvodem; nejde o důvod zadržet funkční akci.
+  vstup mají přednost před nepovinnými efekty; časová výjimka pro představení
+  postavy je vymezena výše.
 - Ověř 320 a 390 px, širší obrazovku, 200% text, klávesnici, kontrast,
   safe areas, chyby a omezený pohyb. Browser fixture není nativní ani živý AI důkaz.
 

@@ -13,6 +13,7 @@ import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
 import { launchCopy as copy } from './launchCopy';
 import PortraitCurtain from './PortraitCurtain.vue';
+import CharacterEntrance from './CharacterEntrance.vue';
 import SceneShell from '../../components/scene/SceneShell.vue';
 import PaperSurface from '../../components/scene/PaperSurface.vue';
 import CharacterCountdown from '../../components/scene/CharacterCountdown.vue';
@@ -40,6 +41,7 @@ const error = ref('');
 const remaining = ref(0);
 const revealed = ref(false);
 const groupOpening = ref(false);
+const groupPresenting = ref(false);
 const groupBusy = ref(false);
 const formFocused = ref(false);
 let characterRead = 0;
@@ -105,6 +107,8 @@ const timeParts = computed(() => {
 watch(() => account.value?.id, id => {
   accountEpoch++;
   groupOpening.value = false;
+  groupPresenting.value = false;
+  groupBusy.value = false;
   characterRead++;
   portrait.clear();
   state.value = null;
@@ -157,6 +161,7 @@ async function refreshPolicy(): Promise<void> {
   if (!value.allowed) {
     const wasOpening = groupOpening.value;
     groupOpening.value = false;
+    groupPresenting.value = false;
     // A pause may arrive before the opening scene ever fetched a character.
     // Reconcile the waiting scene with reads, never a second enrollment/save.
     if (wasOpening && account.value && customerMembershipState.value === 'active') {
@@ -180,17 +185,36 @@ async function refreshPolicy(): Promise<void> {
     else groupOpening.value = true;
   }
 }
-async function enterGroup(): Promise<void> {
+async function enterGroup(continueToApp = false): Promise<void> {
   const owner = account.value;
   if (!owner || groupBusy.value || !policy.value?.allowed || (isCustomerAccount(owner) && customerMembershipState.value !== 'active')) return;
+  const epoch = accountEpoch;
   groupBusy.value = true;
   error.value = '';
-  try { await refreshPolicy(); }
-  catch { error.value = copy.value.readFailed; groupBusy.value = false; return; }
-  if (!policy.value?.allowed || account.value?.id !== owner.id) { groupBusy.value = false; return; }
-  try { sessionStorage.setItem(`wand.group-opening-seen.v1.${owner.id}`, 'seen'); } catch { /* The server still checks access at the destination. */ }
-  try { await router.replace(defaultSignedInDestination(owner)); }
-  finally { groupBusy.value = false; }
+  try {
+    await refreshPolicy();
+    if (epoch !== accountEpoch || !policy.value?.allowed || account.value?.id !== owner.id || customerMembershipState.value !== 'active') return;
+    if (!continueToApp) {
+      groupPresenting.value = true;
+      void refreshCharacter(controller?.signal)
+        .catch(() => { if (epoch === accountEpoch) error.value = copy.value.readFailed; })
+        .then(() => { if (epoch === accountEpoch) beginPolling(); });
+      return;
+    }
+    const failure = await router.replace(defaultSignedInDestination(owner));
+    if (epoch !== accountEpoch) return;
+    if (failure) { error.value = copy.value.readFailed; return; }
+    if (account.value?.id === owner.id) {
+      try { sessionStorage.setItem(`wand.group-opening-seen.v1.${owner.id}`, 'seen'); } catch { /* Restricted storage can safely replay the introduction. */ }
+    }
+  }
+  catch { if (epoch === accountEpoch) error.value = copy.value.readFailed; }
+  finally { if (epoch === accountEpoch) groupBusy.value = false; }
+}
+async function retryEntrance(): Promise<void> {
+  const epoch = accountEpoch;
+  await retryRead();
+  if (epoch === accountEpoch && state.value?.artwork?.status === 'ready' && portrait.failed.value) await portrait.retry();
 }
 async function refreshBetaEnrollment(): Promise<void> {
   try {
@@ -318,7 +342,8 @@ async function requestBetaAdmission(): Promise<void> {
 }
 function beginPolling(): void {
   if (!account.value || !presentationForeground.value || navigator.onLine === false || pollTimer || controller?.signal.aborted) return;
-  if (!actualPreparation.value && !uncertain.value) return;
+  const entranceWaiting = groupPresenting.value && !hasPortrait.value && !portrait.failed.value && state.value?.artwork?.status !== 'failed';
+  if (!actualPreparation.value && !uncertain.value && !entranceWaiting) return;
   pollTimer = setTimeout(async () => {
     pollTimer = undefined;
     try { await refreshCharacter(controller?.signal); }
@@ -390,14 +415,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SceneShell v-if="groupOpening" class="launch-page group-opening" labelled-by="group-opening-title" :active="presentationForeground">
-    <div class="group-opening-art" data-scene-enter aria-hidden="true"><span>W</span></div>
-      <section class="group-opening-copy" aria-live="polite">
+  <SceneShell v-if="groupOpening" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
+    <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!error" :active="presentationForeground" :busy="groupBusy" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
+      <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
+      <p v-if="portraitSource && hasPortrait" class="launch-attribution">Obrázek z internetu: <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> · {{ portraitSource.author }} · <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
+    </CharacterEntrance>
+    <template v-else>
+      <div class="group-opening-art" data-scene-enter aria-hidden="true"><span>W</span></div>
+      <section class="group-opening-copy">
       <h1 id="group-opening-title">{{ language === 'en' ? 'The evening begins.' : 'Večer začíná.' }}</h1>
-      <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup">{{ copy.retry }}</button></AwNotice>
-      <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup">{{ language === 'en' ? 'Enter' : 'Vstoupit' }}</AwButton>
-      <button class="launch-skip" :disabled="groupBusy" @click="enterGroup">{{ language === 'en' ? 'Skip animation' : 'Přeskočit animaci' }}</button>
+      <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup(false)">{{ copy.retry }}</button></AwNotice>
+      <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup(false)">Vstoupit</AwButton>
     </section>
+    </template>
     <footer class="launch-footer"><details class="launch-account-options"><summary>{{ copy.account }}</summary><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
   <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" labelled-by="launch-title">
