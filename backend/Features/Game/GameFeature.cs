@@ -6,6 +6,7 @@ using System.Text.Json;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.Access;
+using Kufr.Backend.Features.Customers;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -602,7 +603,8 @@ internal static class GameEndpoints
                 return await next(invocation);
             } catch (GameFault e) { return ApiProblem.Create(h, e.Status, e.Code); }
         });
-        group.MapGet("", async (HttpContext h, AccountDatabase db, GameStore store) =>
+        group.MapGet("", async (HttpContext h, AccountDatabase db, GameStore store,
+            CharacterProfileStore profiles) =>
         {
             var id = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!; var groupId = (string)h.Items["dv-game-group"]!;
             var activePeerQuery = from u in db.Users.AsNoTracking()
@@ -631,10 +633,11 @@ internal static class GameEndpoints
                 Active = lobby.Active.Where(match => eligibleIds.Contains(match.Opponent.Id)).ToArray(),
                 History = lobby.History.Where(match => eligibleIds.Contains(match.Opponent.Id)).ToArray()
             };
-            h.Response.Headers.CacheControl = "no-store"; return Results.Ok(safeLobby);
+            h.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(await GameDisplayNames.DecorateAsync(safeLobby, profiles, h.RequestAborted));
         });
         group.MapPost("/matches", async (GameChallenge r, HttpContext h, AccountDatabase db, GameStore store,
-            LaunchPolicyStore launch) =>
+            LaunchPolicyStore launch, CharacterProfileStore profiles) =>
         {
             var id = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!; var groupId = (string)h.Items["dv-game-group"]!;
             await MobileWandSessions.RequireForGame(h, id, r.Mode == "tactical");
@@ -645,12 +648,19 @@ internal static class GameEndpoints
             var groupSettings = launch.ReadGroup(groupId)!;
             var result = store.Challenge(groupId, id, challenger, opponent.Id, opponent.DisplayName, r,
                 DateTimeOffset.UtcNow.ToUnixTimeSeconds(), groupSettings.AdultContentEnabled, groupSettings.FlirtEnabled);
-            return Results.Created($"/app/v1/game/matches/{result.Id}", result);
+            var decorated = await GameDisplayNames.DecorateAsync(result, profiles, h.RequestAborted);
+            return Results.Created($"/app/v1/game/matches/{result.Id}", decorated);
         });
-        group.MapGet("/matches/{id}", (string id, HttpContext h, GameStore store) => Results.Ok(store.Read(id, (string)h.Items["dv-game-group"]!, h.User.FindFirstValue(ClaimTypes.NameIdentifier)!)));
+        group.MapGet("/matches/{id}", async (string id, HttpContext h, GameStore store,
+            CharacterProfileStore profiles) =>
+        {
+            var match = store.Read(id, (string)h.Items["dv-game-group"]!,
+                h.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            return Results.Ok(await GameDisplayNames.DecorateAsync(match, profiles, h.RequestAborted));
+        });
         foreach (var action in new[] { "accept", "decline", "cancel", "choose", "loadout", "task", "retry" })
             group.MapPost($"/matches/{{id}}/{action}", async (string id, GameCommand request, HttpContext h,
-                GameStore store, GameYoloWorker yolo, LaunchPolicyStore launch) =>
+                GameStore store, GameYoloWorker yolo, LaunchPolicyStore launch, CharacterProfileStore profiles) =>
             {
                 var groupId = (string)h.Items["dv-game-group"]!;
                 var userId = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -664,7 +674,7 @@ internal static class GameEndpoints
                 var result = store.Mutate(id, groupId, userId, action,
                     request, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), settings.AdultContentEnabled, settings.FlirtEnabled);
                 if (result.Yolo?.Status == "generating") yolo.Enqueue(id, result.Revision);
-                return Results.Ok(result);
+                return Results.Ok(await GameDisplayNames.DecorateAsync(result, profiles, h.RequestAborted));
             });
     }
 }

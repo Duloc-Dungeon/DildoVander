@@ -88,6 +88,10 @@ internal static partial class AccountIdentityTests
             openAiConsent=true, longTermConsent=false, expectedRevision=0
         }));
         var characterId=character.GetProperty("id").GetString()!;
+        var labeledCharacter = await JsonAsync(await tester.PutAsJsonAsync(
+            "/app/v1/testing-sessions/characters/" + characterId + "/label", new TestingCharacterLabelRequest("Test A")));
+        Check(labeledCharacter.GetProperty("character").GetProperty("label").GetString() == "Test A",
+            "test label update is independent of an AI consent request");
         await JsonAsync(await tester.PostAsJsonAsync("/app/v1/testing-sessions/"+id+"/character",new { characterId,expectedRevision=created.GetProperty("revision").GetInt32() }));
         using (var rejectedDecision = await tester.PostAsJsonAsync("/app/v1/testing-sessions/" + id + "/select", new { }))
         {

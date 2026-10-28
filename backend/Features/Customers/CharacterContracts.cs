@@ -11,7 +11,13 @@ internal sealed record CharacterEnrichment(string RecognizedName, string World, 
     CharacterSource[] Sources, string Model, string PromptVersion, long ProcessedAt, long InputRevision,
     string EvidenceKind, int InputTokens = 0, int OutputTokens = 0);
 internal sealed record CharacterProfile(string ProfileId, long Revision, CharacterUserInput UserInput,
-    string Status, CharacterEnrichment? Enrichment, string? ErrorCode, long UpdatedAt);
+    string Status, CharacterEnrichment? Enrichment, string? ErrorCode, long UpdatedAt)
+{
+    public string? Label { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string DisplayName => CharacterLabel.DisplayName(UserInput.Name, Label);
+}
+internal sealed record CharacterLabelWriteRequest(string ProfileId, string? Label, string? ExpectedLabel = null);
 internal sealed record CharacterWriteRequest(long ExpectedRevision, CharacterUserInput UserInput,
     string? ExpectedProfileId = null, bool NewCharacter = false, bool OpenAiConsent = false,
     bool PortraitConsent = false);

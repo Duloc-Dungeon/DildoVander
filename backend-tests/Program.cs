@@ -63,6 +63,7 @@ if (args is ["--testing-conversations"]) { await TestingConversationTests.RunAsy
 if (args is ["--testing-multiturn"]) { await TestingMultiTurnTests.RunAsync(); return; }
 if (args is ["--testing-resources"]) { await TestingResourcesTests.RunAsync(); return; }
 if (args is ["--testing-session-http"]) { await AccountIdentityTests.RunTestingSessionHttpAsync(); return; }
+if (args is ["--character-labels"]) { await CharacterLabelTests.RunAsync(); GameDisplayNameTests.Run(); return; }
 if (args is ["--testing-sessions"]) { await TestingSessionsTests.RunAsync(); return; }
 if (args is ["--testing-enrichment-queue"]) { await TestingSessionsTests.RunOptionalEnrichmentAsync(); return; }
 if (args is ["--testing-character-race"]) { await TestingCharacterRaceTests.RunAsync(); return; }
@@ -261,6 +262,8 @@ await TestingResourcesTests.RunAsync();
 await TestingCharacterRaceTests.RunAsync();
 await AccountIdentityTests.RunTestingSessionHttpAsync();
 await TestingSessionsTests.RunAsync();
+await CharacterLabelTests.RunAsync();
+GameDisplayNameTests.Run();
 await PersonalityTests.RunAsync();
 await AutonomousLiveTests.RunAsync();
 await CaseVoiceAsideTests.RunAsync();

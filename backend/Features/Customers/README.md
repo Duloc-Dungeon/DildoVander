@@ -9,6 +9,15 @@ never an account identifier supplied in a body or a character's name.
 Writes require the current revision and profile identity. An account has one
 active character; `newCharacter` cannot replace an existing identity. Customers
 create their first character; only an administrator can edit or refine it.
+Customers can independently set or clear an optional display label (80 characters)
+with `PUT /app/v1/customer/character/label` using `profileId`, `label` and
+`expectedLabel`. A stale label/profile returns 409. This does not change the
+profile revision, enqueue AI work or require additional AI consent. The additive
+`character_labels` table stores it outside `userInput`; deleting the profile
+cascades to its label. Game lobby, match and ranking responses resolve current
+labels for display while persisted match names and AI context remain unchanged.
+Testing characters have equivalent isolated metadata at
+`PUT /app/v1/testing-sessions/characters/{id}/label`.
 Registration requires affirmative processing consent, stored with a timestamp
 and version on the account. Existing accounts confirm once before further AI
 work; the migration never infers consent. Endpoints derive processing permission

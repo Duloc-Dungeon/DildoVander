@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import userIcon from '../../assets/wns-v2/icons/regular/user.svg';
 import type { PrelaunchCharacterResponse } from './generatedPrelaunchCharacter';
+import { characterDisplayName } from '../customer/characterLabel';
 
 const props = defineProps<{
   character: PrelaunchCharacterResponse['character'];
@@ -26,8 +27,12 @@ const showPersonal = computed(() => !!personalJoke.value && elapsed.value >= 900
 const unavailable = computed(() => !props.image && (props.failed || props.readFailed
   || ['failed', 'not_requested', 'unavailable'].includes(props.artwork?.status ?? '') || elapsed.value >= 15_000));
 const phase = computed(() => revealed.value && props.image ? 'portrait' : unavailable.value ? 'placeholder' : showPersonal.value ? 'personal' : 'waiting');
-const title = computed(() => phase.value === 'portrait' || phase.value === 'placeholder' && props.character ? props.character?.name || 'Tvoje postava'
-  : phase.value === 'placeholder' ? 'Podoba se nedostavila.' : 'Tohle je tvůj nástup.');
+const title = computed(() => {
+  if (phase.value === 'portrait' || phase.value === 'placeholder' && props.character) {
+    return props.character ? characterDisplayName(props.character.name, props.character.label) : 'Tvoje postava';
+  }
+  return phase.value === 'placeholder' ? 'Podoba se nedostavila.' : 'Tohle je tvůj nástup.';
+});
 const status = computed(() => phase.value === 'portrait' ? 'Postava je připravená. Večer může začít.'
   : phase.value === 'placeholder' ? canContinue.value ? 'Portrét není dostupný. Můžeš pokračovat i bez něj.' : 'Portrét zatím není dostupný. Za chvíli můžeš pokračovat i bez něj.'
     : props.character ? canContinue.value ? 'Portrét se ještě připravuje. Můžeš pokračovat i bez něj.' : 'Portrét se ještě připravuje. Dej mu chvilku na příchod.'

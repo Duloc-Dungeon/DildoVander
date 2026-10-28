@@ -4,6 +4,16 @@ The maintained Vue/Capacitor application offers `/me/` for the account's own
 character, conversations and keepsakes. Staff retain their exact device/resource
 permissions. Customer passkey enrollment never assigns staff roles or grants.
 
+An optional display `label` is stored outside character `userInput`.
+`PUT /app/v1/customer/character/label` accepts `{ profileId, label, expectedLabel }`
+and returns `{ profile }`. Labels are at most 80 characters without controls;
+empty text clears them. A stale profile or label returns `409 character_label_conflict`.
+The write requires the normal account/CSRF authorization but no AI consent,
+profile revision change or generation. Session summaries, game opponents and
+rankings use the current label; conversation and AI snapshots retain the original
+name. The wand availability response exposes optional `characterDisplayName`
+for the player's own game score; this is UI metadata, not a provider input.
+
 ## Start and identity
 
 1. A trusted device registers `POST /v1/customer-sessions/device-challenge` using

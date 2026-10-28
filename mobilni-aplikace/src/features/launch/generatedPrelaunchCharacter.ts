@@ -24,6 +24,6 @@ export interface PrelaunchArtwork {
 }
 
 export interface PrelaunchCharacterResponse {
-  character: { profileId: string; revision: number; name: string; universe: string; status: string } | null;
+  character: { profileId: string; revision: number; name: string; universe: string; status: string; label?: string | null } | null;
   artwork: PrelaunchArtwork | null;
 }

@@ -791,6 +791,18 @@ internal static partial class MobileGameTests
         await fixture.LoginAsync(paused, fixture.PausedId);
 
         Check((await alice.GetAsync("/app/v1/game")).StatusCode == HttpStatusCode.OK, "active launch group reads game lobby");
+        var aliceProfile = (await fixture.Profiles.ReadAsync(fixture.AliceId))!;
+        var bobProfile = (await fixture.Profiles.ReadAsync(fixture.BobId))!;
+        await fixture.Profiles.WriteLabelAsync(fixture.AliceId, new(aliceProfile.ProfileId, "Petr"));
+        await fixture.Profiles.WriteLabelAsync(fixture.BobId, new(bobProfile.ProfileId, "Jana"));
+        var labeledLobby = await alice.GetFromJsonAsync<JsonElement>("/app/v1/game");
+        Check(labeledLobby.GetProperty("player").GetProperty("displayName").GetString() == aliceProfile.UserInput.Name + " · Petr"
+            && labeledLobby.GetProperty("opponents").EnumerateArray().Any(opponent =>
+                opponent.GetProperty("id").GetString() == fixture.BobId
+                && opponent.GetProperty("displayName").GetString() == bobProfile.UserInput.Name + " · Jana"),
+            "lobby displays separate labels for self and challenge targets");
+        await fixture.Profiles.WriteLabelAsync(fixture.AliceId, new(aliceProfile.ProfileId, null, "Petr"));
+        await fixture.Profiles.WriteLabelAsync(fixture.BobId, new(bobProfile.ProfileId, null, "Jana"));
         var pausedResponse = await paused.GetAsync("/app/v1/game");
         Check(pausedResponse.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Locked,
             "paused group is denied (" + (int)pausedResponse.StatusCode + ")");

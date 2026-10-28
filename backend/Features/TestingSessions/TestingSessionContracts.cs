@@ -13,12 +13,14 @@ internal sealed record TestingSession(string Id, string OwnerId, string VirtualD
 internal sealed record TestingCharacter(string Id, string OwnerId, CharacterProfile Profile, bool LongTermConsent)
 {
     public string? EnrichmentOperationId { get; init; }
+    public string? Label { get; init; }
 }
 internal sealed record TestingSessionRequest(string Engine = "gpt-live-1", string InputMode = "text",
     bool OpenAiConsent = false, bool RecordContent = false, string? OperationId = null, string Platform = "web");
 internal sealed record TestingCharacterRequest(CharacterUserInput UserInput, bool OpenAiConsent = false,
     bool LongTermConsent = false, long ExpectedRevision = 0);
 internal sealed record TestingEnrichRequest(bool OpenAiConsent = false);
+internal sealed record TestingCharacterLabelRequest(string? Label, string? ExpectedLabel = null);
 internal sealed record TestingCharacterSelection(string CharacterId, int ExpectedRevision);
 internal sealed record TestingModeRequest(string InputMode, int ExpectedRevision);
 internal sealed record TestingGenerationRetryRequest(string JobId,bool ConfirmAmbiguous=false);

@@ -49,6 +49,7 @@ internal sealed partial class CharacterProfileStore
                 input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, processed_at INTEGER NOT NULL);
             """;
         command.ExecuteNonQuery();
+        InitializeLabels(connection);
         InitializeConversationPreferences(connection);
         InitializePortraits(connection);
         using var column = connection.CreateCommand();
@@ -203,7 +204,8 @@ internal sealed partial class CharacterProfileStore
         }
         var profile = new CharacterProfile(current?.ProfileId ?? Guid.NewGuid().ToString("N"),
             (current?.Revision ?? 0) + 1,
-            request.UserInput, request.OpenAiConsent ? "queued" : "saved", null, null, Now());
+            request.UserInput, request.OpenAiConsent ? "queued" : "saved", null, null, Now())
+        { Label = current?.Label };
         using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
@@ -531,13 +533,18 @@ internal sealed partial class CharacterProfileStore
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT profile_id,revision,input_json,status,enrichment_json,error_code,updated_at FROM character_profiles WHERE account_id=$account";
+        command.CommandText = """
+            SELECT profile_id,revision,input_json,status,enrichment_json,error_code,updated_at,
+                (SELECT label FROM character_labels WHERE account_id=$account AND profile_id=character_profiles.profile_id)
+            FROM character_profiles WHERE account_id=$account
+            """;
         command.Parameters.AddWithValue("$account", accountId);
         using var reader = command.ExecuteReader();
         return !reader.Read() ? null : new(reader.GetString(0), reader.GetInt64(1),
             JsonSerializer.Deserialize<CharacterUserInput>(reader.GetString(2), Json)!, reader.GetString(3),
             reader.IsDBNull(4) ? null : JsonSerializer.Deserialize<CharacterEnrichment>(reader.GetString(4), Json),
-            reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6));
+            reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6))
+        { Label = reader.IsDBNull(7) ? null : reader.GetString(7) };
     }
 
     private static long Scalar(SqliteConnection connection, SqliteTransaction transaction, string sql, string accountId)

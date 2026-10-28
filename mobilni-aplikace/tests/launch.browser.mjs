@@ -65,6 +65,14 @@ try {
       artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
       return json({ character, artwork });
     }
+    if (url.pathname === '/app/v1/customer/character/label' && request.method() === 'PUT') {
+      const body = request.postDataJSON();
+      assert.equal(body.profileId, character.profileId);
+      assert.equal(body.expectedLabel, character.label ?? null);
+      assert(!('name' in body) && !('userInput' in body));
+      character = { ...character, label: body.label.trim() || null };
+      return json({ profile: { label: character.label } });
+    }
     if (url.pathname === '/app/v1/prelaunch/character/portrait') {
       if (!account || url.searchParams.get('profileId') !== character?.profileId || Number(url.searchParams.get('revision')) !== character?.revision) return json({}, 404);
       return route.fulfill({ status: 200, contentType: 'image/webp', body: image });
@@ -133,6 +141,11 @@ try {
   assert.doesNotMatch(await page.locator('.launch-copy').innerText(), /Poznáváme postavu|Mícháme barvy|portrét|rešerš|malujeme/i);
   assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
   assert.equal(writes.at(-1).openAiConsent, true);
+  await page.getByLabel('Rozlišovací označení (nepovinné)').fill('U okna');
+  await page.getByRole('button', { name: 'Uložit označení', exact: true }).click();
+  await page.getByRole('heading', { name: 'Matylda · U okna', exact: true }).waitFor();
+  assert.equal(character.name, 'Matylda');
+  assert.equal(writes.length, 1, 'display labels never repeat AI creation');
   assert.equal(await page.getByText(/Summary|Appearance|Facts/).count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-countdown.png'), fullPage: true });
   for (const [label, viewport] of [['tablet', { width: 820, height: 1180 }], ['desktop', { width: 1440, height: 1000 }]]) {

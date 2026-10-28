@@ -9,6 +9,15 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('progressive character entrance', () => {
+  it('shows and clears the display label without changing the character name', async () => {
+    const view = mount(CharacterEntrance, { props: { ...initial, character: { ...character, label: 'Petr' }, failed: true } });
+    try {
+      expect(view.get('h1').text()).toBe('Raven · Petr');
+      await view.setProps({ character: { ...character, label: null } });
+      expect(view.get('h1').text()).toBe('Raven');
+      expect(character.name).toBe('Raven');
+    } finally { view.unmount(); }
+  });
   it('opens with a stable general joke and only offers continuation after ten visible seconds', async () => {
     const view = mount(CharacterEntrance, { props: initial });
     try {

@@ -22,6 +22,18 @@ internal static partial class AccountIdentityTests
         await CsrfAsync(owner);
         var firstProfile = await CustomerAsync(first, firstKey);
         var secondProfile = await CustomerAsync(second, secondKey);
+        const string labelRoute = "/app/v1/customer/character/label";
+        var labeled = await JsonAsync(await first.PutAsJsonAsync(labelRoute,
+            new CharacterLabelWriteRequest(firstProfile.GetProperty("profileId").GetString()!, "Petr")));
+        Check(labeled.GetProperty("profile").GetProperty("label").GetString() == "Petr"
+            && labeled.GetProperty("profile").GetProperty("userInput").GetProperty("name").GetString() == "Harry Potter",
+            "customer can label their character while its AI name stays original");
+        Check((await second.PutAsJsonAsync(labelRoute,
+            new CharacterLabelWriteRequest(firstProfile.GetProperty("profileId").GetString()!, "Stolen"))).StatusCode
+            == HttpStatusCode.Conflict, "label writes cannot select another owner's profile");
+        Check((await first.PutAsJsonAsync(labelRoute,
+            new CharacterLabelWriteRequest(firstProfile.GetProperty("profileId").GetString()!, null, "Petr"))).IsSuccessStatusCode,
+            "customer can clear their label without a new AI profile write");
         const string preferencesRoute = "/app/v1/customer/conversation-preferences";
         await SavePreferencesAsync(first, firstProfile, 0, "en-US", "cheeky");
         Check((await first.PutAsJsonAsync("/app/v1/customer/admin/devices/granted-device", new { enabled = true })).StatusCode
