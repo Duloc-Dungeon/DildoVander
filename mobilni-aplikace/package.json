@@ -21,6 +21,7 @@
     "test:persona-lab:browser": "node tests/persona-lab.browser.mjs",
     "test:accounts": "node tests/accounts.browser.mjs",
     "test:accounts:fixture": "node tests/accounts.fixture.browser.mjs",
+    "test:guest-journey:browser": "node tests/accounts.fixture.browser.mjs --guest-journey",
     "test:invitation:browser": "node tests/invitation.browser.mjs",
     "test:beta-admission:browser": "node tests/beta-admission.browser.mjs",
     "test:owner:browser": "node tests/owner-flows.browser.mjs",
