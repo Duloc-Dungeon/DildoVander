@@ -10,6 +10,14 @@ from the authenticated principal; no caller-provided owner or preview role grant
 production authority. Unowned resources fail without exposing private content.
 Owner/Administrator are not implicit test identities.
 
+Characters have an optional `label` (up to 80 characters) used only for display.
+`PUT /app/v1/testing-sessions/characters/{id}/label` accepts `{ label, expectedLabel }`
+and returns `{ character }`. Empty text clears the label; a stale expected label
+returns `409 test_character_label_conflict`. This owner-scoped metadata write
+does not require AI consent, revise the profile, or enqueue enrichment. Lists,
+session titles and duel selectors/participants compose the original name with
+the current label. Conversation snapshots and AI provider input exclude it.
+
 Testing-session GETs have a separate per-IP fixed-window allowance of 240 requests
 per minute. Mutations retain the existing account request allowance. Middleware
 rate-limit rejections return HTTP 429 with the standard problem body, code

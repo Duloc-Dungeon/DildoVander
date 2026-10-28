@@ -66,7 +66,8 @@ internal static class CharacterEndpoints
                         return ApiProblem.Create(http, 409, "invitation_universe_required");
                     }
                 }
-                if (http.Request.Method is "PUT" or "POST")
+                if (http.Request.Method is "PUT" or "POST"
+                    && !invocation.Arguments.OfType<CharacterLabelWriteRequest>().Any())
                 {
                     var consentError = await AccountAiConsent.RequireAsync(http);
                     if (consentError is not null) { return consentError; }
@@ -88,6 +89,8 @@ internal static class CharacterEndpoints
         });
         group.MapPut("", async (CharacterWriteRequest request, HttpContext http, CharacterProfileStore store) =>
             Results.Ok(new { profile = await store.SaveAsync(AccountId(http), request with { OpenAiConsent = true, PortraitConsent = true }, http.RequestAborted, canEditExisting: AccountRoles.IsAdmin(http.User)) }));
+        group.MapPut("/label", async (CharacterLabelWriteRequest request, HttpContext http, CharacterProfileStore store) =>
+            Results.Ok(new { profile = await store.WriteLabelAsync(AccountId(http), request, http.RequestAborted) }));
         group.MapPost("/correction", async (CharacterCorrectionRequest request, HttpContext http, CharacterProfileStore store) =>
             AccountRoles.IsAdmin(http.User)
                 ? Results.Ok(new { profile = await store.CorrectAsync(AccountId(http), request with { OpenAiConsent = true }, http.RequestAborted) })

@@ -42,7 +42,8 @@ internal static class MobileWandEndpoints
             var owner = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var profile = await profiles.ReadAsync(owner, h.RequestAborted);
             var wand = profile is null ? null : MobileWandSessions.Current(wands, owner, profile.ProfileId, profile.Revision);
-            return Results.Ok(new { hasCharacter = profile is not null, wand, tier = profile is null ? 0
+            return Results.Ok(new { hasCharacter = profile is not null, wand,
+                characterDisplayName = profile?.Label is null ? null : profile.DisplayName, tier = profile is null ? 0
                 : Math.Max(wand is null ? 0 : 1, wands.MobileTier(owner, profile.ProfileId, profile.Revision)) });
         });
         group.MapMobileWandWorkshop();

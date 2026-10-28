@@ -50,7 +50,8 @@ describe('Show Pack closed projections', () => {
     expect(projectGalleryItem({ locator: id, editionId: other, wizardIdentity: identity })?.wizardIdentity).toBeNull();
     expect(ownerProphecy({ editionId: id, state: 'locked', unlockAt: 'later', revelation: 'private', afterword: 'private' })).toEqual({ editionId: id, state: 'locked', unlockAt: 'later' });
     expect(projectChronicle({ ...chronicle(), transcript: 'private', photograph: 'private', prophecy: 'private' })).not.toHaveProperty('transcript');
-    const view = projectDuel({ ...duel(), token: 'private', leftChoice: 'trick', seed: 'future', result: { ending: 'future' } }, id);
+    const view = projectDuel({ ...duel(), left: { ...duel().left, identityId: 'test-session' }, token: 'private', leftChoice: 'trick', seed: 'future', result: { ending: 'future' } }, id);
+    expect(view.left.identityId).toBe('test-session');
     expect(view).not.toHaveProperty('token'); expect(view).not.toHaveProperty('seed'); expect(view.result).toBeNull();
   });
   it('preserves historical negative v1 round scores instead of changing their displayed result', () => {

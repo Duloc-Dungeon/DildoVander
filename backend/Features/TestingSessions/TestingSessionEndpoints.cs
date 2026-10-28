@@ -67,6 +67,8 @@ internal static class TestingSessionEndpoints
         group.MapGet("/characters",async(HttpContext h,TestingSessionService s)=>Results.Json(await s.CharactersAsync(Owner(h),h.RequestAborted))).RequireRateLimiting(AccountIdentity.PollingRateLimitPolicy);
         group.MapPost("/characters",async (HttpContext h,TestingCharacterRequest r,TestingSessionService s)=>Results.Json(await s.SaveCharacterAsync(Owner(h),null,r,h.RequestAborted)));
         group.MapPut("/characters/{id}",async (HttpContext h,string id,TestingCharacterRequest r,TestingSessionService s)=>Results.Json(await s.SaveCharacterAsync(Owner(h),id,r,h.RequestAborted)));
+        group.MapPut("/characters/{id}/label", (HttpContext h, string id, TestingCharacterLabelRequest request, TestingSessionService service) =>
+            Results.Json(new { character = service.LabelCharacter(Owner(h), id, request) }));
         group.MapDelete("/characters/{id}",async(HttpContext h,string id,TestingSessionService s)=>{await s.DeleteCharacterAsync(Owner(h),id,h.RequestAborted);return Results.NoContent();});
         group.MapPost("/characters/{id}/enrich",async (HttpContext h,string id,TestingEnrichRequest r,TestingSessionService s)=>Results.Json(await s.EnrichAsync(Owner(h),id,r.OpenAiConsent,h.RequestAborted)));
         group.MapGet("/{id}",async(HttpContext h,string id,TestingSessionService s)=>Results.Json(await s.DetailAsync(Owner(h),id,h.RequestAborted))).RequireRateLimiting(AccountIdentity.PollingRateLimitPolicy);

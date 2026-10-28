@@ -17,11 +17,14 @@ internal static class CharacterAdministrationTests
         {
             var store = new CharacterProfileStore(root);
             var initial = await store.SaveAsync("customer", new(0, new("Raven", "Fiction"), OpenAiConsent: true, PortraitConsent: true));
+            await store.WriteLabelAsync("customer", new(initial.ProfileId, "Display-only label"));
             var job = (await store.ClaimAsync())!;
             var edited = store.EditAdminCharacter(initial.ProfileId, new(initial.Revision, new("Robin", "Fiction")));
             Check(edited.Revision == 2 && edited.Status == "saved" && edited.Enrichment is null && edited.Portrait is null,
                 "manual edit clears unfinished enrichment/portrait and advances revision");
             Check(!await store.CompleteAsync(job, null, "late") && !await store.CanDispatchAsync(job), "text edit fences late enrichment");
+            Check((await store.ReadAsync("customer"))?.Label == "Display-only label" && edited.UserInput.Name == "Robin",
+                "manual admin edits preserve display labels separately from AI identity");
             Expect("character_revision_conflict", () => store.EditAdminCharacter(initial.ProfileId, new(1, initial.UserInput)));
             await store.RequestEnrichmentAsync("customer");
             var enrichedJob = (await store.ClaimAsync())!;
@@ -42,6 +45,9 @@ internal static class CharacterAdministrationTests
             var replaced = store.ReplaceAdminPortrait(edited.ProfileId, edited.Revision, normalized);
             Check(replaced.Revision == 3 && replaced.Enrichment?.InputRevision == 3 && replaced.Portrait?.HasImage == true,
                 "upload retains enrichment and increments profile revision");
+            Check((await store.ReadAsync("customer"))?.Label == "Display-only label"
+                && !System.Text.Json.JsonSerializer.Serialize(WelcomeWriterInput.Build(portraitJob!)).Contains("Display-only label"),
+                "portrait replacement preserves the label without adding it to welcome authoring input");
             Check(!store.CompletePortrait(portraitJob!, normalized, null), "late portrait worker cannot overwrite upload");
             var secondEdit = store.EditAdminCharacter(replaced.ProfileId, new(replaced.Revision, new("New name", "Fiction")));
             Check(secondEdit.Enrichment is null && secondEdit.Portrait?.HasImage == true

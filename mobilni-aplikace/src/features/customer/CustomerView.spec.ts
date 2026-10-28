@@ -193,7 +193,7 @@ describe('customer conversation', () => {
     api.request.mockImplementation(async (path: string, method?: string, body?: Record<string, unknown>) =>
       path.endsWith('/character') ? { profile: method === 'PUT' ? { ...profile, revision: 2, userInput: body?.userInput } : profile } : { items: [] });
     const wrapper = mount(CustomerView, { global: { plugins: [await router('/me/character')] } }); await flushPromises();
-    await wrapper.get('#character-name').setValue('Luna opravená'); await wrapper.get('form').trigger('submit'); await flushPromises();
+    await wrapper.get('#character-name').setValue('Luna opravená'); await wrapper.get('form.customer-form').trigger('submit'); await flushPromises();
     expect(api.request).toHaveBeenCalledWith('/app/v1/customer/character', 'PUT', expect.objectContaining({
       expectedProfileId: profile.profileId, expectedRevision: profile.revision, openAiConsent: true, portraitConsent: true,
       userInput: expect.objectContaining({ name: 'Luna opravená' }),

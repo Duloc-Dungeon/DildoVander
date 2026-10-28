@@ -4,7 +4,7 @@ import type { LabEngine, LabSession } from '../persona-lab/contracts';
 export type InputMode = 'text' | 'voice' | 'hybrid';
 export interface CharacterInput { name: string; world: string; version?: string; description?: string; language?: string }
 export interface TestCharacter {
-  id: string; longTermConsent?: boolean; enrichmentOperationId?: string | null;
+  id: string; label?: string | null; longTermConsent?: boolean; enrichmentOperationId?: string | null;
   profile: { profileId: string; revision: number; userInput: CharacterInput; status: string; errorCode?: string | null; updatedAt?: number;
     enrichment?: { recognizedName: string; world?: string; summary: string; model: string; promptVersion?: string; evidenceKind: string;
       conversationIdeas: string[]; ambiguities: string[]; facts?: { text: string; sourceUrls: string[] }[];
