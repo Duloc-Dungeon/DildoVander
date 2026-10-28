@@ -84,6 +84,57 @@ retains an already generated joke. The owner-scoped retry endpoint accepts
 `expectedProfileId` and `expectedRevision`, queues a missing/failed portrait and
 never changes the character identity or regenerates a ready image.
 
+Welcome authoring uses the Czech roast/absurdity instructions in
+`CharacterWelcomePolicy.Prompt`. A teaser is optional and must match the one
+approved theme when present; omission requires empty `teaser` and null `teaserId`.
+Without verified facts, the writer receives an exact identity sentence containing
+only the supplied name and world (or an empty sentence when it exceeds the text
+limit or fails the display policy). Other unverified biography is rejected. Existing saved welcomes are not
+regenerated merely because the authoring instructions change.
+
+## Administration of characters and portraits
+
+Owners and administrators open `/settings/admin/characters` from account
+administration, the launch page or the customer-session overview. The list loads
+50 compact records at a time; search covers the loaded records. Selecting a
+character fetches its current detail. Operators and customers cannot use these
+administrative endpoints.
+
+| Endpoint | Contract |
+| --- | --- |
+| `GET /app/v1/admin/characters` | `{ items, nextCursor }`; summaries contain profile ID, revision, name/world, status and update time. Continue with `?after=<nextCursor>` (32 lowercase hex characters). |
+| `GET /app/v1/admin/characters/{profileId}` | Full current profile and `portrait: { status, hasImage, errorCode, updatedAt }` or null. |
+| `PUT /app/v1/admin/characters/{profileId}` | `{ expectedRevision, userInput: { name, world, version, description, language } }`; returns the updated detail. |
+| `GET /app/v1/admin/characters/{profileId}/portrait?revision=N` | Current revision's private WebP image; obsolete or missing revisions return 404. |
+| `PUT /app/v1/admin/characters/{profileId}/portrait?expectedRevision=N` | Raw PNG, JPEG or WebP body; returns the updated detail. |
+
+Writes require recent passkey verification, `X-DV-Confirm: yes`, and the existing
+account session/origin/CSRF checks. Both mutations atomically advance the profile
+revision and reject an outdated revision with `character_revision_conflict`
+(409). The editor preserves the draft and offers a reload; reauthentication does
+not replay a write. Account changes abort reads and writes and clear private
+drafts, images and object URLs. All administrative responses are private/no-store.
+
+Manual edits do not enqueue AI work. Changed input clears the old enrichment;
+finished portraits remain attached to the new revision. Portrait replacement
+preserves finished enrichment and replaces the image, clearing old welcome text
+and attribution. Both mutations invalidate queued/running jobs and portrait
+leases so late workers cannot overwrite the administrator's changes. Existing
+captured conversation snapshots and saved keepsake copies remain unchanged.
+Deleted/fenced accounts are excluded from reads and mutations.
+
+Uploads are bounded to 8 MiB, checked against the actual image format and decoded
+within 4096 pixels per side and 16 million pixels total. Animated/malformed images
+are rejected; accepted images are re-encoded as WebP. Upload errors use
+`invalid_character_portrait` (400/415) or `character_portrait_too_large` (413).
+
+Focused checks: backend harness `--character-administration` (also included in
+`--identity`), frontend component `CharacterAdminView.spec.ts`, transport policy
+tests, and `npm run test:character-admin:browser --prefix mobilni-aplikace` after
+the frontend build. The browser check uses synthetic accounts/media and checks
+390/1280 px layouts, edits, uploads and revision conflicts. Native device and real
+passkey ceremonies require their normal platform acceptance checks.
+
 The phone's `/app/v1/customer/wand` flow provides a short live voice conversation
 for the first digital wand and its upgrade. It uses account-bound, short-lived
 socket tickets and persisted selections; it cannot operate a physical device or

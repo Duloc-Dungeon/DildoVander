@@ -190,7 +190,9 @@ internal static class AccountIdentity
                 context.Response.Headers["X-Content-Type-Options"] = "nosniff";
                 if (accountApi && context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } bodySize)
                 {
-                    bodySize.MaxRequestBodySize = 65536;
+                    bodySize.MaxRequestBodySize = HttpMethods.IsPut(context.Request.Method)
+                        && context.GetEndpoint()?.Metadata.GetMetadata<Kufr.Backend.Features.Customers.CharacterAdminEndpoints.PortraitUploadMetadata>() is not null
+                        ? Kufr.Backend.Features.Customers.CharacterAdminEndpoints.MaximumUploadBytes + 1L : 65536;
                 }
                 if (accountSocket || context.Request.Method is not ("GET" or "HEAD" or "OPTIONS"))
                 {

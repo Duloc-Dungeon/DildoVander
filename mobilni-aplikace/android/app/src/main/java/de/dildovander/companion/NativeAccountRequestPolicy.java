@@ -111,6 +111,11 @@ final class NativeAccountRequestPolicy {
     }
 
     static int requestBodyLimit(String path, String method, String contentType) {
+        if (adminCharacterProfilePath(path) && "PUT".equals(method)) return 256 * 1024;
+        if (adminCharacterPortraitPath(path, method, true)) {
+            return Arrays.asList("image/jpeg", "image/png", "image/webp").contains(mediaType(contentType))
+                ? 8 * 1024 * 1024 : 256 * 1024;
+        }
         if (path.matches("^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/transcribe$")
             && "POST".equals(method) && Arrays.asList("audio/webm", "audio/mp4", "audio/ogg", "audio/wav").contains(mediaType(contentType))) {
             return 8 * 1024 * 1024;
@@ -123,6 +128,11 @@ final class NativeAccountRequestPolicy {
     }
 
     static int responseBodyLimit(String path, String method) {
+        if (("GET".equals(method) && (adminCharacterListPath(path) || adminCharacterProfilePath(path))) ||
+            ("PUT".equals(method) && (adminCharacterProfilePath(path) || adminCharacterPortraitPath(path, method, true)))) {
+            return 256 * 1024;
+        }
+        if (adminCharacterPortraitPath(path, method, false)) return 8 * 1024 * 1024;
         if (path.matches("^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$") && "POST".equals(method)) {
             return 8 * 1024 * 1024;
         }
@@ -151,6 +161,9 @@ final class NativeAccountRequestPolicy {
         if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}$")) return "GET".equals(method);
         if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}/(accept|decline|cancel|choose|loadout|task|retry)$")) return "POST".equals(method);
         if (query != null && !query.isEmpty()) {
+            if ("/app/v1/admin/characters".equals(path) && "GET".equals(method) && query.matches("^after=[0-9a-f]{32}$")) return true;
+            if (path.matches("^/app/v1/admin/characters/[0-9a-fA-F-]{32,36}/portrait$") &&
+                ("GET".equals(method) || "PUT".equals(method))) return validAdminCharacterPortraitQuery(query, "GET".equals(method));
             if ("/app/v1/admin/launch/waiting-room".equals(path) && "GET".equals(method)) return query.matches("^after=[0-9a-f]{32}$");
             if ("/app/v1/admin/operations/logs".equals(path) && "GET".equals(method)) return validOptionalQuery(query, "after", "level");
             if ("/app/v1/customer/completion-updates".equals(path) && "GET".equals(method)) return validOptionalQuery(query, "cursor", "limit");
@@ -198,6 +211,8 @@ final class NativeAccountRequestPolicy {
         if ("/app/v1/customer/character/correction".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/sessions".equals(path) || "/app/v1/customer/duels".equals(path) ||
             "/app/v1/customer/admin/sessions".equals(path) || "/app/v1/customer/admin/characters".equals(path)) return "GET".equals(method);
+        if (query == null && "/app/v1/admin/characters".equals(path)) return "GET".equals(method);
+        if (adminCharacterProfilePath(path)) return "GET".equals(method) || "PUT".equals(method);
         if ("/app/v1/customer/start-tickets".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/completion-updates".equals(path)) return "GET".equals(method);
         if ("/app/v1/archive/collection".equals(path)) return "GET".equals(method);
@@ -436,6 +451,31 @@ final class NativeAccountRequestPolicy {
             else return false;
         }
         return validId(profile) && revision != null && revision.matches("^[1-9][0-9]{0,18}$");
+    }
+
+    private static boolean adminCharacterProfilePath(String path) {
+        return path != null && path.matches("^/app/v1/admin/characters/[0-9a-fA-F]{32}$|^/app/v1/admin/characters/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+    }
+
+    private static boolean adminCharacterListPath(String path) {
+        return "/app/v1/admin/characters".equals(path) ||
+            (path != null && path.matches("^/app/v1/admin/characters\\?after=[0-9a-f]{32}$"));
+    }
+
+    private static boolean adminCharacterPortraitPath(String path, String method, boolean upload) {
+        if (!"GET".equals(method) && !"PUT".equals(method)) return false;
+        String expectedMethod = upload ? "PUT" : "GET";
+        if (!expectedMethod.equals(method) || path == null) return false;
+        String marker = "/portrait?";
+        int index = path.indexOf(marker);
+        return index > 0 && adminCharacterProfilePath(path.substring(0, index)) &&
+            validAdminCharacterPortraitQuery(path.substring(index + marker.length()), !upload);
+    }
+
+    private static boolean validAdminCharacterPortraitQuery(String raw, boolean read) {
+        if (raw == null) return false;
+        String key = read ? "revision" : "expectedRevision";
+        return raw.matches("^" + key + "=[1-9][0-9]{0,18}$");
     }
 
     private static boolean validCharacterDeleteQuery(String raw) {
