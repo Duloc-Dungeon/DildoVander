@@ -1,10 +1,12 @@
 using System.Text.Json;
+using Kufr.Backend.Features.CustomerData;
 using Microsoft.Data.Sqlite;
 
 namespace Kufr.Backend.Features.Customers;
 
 internal sealed record CharacterPortrait(string Status, string? LoadingMessage, string? FinalMessage,
     string? ErrorCode, int Attempt, long UpdatedAt, CharacterWelcome? Welcome = null);
+internal sealed record CharacterPortraitCapture(CharacterPortrait Portrait, byte[]? Image);
 internal sealed record CharacterPortraitJob(string AccountId, string ProfileId, long Revision, string LeaseToken,
     int Attempt, CharacterUserInput Input, CharacterEnrichment Enrichment);
 internal sealed record PortraitJobSummary(string ProfileId, long Revision, string Status, int Attempt, string? ErrorCode, long UpdatedAt);
@@ -87,6 +89,29 @@ internal sealed partial class CharacterProfileStore
             reader.IsDBNull(6) ? null : reader.GetString(6),
             reader.IsDBNull(2) ? null : reader.GetString(2),
             reader.GetInt32(3), reader.GetInt64(4), reader.IsDBNull(7) ? null : JsonSerializer.Deserialize<CharacterWelcome>(reader.GetString(7)));
+    }
+
+    internal CharacterPortraitCapture? ReadHeldPortrait(CustomerDataSqliteGuard guard, string accountId, string profileId, long revision)
+    {
+        ValidateCustomerDataAccount(guard, accountId);
+        if (CustomerDataProfileRevoked(guard, accountId, profileId)) return null;
+        using var command = guard.Command("""
+            SELECT a.status,a.loading_message,a.error_code,a.attempt,a.updated_at,p.status,a.final_message,a.welcome_json,a.image
+            FROM character_portraits a JOIN character_profiles p USING(account_id)
+            WHERE a.account_id=$account AND a.profile_id=$profile AND a.revision=$revision
+                AND a.profile_id=p.profile_id AND a.revision=p.revision;
+            """);
+        command.Parameters.AddWithValue("$account", accountId);
+        command.Parameters.AddWithValue("$profile", profileId);
+        command.Parameters.AddWithValue("$revision", revision);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read()) return null;
+        var enrichmentFailed = reader.GetString(5) == "failed" && reader.GetString(0) == "queued";
+        var portrait = new CharacterPortrait(enrichmentFailed ? "failed" : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1), reader.IsDBNull(6) ? null : reader.GetString(6),
+            enrichmentFailed ? "character_enrichment_failed" : reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.GetInt32(3), reader.GetInt64(4), reader.IsDBNull(7) ? null : JsonSerializer.Deserialize<CharacterWelcome>(reader.GetString(7)));
+        return new(portrait, reader.IsDBNull(8) ? null : (byte[])reader[8]);
     }
 
     internal byte[]? ReadPortraitImage(string accountId, string profileId, long revision)

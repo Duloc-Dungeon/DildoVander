@@ -1248,19 +1248,6 @@ private struct AccountDataCleanupHarnessError: Error {}
     require(cleanupFailure.isFinished, "cleanup failure left the share lifecycle pending")
 }
 
-DispatchQueue.global().asyncAfter(deadline: .now() + 20) { fatalError("Native account scheduling regression timed out") }
-Task { @MainActor in
-    do {
-        try await anonymousAccountBootstrapTests()
-        try await nativeAccountSchedulingTests()
-        try await accountDataShareLifecycleTests()
-        print("PASS account data share lifecycle success, duplicate, cancellation and cleanup behavior")
-        exit(0)
-    }
-    catch { fatalError("Native account scheduling regression failed: \(error)") }
-}
-dispatchMain()
-
 let wandArtworkRetry = "/app/v1/customer/keepsakes/" + id + "/wand-artwork/retry"
 require(AccountTransportPolicy.customer(path: wandArtworkRetry, method: "POST"), "owner wand artwork recovery unavailable")
 require(!AccountTransportPolicy.customer(path: wandArtworkRetry, method: "GET"), "artwork recovery became a read")
@@ -1278,3 +1265,45 @@ for malformed in [wandTicket + "?extra=1", wandTicket + "/extra", wandTicket + "
     require(!AccountTransportPolicy.account(path: malformed, method: "POST"), "wand ticket path broadened")
 }
 require(!AccountTransportPolicy.account(path: wandTicket, method: "GET"), "wand ticket method broadened")
+
+// Pod peceti has an exact native allowlist; world truth is never a bridge route.
+let sealedRoot = "/app/v1/sealed-cases"
+let sealedCase = sealedRoot + "/sc_" + String(repeating: "a", count: 32)
+require(AccountTransportPolicy.account(path: sealedRoot, method: "POST"), "case create unavailable")
+require(AccountTransportPolicy.account(path: sealedRoot + "/current", method: "GET"), "current case unavailable")
+for read in ["play", "context", "moderator", "portraits/player_1"] {
+    require(AccountTransportPolicy.account(path: sealedCase + "/" + read, method: "GET"), "case read unavailable")
+    require(!AccountTransportPolicy.account(path: sealedCase + "/" + read, method: "POST"), "case read became mutable")
+}
+for write in ["lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent"] {
+    require(AccountTransportPolicy.account(path: sealedCase + "/" + write, method: "POST"), "case write unavailable")
+    require(!AccountTransportPolicy.account(path: sealedCase + "/" + write, method: "GET"), "case write became readable")
+}
+for invalid in [sealedCase + "/world", sealedCase + "/play?viewer=other", sealedCase + "/portraits/../other", sealedRoot + "/sc_bad/play", sealedCase + "/play/", sealedCase + "/%70lay"] {
+    require(!AccountTransportPolicy.account(path: invalid, method: "GET"), "invalid case path accepted")
+}
+require(AccountTransportPolicy.accountResponseLimit(path: sealedCase + "/portraits/player_1", method: "GET") == 8 * 1024 * 1024, "frozen portrait response limit")
+
+for mime in ["image/png", "image/webp", "image/jpeg; charset=binary"] {
+    require(AccountTransportPolicy.accountResponseContentTypeAllowed(path: sealedCase + "/portraits/player_1", method: "GET", contentType: mime), "valid frozen portrait MIME rejected")
+}
+for mime in ["text/html", "application/json", "image/svg+xml"] {
+    require(!AccountTransportPolicy.accountResponseContentTypeAllowed(path: sealedCase + "/portraits/player_1", method: "GET", contentType: mime), "invalid frozen portrait MIME accepted")
+}
+for status in [401, 403, 404] {
+    require(AccountTransportPolicy.accountResponseContentTypeAllowed(path: sealedCase + "/portraits/player_1", method: "GET", contentType: "application/json", status: status), "portrait auth/error JSON blocked")
+}
+print("PASS SealedCase native routes, method/query denial and frozen portrait MIME/byte bounds")
+
+DispatchQueue.global().asyncAfter(deadline: .now() + 20) { fatalError("Native account scheduling regression timed out") }
+Task { @MainActor in
+    do {
+        try await anonymousAccountBootstrapTests()
+        try await nativeAccountSchedulingTests()
+        try await accountDataShareLifecycleTests()
+        print("PASS account data share lifecycle success, duplicate, cancellation and cleanup behavior")
+        exit(0)
+    }
+    catch { fatalError("Native account scheduling regression failed: \(error)") }
+}
+dispatchMain()

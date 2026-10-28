@@ -85,6 +85,9 @@ internal sealed class AccountDeletionService(AccountDatabase db, IServiceProvide
                 { await testing.DeleteAccountAsync(request.UserId, token); }
                 services.GetService<Kufr.Backend.Features.Wands.WandGenerationStore>()?.DeleteAccount(request.UserId);
                 await stores.Character.FenceAccountDeletionAsync(request.UserId, token);
+                // Identity deletion is already durably fenced and no identity/character
+                // reservation is held here; erase all private SealedCase copies before ack.
+                Kufr.Backend.Features.SealedCase.SealedCaseErasure.EraseAccount(services, request.UserId);
                 stores.Journal.RevokeCustomerProfile(request.UserId);
                 stores.Keepsakes.FenceAccountDeletion(request.UserId);
                 stores.Lab.FenceAccountDeletion(request.UserId);

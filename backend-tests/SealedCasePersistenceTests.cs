@@ -12,6 +12,15 @@ internal static class SealedCasePersistenceTests
         invalid_transition_and_late_commands_are_rejected();
         retry_is_bound_to_group_kind_and_expected_revision();
         revision_and_history_are_one_read_snapshot();
+        retry_returns_original_receipt_after_later_transitions();
+        world_checkpoint_and_content_version_survive_reopening();
+        resolved_outcomes_survive_restart_and_cannot_be_rewritten();
+        event_history_is_append_only_and_failed_commits_are_atomic();
+        competing_resolvers_commit_only_once();
+        creation_and_initialization_replay_the_original_snapshot();
+        rejected_resolution_and_admission_leave_state_unchanged();
+        upgrades_legacy_journal_without_rewriting_history();
+        privacy_erasure_is_atomic_terminal_and_idempotent();
     }
 
     private static void creates_durable_setup_and_event_history()
@@ -121,8 +130,274 @@ internal static class SealedCasePersistenceTests
         finally { Delete(path); }
     }
 
+    private static void retry_returns_original_receipt_after_later_transitions()
+    {
+        var path = TempPath();
+        try
+        {
+            var store = new SealedCaseStore(path);
+            var setup = store.Create("group", "owner", 1);
+            var lobby = store.Append(setup.Id, "group", "owner", "lobby", "lobby", 1, 2, new { ready = true });
+            store.Append(setup.Id, "group", "owner", "start", "start", 2, 3, new { chapterSeconds = 600 });
+            var retry = new SealedCaseStore(path).Append(setup.Id, "group", "owner", "lobby", "lobby", 1, 99, new { ready = true });
+            Equal(lobby with { Replayed = true }, retry);
+        }
+        finally { Delete(path); }
+    }
+
+    private static void world_checkpoint_and_content_version_survive_reopening()
+    {
+        var path = TempPath();
+        try
+        {
+            var store = new SealedCaseStore(path);
+            var setup = store.Create("group", "owner", 1);
+            var player = new SealedPlayer("owner", "ARCHIV", ["other"], ["other"], methods: ["IMPACT_SEAL"], expertise: ["STUN"])
+            { Cover = 1, Preparation = 1, PreparationChapter = 2, PreparedIntent = SealedIntent.Stun, Ward = 1, FeigningSleep = true, UnconsciousUntilEnd = 3, SleepingUntilStart = 2 };
+            player.VerifiedSleepEvidence["other"] = "evidence";
+            var game = new SealedGame([player], "private-seed", new Dictionary<string, string[]> { ["ARCHIV"] = ["SALON"], ["SALON"] = ["ARCHIV"] });
+            var initialized = store.InitializeWorld(setup.Id, "group", setup.Revision, 2, game);
+            var recovered = new SealedCaseStore(path).ReadWorld(setup.Id, "group");
+            Equal(2L, recovered.Revision);
+            Equal(0, recovered.LastChapter);
+            Equal(System.Text.Json.JsonSerializer.Serialize(initialized), System.Text.Json.JsonSerializer.Serialize(recovered));
+            Equal("1.0.0", System.Text.Json.JsonDocument.Parse(recovered.ContentVersionJson).RootElement.GetProperty("rulesVersion").GetString());
+            var restored = SealedGame.Restore(recovered.Checkpoint);
+            Equal(player.Copy().VerifiedSleepEvidence["other"], restored.Players["owner"].VerifiedSleepEvidence["other"]);
+            Equal(System.Text.Json.JsonSerializer.Serialize(game.Checkpoint()), System.Text.Json.JsonSerializer.Serialize(restored.Checkpoint()));
+            Throws<SealedCasePersistenceException>(() => store.ReadWorld(setup.Id, "other-group"), "case_not_found");
+            Throws<SealedCasePersistenceException>(() => store.InitializeWorld(setup.Id, "group", 2, 3, game), "world_already_initialized");
+        }
+        finally { Delete(path); }
+    }
+
+    private static void resolved_outcomes_survive_restart_and_cannot_be_rewritten()
+    {
+        var path = TempPath();
+        try
+        {
+            var store = new SealedCaseStore(path);
+            var setup = store.Create("group", "owner", 1);
+            store.InitializeWorld(setup.Id, "group", 1, 2, new SealedGame([
+                new SealedPlayer("owner", knownPlayers: ["other"], observedPlayers: ["other"]),
+                new SealedPlayer("other", knownPlayers: ["owner"], observedPlayers: ["owner"])], "persisted-secret"));
+            SealedAction[] firstOrders = [new("rest", "owner", 1, SealedIntent.Rest), new("hold", "other", 1, SealedIntent.Hold)];
+            var first = store.ResolveWorldChapter(setup.Id, "group", 1, 2, 3, firstOrders);
+            var restarted = new SealedCaseStore(path);
+            Equal(SealedPlayerState.Sleeping, restarted.ReadWorld(setup.Id, "group").Checkpoint.Players.Single(x => x.Id == "owner").State);
+            SealedAction[] orders = [new("attack", "owner", 2, SealedIntent.Lethal, "other", Method: "BREAKING_SEAL", LethalConfirmed: true), new("sleep", "other", 2, SealedIntent.Rest)];
+            var resolved = restarted.ResolveWorldChapter(setup.Id, "group", 2, 3, 4, orders);
+            var retry = new SealedCaseStore(path).ResolveWorldChapter(setup.Id, "group", 2, 3, 999, orders.Reverse().ToArray());
+            Equal(System.Text.Json.JsonSerializer.Serialize(resolved with { Replayed = true }), System.Text.Json.JsonSerializer.Serialize(retry));
+            Equal(4L, restarted.ReadWorld(setup.Id, "group").Revision);
+            Equal(0, restarted.ReadWorld(setup.Id, "group").Checkpoint.Players.Single(x => x.Id == "owner").ExtremeToken);
+            Equal(true, resolved.Results.Single(x => x.ActorId == "owner").Rolls is not null);
+            Equal(System.Text.Json.JsonSerializer.Serialize(first with { Replayed = true }), System.Text.Json.JsonSerializer.Serialize(restarted.ResolveWorldChapter(setup.Id, "group", 1, 2, 1000, firstOrders)));
+            Throws<SealedCasePersistenceException>(() => restarted.ResolveWorldChapter(setup.Id, "group", 2, 3, 5, [orders[0] with { Intent = SealedIntent.Hold }, orders[1]]), "resolved_chapter_conflict");
+            Throws<SealedCasePersistenceException>(() => restarted.ResolveWorldChapter(setup.Id, "group", 2, 4, 5, orders), "resolved_chapter_conflict");
+            Throws<SealedCasePersistenceException>(() => restarted.ResolveWorldChapter(setup.Id, "other-group", 2, 3, 5, orders), "case_not_found");
+            Throws<SealedCasePersistenceException>(() => restarted.ResolveWorldChapter(setup.Id, "group", 4, 4, 5, []), "wrong_chapter");
+            Equal(4L, restarted.ReadWorld(setup.Id, "group").Revision);
+            Equal(2, restarted.ReadWorldHistory(setup.Id, "group").Count);
+        }
+        finally { Delete(path); }
+    }
+
+    private static void event_history_is_append_only_and_failed_commits_are_atomic()
+    {
+        var path = TempPath();
+        try
+        {
+            var store = new SealedCaseStore(path); var setup = store.Create("group", "owner", 1);
+            store.Append(setup.Id, "group", "owner", "lobby", "lobby", 1, 2, new { ready = true });
+            store.InitializeWorld(setup.Id, "group", 2, 3, new SealedGame([new SealedPlayer("owner")], "seed"));
+            store.ResolveWorldChapter(setup.Id, "group", 1, 3, 4, [new("rest", "owner", 1, SealedIntent.Rest)]);
+            using var c = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"); c.Open();
+            foreach (var table in new[] { "sealed_case_events", "sealed_case_world", "sealed_case_resolutions" })
+            foreach (var sql in new[] { $"UPDATE {table} SET created_at=999", $"DELETE FROM {table}", $"INSERT OR REPLACE INTO {table} SELECT * FROM {table}" })
+            {
+                using var cmd = c.CreateCommand(); cmd.CommandText = sql;
+                try { cmd.ExecuteNonQuery(); throw new InvalidOperationException("History mutation was permitted: " + sql); }
+                catch (Microsoft.Data.Sqlite.SqliteException e) when (e.SqliteErrorCode == 19) { }
+            }
+            var before = System.Text.Json.JsonSerializer.Serialize(store.ReadWorld(setup.Id, "group"));
+            using (var fail = c.CreateCommand())
+            {
+                fail.CommandText = "CREATE TRIGGER fail_resolution_revision BEFORE UPDATE OF revision ON sealed_cases BEGIN SELECT RAISE(ABORT,'test interruption'); END";
+                fail.ExecuteNonQuery();
+            }
+            try { store.ResolveWorldChapter(setup.Id, "group", 2, 4, 5, [new("hold", "owner", 2, SealedIntent.Hold)]); throw new InvalidOperationException("Expected injected failure"); }
+            catch (Microsoft.Data.Sqlite.SqliteException e) when (e.SqliteErrorCode == 19) { }
+            Equal(before, System.Text.Json.JsonSerializer.Serialize(new SealedCaseStore(path).ReadWorld(setup.Id, "group")));
+            Equal(1, store.ReadWorldHistory(setup.Id, "group").Count);
+            using var drop = c.CreateCommand(); drop.CommandText = "DROP TRIGGER fail_resolution_revision"; drop.ExecuteNonQuery();
+            store.ResolveWorldChapter(setup.Id, "group", 2, 4, 6, [new("hold", "owner", 2, SealedIntent.Hold)]);
+            Equal(2, store.ReadWorldHistory(setup.Id, "group").Count);
+        }
+        finally { Delete(path); }
+    }
+
+    private static void competing_resolvers_commit_only_once()
+    {
+        var path = TempPath();
+        try
+        {
+            var store = new SealedCaseStore(path); var setup = store.Create("group", "owner", 1);
+            store.InitializeWorld(setup.Id, "group", 1, 2, new SealedGame([new SealedPlayer("owner")], "seed"));
+            using var barrier = new Barrier(2);
+            var tasks = Enumerable.Range(0, 2).Select(_ => Task.Run(() =>
+            {
+                var peer = new SealedCaseStore(path); barrier.SignalAndWait();
+                return peer.ResolveWorldChapter(setup.Id, "group", 1, 2, 3, [new("rest", "owner", 1, SealedIntent.Rest)]);
+            })).ToArray();
+            Task.WaitAll(tasks);
+            Equal(1, tasks.Count(t => !t.Result.Replayed));
+            Equal(System.Text.Json.JsonSerializer.Serialize(tasks[0].Result with { Replayed = true }), System.Text.Json.JsonSerializer.Serialize(tasks[1].Result with { Replayed = true }));
+            Equal(3L, store.ReadWorld(setup.Id, "group").Revision);
+            Equal(1, store.ReadWorldHistory(setup.Id, "group").Count);
+        }
+        finally { Delete(path); }
+    }
+
+    private static void creation_and_initialization_replay_the_original_snapshot()
+    {
+        var path = TempPath();
+        try
+        {
+            var store = new SealedCaseStore(path); var setup = store.Create("group", "owner", 1, operationId: "creation-operation");
+            var game = new SealedGame([new SealedPlayer("owner")], "seed");
+            var initial = store.InitializeWorld(setup.Id, "group", 1, 2, game);
+            store.Append(setup.Id, "group", "owner", "lobby", "lobby", 2, 3, new { ready = true });
+            Equal(setup, new SealedCaseStore(path).Create("group", "owner", 999, operationId: "creation-operation"));
+            Equal(System.Text.Json.JsonSerializer.Serialize(initial), System.Text.Json.JsonSerializer.Serialize(store.InitializeWorld(setup.Id, "group", 1, 999, game)));
+            Throws<SealedCasePersistenceException>(() => store.InitializeWorld(setup.Id, "group", 1, 999, new SealedGame([new SealedPlayer("owner")], "changed-seed")), "world_already_initialized");
+            Equal(3L, store.ReadWorld(setup.Id, "group").Revision);
+        }
+        finally { Delete(path); }
+    }
+
+    private static void rejected_resolution_and_admission_leave_state_unchanged()
+    {
+        var path = TempPath();
+        try
+        {
+            var store = new SealedCaseStore(path); var setup = store.Create("group", "owner", 1);
+            var game = new SealedGame([new SealedPlayer("owner")], "seed");
+            Func<IDisposable> denied = () => throw new SealedCasePersistenceException("admission_denied", 403);
+            Throws<SealedCasePersistenceException>(() => store.InitializeWorld(setup.Id, "group", 1, 2, game, denied), "admission_denied");
+            Equal(1L, store.Read(setup.Id).Revision);
+            store.InitializeWorld(setup.Id, "group", 1, 2, game);
+            Throws<SealedCasePersistenceException>(() => store.ResolveWorldChapter(setup.Id, "group", 1, 2, 3, [], denied), "admission_denied");
+            Throws<SealedCasePersistenceException>(() => store.ResolveWorldChapter(setup.Id, "group", 1, 1, 3, []), "revision_conflict");
+            try { store.ResolveWorldChapter(setup.Id, "group", 1, 2, 3, [new("invalid", "stranger", 1, SealedIntent.Rest)]); throw new InvalidOperationException("Unknown actor accepted"); }
+            catch (SealedCaseRuleException) { }
+            Equal(2L, store.ReadWorld(setup.Id, "group").Revision);
+            Equal(0, store.ReadWorldHistory(setup.Id, "group").Count);
+            store.ResolveWorldChapter(setup.Id, "group", 1, 2, 3, [new("valid", "owner", 1, SealedIntent.Rest)]);
+            Throws<SealedCasePersistenceException>(() => store.ResolveWorldChapter(setup.Id, "group", 1, 2, 4, [new("valid", "owner", 1, SealedIntent.Rest)], denied), "admission_denied");
+            Equal(3L, store.ReadWorld(setup.Id, "group").Revision);
+        }
+        finally { Delete(path); }
+    }
+
+    private static void upgrades_legacy_journal_without_rewriting_history()
+    {
+        var path = TempPath();
+        try
+        {
+            using (var c = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"))
+            {
+                c.Open(); using var cmd = c.CreateCommand();
+                cmd.CommandText = """
+                    CREATE TABLE sealed_cases(id TEXT PRIMARY KEY, group_id TEXT NOT NULL, status TEXT NOT NULL, revision INTEGER NOT NULL,
+                      started_at INTEGER NULL, chapter INTEGER NOT NULL, chapter_deadline INTEGER NULL,
+                      setup_json TEXT NOT NULL, lobby_json TEXT NOT NULL, created_at INTEGER NOT NULL);
+                    CREATE TABLE sealed_case_events(event_id TEXT PRIMARY KEY, case_id TEXT NOT NULL REFERENCES sealed_cases(id),
+                      actor_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, expected_revision INTEGER NOT NULL,
+                      revision INTEGER NOT NULL, kind TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL,
+                      UNIQUE(case_id,actor_id,idempotency_key));
+                    INSERT INTO sealed_cases VALUES('legacy','group','lobby',2,NULL,0,NULL,'{"createdBy":"owner","expectedPlayers":8,"variant":"full"}','{}',1);
+                    INSERT INTO sealed_case_events VALUES('legacy-event','legacy','owner','old-key',1,2,'lobby','{"ready":true}',2);
+                    """;
+                cmd.ExecuteNonQuery();
+            }
+            var store = new SealedCaseStore(path);
+            Equal(2L, store.Read("legacy").Revision);
+            Equal("{\"ready\":true}", store.Read("legacy").Events.Single());
+            var receipt = store.Append("legacy", "group", "owner", "lobby", "old-key", 1, 999, new { ready = true });
+            Equal("legacy-event", receipt.EventId); Equal(true, receipt.Replayed);
+            Equal(2L, receipt.Revision); Equal("lobby", receipt.Status);
+            Throws<SealedCasePersistenceException>(() => store.ReadWorld("legacy", "group"), "world_not_initialized");
+            store.InitializeWorld("legacy", "group", 2, 3, new SealedGame([new SealedPlayer("owner")], "legacy-seed"));
+            Equal("{\"ready\":true}", store.Read("legacy").Events.Single());
+            Equal(3L, new SealedCaseStore(path).ReadWorld("legacy", "group").Revision);
+        }
+        finally { Delete(path); }
+    }
+
+    private static void privacy_erasure_is_atomic_terminal_and_idempotent()
+    {
+        var path = TempPath();
+        try
+        {
+            var store = new SealedCaseStore(path);
+            var setup = store.Create("group", "deleted-account", 1, operationId: "erase-operation");
+            store.Append(setup.Id, "group", "deleted-account", "lobby", "ready-once", 1, 2,
+                new { playerId = "deleted-account", ready = true, consent = true });
+            Equal(1, store.EraseAccount("deleted-account"));
+            Equal(0, new SealedCaseStore(path).EraseAccount("deleted-account"));
+            Throws<SealedCasePersistenceException>(() => new SealedCaseStore(path).Read(setup.Id), "case_not_found");
+            Throws<SealedCasePersistenceException>(() => store.Append(setup.Id, "group", "deleted-account", "lobby", "ready-once", 1, 3,
+                new { playerId = "deleted-account", ready = true, consent = true }), "case_not_found");
+            using var c = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"); c.Open();
+            using var command = c.CreateCommand();
+            command.CommandText = "SELECT status,setup_json,lobby_json,(SELECT COUNT(*) FROM sealed_case_events WHERE case_id=sealed_cases.id),(SELECT COUNT(*) FROM sealed_case_private_snapshots WHERE case_id=sealed_cases.id) FROM sealed_cases WHERE id=$id";
+            command.Parameters.AddWithValue("$id", setup.Id);
+            using var row = command.ExecuteReader();
+            if (!row.Read()) throw new InvalidOperationException("Terminal anti-resurrection row missing");
+            Equal("privacy_terminated", row.GetString(0)); Equal("{}", row.GetString(1)); Equal("{}", row.GetString(2));
+            Equal(0L, row.GetInt64(3)); Equal(0L, row.GetInt64(4));
+        }
+        finally { Delete(path); }
+    }
+
+    internal static void WriteRestartFixture(string path)
+    {
+        var store = new SealedCaseStore(path);
+        var setup = store.Create("restart-group", "owner", 1, operationId: "restart-operation");
+        store.InitializeWorld(setup.Id, setup.GroupId, 1, 2, new SealedGame([
+            new SealedPlayer("owner", knownPlayers: ["other"], observedPlayers: ["other"]),
+            new SealedPlayer("other", knownPlayers: ["owner"], observedPlayers: ["owner"])], "restart-private-seed"));
+        store.ResolveWorldChapter(setup.Id, setup.GroupId, 1, 2, 3, [new("rest", "owner", 1, SealedIntent.Rest), new("hold", "other", 1, SealedIntent.Hold)]);
+        var result = store.ResolveWorldChapter(setup.Id, setup.GroupId, 2, 3, 4, RestartOrders());
+        File.WriteAllText(path + ".expected.json", System.Text.Json.JsonSerializer.Serialize(result with { Replayed = true }));
+        File.WriteAllText(path + ".id", setup.Id);
+        Console.WriteLine("PASS restart writer: committed chapter 2, rolls, token and checkpoint.");
+    }
+
+    internal static void VerifyRestartFixture(string path)
+    {
+        var store = new SealedCaseStore(path); var id = File.ReadAllText(path + ".id");
+        var world = store.ReadWorld(id, "restart-group");
+        Equal(4L, world.Revision); Equal(2, world.LastChapter);
+        Equal(0, world.Checkpoint.Players.Single(p => p.Id == "owner").ExtremeToken);
+        var retry = store.ResolveWorldChapter(id, "restart-group", 2, 3, 999999, RestartOrders());
+        Equal(File.ReadAllText(path + ".expected.json"), System.Text.Json.JsonSerializer.Serialize(retry));
+        File.WriteAllText(path + ".events.json", System.Text.Json.JsonSerializer.Serialize(store.ReadWorldHistory(id, "restart-group").SelectMany(r => r.Events)));
+        Console.WriteLine("PASS restart reader: exact stored outcome/rolls/IDs/version, no second spend or reroll.");
+    }
+
+    private static SealedAction[] RestartOrders() => [new("attack", "owner", 2, SealedIntent.Lethal, "other", Method: "BREAKING_SEAL", LethalConfirmed: true), new("sleep", "other", 2, SealedIntent.Rest)];
+
     private static string TempPath() => Path.Combine(Path.GetTempPath(), "sealed-case-" + Guid.NewGuid().ToString("N") + ".sqlite");
-    private static void Delete(string path) { foreach (var file in new[] { path, path + "-wal", path + "-shm" }) if (File.Exists(file)) File.Delete(file); }
+    private static void Delete(string path)
+    {
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        foreach (var file in new[] { path, path + "-wal", path + "-shm" })
+        {
+            if (File.Exists(file)) { File.Delete(file); }
+        }
+    }
     private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new InvalidOperationException($"SealedCase HTTP/store: expected {expected}, got {actual}"); }
     private static void Throws<T>(Action action, string code) where T : Exception
     {

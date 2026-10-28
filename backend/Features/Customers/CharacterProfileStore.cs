@@ -289,6 +289,15 @@ internal sealed partial class CharacterProfileStore
         return Task.FromResult((long)command.ExecuteScalar()! > 0);
     }
 
+    internal bool HasDeletionFence(string accountId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM character_account_fences WHERE account_id=$account UNION ALL SELECT 1 FROM character_deletions WHERE account_id=$account AND (completed=0 OR profile_id='*') LIMIT 1";
+        command.Parameters.AddWithValue("$account", accountId);
+        return command.ExecuteScalar() is not null;
+    }
+
     internal Task<(string AccountId, string ProfileId)[]> PendingDeletionsAsync(CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();

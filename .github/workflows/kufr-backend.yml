@@ -53,6 +53,10 @@ jobs:
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-boss
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-teams
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-progress
+      - name: Sealed case privacy, plans and timing (offline providers)
+        run: |
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --sealed-case-runtime
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --account-deletion
       - name: Build the shared application for real account journeys
         run: |
           npm ci --prefix contracts

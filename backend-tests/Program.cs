@@ -7,10 +7,31 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
-if (args is ["--sealed-case"]) { SealedCaseTests.Run(); Console.WriteLine("SealedCase foundation checks passed."); return; }
+if (args is ["--sealed-case-context-persistence"]) { SealedCaseContextPersistenceTests.Run(); return; }
+if (args is ["--sealed-case-projections"]) { SealedCaseProjectionTests.Run(); return; }
+if (args is ["--sealed-case"]) { SealedCaseTests.Run(); SealedCaseProjectionTests.Run(); SealedCaseContextPersistenceTests.Run(); Console.WriteLine("SealedCase foundation checks passed."); return; }
+if (args is ["--sealed-case-restart-write", var writePath]) { SealedCasePersistenceTests.WriteRestartFixture(writePath); return; }
+if (args is ["--sealed-case-restart-read", var readPath]) { SealedCasePersistenceTests.VerifyRestartFixture(readPath); return; }
 if (args is ["--sealed-case-persistence"]) { SealedCasePersistenceTests.Run(); Console.WriteLine("SealedCase persistence checks passed."); return; }
 if (args is ["--sealed-case-rules"]) { SealedCaseRulesTests.Run(); return; }
 if (args is ["--sealed-case-http"]) { await SealedCaseHttpTests.RunAsync(); return; }
+if (args is ["--sealed-case-c1"]) { await SealedCaseHttpTests.FrozenPrivacyAndLegacyAcceptanceAsync(); return; }
+if (args is ["--sealed-case-timing"]) { SealedCaseTimingTests.Run(); return; }
+if (args is ["--sealed-case-plans"]) { SealedCasePlanTests.Run(); return; }
+if (args is ["--sealed-case-ai", var aiVariant])
+{
+    try { await SealedCaseHttpTests.AiGameAsync(aiVariant); }
+    catch (Exception error) { Console.Error.WriteLine(error is HttpRequestException ? "AI acceptance transport failure" : error.Message); Environment.ExitCode = 1; }
+    return;
+}
+if (args is ["--sealed-case-playable"]) { await SealedCaseHttpTests.PlayableCasesAsync(); return; }
+if (args is ["--sealed-case-runtime"])
+{
+    SealedCaseTests.Run(); SealedCaseRulesTests.Run(); SealedCaseProjectionTests.Run();
+    SealedCaseContextPersistenceTests.Run(); SealedCasePersistenceTests.Run();
+    SealedCaseTimingTests.Run(); SealedCasePlanTests.Run();
+    await SealedCaseHttpTests.RunAsync(); await SealedCaseHttpTests.PlayableCasesAsync(); return;
+}
 if (args is ["--mobile-wands"]) { await MobileWandTests.RunAsync(); return; }
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); return; }
 if (args is ["--mobile-game-http"]) { await MobileGameTests.RunHttpAsync(); return; }

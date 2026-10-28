@@ -76,6 +76,8 @@ internal sealed class CustomerAdmissionAuthority(IServiceScopeFactory scopes, Ch
 // Acquire these before awaiting memory admission; dispose later scopes first.
 internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDisposable
 {
+    internal CustomerDataSqliteGuard AccountReservation => account;
+    internal CustomerDataSqliteGuard CharacterReservation => character;
     private readonly CustomerDataSqliteGuard account;
     private readonly CustomerDataSqliteGuard character;
     private readonly CharacterProfileStore profiles;
@@ -218,6 +220,22 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
         return snapshot ?? throw new CustomerDataAccessException(409, "character_revision_mismatch");
     }
 
+    internal CharacterProfile? ReadCurrentOwnedProfile()
+    {
+        ValidateCurrent();
+        var profile = profiles.ReadHeldCurrentAdmissionProfile(character, Proof.AccountId);
+        ValidateCurrent();
+        return profile;
+    }
+
+    internal CharacterPortraitCapture? ReadOwnedPortrait(string profileId, long revision)
+    {
+        ValidateCurrent();
+        var portrait = profiles.ReadHeldPortrait(character, Proof.AccountId, profileId, revision);
+        ValidateCurrent();
+        return portrait;
+    }
+
     internal bool IsProfileRevoked(string profileId)
     {
         ValidateCurrent();
@@ -271,6 +289,7 @@ internal sealed partial class CustomerAdmissionGuard : IDisposable, IAsyncDispos
 // account-scoped store without opening a second SQLite transaction.
 internal sealed class CustomerAccountAdmission : IDisposable
 {
+    internal CustomerDataSqliteGuard AccountReservation => account;
     private readonly CustomerDataSqliteGuard account;
 
     internal CustomerAdmissionProof Proof { get; }

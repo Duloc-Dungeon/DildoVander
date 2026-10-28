@@ -6,6 +6,7 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Collections;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -13,6 +14,24 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void sealedCaseRoutesAreMethodAndScopeBound() {
+        String root = "/app/v1/sealed-cases";
+        String id = root + "/sc_" + String.join("", Collections.nCopies(32, "a"));
+        assertTrue(NativeAccountRequestPolicy.allows(root, "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(root + "/current", "GET"));
+        for (String read : Arrays.asList("play", "context", "moderator", "portraits/player_1")) {
+            assertTrue(NativeAccountRequestPolicy.allows(id + "/" + read, "GET"));
+            assertFalse(NativeAccountRequestPolicy.allows(id + "/" + read, "POST"));
+        }
+        for (String write : Arrays.asList("lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent")) {
+            assertTrue(NativeAccountRequestPolicy.allows(id + "/" + write, "POST"));
+            assertFalse(NativeAccountRequestPolicy.allows(id + "/" + write, "GET"));
+        }
+        for (String invalid : Arrays.asList(id + "/world", id + "/play?viewer=other", id + "/portraits/../other", root + "/sc_bad/play", id + "/play/", id + "/%70lay")) {
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "GET"));
+        }
+    }
+
     @Test public void consentAndWandWorkshopRoutesAreMethodBound() {
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "POST"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "GET"));

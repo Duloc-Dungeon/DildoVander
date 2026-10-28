@@ -1,0 +1,857 @@
+{
+  "schema_version": "1.0",
+  "scenario_id": "POD_PECETI_POSLEDNI_ZVON_V1",
+  "title": "Případ posledního zvonu",
+  "module_title": "Pod pečetí",
+  "language": "cs-CZ",
+  "date": "2026-10-26",
+  "document_visibility": "HOST_DESIGN_CONTAINS_SPOILERS_DO_NOT_SHIP_AS_PLAYER_PAYLOAD",
+  "design_status": "PARAMETERIZED_PLAYTEST_BASELINE",
+  "world": "Harry Potter",
+  "story_continuity": "original alternative event; house, seals, echo state and prelude are original game fiction",
+  "profile_policy": "Only supplied profiles establish canonical facts. Scenario history is explicitly accepted before play and stored separately.",
+  "parameters": {
+    "player_count": {
+      "min": 8,
+      "max": 30
+    },
+    "team_thresholds": [
+      {
+        "min": 8,
+        "max": 12,
+        "T": 2,
+        "K": 2
+      },
+      {
+        "min": 13,
+        "max": 17,
+        "T": 3,
+        "K": 2
+      },
+      {
+        "min": 18,
+        "max": 22,
+        "T": 4,
+        "K": 3
+      },
+      {
+        "min": 23,
+        "max": 27,
+        "T": 5,
+        "K": 4
+      },
+      {
+        "min": 28,
+        "max": 30,
+        "T": 6,
+        "K": 4
+      }
+    ],
+    "full_chapters": 6,
+    "tutorial_chapters": 3,
+    "tutorial_players": {
+      "min": 8,
+      "max": 12
+    },
+    "max_major_actions_per_actor_per_chapter": 1,
+    "max_adjacent_moves_with_action": 1,
+    "max_simple_conditions": 1
+  },
+  "four_contexts": {
+    "WORLD_TRUTH": {
+      "scope": "global authoritative event log",
+      "new_fact_requires": "resolved event or accepted scenario prelude",
+      "private_by_default": true
+    },
+    "EXPERIENCE": {
+      "scope": "one player's permitted observations and interpretations",
+      "fields": [
+        "source_event_id",
+        "perception",
+        "certainty",
+        "interpretation",
+        "received_at"
+      ],
+      "can_be_mistaken": true
+    },
+    "PRESENTATION": {
+      "scope": "what actor says, shows or physically performs for an audience",
+      "fields": [
+        "statement_or_pose",
+        "audience",
+        "delivery_receipt",
+        "source_action_id"
+      ],
+      "not_equivalent_to": "recipient belief or world truth"
+    },
+    "COVERT_ACTION": {
+      "scope": "private intent, confirmation, execution status and causal links",
+      "fields": [
+        "intent",
+        "confirmed_order",
+        "execution_status",
+        "executed_event_refs",
+        "blocked_reasons"
+      ],
+      "executed_steps_derive_from": "WORLD_TRUTH"
+    }
+  },
+  "timing": {
+    "full": {
+      "intro_minutes": 15,
+      "finale_minutes": 20,
+      "brackets": [
+        {
+          "min": 8,
+          "max": 12,
+          "planning_minutes": 25,
+          "quiet_minutes": 15,
+          "total_minutes": 275
+        },
+        {
+          "min": 13,
+          "max": 20,
+          "planning_minutes": 30,
+          "quiet_minutes": 20,
+          "total_minutes": 335
+        },
+        {
+          "min": 21,
+          "max": 30,
+          "planning_minutes": 40,
+          "quiet_minutes": 20,
+          "total_minutes": 395
+        }
+      ]
+    },
+    "tutorial": {
+      "intro_minutes": 5,
+      "finale_minutes": 10,
+      "planning_minutes": 8,
+      "quiet_minutes": 2,
+      "total_minutes": 45
+    },
+    "last_action_results_before_final_vote": true,
+    "optional_runoff_minutes_included": 2,
+    "late_actor_does_not_extend_round": true,
+    "earlier_finish_does_not_remove_quiet_time": true
+  },
+  "map": {
+    "zones": [
+      {
+        "id": "VESTIBUL",
+        "name": "Vestibul",
+        "adjacent": [
+          "SALON",
+          "ARCHIV"
+        ],
+        "cover_available": false,
+        "base_clue_families": [
+          "B"
+        ],
+        "purpose": "Průchodové záznamy a návaznost příchodů."
+      },
+      {
+        "id": "SALON",
+        "name": "Salon",
+        "adjacent": [
+          "VESTIBUL",
+          "ARCHIV",
+          "POKOJE",
+          "KOMORA"
+        ],
+        "cover_available": false,
+        "base_clue_families": [],
+        "purpose": "Společný zpravodaj, rozhovory a výměny."
+      },
+      {
+        "id": "ARCHIV",
+        "name": "Archiv",
+        "adjacent": [
+          "SALON",
+          "VESTIBUL"
+        ],
+        "cover_available": true,
+        "cover_requires": "explicit reachable sheltered position",
+        "base_clue_families": [
+          "A"
+        ],
+        "purpose": "Záznamy a původ předmětů."
+      },
+      {
+        "id": "POKOJE",
+        "name": "Hostinské pokoje",
+        "adjacent": [
+          "SALON"
+        ],
+        "cover_available": true,
+        "cover_requires": "explicit reachable sheltered position",
+        "base_clue_families": [],
+        "purpose": "Odpočinek, soukromé scény a skutečné stopy pohybu."
+      },
+      {
+        "id": "KOMORA",
+        "name": "Pečetní komora",
+        "adjacent": [
+          "SALON"
+        ],
+        "cover_available": false,
+        "base_clue_families": [
+          "C"
+        ],
+        "purpose": "Pozdější otisky a uzavírání řetězců."
+      }
+    ],
+    "initial_location_policy": "independent seeded shuffle and cycle through five zones; each zone occupied at N>=8",
+    "remote_human_play_supported": true,
+    "no_real_world_movement_required": true,
+    "essential_access_not_held_by_one_player": true
+  },
+  "prelude": {
+    "event_id": "SCENARIO_PRELUDE_ROOT",
+    "occurred_before_player_action_loop": true,
+    "requires_player_acceptance": true,
+    "public_facts": [
+      "Ochranná pečeť byla narušena před startem.",
+      "Existuje T původních aktivátorů rituálu a T odlišitelných otisků.",
+      "Týmové role odpovídají účasti na této nové scénářové zápletce."
+    ],
+    "private_by_team": {
+      "SPIKLENCI": "V přijaté scénářové minulosti ses podílel na přípravě jednoho otisku rituálu. Znáš své spolupracovníky a vlastní motiv. Vypravěč tvou příslušnost nikomu nevydá.",
+      "STRAZCI": "Přišel jsi s legitimním scénářovým důvodem. Máš vlastní zaznamenanou výchozí scénu, jednu stopu a jednu výpověď. Neznáš cizí týmy."
+    },
+    "starting_personal_log_minimum": [
+      "one confirmed local scene",
+      "one owned or received starting evidence record",
+      "one clearly attributed statement"
+    ],
+    "independent_of_voluntary_sabotage": true
+  },
+  "evidence_graph_template": {
+    "chain_count": "T",
+    "chain_target_assignment": "independently seeded permutation of the actual conspirator IDs; public chain number never encodes seat order",
+    "candidate_count": {
+      "players_8_to_12": 3,
+      "players_13_to_30": 5
+    },
+    "candidate_recipes": [
+      {
+        "min_players": 8,
+        "max_players": 12,
+        "distinct_other_tokens": ["foil", "decoy_a", "decoy_b"],
+        "A": ["target", "foil", "decoy_a"],
+        "B": ["target", "foil", "decoy_b"],
+        "C": ["target", "decoy_a", "decoy_b"]
+      },
+      {
+        "min_players": 13,
+        "max_players": 30,
+        "distinct_other_tokens": ["foil", "a1", "a2", "a3", "b1", "b2", "b3", "c1", "c2"],
+        "A": ["target", "foil", "a1", "a2", "a3"],
+        "B": ["target", "foil", "b1", "b2", "b3"],
+        "C": ["target", "a1", "b1", "c1", "c2"]
+      }
+    ],
+    "materialization_algorithm": [
+      "For each true target choose a distinct foil from other players with a purpose-separated seeded order.",
+      "For N<=12 choose distinct decoy_a and decoy_b, both different from target and foil. A=[target,foil,decoy_a]; B=[target,foil,decoy_b]; C=[target,decoy_a,decoy_b].",
+      "For N>=13 choose eight distinct decoys apart from target and foil. A=[target,foil,a1,a2,a3]; B=[target,foil,b1,b2,b3]; C=[target,a1,b1,c1,c2].",
+      "Materialize the structured candidate_recipes above. Shuffle displayed candidate order with a separate seed. Every pair AB, AC and BC must retain at least two candidates; A intersect B intersect C must equal target.",
+      "Other conspirators may be decoys; no quota of traitors per candidate group is advertised.",
+      "Each fact receives a world-event provenance link stored server-side. User-facing source labels do not encode actor IDs."
+    ],
+    "invariants": [
+      "target belongs to all three candidate sets",
+      "each candidate set contains at least three players",
+      "every pairwise intersection AB, AC and BC has at least two players",
+      "intersection of A B C is exactly target",
+      "no direct secret-team response",
+      "all noncanonical prelude acts accepted before start"
+    ],
+    "full_release_chapters": {
+      "A": 1,
+      "B": 3,
+      "C": 5
+    },
+    "tutorial_release_chapters": {
+      "A": 1,
+      "B": 2,
+      "C": 3
+    },
+    "release_locations": {
+      "A": "ARCHIV",
+      "B": "VESTIBUL",
+      "C": "KOMORA"
+    },
+    "new_alignment_facts_per_chapter": "at most T different facts; duplicated delivery of same fact is not new logical information",
+    "new_alignment_facts_per_main_action": 1,
+    "selection_among_simultaneous_valid_requests": "stable seeded ordering over locked actor/order IDs; timestamp does not confer priority",
+    "duplicate_inspections": "May confirm or copy the same already available fact; never generate unlimited new exclusion tests.",
+    "additional_evidence": "Actual movements, held objects, attacks, sabotage and explicitly shared statements generate event-backed facts subject to visibility.",
+    "sabotage": {
+      "max_same_fact_per_chapter": 1,
+      "allowed_effects": [
+        "redirect one delivery to another eligible recipient",
+        "delay one delivery for one chapter"
+      ],
+      "repeated_delay_in_immediately_next_chapter": false,
+      "truth_deletion": false,
+      "fake_verified_fact": false,
+      "leaves_own_trace": true,
+      "guard_can_contest": true
+    }
+  },
+  "chapters": [
+    {
+      "number": 1,
+      "title": "Dům má připomínky",
+      "new_alignment_family": "A",
+      "focus_zone": "ARCHIV",
+      "public_scheduled_message": "Dům uznal přítomné za hosty. O jejich vhodnosti si ponechal výhrady. Ochranná pečeť je narušená. Do posledního zvonu zbývá šest kapitol. Správce zdůrazňuje, že záloha se při konci světa nevrací.",
+      "learning_goal": "Výchozí scéna a první potvrzená akce.",
+      "public_message_must_reference_actual_event_ids": true,
+      "conditional_branch_policy": {
+        "attack": "Only mention an actual attack if corresponding event exists.",
+        "echo": "Only announce a death or echo if state transition committed.",
+        "contradiction": "Only contrast an attributed statement with a known fact; do not invent a confession.",
+        "quiet": "Use unresolved sources and voluntary choices when no hostile event occurred."
+      },
+      "personal_hook_policy": "one current scene/own clue/known promise relevant to this player; never fabricated completed action",
+      "physical_lethal_enabled": false,
+      "conversation_group_rotation_after": false
+    },
+    {
+      "number": 2,
+      "title": "Každý měl dobrý důvod",
+      "new_alignment_family": null,
+      "focus_zone": "SALON",
+      "public_scheduled_message": "První výpovědi byly zařazeny do záznamu. Jejich délka značně převyšuje počet potvrzených skutečností. Další kapitola je otevřena.",
+      "learning_goal": "Rozlišení tvrzení, skutečné akce a dostupné obrany.",
+      "public_message_must_reference_actual_event_ids": true,
+      "conditional_branch_policy": {
+        "attack": "Only mention an actual attack if corresponding event exists.",
+        "echo": "Only announce a death or echo if state transition committed.",
+        "contradiction": "Only contrast an attributed statement with a known fact; do not invent a confession.",
+        "quiet": "Use unresolved sources and voluntary choices when no hostile event occurred."
+      },
+      "personal_hook_policy": "one current scene/own clue/known promise relevant to this player; never fabricated completed action",
+      "physical_lethal_enabled": true,
+      "conversation_group_rotation_after": true
+    },
+    {
+      "number": 3,
+      "title": "To není totéž svědectví",
+      "new_alignment_family": "B",
+      "focus_zone": "VESTIBUL",
+      "public_scheduled_message": "Záznamy příchodů vydaly další část otisků. Výborná zpráva pro vyšetřování. Pro některé dřívější formulace už méně.",
+      "learning_goal": "Propojení prvních dvou částí stejné stopy.",
+      "public_message_must_reference_actual_event_ids": true,
+      "conditional_branch_policy": {
+        "attack": "Only mention an actual attack if corresponding event exists.",
+        "echo": "Only announce a death or echo if state transition committed.",
+        "contradiction": "Only contrast an attributed statement with a known fact; do not invent a confession.",
+        "quiet": "Use unresolved sources and voluntary choices when no hostile event occurred."
+      },
+      "personal_hook_policy": "one current scene/own clue/known promise relevant to this player; never fabricated completed action",
+      "physical_lethal_enabled": true,
+      "conversation_group_rotation_after": false
+    },
+    {
+      "number": 4,
+      "title": "Následky mají jména",
+      "new_alignment_family": null,
+      "focus_zone": "SALON",
+      "public_scheduled_message": "Dům zpřístupnil návaznost zaznamenaných předání. Předměty mají přehlednější minulost než většina výpovědí. Jde patrně o důsledek jejich omezené schopnosti mluvit.",
+      "learning_goal": "Pravdivé následky dosavadních kroků bez vynucené oběti.",
+      "public_message_must_reference_actual_event_ids": true,
+      "conditional_branch_policy": {
+        "attack": "Only mention an actual attack if corresponding event exists.",
+        "echo": "Only announce a death or echo if state transition committed.",
+        "contradiction": "Only contrast an attributed statement with a known fact; do not invent a confession.",
+        "quiet": "Use unresolved sources and voluntary choices when no hostile event occurred."
+      },
+      "personal_hook_policy": "one current scene/own clue/known promise relevant to this player; never fabricated completed action",
+      "physical_lethal_enabled": true,
+      "conversation_group_rotation_after": true
+    },
+    {
+      "number": 5,
+      "title": "Pečeť si pamatuje",
+      "new_alignment_family": "C",
+      "focus_zone": "KOMORA",
+      "public_scheduled_message": "Pečetní komora vydává závěrečnou část původních otisků. Paměť místa se ukazuje jako nepříjemně konzistentní.",
+      "learning_goal": "Uzavření některých řetězců a rozhodnutí, komu důkaz předat.",
+      "public_message_must_reference_actual_event_ids": true,
+      "conditional_branch_policy": {
+        "attack": "Only mention an actual attack if corresponding event exists.",
+        "echo": "Only announce a death or echo if state transition committed.",
+        "contradiction": "Only contrast an attributed statement with a known fact; do not invent a confession.",
+        "quiet": "Use unresolved sources and voluntary choices when no hostile event occurred."
+      },
+      "personal_hook_policy": "one current scene/own clue/known promise relevant to this player; never fabricated completed action",
+      "physical_lethal_enabled": true,
+      "conversation_group_rotation_after": false
+    },
+    {
+      "number": 6,
+      "title": "Před posledním zvonem",
+      "new_alignment_family": null,
+      "focus_zone": "SALON",
+      "public_scheduled_message": "Zbývá poslední kapitola. Dům přijímá nové příkazy, svědectví a omluvy. U poslední položky již neslibuje zpracování před termínem.",
+      "learning_goal": "Poslední akce musí ovlivnit závěrečné rozhodnutí.",
+      "public_message_must_reference_actual_event_ids": true,
+      "conditional_branch_policy": {
+        "attack": "Only mention an actual attack if corresponding event exists.",
+        "echo": "Only announce a death or echo if state transition committed.",
+        "contradiction": "Only contrast an attributed statement with a known fact; do not invent a confession.",
+        "quiet": "Use unresolved sources and voluntary choices when no hostile event occurred."
+      },
+      "personal_hook_policy": "one current scene/own clue/known promise relevant to this player; never fabricated completed action",
+      "physical_lethal_enabled": true,
+      "conversation_group_rotation_after": false
+    }
+  ],
+  "tutorial": {
+    "chapters": [
+      {
+        "number": 1,
+        "family": "A",
+        "lesson": "Read a fact and confirm one action."
+      },
+      {
+        "number": 2,
+        "family": "B",
+        "lesson": "Observe conditions, state and protection; harm is optional."
+      },
+      {
+        "number": 3,
+        "family": "C",
+        "lesson": "Connect and share permitted evidence before final voting."
+      }
+    ],
+    "exact_main_action_options": 3,
+    "generator_uses_only": "player permitted context, current actual own state, lawful visible candidates and kit",
+    "awake_slot_patterns": [
+      {
+        "slot": 1,
+        "purpose": "information",
+        "preferred": [
+          "INVESTIGATE",
+          "FOLLOW"
+        ],
+        "requires": "one visible eligible source or known target"
+      },
+      {
+        "slot": 2,
+        "purpose": "cooperation_or_protection",
+        "preferred": [
+          "GUARD",
+          "HELP",
+          "TRANSFER"
+        ],
+        "requires": "lawful reachable target/item; self GUARD is permitted"
+      },
+      {
+        "slot": 3,
+        "purpose": "distinct_risk_or_preparation",
+        "preferred": [
+          "PREPARE",
+          "REST",
+          "FEIGN_SLEEP",
+          "SABOTAGE",
+          "STUN",
+          "LETHAL"
+        ],
+        "requires": "state/role-independent legal prerequisites; never offer lethal before chapter2; never force it"
+      }
+    ],
+    "last_chapter_policy": "Do not propose PREPARE or REST as future-bonus value when no next main-action chapter exists; use a lawful current investigation, protection or other substantive action.",
+    "fallback_sources": "starting personal log guarantees scene, evidence and attributed statement; choose distinct existing sources, not invented facts",
+    "unconscious_options": [
+      "DREAM own recorded visual scene",
+      "DREAM own recorded statement",
+      "DREAM own recorded state/item context"
+    ],
+    "echo_options": [
+      "ECHO_REVIEW own clue",
+      "ECHO_DELIVER own evidence",
+      "ECHO_SCENE permitted scene"
+    ],
+    "free_main_action_text": false,
+    "optional_dialogue_text": true,
+    "requires_confirmation": true
+  },
+  "sleep_and_bluff": {
+    "chat_statement": {
+      "presentation": "Jdu spát.",
+      "changes_truth_state": false,
+      "changes_observable_pose": false
+    },
+    "REST": {
+      "phase": 2,
+      "truth_state": "SLEEPING",
+      "observable_pose": "SLEEPING",
+      "wake": "next chapter start",
+      "next_action_bonus": 1,
+      "bonus_scope": "universal first action in next chapter"
+    },
+    "FEIGN_SLEEP": {
+      "phase": 2,
+      "truth_state": "AWAKE",
+      "observable_pose": "SLEEPING",
+      "expires": "next chapter start",
+      "consumes_main_action": true,
+      "defence_base": 2,
+      "available_to_all_kits": true
+    },
+    "default_condition": {
+      "id": "TARGET_APPEARS_ASLEEP",
+      "confirmation_cs": "Počkám, až bude cíl podle mého dostupného pozorování vypadat spící.",
+      "requires": [
+        "actual reachability",
+        "permitted observation of physical pose"
+      ],
+      "triggers_on": [
+        "REST sleep",
+        "valid FEIGN_SLEEP pose"
+      ],
+      "does_not_trigger_on": "chat alone",
+      "uses_true_defence_at_resolution": true
+    },
+    "verified_condition": {
+      "id": "VERIFIED_SLEEP",
+      "requires": "specific current authorized proof, not mere appearance and not private engine knowledge",
+      "otherwise": "not admissible; clarify or offer apparent-sleep condition before confirming"
+    },
+    "AFK_is_not_sleep": true
+  },
+  "operator_validation": {
+    "public_payload_excludes": [
+      "team map",
+      "secret seed",
+      "graph target IDs",
+      "private orders",
+      "full private chat",
+      "unreleased clues"
+    ],
+    "essential_rechecks": [
+      "one accepted intent per chapter",
+      "no actor-ID leaks in visible provenance IDs",
+      "no repeated lethal charge",
+      "no new hidden fact in public joke",
+      "last results delivered before final ballot",
+      "new facts respect release chapter"
+    ]
+  },
+  "finale": {
+    "actor_population": "original N including echoes",
+    "ballot_size": "T different other actors or full abstention",
+    "ranking": "descending approval count",
+    "threshold": "ceil(2*T/3)",
+    "tie_policy": "two-minute runoff for boundary candidates then seeded logged draw",
+    "reconstruction_contexts": [
+      "WORLD_TRUTH",
+      "EXPERIENCE",
+      "PRESENTATION",
+      "COVERT_ACTION"
+    ],
+    "disclose_significant_game_orders": true,
+    "automatically_disclose_full_private_chats": false,
+    "include_unfulfilled_plans_as_unfulfilled": true
+  },
+  "example_fixture_8_players": {
+    "visibility": "SERVER_ONLY_DESIGN_EXAMPLE_NOT_REAL_PARTY_ASSIGNMENT",
+    "example_secret_teams": {
+      "SPIKLENCI": [
+        "P03",
+        "P07"
+      ],
+      "STRAZCI": [
+        "P01",
+        "P02",
+        "P04",
+        "P05",
+        "P06",
+        "P08"
+      ]
+    },
+    "warning": "Never reuse this visible example mapping for a real secret-role game. Materialize a new game using a private seed.",
+    "nodes": [
+      {
+        "id": "W-PUBLIC-001",
+        "kind": "WORLD_EVENT",
+        "visibility": "PUBLIC",
+        "text": "Před začátkem setkání byla narušena pečeť. Zůstaly dva neúplné, vzájemně odlišitelné otisky původních aktivátorů.",
+        "accepted_scenario_prelude": true
+      },
+      {
+        "id": "W-PRELUDE-101",
+        "kind": "WORLD_EVENT",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE",
+        "actor": "P03",
+        "intent": "SCENARIO_PRELUDE_ATTUNE",
+        "result": "original ritual trace created",
+        "chain_id": "R01",
+        "accepted_scenario_prelude": true,
+        "new_fiction_not_canonical_biography": true
+      },
+      {
+        "id": "R01-A",
+        "kind": "EVIDENCE_FACT",
+        "visibility": "PRIVATE_TO_AUTHORIZED_RECIPIENTS",
+        "family": "A",
+        "chain_id": "R01",
+        "candidates": [
+          "P03",
+          "P01",
+          "P04"
+        ],
+        "full_release_chapter": 1,
+        "tutorial_release_chapter": 1,
+        "location": "ARCHIV",
+        "text_template": "Doložený původní aktivátor otisku R01 patří mezi: P03, P01, P04.",
+        "public_source_label": "Archivní list",
+        "truth_source_ref": "W-PRELUDE-101",
+        "truth_source_ref_visibility": "SERVER_ONLY",
+        "gives_explicit_team": false
+      },
+      {
+        "id": "R01-B",
+        "kind": "EVIDENCE_FACT",
+        "visibility": "PRIVATE_TO_AUTHORIZED_RECIPIENTS",
+        "family": "B",
+        "chain_id": "R01",
+        "candidates": [
+          "P03",
+          "P01",
+          "P05"
+        ],
+        "full_release_chapter": 3,
+        "tutorial_release_chapter": 2,
+        "location": "VESTIBUL",
+        "text_template": "Doložený původní aktivátor otisku R01 patří mezi: P03, P01, P05.",
+        "public_source_label": "Průchodový záznam",
+        "truth_source_ref": "W-PRELUDE-101",
+        "truth_source_ref_visibility": "SERVER_ONLY",
+        "gives_explicit_team": false
+      },
+      {
+        "id": "R01-C",
+        "kind": "EVIDENCE_FACT",
+        "visibility": "PRIVATE_TO_AUTHORIZED_RECIPIENTS",
+        "family": "C",
+        "chain_id": "R01",
+        "candidates": [
+          "P03",
+          "P04",
+          "P05"
+        ],
+        "full_release_chapter": 5,
+        "tutorial_release_chapter": 3,
+        "location": "KOMORA",
+        "text_template": "Doložený původní aktivátor otisku R01 patří mezi: P03, P04, P05.",
+        "public_source_label": "Otisk pečetě",
+        "truth_source_ref": "W-PRELUDE-101",
+        "truth_source_ref_visibility": "SERVER_ONLY",
+        "gives_explicit_team": false
+      },
+      {
+        "id": "R01-JOINT",
+        "kind": "DERIVABLE_CONCLUSION",
+        "visibility": "ONLY_IF_ALL_REQUIRED_CLUES_ARE_KNOWN",
+        "required_clues": [
+          "R01-A",
+          "R01-B",
+          "R01-C"
+        ],
+        "operation": "intersection",
+        "conclusion_actor": "P03",
+        "not_automatically_distributed": true
+      },
+      {
+        "id": "W-PRELUDE-202",
+        "kind": "WORLD_EVENT",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE",
+        "actor": "P07",
+        "intent": "SCENARIO_PRELUDE_ATTUNE",
+        "result": "original ritual trace created",
+        "chain_id": "R02",
+        "accepted_scenario_prelude": true,
+        "new_fiction_not_canonical_biography": true
+      },
+      {
+        "id": "R02-A",
+        "kind": "EVIDENCE_FACT",
+        "visibility": "PRIVATE_TO_AUTHORIZED_RECIPIENTS",
+        "family": "A",
+        "chain_id": "R02",
+        "candidates": [
+          "P07",
+          "P02",
+          "P04"
+        ],
+        "full_release_chapter": 1,
+        "tutorial_release_chapter": 1,
+        "location": "ARCHIV",
+        "text_template": "Doložený původní aktivátor otisku R02 patří mezi: P07, P02, P04.",
+        "public_source_label": "Archivní list",
+        "truth_source_ref": "W-PRELUDE-202",
+        "truth_source_ref_visibility": "SERVER_ONLY",
+        "gives_explicit_team": false
+      },
+      {
+        "id": "R02-B",
+        "kind": "EVIDENCE_FACT",
+        "visibility": "PRIVATE_TO_AUTHORIZED_RECIPIENTS",
+        "family": "B",
+        "chain_id": "R02",
+        "candidates": [
+          "P07",
+          "P02",
+          "P08"
+        ],
+        "full_release_chapter": 3,
+        "tutorial_release_chapter": 2,
+        "location": "VESTIBUL",
+        "text_template": "Doložený původní aktivátor otisku R02 patří mezi: P07, P02, P08.",
+        "public_source_label": "Průchodový záznam",
+        "truth_source_ref": "W-PRELUDE-202",
+        "truth_source_ref_visibility": "SERVER_ONLY",
+        "gives_explicit_team": false
+      },
+      {
+        "id": "R02-C",
+        "kind": "EVIDENCE_FACT",
+        "visibility": "PRIVATE_TO_AUTHORIZED_RECIPIENTS",
+        "family": "C",
+        "chain_id": "R02",
+        "candidates": [
+          "P07",
+          "P04",
+          "P08"
+        ],
+        "full_release_chapter": 5,
+        "tutorial_release_chapter": 3,
+        "location": "KOMORA",
+        "text_template": "Doložený původní aktivátor otisku R02 patří mezi: P07, P04, P08.",
+        "public_source_label": "Otisk pečetě",
+        "truth_source_ref": "W-PRELUDE-202",
+        "truth_source_ref_visibility": "SERVER_ONLY",
+        "gives_explicit_team": false
+      },
+      {
+        "id": "R02-JOINT",
+        "kind": "DERIVABLE_CONCLUSION",
+        "visibility": "ONLY_IF_ALL_REQUIRED_CLUES_ARE_KNOWN",
+        "required_clues": [
+          "R02-A",
+          "R02-B",
+          "R02-C"
+        ],
+        "operation": "intersection",
+        "conclusion_actor": "P07",
+        "not_automatically_distributed": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "W-PRELUDE-101",
+        "to": "W-PUBLIC-001",
+        "relation": "contributed_to_incident",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE"
+      },
+      {
+        "from": "W-PRELUDE-101",
+        "to": "R01-A",
+        "relation": "truth_provenance",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE"
+      },
+      {
+        "from": "W-PRELUDE-101",
+        "to": "R01-B",
+        "relation": "truth_provenance",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE"
+      },
+      {
+        "from": "W-PRELUDE-101",
+        "to": "R01-C",
+        "relation": "truth_provenance",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE"
+      },
+      {
+        "from": "R01-A",
+        "to": "R01-JOINT",
+        "relation": "required_joint_evidence"
+      },
+      {
+        "from": "R01-B",
+        "to": "R01-JOINT",
+        "relation": "required_joint_evidence"
+      },
+      {
+        "from": "R01-C",
+        "to": "R01-JOINT",
+        "relation": "required_joint_evidence"
+      },
+      {
+        "from": "W-PRELUDE-202",
+        "to": "W-PUBLIC-001",
+        "relation": "contributed_to_incident",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE"
+      },
+      {
+        "from": "W-PRELUDE-202",
+        "to": "R02-A",
+        "relation": "truth_provenance",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE"
+      },
+      {
+        "from": "W-PRELUDE-202",
+        "to": "R02-B",
+        "relation": "truth_provenance",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE"
+      },
+      {
+        "from": "W-PRELUDE-202",
+        "to": "R02-C",
+        "relation": "truth_provenance",
+        "visibility": "SERVER_ONLY_UNTIL_FINALE"
+      },
+      {
+        "from": "R02-A",
+        "to": "R02-JOINT",
+        "relation": "required_joint_evidence"
+      },
+      {
+        "from": "R02-B",
+        "to": "R02-JOINT",
+        "relation": "required_joint_evidence"
+      },
+      {
+        "from": "R02-C",
+        "to": "R02-JOINT",
+        "relation": "required_joint_evidence"
+      }
+    ],
+    "expected_deductions": [
+      {
+        "chain_id": "R01",
+        "using_all": [
+          "R01-A",
+          "R01-B",
+          "R01-C"
+        ],
+        "result": "P03"
+      },
+      {
+        "chain_id": "R02",
+        "using_all": [
+          "R02-A",
+          "R02-B",
+          "R02-C"
+        ],
+        "result": "P07"
+      }
+    ]
+  }
+}

@@ -98,7 +98,19 @@ final class NativeAccountRequestPolicy {
         return true;
     }
 
+    private static boolean allowsSealedCasePath(String path, String method) {
+        if ("/app/v1/sealed-cases".equals(path)) return "POST".equals(method);
+        if ("/app/v1/sealed-cases/current".equals(path)) return "GET".equals(method);
+        if (path.matches("^/app/v1/sealed-cases/sc_[a-f0-9]{32}/portraits/[A-Za-z0-9_-]{1,128}$")) return "GET".equals(method);
+        if (!path.matches("^/app/v1/sealed-cases/sc_[a-f0-9]{32}(/[a-z-]+)?$")) return false;
+        String[] parts = path.split("/");
+        if (parts.length == 5) return "GET".equals(method);
+        return "GET".equals(method) ? Arrays.asList("play", "context", "moderator").contains(parts[5])
+            : "POST".equals(method) && Arrays.asList("lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent").contains(parts[5]);
+    }
+
     private static boolean allowsAppPath(String path, String method, String query) {
+        if (query == null && allowsSealedCasePath(path, method)) return true;
         if (query == null && "/app/v1/game".equals(path)) return "GET".equals(method);
         if (query == null && "/app/v1/game/matches".equals(path)) return "POST".equals(method);
         if (query == null && "/app/v1/game/progress".equals(path)) return "GET".equals(method);

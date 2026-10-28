@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -7,16 +8,21 @@ namespace Kufr.Backend.Features.SealedCase;
 internal enum SealedPlayerState { Awake, Sleeping, Unconscious, Echo }
 internal enum SealedIntent { Hold, Rest, Guard, Prepare, Investigate, Follow, Steal, Sabotage, Stun, Lethal, Help, EchoReview, EchoDeliver, EchoScene, Dream, Mask, FeignSleep, Transfer }
 internal enum SealedConditionKind { TargetAppearsAsleep, VerifiedSleep }
+internal enum SealedDefensePolicy { TakeCover, CallForHelp, Withdraw }
 internal enum SealedResult { Success, Defended, Hold, RequestValid }
 internal sealed class SealedCaseRuleException(string message) : Exception(message);
 
 internal sealed record SealedCondition(SealedConditionKind Kind, string? EvidenceId = null);
 internal sealed record SealedAction(string Id, string ActorId, int Chapter, SealedIntent Intent,
     string? TargetId = null, string? Destination = null, string? Method = null, SealedCondition? Condition = null,
-    string Fallback = "HOLD", bool LethalConfirmed = false, int Revision = 1, SealedIntent? PreparedIntent = null)
+    string Fallback = "HOLD", bool LethalConfirmed = false, int Revision = 1, SealedIntent? PreparedIntent = null, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ResourceId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Summary = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SealedDefensePolicy? DefensePolicy = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ShelteredPosition = null)
 {
     internal void Validate()
     {
+        if (DefensePolicy is { } policy && !Enum.IsDefined(policy)) { throw new SealedCaseRuleException("Unknown defense policy."); }
         if (!Enum.IsDefined(Intent) || PreparedIntent is { } prepared && !Enum.IsDefined(prepared)
             || Condition is { } condition && !Enum.IsDefined(condition.Kind))
             throw new SealedCaseRuleException("Unknown action enum.");
@@ -91,7 +97,7 @@ internal sealed record SealedEvent(string Id, int Chapter, int Phase, string Act
     SealedIntent Intent, SealedResult Result, string? Reason, SealedModifiers? Modifiers = null, SealedRolls? Rolls = null,
     bool TraceCreated = false, IReadOnlyList<string>? CausalParentIds = null);
 
-internal sealed class SealedGame
+internal sealed partial class SealedGame
 {
     private readonly string _seed;
     private readonly Dictionary<string, HashSet<string>> _adjacency;
@@ -131,6 +137,8 @@ internal sealed class SealedGame
         }
         var events = new Dictionary<string, SealedEvent>(StringComparer.Ordinal);
         var denied = new HashSet<string>(StringComparer.Ordinal);
+        var nextScenario = Scenario?.Copy();
+        nextScenario?.Masks.Clear();
         foreach (var (actorId, action) in actions.OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             var actor = working[actorId];
@@ -151,6 +159,27 @@ internal sealed class SealedGame
                 actor.Location = action.Destination; actor.Cover = 0;
             }
         }
+        if (nextScenario is not null)
+        {
+            var moved = working.ToDictionary(p => p.Key, p => p.Value.Copy(), StringComparer.Ordinal);
+            foreach (var follow in actions.Values.Where(a => a.Intent == SealedIntent.Follow && !denied.Contains(a.ActorId)))
+            {
+                var actor = working[follow.ActorId];
+                var target = follow.TargetId is { } targetId ? moved.GetValueOrDefault(targetId) : null;
+                var prior = Players[actor.Id];
+                var seen = target is not null && prior.KnownPlayers.Contains(target.Id)
+                    && (prior.Location == Players[target.Id].Location || prior.ObservedPlayers.Contains(target.Id))
+                    && (target.Location == prior.Location || _adjacency.GetValueOrDefault(prior.Location, []).Contains(target.Location))
+                    && (follow.Destination is null || follow.Destination == target.Location);
+                if (seen) { actor.Location = target!.Location; }
+                if (!seen) { events[actor.Id] = Event(follow, SealedResult.Hold, 1, "FOLLOW_NOT_OBSERVED"); }
+            }
+            foreach (var actor in working.Values.Where(p => p.State == SealedPlayerState.Awake))
+            {
+                actor.ObservedPlayers.Clear();
+                actor.ObservedPlayers.UnionWith(working.Values.Where(other => other.Id != actor.Id && other.Location == actor.Location).Select(other => other.Id));
+            }
+        }
         foreach (var (actorId, action) in actions.OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             if (denied.Contains(actorId)) continue;
@@ -158,6 +187,10 @@ internal sealed class SealedGame
             if (p.State == SealedPlayerState.Echo && action.Intent is not (SealedIntent.Hold or SealedIntent.EchoReview or SealedIntent.EchoDeliver or SealedIntent.EchoScene)) { Reject(action, "BODY_UNAVAILABLE"); continue; }
             if (p.State == SealedPlayerState.Unconscious && action.Intent is not (SealedIntent.Hold or SealedIntent.Dream)) { Reject(action, "UNCONSCIOUS"); continue; }
             if (p.State == SealedPlayerState.Sleeping && action.Intent != SealedIntent.Hold) { Reject(action, "ASLEEP_BEFORE_ACTION"); continue; }
+            if (nextScenario is not null && action.ShelteredPosition == true && p.State == SealedPlayerState.Awake
+                && SealedScenario.Definition.GetProperty("map").GetProperty("zones").EnumerateArray()
+                    .Any(zone => zone.GetProperty("id").GetString() == p.Location && zone.GetProperty("cover_available").GetBoolean()))
+            { p.Cover = 1; }
             if (action.Intent == SealedIntent.FeignSleep) { p.FeigningSleep = true; events[actorId] = Event(action, SealedResult.Success, 2); }
             else if (action.Intent is SealedIntent.Rest or SealedIntent.Prepare)
             {
@@ -173,6 +206,7 @@ internal sealed class SealedGame
             }
         }
         var snapshot = working.ToDictionary(p => p.Key, p => p.Value.Copy(), StringComparer.Ordinal);
+        ResolveScenarioActions(chapter, actions, working, snapshot, events, denied, nextScenario);
         var pending = new Dictionary<string, SealedPlayerState>(StringComparer.Ordinal);
         var spend = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (actorId, action) in actions.OrderBy(x => x.Key, StringComparer.Ordinal))
@@ -228,6 +262,13 @@ internal sealed class SealedGame
             if (p.State == SealedPlayerState.Unconscious && p.UnconsciousUntilEnd == chapter) { p.State = SealedPlayerState.Awake; p.UnconsciousUntilEnd = 0; }
             if (p.PreparationChapter <= chapter) { p.Preparation = 0; p.PreparedIntent = null; p.PreparationChapter = 0; }
         }
+        if (nextScenario is not null)
+        {
+            RecordOversightTrace(nextScenario, snapshot, actions, events, chapter);
+            ResolvePassiveDefense(nextScenario, snapshot, working, actions, events, chapter);
+            CaptureObservations(nextScenario, working, chapter);
+        }
+        Scenario = nextScenario;
         Players.Clear(); foreach (var p in working) Players.Add(p.Key, p.Value);
         var output = events.Values.OrderBy(x => x.ActorId, StringComparer.Ordinal).ToArray();
         _resolved[chapter] = (fingerprint, output);
@@ -272,7 +313,14 @@ internal sealed class SealedWorldLog
     internal IReadOnlyList<SealedWorldEvent> Events => _events;
     internal void Append(SealedWorldEvent item) { if (_events.Any(x => x.Id == item.Id)) throw new SealedCaseRuleException("Duplicate world event id."); _events.Add(item); }
 }
-internal sealed record SealedExperience(string Id, string ObserverId, string? SourceEventId, string Text, string Confidence);
+internal sealed record SealedExperience(string Id, string ObserverId, string? SourceEventId, string Text, string Confidence,
+    int Phase = 3, string Modality = "SAW", string? PerceivedState = null)
+{
+    internal string Classification => Confidence switch
+    {
+        "REPORTED" => "STATEMENT", "INFERRED" => "INFERENCE", "UNCERTAIN" => "UNCERTAIN_FRAGMENT", _ => "CONFIRMED_OBSERVATION"
+    };
+}
 internal enum SealedPresentationKind { Statement, PhysicalPerformance, DisplayedEvidence }
 internal sealed record SealedAudience(string Kind, IReadOnlyList<string> Recipients)
 {
@@ -281,7 +329,14 @@ internal sealed record SealedAudience(string Kind, IReadOnlyList<string> Recipie
 }
 internal sealed record SealedPresentation(string Id, string AuthorId, string Text, SealedAudience Audience,
     IReadOnlyList<string> DeliveryReceipts, bool Published, SealedPresentationKind Kind = SealedPresentationKind.Statement);
-internal sealed record SealedCovertOrder(string Id, string ActorId, string Intent, string? TargetId, bool Confirmed, IReadOnlyList<string> WorldEventRefs);
+internal sealed record SealedCovertOrder(string Id, string ActorId, string Intent, string? TargetId, bool Confirmed, IReadOnlyList<string> WorldEventRefs)
+{
+    // Trusted observer/action disclosure, separate from internal event provenance.
+    // A source writer must explicitly authorize these for this order's actor;
+    // neither hidden event existence nor SourceEventId grants causal knowledge.
+    internal IReadOnlyList<string> AuthorizedResultRefs { get; init; } = [];
+    internal bool ExecutionAcknowledged { get; init; }
+}
 internal sealed record SealedWorldTruthProjection(string Source, string Access, IReadOnlyList<string> EventRefs);
 internal sealed record SealedPresentationProjection(string Id, string AuthorId, string Text, SealedPresentationKind Kind, string AudienceKind, IReadOnlyList<string> Recipients, bool Published, IReadOnlyList<string> DeliveryReceipts);
 internal sealed record SealedCovertProjection(string ActionRef, string Intent, bool Confirmed, string ExecutionStatus, IReadOnlyList<string> WorldEventRefs, IReadOnlyList<string> PerceivedResultRefs);
@@ -300,20 +355,23 @@ internal static class SealedProjection
         var p = PresentationForPlayer(presentations, playerId).Select(x => new SealedPresentationProjection(x.Id, x.AuthorId, x.Text, x.Kind, x.Audience.Kind, x.Audience.Recipients, x.AuthorId == playerId && x.Published, x.DeliveryReceipts)).ToArray();
         var c = orders.Where(x => x.ActorId == playerId).Select(order =>
         {
-            var refs = order.WorldEventRefs.Where(id => world.Events.Any(e => e.Id == id && e.ActorId == playerId)).ToArray();
-            var perceived = ownExperience.Where(x => x.SourceEventId is not null && refs.Contains(x.SourceEventId, StringComparer.Ordinal)).Select(x => x.Id).Distinct(StringComparer.Ordinal).ToArray();
+            var refs = revealed ? order.WorldEventRefs.Where(id => world.Events.Any(e => e.Id == id && e.ActorId == playerId)).ToArray() : [];
+            var perceived = order.Confirmed ? ownExperience.Where(x => order.AuthorizedResultRefs.Contains(x.Id, StringComparer.Ordinal))
+                .Select(x => x.Id).Distinct(StringComparer.Ordinal).ToArray() : [];
             return new SealedCovertProjection(order.Id, order.Intent, order.Confirmed,
-                refs.Length == 0 ? "PLANNED" : revealed || perceived.Length > 0 ? "RESOLVED" : "RESOLVED_RESULT_NOT_OBSERVED",
-                revealed ? refs : [], perceived);
+                perceived.Length > 0 || revealed && refs.Length > 0 ? "RESOLVED"
+                    : order.Confirmed && order.ExecutionAcknowledged ? "RESOLVED_RESULT_NOT_OBSERVED" : "PLANNED",
+                refs, perceived);
         }).ToArray();
         var truthRefs = revealed ? world.Events.Where(e => e.ActorId == playerId || e.TargetId == playerId).Select(e => e.Id).Distinct().ToArray() : [];
-        return new(playerId, new("GLOBAL_EVENT_LOG", revealed ? "REVEALED_REFERENCES" : "WITHHELD", truthRefs), ownExperience, p, c);
+        return new(playerId, new("GLOBAL_EVENT_LOG", revealed ? "REVEALED_REFERENCES" : "WITHHELD", truthRefs),
+            ownExperience.Select(x => x with { SourceEventId = revealed ? x.SourceEventId : null }).ToArray(), p, c);
     }
 
     internal static IReadOnlyList<SealedPresentation> PresentationForPlayer(IReadOnlyList<SealedPresentation> records, string viewer) => records.Where(r =>
         r.AuthorId == viewer || r.DeliveryReceipts.Contains(viewer, StringComparer.Ordinal) &&
         (r.Audience.Kind == "PUBLIC" || r.Audience.Recipients.Contains(viewer, StringComparer.Ordinal)))
-        .Select(r => r with { Audience = r.AuthorId == viewer ? r.Audience : new SealedAudience(r.Audience.Kind, []), DeliveryReceipts = r.AuthorId == viewer ? r.DeliveryReceipts : [] }).ToArray();
+        .Select(r => r with { Audience = new SealedAudience(r.Audience.Kind, r.AuthorId == viewer ? r.Audience.Recipients.ToArray() : []), DeliveryReceipts = r.AuthorId == viewer ? r.DeliveryReceipts.ToArray() : [] }).ToArray();
 
     internal static IReadOnlyList<SealedPresentationProjection> PublicFeed(IReadOnlyList<SealedPresentation> records) => records
         .Where(r => r.Audience.Kind == "PUBLIC" && r.Published)

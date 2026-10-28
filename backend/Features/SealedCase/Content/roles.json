@@ -1,0 +1,448 @@
+{
+  "schema_version": "1.0",
+  "document_kind": "game_role_definitions",
+  "visibility": "PUBLIC_RULES",
+  "language": "cs-CZ",
+  "date": "2026-10-26",
+  "design_status": "PLAYTEST_BASELINE_NOT_EMPIRICALLY_BALANCED",
+  "team_independent": true,
+  "one_kit_per_player": true,
+  "universal_intents": [
+    "HOLD",
+    "REST",
+    "GUARD",
+    "PREPARE",
+    "INVESTIGATE",
+    "FOLLOW",
+    "STEAL",
+    "TRANSFER",
+    "SABOTAGE",
+    "FEIGN_SLEEP",
+    "STUN",
+    "LETHAL",
+    "HELP"
+  ],
+  "expertise_rule": {
+    "bonus": 1,
+    "requires_registered_tag": true,
+    "max_per_conflict": 1,
+    "defence_formula_unchanged": true,
+    "unopposed_action": "No roll; kit changes framing of permitted fact, not information quota."
+  },
+  "preparation": {
+    "PREPARE": {
+      "amount": 1,
+      "scope": "one declared next-chapter intent",
+      "expires": "end of next chapter"
+    },
+    "REST": {
+      "amount": 1,
+      "scope": "first next-chapter main action",
+      "expires": "end of next chapter",
+      "cost": "actual sleep during current resolution"
+    },
+    "stacking": false,
+    "restores_lethal_token": false
+  },
+  "common_loadout": [
+    {
+      "id": "PROFILE_TOOL",
+      "name": "Nástroj postavy nebo scénářový katalyzátor",
+      "source": "supplied_profile_or_original_scenario",
+      "rule": "No new canonical ability may be inferred.",
+      "transferable": false
+    },
+    {
+      "id": "SEAL_OF_IMPACT",
+      "name": "Pečeť zásahu",
+      "source": "original_scenario_house_rule",
+      "allows": [
+        "STUN"
+      ],
+      "transferable": false,
+      "physical_world_use": false
+    },
+    {
+      "id": "BREAKPOINT_SEAL",
+      "name": "Zlomová pečeť",
+      "source": "original_scenario_house_rule",
+      "allows": [
+        "LETHAL"
+      ],
+      "resource_id": "KRAJNI_CIN",
+      "initial_charges": 1,
+      "rechargeable": false,
+      "transferable": false,
+      "earliest_chapter": 2,
+      "consume_on": "valid reached contested attempt",
+      "not_consumed_on": [
+        "unmet_trigger",
+        "inaccessible_target",
+        "target_already_echo_before_contact"
+      ],
+      "physical_world_use": false
+    }
+  ],
+  "kits": [
+    {
+      "id": "BADATEL",
+      "name": "Badatel",
+      "expertise_tags": [
+        "document_analysis",
+        "object_provenance"
+      ],
+      "intents": [
+        "INVESTIGATE"
+      ],
+      "summary": "Původ předmětů, dokumenty a jejich souvislosti.",
+      "limit": "Rozpoznání původního majitele neprokazuje současného pachatele.",
+      "voice": "Přesný odborný postřeh a přiznání mezí znalosti.",
+      "study": "Porovnat dostupnou listinu nebo předmět s vlastními oprávněnými záznamy.",
+      "expertise_bonus": 1,
+      "allowed_teams": [
+        "STRAZCI",
+        "SPIKLENCI"
+      ],
+      "tutorial_primary_investigation": {
+        "intent": "INVESTIGATE",
+        "method_tags": [
+          "document_analysis",
+          "object_provenance"
+        ],
+        "description": "Porovnat dostupnou listinu nebo předmět s vlastními oprávněnými záznamy.",
+        "requires": "a visible eligible source; max one new alignment clue"
+      },
+      "tutorial_support_candidates": [
+        {
+          "intent": "GUARD",
+          "target": "reachable consenting player or self"
+        },
+        {
+          "intent": "HELP",
+          "target": "reachable unconscious player"
+        },
+        {
+          "intent": "TRANSFER",
+          "target": "reachable intended recipient",
+          "requires": "a held transferable scenario item"
+        }
+      ],
+      "tutorial_distinct_candidate": {
+        "intent": "PREPARE",
+        "prepare_for": "INVESTIGATE"
+      },
+      "does_not_reveal_team": true
+    },
+    {
+      "id": "STRAZCE",
+      "name": "Ochránce",
+      "expertise_tags": [
+        "aid",
+        "ward_analysis"
+      ],
+      "intents": [
+        "HELP",
+        "INVESTIGATE"
+      ],
+      "summary": "Ochrany, pomoc a návrat k možnosti jednat.",
+      "limit": "GUARD dává nejvýše standardní ochranu +1; sada nepřidá další obranný bonus.",
+      "voice": "Praktická péče s vědomím, že ochrany mají konkrétní meze.",
+      "study": "Prověřit dostupný záznam o narušení ochrany.",
+      "expertise_bonus": 1,
+      "allowed_teams": [
+        "STRAZCI",
+        "SPIKLENCI"
+      ],
+      "tutorial_primary_investigation": {
+        "intent": "INVESTIGATE",
+        "method_tags": [
+          "aid",
+          "ward_analysis"
+        ],
+        "description": "Prověřit dostupný záznam o narušení ochrany.",
+        "requires": "a visible eligible source; max one new alignment clue"
+      },
+      "tutorial_support_candidates": [
+        {
+          "intent": "GUARD",
+          "target": "reachable consenting player or self"
+        },
+        {
+          "intent": "HELP",
+          "target": "reachable unconscious player"
+        },
+        {
+          "intent": "TRANSFER",
+          "target": "reachable intended recipient",
+          "requires": "a held transferable scenario item"
+        }
+      ],
+      "tutorial_distinct_candidate": {
+        "intent": "PREPARE",
+        "prepare_for": "INVESTIGATE"
+      },
+      "does_not_reveal_team": true
+    },
+    {
+      "id": "STOPAR",
+      "name": "Stopař",
+      "expertise_tags": [
+        "movement",
+        "physical_trace"
+      ],
+      "intents": [
+        "FOLLOW",
+        "INVESTIGATE"
+      ],
+      "summary": "Pohyb osob a stopy přítomnosti.",
+      "limit": "Nemá globální sledování poloh ani přístup přes uzavřené zóny.",
+      "voice": "Pozorování, časová návaznost a oddělení stopy od domněnky.",
+      "study": "Porovnat oprávněnou stopu přítomnosti s výpovědí.",
+      "expertise_bonus": 1,
+      "allowed_teams": [
+        "STRAZCI",
+        "SPIKLENCI"
+      ],
+      "tutorial_primary_investigation": {
+        "intent": "INVESTIGATE",
+        "method_tags": [
+          "movement",
+          "physical_trace"
+        ],
+        "description": "Porovnat oprávněnou stopu přítomnosti s výpovědí.",
+        "requires": "a visible eligible source; max one new alignment clue"
+      },
+      "tutorial_support_candidates": [
+        {
+          "intent": "GUARD",
+          "target": "reachable consenting player or self"
+        },
+        {
+          "intent": "HELP",
+          "target": "reachable unconscious player"
+        },
+        {
+          "intent": "TRANSFER",
+          "target": "reachable intended recipient",
+          "requires": "a held transferable scenario item"
+        }
+      ],
+      "tutorial_distinct_candidate": {
+        "intent": "PREPARE",
+        "prepare_for": "FOLLOW"
+      },
+      "does_not_reveal_team": true
+    },
+    {
+      "id": "PROSTREDNIK",
+      "name": "Prostředník",
+      "expertise_tags": [
+        "object_handling",
+        "custody_chain"
+      ],
+      "intents": [
+        "STEAL",
+        "INVESTIGATE"
+      ],
+      "summary": "Předání, držení a získání přenositelných předmětů.",
+      "limit": "Nemůže převést osobně vázanou pečeť, zfalšovat souhlas nebo duplikovat předmět.",
+      "voice": "Zdvořilé vyjednávání a přesná formulace závazků.",
+      "study": "Ověřit doložený řetězec držitelů dostupného předmětu.",
+      "expertise_bonus": 1,
+      "allowed_teams": [
+        "STRAZCI",
+        "SPIKLENCI"
+      ],
+      "tutorial_primary_investigation": {
+        "intent": "INVESTIGATE",
+        "method_tags": [
+          "object_handling",
+          "custody_chain"
+        ],
+        "description": "Ověřit doložený řetězec držitelů dostupného předmětu.",
+        "requires": "a visible eligible source; max one new alignment clue"
+      },
+      "tutorial_support_candidates": [
+        {
+          "intent": "GUARD",
+          "target": "reachable consenting player or self"
+        },
+        {
+          "intent": "HELP",
+          "target": "reachable unconscious player"
+        },
+        {
+          "intent": "TRANSFER",
+          "target": "reachable intended recipient",
+          "requires": "a held transferable scenario item"
+        }
+      ],
+      "tutorial_distinct_candidate": {
+        "intent": "PREPARE",
+        "prepare_for": "STEAL"
+      },
+      "does_not_reveal_team": true
+    },
+    {
+      "id": "ILUZIONISTA",
+      "name": "Iluzionista",
+      "expertise_tags": [
+        "misdirection",
+        "concealment"
+      ],
+      "intents": [
+        "SABOTAGE"
+      ],
+      "summary": "Odvedení pozornosti a cílené přesměrování doručení.",
+      "limit": "Nevytváří falešné systémově ověřené důkazy; Dohled nelze obejít slovní formulací.",
+      "voice": "Dvojznačnost, nikoliv volná změna skutečnosti.",
+      "study": "Prozkoumat zaznamenaný rozdíl mezi prezentací a skutečným doručením.",
+      "expertise_bonus": 1,
+      "allowed_teams": [
+        "STRAZCI",
+        "SPIKLENCI"
+      ],
+      "tutorial_primary_investigation": {
+        "intent": "INVESTIGATE",
+        "method_tags": [
+          "misdirection",
+          "concealment"
+        ],
+        "description": "Prozkoumat zaznamenaný rozdíl mezi prezentací a skutečným doručením.",
+        "requires": "a visible eligible source; max one new alignment clue"
+      },
+      "tutorial_support_candidates": [
+        {
+          "intent": "GUARD",
+          "target": "reachable consenting player or self"
+        },
+        {
+          "intent": "HELP",
+          "target": "reachable unconscious player"
+        },
+        {
+          "intent": "TRANSFER",
+          "target": "reachable intended recipient",
+          "requires": "a held transferable scenario item"
+        }
+      ],
+      "tutorial_distinct_candidate": {
+        "intent": "FEIGN_SLEEP",
+        "prepare_for": null
+      },
+      "does_not_reveal_team": true
+    },
+    {
+      "id": "REZONATOR",
+      "name": "Rezonátor",
+      "expertise_tags": [
+        "magic_residue",
+        "scene_echo"
+      ],
+      "intents": [
+        "INVESTIGATE"
+      ],
+      "summary": "Zaznamenané zbytky magie a ozvěny oprávněných scén.",
+      "limit": "Nečte libovolné myšlenky a nezjišťuje příslušnost z aury bez stopy.",
+      "voice": "Smyslový postřeh s jasně označenou nejistotou.",
+      "study": "Rozlišit původní magickou stopu od pozdějšího zaznamenaného zásahu.",
+      "expertise_bonus": 1,
+      "allowed_teams": [
+        "STRAZCI",
+        "SPIKLENCI"
+      ],
+      "tutorial_primary_investigation": {
+        "intent": "INVESTIGATE",
+        "method_tags": [
+          "magic_residue",
+          "scene_echo"
+        ],
+        "description": "Rozlišit původní magickou stopu od pozdějšího zaznamenaného zásahu.",
+        "requires": "a visible eligible source; max one new alignment clue"
+      },
+      "tutorial_support_candidates": [
+        {
+          "intent": "GUARD",
+          "target": "reachable consenting player or self"
+        },
+        {
+          "intent": "HELP",
+          "target": "reachable unconscious player"
+        },
+        {
+          "intent": "TRANSFER",
+          "target": "reachable intended recipient",
+          "requires": "a held transferable scenario item"
+        }
+      ],
+      "tutorial_distinct_candidate": {
+        "intent": "PREPARE",
+        "prepare_for": "INVESTIGATE"
+      },
+      "does_not_reveal_team": true
+    }
+  ],
+  "character_adapter_example": {
+    "character_id": "garrick_ollivander",
+    "display_name": "Garrick Ollivander",
+    "universe": "Harry Potter",
+    "portrait_ref": {
+      "kind": "existing_user_asset",
+      "asset_id": null
+    },
+    "kit_id": "BADATEL",
+    "profile_source": "User-supplied character profile in current conversation",
+    "accepted_profile_facts": [
+      "Výrobce hůlek a majitel rodinného obchodu v Příčné ulici.",
+      "Pamatuje si hůlky, které prodal.",
+      "Zastává zásadu, že hůlka si vybírá kouzelníka.",
+      "Připouští hranice vlastního poznání."
+    ],
+    "expertise_binding": "object_provenance: wands actually sold by this character in supplied profile or accepted scenario history",
+    "forbidden_inferences": [
+      "knows_current_attacker_from_previous_owner",
+      "knows_all_secret_teams",
+      "all_power_interest_implies_conspirator"
+    ],
+    "scenario_motivation_example": "Chceš objasnit původ nalezeného předmětu a zachovat jeho vlastnosti pro poznání. Konkrétní tým bude přidělen nezávisle.",
+    "new_scenario_not_canon": true
+  },
+  "tutorial": {
+    "exact_choices": 3,
+    "free_main_action_input": false,
+    "dialogue_optional": true,
+    "selection_policy": "Build from visible eligible targets and current state; never reveal hidden target availability by option wording.",
+    "state_overrides": {
+      "BEZVEDOMI": [
+        {
+          "intent": "DREAM",
+          "source": "own_last_scene_visual_memory"
+        },
+        {
+          "intent": "DREAM",
+          "source": "own_recorded_statement_memory"
+        },
+        {
+          "intent": "DREAM",
+          "source": "own_recorded_state_or_item_memory"
+        }
+      ],
+      "OZVENA": [
+        {
+          "intent": "ECHO_REVIEW",
+          "source": "own_existing_clue"
+        },
+        {
+          "intent": "ECHO_DELIVER",
+          "source": "own_existing_evidence",
+          "recipient": "chosen_other_player"
+        },
+        {
+          "intent": "ECHO_SCENE",
+          "source": "permitted_recorded_scene"
+        }
+      ]
+    },
+    "fallback_policy": "Use three distinct already available sources or lawful self-protection; never fabricate a sensory memory or locked target."
+  }
+}

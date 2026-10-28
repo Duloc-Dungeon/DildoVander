@@ -262,6 +262,8 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
             }
             guard let http = result.1 as? HTTPURLResponse,
                   AccountTransportPolicy.accountResponseAllowed(path: path, method: method, size: result.0.count),
+                  AccountTransportPolicy.accountResponseContentTypeAllowed(path: path, method: method,
+                    contentType: http.value(forHTTPHeaderField: "Content-Type"), status: http.statusCode),
                   AccountTransportPolicy.accountDataDownloadLengthAllowed(path: path, method: method,
                     contentLength: http.value(forHTTPHeaderField: "Content-Length"), size: result.0.count),
                   http.url?.host == origin.host, http.url?.scheme == origin.scheme, http.url?.port == origin.port else { throw AccountError.invalidResponse }
