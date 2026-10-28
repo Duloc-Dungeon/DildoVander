@@ -8,7 +8,7 @@ internal enum SealedCharacterKit { Badatel, Strazce, Stopar, Prostrednik, Iluzio
 internal sealed record SealedRosterAssignment(string PlayerId, string SeatId, SealedCharacterKit Kit, SealedSecretTeam Team);
 internal sealed record SealedPublicSeat(string PlayerId, string SeatId, SealedCharacterKit Kit);
 internal sealed record SealedStoredRosterMember(string AccountId, string PlayerId, string SeatId, string ProfileId, long ProfileRevision,
-    string? PortraitStatus, SealedCharacterKit Kit, SealedSecretTeam Team, string? SnapshotRef = null);
+    string? PortraitStatus, SealedCharacterKit Kit, SealedSecretTeam Team, string? SnapshotRef = null, bool IsAi = false, string? DisplayName = null);
 internal sealed record SealedStoredRoster(string CaseId, string ServerSeed, SealedStoredRosterMember[] Members, long FrozenAt);
 
 // Keep character identity, public capability set, and confidential case allegiance

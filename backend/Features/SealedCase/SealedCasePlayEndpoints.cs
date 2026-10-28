@@ -18,22 +18,27 @@ internal static partial class SealedCaseEndpoints
         string Group(HttpContext h) => (string)h.Items[GroupItem]!;
         CustomerAdmissionGuard Admit(HttpContext h) => AuthorizeLobbyWrite(h);
         object Ack(string operationId, bool replayed) => new { operationId, accepted = true, replayed };
-        routes.MapGet("/current", (HttpContext h, SealedCaseStore store) => Results.Ok(new { id = store.LatestCase(Group(h)) }));
-        routes.MapGet("/{id}/play", (string id, HttpContext h, SealedCaseStore store) =>
+        routes.MapGet("/current", (HttpContext h, SealedCaseStore store) => Results.Ok(new { id = store.LatestCase(Group(h)) })).WithMetadata(new SealedCaseOwnerControl());
+        routes.MapGet("/{id}/play", (string id, HttpContext h, SealedCaseStore store, ISealedCaseAiPlayers ai) =>
         {
             store.AdvancePlayableCase(id, Group(h), Actor(h), () => Admit(h));
-            return Results.Ok(store.ReadPlay(id, Group(h), Actor(h), () => Admit(h)));
-        });
+            var view = store.ReadPlay(id, Group(h), Actor(h), () => Admit(h));
+            return Results.Ok(view with { AiAvailable = view.CanManageAi && ai.Available });
+        }).WithMetadata(new SealedCaseOwnerControl());
         routes.MapGet("/{id}/context", (string id, HttpContext h, SealedCaseStore store) =>
             Results.Ok(store.ReadContext(id, Group(h), Actor(h), SealedContextRole.Player,
                 store.ReadRosterAuthority(id, Group(h)), () => DemandPlayerAdmissionForContext(h)).ToSchema()));
+        routes.MapPost("/{id}/ai-players", (string id, SealedAddAiPlayersRequest request, HttpContext h,
+            SealedCaseStore store, AccountDatabase db, CharacterProfileStore profiles, ISealedCaseAiPlayers ai) =>
+            Results.Ok(Ack(request.OperationId, store.AddAiPlayers(id, Group(h), Actor(h), request, () => Admit(h),
+                () => EligibleMembers(Group(h), db, profiles), ai.Available).Replayed))).WithMetadata(new SealedCaseOwnerControl());
         routes.MapPost("/{id}/start", (string id, SealedCaseStartRequest request, HttpContext h,
             SealedCaseStore store, AccountDatabase db, CharacterProfileStore profiles) =>
         {
             ValidateOperation(request.OperationId);
             return Results.Ok(store.StartPlayableCase(id, Group(h), Actor(h), request.OperationId!, request.ExpectedRevision,
                 () => Admit(h), () => EligibleMembers(Group(h), db, profiles)));
-        });
+        }).WithMetadata(new SealedCaseOwnerControl());
         routes.MapPost("/{id}/scenario-consent", (string id, SealedOperationRequest request, HttpContext h, SealedCaseStore store)
             => Results.Ok(Ack(request.OperationId, store.AcceptScenario(id, Group(h), Actor(h), request.OperationId, () => Admit(h)).Replayed)));
         routes.MapPost("/{id}/actions", (string id, SealedPlanRequest request, HttpContext h, SealedCaseStore store) =>
@@ -56,9 +61,9 @@ internal static partial class SealedCaseEndpoints
             return ApiProblem.Create(h, 503, "sealed_case_retry");
         });
         routes.MapPost("/{id}/pause", (string id, SealedOperationRequest request, HttpContext h, SealedCaseStore store)
-            => Results.Ok(Ack(request.OperationId, store.ChangePause(id, Group(h), Actor(h), request.OperationId, false, () => Admit(h)).Replayed)));
+            => Results.Ok(Ack(request.OperationId, store.ChangePause(id, Group(h), Actor(h), request.OperationId, false, () => Admit(h)).Replayed))).WithMetadata(new SealedCaseOwnerControl());
         routes.MapPost("/{id}/resume", (string id, SealedOperationRequest request, HttpContext h, SealedCaseStore store)
-            => Results.Ok(Ack(request.OperationId, store.ChangePause(id, Group(h), Actor(h), request.OperationId, true, () => Admit(h)).Replayed)));
+            => Results.Ok(Ack(request.OperationId, store.ChangePause(id, Group(h), Actor(h), request.OperationId, true, () => Admit(h)).Replayed))).WithMetadata(new SealedCaseOwnerControl());
         routes.MapPost("/{id}/statements", (string id, SealedStatementRequest request, HttpContext h, SealedCaseStore store)
             => Results.Ok(Ack(request.OperationId, store.PostStatement(id, Group(h), Actor(h), request.OperationId, request.Body ?? "", request.Recipients ?? [], request.Public, () => Admit(h)).Replayed)));
         routes.MapPost("/{id}/ballots", (string id, SealedVoteRequest request, HttpContext h, SealedCaseStore store)
@@ -66,7 +71,7 @@ internal static partial class SealedCaseEndpoints
         routes.MapPost("/{id}/oversight", (string id, SealedOversightRequest request, HttpContext h, SealedCaseStore store)
             => Results.Ok(Ack(request.OperationId, store.RecommendOversight(id, Group(h), Actor(h), request.OperationId, request.Chapter, request.Nominee, () => Admit(h)).Replayed)));
         routes.MapPost("/{id}/disconnect", (string id, SealedDisconnectRequest request, HttpContext h, SealedCaseStore store)
-            => Results.Ok(Ack(request.OperationId, store.Disconnect(id, Group(h), Actor(h), request.OperationId, request.PlayerId, () => Admit(h)).Replayed)));
+            => Results.Ok(Ack(request.OperationId, store.Disconnect(id, Group(h), Actor(h), request.OperationId, request.PlayerId, () => Admit(h)).Replayed))).WithMetadata(new SealedCaseOwnerControl());
         routes.MapGet("/{id}/moderator", (string id, HttpContext h, SealedCaseStore store)
             => Results.Ok(store.ReadModerator(id, Group(h), Actor(h), () => Admit(h))));
         routes.MapGet("/{id}/portraits/{player}", (string id, string player, HttpContext h, SealedCaseStore store) =>
@@ -109,8 +114,8 @@ internal sealed partial class SealedCaseStore
             }
             try
             {
-                return resume ? ResumeTimeline(caseId, group, actor, operationId, revision, () => DemandPlayerAdmission(authorize, actor, group))
-                    : PauseTimeline(caseId, group, actor, operationId, revision, () => DemandPlayerAdmission(authorize, actor, group));
+                return resume ? ResumeTimeline(caseId, group, actor, operationId, revision, () => DemandPlayerAdmission(authorize, actor, group, allowOwner: true))
+                    : PauseTimeline(caseId, group, actor, operationId, revision, () => DemandPlayerAdmission(authorize, actor, group, allowOwner: true));
             }
             catch (SealedCasePersistenceException error) when (error.Code == "revision_conflict") { }
         }

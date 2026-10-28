@@ -691,7 +691,7 @@ enum AccountTransportPolicy {
         let parts = path.split(separator: "/").map(String.init)
         if parts.count == 4 { return method == "GET" }
         return method == "GET" ? ["play", "context", "moderator"].contains(parts[4])
-            : method == "POST" && ["lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent"].contains(parts[4])
+            : method == "POST" && ["lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent", "ai-players"].contains(parts[4])
     }
 
     private static func prelaunchAccount(path: String, method: String, query: [URLQueryItem]) -> Bool {

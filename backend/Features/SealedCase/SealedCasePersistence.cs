@@ -70,6 +70,7 @@ internal sealed partial class SealedCaseStore
             migrate.ExecuteNonQuery();
         }
         catch (SqliteException e) when (e.SqliteErrorCode == 1 && e.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) { }
+        InitializeAiPlayersSchema(connection);
         InitializeWorldSchema(connection);
         InitializeTimingSchema(connection);
         InvalidateLegacySelections();
@@ -202,8 +203,8 @@ internal sealed partial class SealedCaseStore
                 while (rows.Read())
                     if (JsonSerializer.Deserialize<SealedCaseLobbyEntry>(rows.GetString(1), Json) is { } entry)
                         latestLobby[rows.GetString(0)] = entry;
-            var currentCount = latestLobby.Where(x => eligibleLobbyMembers is null || eligibleLobbyMembers.Contains(x.Key))
-                .Count(x => x.Value.Ready && x.Value.Consent && x.Value.SnapshotRef is not null);
+            var currentCount = latestLobby.Where(x => eligibleLobbyMembers is null || eligibleLobbyMembers.Contains(x.Key) || AiPlayers(c, tx, caseId).ContainsKey(x.Key))
+                .Count(x => x.Value.Ready && x.Value.Consent && x.Value.SnapshotRef is not null) + AiPlayers(c, tx, caseId).Count;
             var incoming = JsonSerializer.Deserialize<SealedCaseLobbyEntry>(payloadJson, Json)!;
             var actorAlreadyReady = latestLobby.TryGetValue(actorId, out var actorEntry)
                 && actorEntry.Ready && actorEntry.Consent && actorEntry.SnapshotRef is not null;
@@ -325,7 +326,7 @@ internal sealed partial class SealedCaseStore
             using var terminal = c.CreateCommand(); terminal.Transaction = tx;
             terminal.CommandText = "UPDATE sealed_cases SET status='privacy_terminated',revision=revision+1,started_at=NULL,chapter=0,chapter_deadline=NULL,setup_json='{}',lobby_json='{}' WHERE id=$id";
             terminal.Parameters.AddWithValue("$id", id); terminal.ExecuteNonQuery();
-            foreach (var table in new[] { "sealed_case_resolutions", "sealed_case_world", "sealed_case_rosters", "sealed_case_events", "sealed_case_private_snapshots", "sealed_case_timing" })
+            foreach (var table in new[] { "sealed_case_ai_turns", "sealed_case_ai_players", "sealed_case_resolutions", "sealed_case_world", "sealed_case_rosters", "sealed_case_events", "sealed_case_private_snapshots", "sealed_case_timing" })
             {
                 using var delete = c.CreateCommand(); delete.Transaction = tx;
                 delete.CommandText = $"DELETE FROM {table} WHERE case_id=$id"; delete.Parameters.AddWithValue("$id", id); delete.ExecuteNonQuery();
@@ -354,18 +355,17 @@ internal sealed partial class SealedCaseStore
     {
         using var exists = c.CreateCommand(); exists.Transaction = tx; exists.CommandText = "SELECT 1 FROM sealed_case_rosters WHERE case_id=$id"; exists.Parameters.AddWithValue("$id", caseId);
         if (exists.ExecuteScalar() is not null) return;
-        using var cmd = c.CreateCommand(); cmd.Transaction = tx;
-        cmd.CommandText = "SELECT actor_id,payload_json FROM sealed_case_events WHERE case_id=$case AND kind='lobby' ORDER BY revision";
-        cmd.Parameters.AddWithValue("$case", caseId);
-        var latest = new Dictionary<string, SealedCaseLobbyEntry>(StringComparer.Ordinal);
-        using (var rows = cmd.ExecuteReader()) while (rows.Read()) latest[rows.GetString(0)] = JsonSerializer.Deserialize<SealedCaseLobbyEntry>(rows.GetString(1), Json)!;
-        var ready = latest.Where(x => eligibleLobbyMembers is null || eligibleLobbyMembers.Contains(x.Key)).Select(x => x.Value)
+        var bots = AiPlayers(c, tx, caseId);
+        var latest = LobbyEntries(c, tx, caseId);
+        var ready = latest.Where(x => eligibleLobbyMembers is null || eligibleLobbyMembers.Contains(x.Key) || bots.ContainsKey(x.Key)).Select(x => x.Value)
             .Where(x => x.Ready && x.Consent && x.SnapshotRef is not null).OrderBy(x => x.PlayerId, StringComparer.Ordinal).ToArray();
         if (ready.Length != capacity) return;
         var seed = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         var assignments = SealedCaseRosterAssignments.Assign(ready.Select(x => x.PlayerId).ToArray(), seed);
         var roster = assignments.Select(a =>
         {
+            if (bots.TryGetValue(a.PlayerId, out var botName))
+            { return new SealedStoredRosterMember(a.PlayerId, a.PlayerId, a.SeatId, "ai:" + a.PlayerId, 1, null, a.Kit, a.Team, IsAi: true, DisplayName: botName); }
             var entry = ready.Single(x => x.PlayerId == a.PlayerId);
             using var snapshot = c.CreateCommand(); snapshot.Transaction = tx;
             snapshot.CommandText = "SELECT profile_id,profile_revision,portrait_json FROM sealed_case_private_snapshots WHERE case_id=$case AND snapshot_ref=$ref AND subject_account=$account";

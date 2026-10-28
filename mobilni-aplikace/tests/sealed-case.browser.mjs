@@ -28,7 +28,7 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
     const page = await context.newPage();
     page.on('pageerror', e => errors.push(e.message));
-    let state = view('planning'); const requests = []; let dropAction = true; let dropCreate = true; let created = false;
+    let state = view('planning'); const requests = []; let dropAction = true; let dropCreate = true; let dropAi = true; let rejectAi = false; const aiReceipts = new Set(); let created = false;
     await page.route('**/app/v1/sealed-cases**', async route => {
       const request = route.request(); const pathname = new URL(request.url()).pathname;
       if (request.method() === 'GET') {
@@ -38,6 +38,16 @@ try {
       if (pathname.endsWith('/actions')) {
         state.ownPlan = { ...body.plan, id: 'accepted', actorId: 'one', revision: 1 };
         if (dropAction) { dropAction = false; return route.abort('failed'); }
+      }
+      if (pathname.endsWith('/ai-players')) {
+        if (rejectAi) { rejectAi = false; state.lobbyRevision++; return route.fulfill({ status: 409, json: { code: 'revision_conflict' } }); }
+
+        if (!aiReceipts.has(body.operationId)) {
+          aiReceipts.add(body.operationId); state.readyPlayers += body.count; state.lobbyRevision++;
+          for (let index = 0; index < body.count; index++) state.players.push({ ...players[1], id: `ai_fixture_${state.players.length}`, name: `Svědek AI ${state.players.length}`, isAi: true });
+          if (dropAi) { dropAi = false; return route.abort('failed'); }
+        }
+        return route.fulfill({ json: { accepted: true, replayed: true } });
       }
       if (pathname === '/app/v1/sealed-cases') {
         created = true;
@@ -94,8 +104,41 @@ try {
     const creations = requests.filter(r => r.pathname === '/app/v1/sealed-cases');
     assert.equal(creations.length, 2);
     assert.deepEqual(creations[0].body, creations[1].body, 'lost create ack keeps operation id');
+    state = { ...view('lobby'), readyPlayers: 1, players: [players[0]], canManageAi: true, aiAvailable: true };
+    await page.reload();
+    await page.getByLabel('Počet AI hráčů').fill('1');
+    await page.getByRole('button', { name: 'Přidat AI hráče', exact: true }).click();
+    await page.getByRole('button', { name: 'Ověřit původní přidání AI' }).waitFor();
+    await page.reload();
+    await page.getByRole('button', { name: 'Ověřit původní přidání AI' }).click();
+    const additions = requests.filter(r => r.pathname.endsWith('/ai-players'));
+    assert.equal(additions.length, 2);
+    assert.deepEqual(additions[0].body, additions[1].body, 'AI addition retry keeps the exact persisted key/revision/count');
+    assert.equal(state.readyPlayers, 2, 'lost acknowledgement cannot duplicate AI seats');
+    await page.getByText('Svědek AI 1 · AI', { exact: false }).waitFor();
+    await page.screenshot({ path: path.join(output, `owner-ai-lobby-${width}.png`), fullPage: true });
+    rejectAi = true;
+    await page.getByRole('button', { name: 'Přidat AI hráče', exact: true }).click();
+    await page.getByText('Obsazení se mezitím změnilo.', { exact: false }).waitFor();
+    await page.getByRole('button', { name: 'Přidat AI hráče', exact: true }).click();
+    const conflicts = requests.filter(r => r.pathname.endsWith('/ai-players')).slice(-2);
+    assert.notEqual(conflicts[0].body.operationId, conflicts[1].body.operationId, 'definitive conflict permits a new request');
+    assert.ok(conflicts[1].body.expectedRevision > conflicts[0].body.expectedRevision);
+    await page.getByRole('button', { name: 'Doplnit volná místa AI' }).click();
+    assert.equal(state.readyPlayers, 8, 'owner can fill exactly the remaining capacity');
+    state.canManageAi = false; await page.reload();
+    assert.equal(await page.getByRole('heading', { name: 'AI hráči', exact: true }).count(), 0, 'ordinary host sees no owner control');
+    state.canManageAi = true; state.aiAvailable = false; await page.reload();
+    await page.getByText('AI pro tento večer není zapnutá.', { exact: false }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Přidat AI hráče', exact: true }).count(), 0);
+    state = { ...view('planning'), ownState: 'Operator', ownTeam: null, choices: [], clues: [], notes: [], ownOutcomes: [], canJoin: false };
+    await page.reload();
+    await page.getByText('Nesoutěžící pozorovatel', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Moje akce', exact: true }).count(), 0);
+    await page.getByRole('button', { name: 'Rozhovory', exact: true }).click();
+    assert.equal(await page.getByLabel('Zpráva', { exact: true }).count(), 0, 'observer cannot compose a player message');
     await context.close();
   }
   assert.deepEqual(errors, []);
-  console.log(`PASS sealed client: 320/390px, explicit draft, lost action/create ack and reload, journal, quiet, no page errors. ${output}`);
+  console.log(`PASS sealed client: 320/390px, explicit draft, lost action/create ack and reload, journal, quiet, owner-only AI addition/disabled/reload and no duplicate seats, no page errors. ${output}`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

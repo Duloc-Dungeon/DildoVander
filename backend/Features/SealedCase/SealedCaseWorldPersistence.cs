@@ -135,15 +135,21 @@ internal sealed partial class SealedCaseStore
         if (selectedPlans is not null)
         {
             var disconnected = Disconnected(c, tx, caseId);
-            if (callerAdmission is Kufr.Backend.Features.Identity.CustomerAdmissionGuard current)
+            var accountReservation = callerAdmission switch
             {
-                using var active = current.AccountReservation.Command("""
+                Kufr.Backend.Features.Identity.CustomerAdmissionGuard human => human.AccountReservation,
+                Kufr.Backend.Features.Identity.CustomerAccountAdmission owner => owner.AccountReservation,
+                _ => null
+            };
+            if (accountReservation is not null)
+            {
+                using var active = accountReservation.Command("""
                     SELECT user.Id FROM AspNetUsers user WHERE user.LaunchGroupId=$group AND user.Disabled=0 AND user.LaunchGroupRevokedAt IS NULL
                         AND EXISTS(SELECT 1 FROM AspNetUserRoles membership JOIN AspNetRoles role ON role.Id=membership.RoleId WHERE membership.UserId=user.Id AND role.Name='Customer')
                     """);
                 active.Parameters.AddWithValue("$group", groupId); using var rows = active.ExecuteReader(); var eligible = new HashSet<string>(StringComparer.Ordinal);
                 while (rows.Read()) { eligible.Add(rows.GetString(0)); }
-                foreach (var member in RosterMembers(c, tx, caseId)) { if (!eligible.Contains(member.AccountId)) { disconnected.Add(member.PlayerId); } }
+                foreach (var member in RosterMembers(c, tx, caseId)) { if (!member.IsAi && !eligible.Contains(member.AccountId)) { disconnected.Add(member.PlayerId); } }
             }
             foreach (var member in RosterMembers(c, tx, caseId))
             {

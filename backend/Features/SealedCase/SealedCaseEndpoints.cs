@@ -21,6 +21,8 @@ internal sealed record SealedCaseLobbyView(string Id, string PlayerId, string St
 
 // Session-bound lobby and playable scenario routes share frozen membership,
 // privacy reservations and the authoritative durable case journal.
+internal sealed class SealedCaseOwnerControl;
+
 internal static partial class SealedCaseEndpoints
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -33,6 +35,9 @@ internal static partial class SealedCaseEndpoints
         if (AccountConfiguration.Read(configuration).Enabled && configuration.GetValue<bool>("SealedCase:Enabled"))
         {
             services.AddSealedCaseRateLimits();
+            services.AddSingleton<ISealedCaseAiPlayers, SealedCaseAiPlayers>();
+            services.AddSingleton<SealedCaseAiRunner>();
+            if (configuration.GetValue<bool>("SealedCase:AiPlayers:Enabled")) { services.AddHostedService<SealedCaseAiWorker>(); }
             services.AddSingleton(sp =>
             {
                 using var scope = sp.CreateScope();
@@ -56,13 +61,17 @@ internal static partial class SealedCaseEndpoints
             h.Response.Headers.CacheControl = "no-store";
             var userId = h.User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (userId is null || !h.User.HasClaim(c => c.Type == AccountIdentity.SessionClaim)) return ApiProblem.Create(h, 401, "account_required");
+            var ownerControl = h.GetEndpoint()?.Metadata.GetMetadata<SealedCaseOwnerControl>() is not null;
             var db = h.RequestServices.GetRequiredService<AccountDatabase>();
             var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == userId && !u.Disabled, h.RequestAborted);
             if (user?.LaunchGroupId is null || user.LaunchGroupRevokedAt is not null
                 || await db.DeletionRequests.AnyAsync(d => d.UserId == userId, h.RequestAborted)
-                || !await (from m in db.UserRoles join r in db.Roles on m.RoleId equals r.Id where m.UserId == userId && r.Name == AccountRoles.Customer select m.UserId).AnyAsync(h.RequestAborted))
+                || !await (from m in db.UserRoles join r in db.Roles on m.RoleId equals r.Id where m.UserId == userId && (r.Name == AccountRoles.Customer || ownerControl && r.Name == AccountRoles.Owner) select m.UserId).AnyAsync(h.RequestAborted))
                 return ApiProblem.Create(h, 403, "sealed_case_group_required");
-            var launch = h.RequestServices.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId);
+            // Staff launch admission does not otherwise evaluate their party countdown.
+            // Complete only a due, server-owned group countdown before checking access.
+            var launch = h.RequestServices.GetRequiredService<LaunchPolicyStore>().CompleteForcedCountdown(user.LaunchGroupId,
+                h.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow().ToUnixTimeMilliseconds());
             if (launch?.OpenedAt is null || !(await h.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(h.User)).Allowed)
                 return ApiProblem.Create(h, 403, "sealed_case_launch_unavailable");
             h.Items[GroupItem] = user.LaunchGroupId;
@@ -87,9 +96,9 @@ internal static partial class SealedCaseEndpoints
             var userId = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var created = store.Create((string)h.Items[GroupItem]!, userId, clock.GetUtcNow().ToUnixTimeSeconds(), request.ExpectedPlayers, request.Variant ?? "first", request.OperationId, () => AuthorizeWrite(h, db, clock));
             return Results.Created($"/app/v1/sealed-cases/{created.Id}", await ViewAsync(store.Read(created.Id), userId, db, h.RequestServices.GetRequiredService<CharacterProfileStore>(), clock, h.RequestAborted));
-        });
+        }).WithMetadata(new SealedCaseOwnerControl());
         routes.MapGet("/{id}", async (string id, HttpContext h, SealedCaseStore store, AccountDatabase db, TimeProvider clock) =>
-            ((SealedCaseRecord)h.Items[CaseItem]!).Status == "running" ? Results.Redirect($"/app/v1/sealed-cases/{id}/play") : Results.Ok(await ViewAsync(store.Read(id), h.User.FindFirstValue(ClaimTypes.NameIdentifier)!, db, h.RequestServices.GetRequiredService<CharacterProfileStore>(), clock, h.RequestAborted)));
+            ((SealedCaseRecord)h.Items[CaseItem]!).Status == "running" ? Results.Redirect($"/app/v1/sealed-cases/{id}/play") : Results.Ok(await ViewAsync(store.Read(id), h.User.FindFirstValue(ClaimTypes.NameIdentifier)!, db, h.RequestServices.GetRequiredService<CharacterProfileStore>(), clock, h.RequestAborted))).WithMetadata(new SealedCaseOwnerControl());
         routes.MapPost("/{id}/lobby", async (SealedCaseLobbyRequest request, HttpContext h, SealedCaseStore store, AccountDatabase db, CharacterProfileStore characters, TimeProvider clock) =>
         {
             ValidateOperation(request.OperationId);
@@ -158,7 +167,8 @@ internal static partial class SealedCaseEndpoints
     {
         if (proof.LaunchGroupId != (string)h.Items[GroupItem]! || proof.LaunchGroupRevokedAt is not null
             || proof.LaunchGroupAccessRevision != (long)h.Items[MembershipItem]!
-            || !proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal))
+            || !(proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)
+                || h.GetEndpoint()?.Metadata.GetMetadata<SealedCaseOwnerControl>() is not null && proof.Roles.Contains(AccountRoles.Owner, StringComparer.Ordinal)))
             throw new CustomerDataAccessException(403, "sealed_case_group_required");
     }
 
@@ -175,6 +185,14 @@ internal static partial class SealedCaseEndpoints
         foreach (var payload in record.Events)
         {
             using var doc = JsonDocument.Parse(payload);
+            if (doc.RootElement.TryGetProperty("aiPlayers", out var bots))
+            {
+                foreach (var bot in bots.EnumerateArray())
+                {
+                    var id = bot.GetString()!;
+                    latest[id] = new(id, true, true, "ai:" + id, true);
+                }
+            }
             if (!doc.RootElement.TryGetProperty("playerId", out _) || !doc.RootElement.TryGetProperty("ready", out _) || !doc.RootElement.TryGetProperty("consent", out _)) continue;
             var entry = JsonSerializer.Deserialize<SealedCaseLobbyEntry>(payload, Json)!;
             if (eligible.Contains(entry.PlayerId)) latest[entry.PlayerId] = entry;

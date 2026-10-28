@@ -24,13 +24,14 @@ if (args is ["--sealed-case-ai", var aiVariant])
     catch (Exception error) { Console.Error.WriteLine(error is HttpRequestException ? "AI acceptance transport failure" : error.Message); Environment.ExitCode = 1; }
     return;
 }
+if (args is ["--sealed-case-ai-lobby"]) { await SealedCaseHttpTests.AiLobbyAsync(); return; }
 if (args is ["--sealed-case-playable"]) { await SealedCaseHttpTests.PlayableCasesAsync(); return; }
 if (args is ["--sealed-case-runtime"])
 {
     SealedCaseTests.Run(); SealedCaseRulesTests.Run(); SealedCaseProjectionTests.Run();
     SealedCaseContextPersistenceTests.Run(); SealedCasePersistenceTests.Run();
     SealedCaseTimingTests.Run(); SealedCasePlanTests.Run();
-    await SealedCaseHttpTests.RunAsync(); await SealedCaseHttpTests.PlayableCasesAsync(); return;
+    await SealedCaseHttpTests.RunAsync(); await SealedCaseHttpTests.PlayableCasesAsync(); await SealedCaseHttpTests.AiLobbyAsync(); return;
 }
 if (args is ["--mobile-wands"]) { await MobileWandTests.RunAsync(); return; }
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); return; }

@@ -370,7 +370,7 @@ internal static partial class SealedCaseHttpTests
             var user = await db.Users.SingleAsync(u => u.Id == id); user.LaunchGroupRevokedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(); user.LaunchGroupAccessRevision++;
             await db.SaveChangesAsync();
         }
-        internal static async Task<Fixture> StartAsync(bool enabled = true, int requestsPerMinute = 120)
+        internal static async Task<Fixture> StartAsync(bool enabled = true, int requestsPerMinute = 120, ISealedCaseAiPlayers? aiPlayers = null)
         {
             var root = Path.Combine(Path.GetTempPath(), "sealed-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
             using var rsa = RSA.Create(2048); var request = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -389,6 +389,7 @@ internal static partial class SealedCaseHttpTests
             builder.Services.AddAccountIdentity(builder.Configuration); builder.Services.AddLaunchManagement(builder.Configuration); builder.Services.AddSealedCase(builder.Configuration);
             builder.Services.AddSingleton(sp => new CharacterProfileStore(sp.GetRequiredService<AccountConfiguration>().DataRoot));
             builder.Services.AddSingleton<CustomerAdmissionAuthority>();
+            if (aiPlayers is not null) { builder.Services.AddSingleton<ISealedCaseAiPlayers>(aiPlayers); }
             builder.Services.AddHttpContextAccessor(); builder.Services.AddSingleton<TimeProvider, LobbyProbeClock>();
             var app = builder.Build(); await AccountProvisioning.MigrateAsync(app.Services); await app.InitializeAccountsAsync();
             app.UseMobileGameAuthentication(); app.UseSealedCaseAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapSealedCase();

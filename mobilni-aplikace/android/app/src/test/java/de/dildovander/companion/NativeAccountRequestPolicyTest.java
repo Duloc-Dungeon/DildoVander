@@ -23,7 +23,7 @@ public final class NativeAccountRequestPolicyTest {
             assertTrue(NativeAccountRequestPolicy.allows(id + "/" + read, "GET"));
             assertFalse(NativeAccountRequestPolicy.allows(id + "/" + read, "POST"));
         }
-        for (String write : Arrays.asList("lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent")) {
+        for (String write : Arrays.asList("lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent", "ai-players")) {
             assertTrue(NativeAccountRequestPolicy.allows(id + "/" + write, "POST"));
             assertFalse(NativeAccountRequestPolicy.allows(id + "/" + write, "GET"));
         }

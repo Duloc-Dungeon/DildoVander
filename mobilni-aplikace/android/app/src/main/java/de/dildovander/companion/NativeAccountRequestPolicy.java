@@ -106,7 +106,7 @@ final class NativeAccountRequestPolicy {
         String[] parts = path.split("/");
         if (parts.length == 5) return "GET".equals(method);
         return "GET".equals(method) ? Arrays.asList("play", "context", "moderator").contains(parts[5])
-            : "POST".equals(method) && Arrays.asList("lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent").contains(parts[5]);
+            : "POST".equals(method) && Arrays.asList("lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent", "ai-players").contains(parts[5]);
     }
 
     private static boolean allowsAppPath(String path, String method, String query) {
