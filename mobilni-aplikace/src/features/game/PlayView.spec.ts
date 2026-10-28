@@ -107,17 +107,16 @@ describe('mobile game interaction', () => {
     expect(body).not.toHaveProperty('adultConsent');
     expect(body).not.toHaveProperty('flirtConsent');
   });
-  it('keeps the active first-wand voice mounted when polling discovers its saved wand', async () => {
+  it('links first-wand creation to its own scene without mounting a voice session', async () => {
     api.request.mockResolvedValue({hasCharacter:true,wand:null,tier:0});
     api.transport.mockResolvedValue(Response.json({player:{id:'one',displayName:'Mira',xp:0,matchesPlayed:0},opponents:[],active:[],incoming:[],history:[]}));
     const view = await render('/play');
-    const workshop = view.findComponent(WandWorkshop);
-    const workshopElement = workshop.element;
-    expect(workshop.exists()).toBe(true); expect(view.find('input[type="radio"]').exists()).toBe(false);
-    workshop.vm.$emit('active-change', true); await flushPromises();
+    expect(view.findComponent(WandWorkshop).exists()).toBe(false);
+    expect(view.get('a[href="/play/wand"]').text()).toContain('kufrovy dílny');
+    expect(view.find('input[type="radio"]').exists()).toBe(false);
     api.request.mockResolvedValue({hasCharacter:true,wand:{wandId:'saved'},tier:1});
     window.dispatchEvent(new Event('online')); await flushPromises();
-    expect(view.findComponent(WandWorkshop).element).toBe(workshopElement);
+    expect(view.find('a[href="/play/wand"]').exists()).toBe(false);
   });
   it('offers practice without making game requests or awarding XP', async () => {
     vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => { (array as Uint32Array).fill(0); return array; });
@@ -128,6 +127,19 @@ describe('mobile game interaction', () => {
     }
     expect(view.text()).toContain('Trénink dokončen'); expect(api.transport).not.toHaveBeenCalled();
     expect(view.text()).not.toMatch(/\+\d+ XP/);
+  });
+  it('lets a new guest reach the captured workshop rescue without a first wand', async () => {
+    api.request.mockResolvedValue({ hasCharacter: true, wand: null, tier: 0 });
+    const lobby = { player: { id: 'one', displayName: 'Mira', xp: 0, matchesPlayed: 0 }, opponents: [], incoming: [], active: [], history: [], boss: { revealed: true, rescued: false, referenceXp: 20, revision: 1 } };
+    api.transport.mockImplementation(async (path: string) => Response.json(path.endsWith('/boss') ? lobby.boss : path.endsWith('/progress') ? { pending: [], keeperState: 'captured' } : lobby));
+    const first = await render('/play');
+    expect(first.get('a[href="/play/boss"]').text()).toBe('Osvobodit dílnu');
+    expect(first.find('a[href="/play/wand"]').exists()).toBe(false);
+    first.unmount();
+    const boss = await render('/play/boss');
+    expect(boss.text()).toContain('Jde o exhibici');
+    expect(boss.findAll('button').some(button => button.text() === 'Vyzvat bosse')).toBe(true);
+    expect(boss.find('a[href="/play/wand"]').exists()).toBe(false);
   });
 
   it('allows confirmation of a saved task without granting gameplay to a player without a wand', async () => {
@@ -155,7 +167,7 @@ describe('mobile game interaction', () => {
       history: [snapshot({ status: 'complete', result: 'loss', partyTask: { title: 'Čekající úkol', text: 'Předveď reklamu.', category: 'classic', status: 'pending' } })],
     }));
     const view = await render('/play');
-    expect(view.findComponent(WandWorkshop).exists()).toBe(true);
+    expect(view.find('a[href="/play/wand"]').exists()).toBe(true);
     expect(view.text()).toContain('Úkoly k potvrzení');
     expect(view.findAll('a').find(link => link.text().includes('Potvrdit výsledek'))!.attributes('href')).toBe(`/play/match/${id}`);
     expect(view.find('input[value="strike"]').exists()).toBe(false);

@@ -30,6 +30,8 @@ const portraitProfile = '(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-
 const portraitRevision = '[1-9][0-9]{0,18}';
 const prelaunchPortrait = new RegExp(`^/app/v1/prelaunch/character/portrait\\?(?:profileId=${portraitProfile}&revision=${portraitRevision}|revision=${portraitRevision}&profileId=${portraitProfile})$`);
 const customerMemoryPath = /^\/app\/v1\/customer\/memory$/;
+const workshopTranscription = /^\/app\/v1\/customer\/wand\/workshop\/sessions\/[a-f0-9]{32}\/transcribe$/;
+const workshopAudio = /^\/app\/v1\/customer\/wand\/workshop\/sessions\/[a-f0-9]{32}\/audio$/;
 const customerExportDownloadPath = /^\/app\/v1\/customer\/data\/exports\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\/download$/;
 
 function matchesExactTransportPath(pattern: RegExp, path: string): boolean {
@@ -38,12 +40,15 @@ function matchesExactTransportPath(pattern: RegExp, path: string): boolean {
 }
 
 export function accountTransportBodyLimit(path: string, method: string, contentType: string | null): number {
-  if (!matchesExactTransportPath(ownedPortraitUpload, path) || method !== 'POST') return 262144;
   const mediaType = contentType?.split(';', 1)[0].trim().toLowerCase();
+  if (method === 'POST' && matchesExactTransportPath(workshopTranscription, path)
+    && ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/mpeg'].includes(mediaType ?? '')) return 8 * 1024 * 1024;
+  if (!matchesExactTransportPath(ownedPortraitUpload, path) || method !== 'POST') return 262144;
   return ['image/jpeg', 'image/png', 'image/webp'].includes(mediaType ?? '') ? 8 * 1024 * 1024 : 262144;
 }
 
 export function accountTransportResponseLimit(path: string, method: string): number {
+  if (method === 'POST' && matchesExactTransportPath(workshopAudio, path)) return 8 * 1024 * 1024;
   if (method !== 'GET') return 1024 * 1024;
   if (matchesExactTransportPath(prelaunchPortrait, path) || /^\/app\/v1\/sealed-cases\/sc_[a-f0-9]{32}\/portraits\/[A-Za-z0-9_-]{1,128}$/.test(path)) return 8 * 1024 * 1024;
   return matchesExactTransportPath(archiveAsset, path)

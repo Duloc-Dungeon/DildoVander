@@ -9,6 +9,43 @@ precondition(!AccountTransportPolicy.account(path: "/app/v1/game/matches/\(gameM
 precondition(!AccountTransportPolicy.account(path: "/app/v1/game/matches/\(gameMatch)/choose\n", method: "POST"))
 precondition(!AccountTransportPolicy.account(path: "/app/v1/game/matches/\(gameMatch)?admin=true", method: "GET"))
 
+let workshop = "/app/v1/customer/wand/workshop"
+let workshopSession = workshop + "/sessions/" + gameMatch
+precondition(AccountTransportPolicy.account(path: workshop, method: "GET"))
+precondition(AccountTransportPolicy.account(path: workshop + "?upgrade=1", method: "GET"))
+precondition(AccountTransportPolicy.account(path: workshop + "?upgrade=0", method: "GET"))
+precondition(AccountTransportPolicy.account(path: workshop + "/sessions", method: "POST"))
+precondition(AccountTransportPolicy.account(path: workshop + "/sessions/current", method: "GET"))
+precondition(AccountTransportPolicy.account(path: workshop + "/sessions/current?upgrade=1", method: "GET"))
+precondition(AccountTransportPolicy.account(path: workshopSession, method: "GET"))
+precondition(AccountTransportPolicy.account(path: workshopSession + "/answers", method: "POST"))
+precondition(AccountTransportPolicy.account(path: workshopSession + "/skip", method: "POST"))
+precondition(AccountTransportPolicy.account(path: workshopSession + "/audio", method: "POST"))
+precondition(AccountTransportPolicy.account(path: workshopSession + "/transcribe", method: "POST"))
+precondition(AccountTransportPolicy.account(path: workshopSession + "/artwork/retry", method: "POST"))
+precondition(AccountTransportPolicy.account(path: workshopSession + "/answers/\(String(repeating: "b", count: 32))", method: "PUT"))
+precondition(!AccountTransportPolicy.account(path: workshopSession + "/answers", method: "GET"))
+precondition(!AccountTransportPolicy.account(path: workshopSession + "/audio?extra=1", method: "POST"))
+precondition(!AccountTransportPolicy.account(path: workshop + "?upgrade=1&upgrade=0", method: "GET"))
+precondition(!AccountTransportPolicy.account(path: workshop + "?upgrade=true", method: "GET"))
+precondition(!AccountTransportPolicy.account(path: workshop + "/sessions/current?extra=1", method: "GET"))
+precondition(!AccountTransportPolicy.account(path: workshopSession + "/transcribe/extra", method: "POST"))
+precondition(!AccountTransportPolicy.account(path: workshopSession + "/answers/invalid", method: "PUT"))
+precondition(AccountTransportPolicy.accountRequestBodyLimit(path: workshopSession + "/transcribe", method: "POST", contentType: "audio/webm; codecs=opus") == 8 * 1024 * 1024)
+precondition(AccountTransportPolicy.accountRequestBodyLimit(path: workshopSession + "/transcribe", method: "POST", contentType: "audio/mp4") == 8 * 1024 * 1024)
+precondition(AccountTransportPolicy.accountRequestBodyLimit(path: workshopSession + "/transcribe", method: "POST", contentType: "application/json") == 16 * 1024)
+precondition(AccountTransportPolicy.accountResponseLimit(path: workshopSession + "/audio", method: "POST") == 8 * 1024 * 1024)
+precondition(AccountTransportPolicy.accountResponseContentTypeAllowed(path: workshopSession + "/audio", method: "POST", contentType: "audio/wav"))
+precondition(!AccountTransportPolicy.accountResponseContentTypeAllowed(path: workshopSession + "/audio", method: "POST", contentType: "application/json"))
+let transcriptHeaders: [String: Any] = [
+    "X-Wand-Question-Id": String(repeating: "b", count: 32),
+    "X-Wand-Question-Revision": "3"]
+precondition(AccountTransportPolicy.accountHeadersAllowed(path: workshopSession + "/transcribe", method: "POST", headers: transcriptHeaders))
+precondition(!AccountTransportPolicy.accountHeadersAllowed(path: workshopSession + "/transcribe", method: "POST", headers: ["X-Wand-Question-Id": String(repeating: "b", count: 32)]))
+precondition(!AccountTransportPolicy.accountHeaderAllowed(path: workshopSession + "/transcribe", method: "POST", name: "X-Wand-Question-Id", value: String(repeating: "B", count: 32)))
+precondition(!AccountTransportPolicy.accountHeaderAllowed(path: workshopSession + "/transcribe", method: "POST", name: "X-Wand-Question-Revision", value: "0"))
+precondition(!AccountTransportPolicy.accountHeaderAllowed(path: workshopSession + "/answers", method: "POST", name: "X-Wand-Question-Id", value: String(repeating: "b", count: 32)))
+
 let valid: [String: Any] = ["v": 1, "deviceId": "kufr-1",
     "bootId": "12345678-1234-4234-8234-123456789abc",
     "challenge": "22345678-1234-4234-8234-123456789abc",
@@ -26,6 +63,17 @@ precondition(CustomerBleProtocol.decode(Data(repeating: 0x20, count: 513)) == ni
 var disconnected = valid; disconnected["challenge"] = ""; disconnected["state"] = "recovering"
 precondition(CustomerBleProtocol.decode(data(disconnected)) != nil)
 precondition(AccountTransportPolicy.account(path: "/app/v1/customer/character", method: "PUT"))
+let liveWorkshop = "/app/v1/customer/wand/workshop/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+for route in ["messages", "finish", "ticket", "artwork/repair"] {
+    precondition(AccountTransportPolicy.account(path: liveWorkshop + "/" + route, method: "POST"))
+    precondition(!AccountTransportPolicy.account(path: liveWorkshop + "/" + route, method: "GET"))
+}
+precondition(AccountTransportPolicy.account(path: liveWorkshop + "/messages/live-call_7", method: "PUT"))
+precondition(!AccountTransportPolicy.account(path: liveWorkshop + "/messages/has.dot", method: "PUT"))
+precondition(!AccountTransportPolicy.account(path: liveWorkshop + "/messages/" + String(repeating: "a", count: 161), method: "PUT"))
+precondition(!AccountTransportPolicy.account(path: liveWorkshop + "/messages/live-call_7?x=1", method: "PUT"))
+precondition(AccountTransportPolicy.accountRequestBodyAllowed(path: liveWorkshop + "/ticket", method: "POST", contentType: "application/json", size: 1024))
+precondition(!AccountTransportPolicy.accountRequestBodyAllowed(path: liveWorkshop + "/ticket", method: "POST", contentType: "application/json", size: 17 * 1024))
 precondition(AccountTransportPolicy.account(path: "/app/v1/customer/enrollment/complete", method: "POST"))
 precondition(AccountTransportPolicy.account(path: "/app/v1/enrollment/default", method: "GET"))
 precondition(!AccountTransportPolicy.account(path: "/app/v1/enrollment/default", method: "POST"))

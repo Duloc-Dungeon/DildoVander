@@ -17,13 +17,36 @@ internal static class GameBossTests
             {
                 connection.Open();
                 using var command = connection.CreateCommand();
-                command.CommandText = "INSERT INTO game_players(group_id,user_id,xp,matches) VALUES('g','a',30,4),('g','b',60,6),('g','outlier',9999,50)";
+                command.CommandText = "INSERT INTO game_players(group_id,user_id,xp,matches) VALUES('g','a',30,4),('g','b',60,6),('g','outlier',9999,50),('rookie','veteran-a',30,4),('rookie','veteran-b',60,6),('rookie','newbie',0,0)";
                 command.ExecuteNonQuery();
             }
             var reveal = new GameBossCommand(Guid.NewGuid().ToString(), 0);
             var boss = store.RevealBoss("g", "admin", new HashSet<string> { "a", "b" }, reveal);
             Check(boss.ReferenceXp == 45 && boss.Revealed && !boss.Rescued, "median uses only eligible active players");
             Check(store.RevealBoss("g", "admin", new HashSet<string>(), reveal) == boss, "reveal retry preserves frozen reference");
+            var rookieBoss = store.RevealBoss("rookie", "admin", new HashSet<string> { "veteran-a", "veteran-b" },
+                new(Guid.NewGuid().ToString(), 0));
+            var novice = store.StartBoss("rookie", "newbie", new(Guid.NewGuid().ToString(), rookieBoss.Revision));
+            Check(novice.Exhibition && novice.Strength == 1 && novice.OpponentEnergy == 3,
+                "zero-XP no-wand exhibition gives a new player enough strength and bounded boss energy to rescue the group");
+            while (novice.Status == "active")
+            {
+                string bossChoice;
+                using (var connection = new SqliteConnection($"Data Source={Path.Combine(root, "mobile-game.sqlite")}"))
+                {
+                    connection.Open();
+                    using var command = connection.CreateCommand();
+                    command.CommandText = "SELECT state_json FROM game_boss_attempts WHERE id=$id";
+                    command.Parameters.AddWithValue("$id", novice.Id);
+                    using var state = JsonDocument.Parse((string)command.ExecuteScalar()!);
+                    bossChoice = state.RootElement.GetProperty("bossChoice").GetString()!;
+                }
+                var noviceCounter = bossChoice switch { "strike" => "shield", "trick" => "strike", _ => "trick" };
+                novice = store.ChooseBoss("rookie", "newbie", novice.Id,
+                    new(Guid.NewGuid().ToString(), novice.Revision, noviceCounter));
+            }
+            Check(novice.Result == "win" && store.ReadBoss("rookie").Rescued,
+                "the zero-XP no-wand rescue can actually free a captured group");
             var start = new GameBossCommand(Guid.NewGuid().ToString(), boss.Revision);
             var attempt = store.StartBoss("g", "a", start);
             Check(store.StartBoss("g", "a", start).Id == attempt.Id, "start is idempotent");

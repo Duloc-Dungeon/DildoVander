@@ -44,17 +44,17 @@ internal sealed partial class WandGenerationStore
 
     internal WandGenerationSession Begin(string accountId, string operationId,
         CharacterConversationSnapshot profile, int readyMask, bool openAiConsent,
-        IReadOnlyList<string>? evidence = null)
+        IReadOnlyList<string>? evidence = null, string? outputLanguage = null)
     {
         if (!WandGenerationValidation.Text(accountId, 200) || !WandGenerationValidation.Text(operationId, 120)
             || !WandGenerationValidation.Text(profile.ProfileId, 100) || profile.Revision < 1
-            || readyMask is < 0 or > 63 || evidence?.Count > 32
+            || readyMask is < 0 or > 63 || outputLanguage is not (null or "cs") || evidence?.Count > 32
             || evidence?.Any(value => !WandGenerationValidation.Text(value, 1000)) == true)
             throw new WandGenerationException("invalid_wand_generation", 400);
         if (!openAiConsent) throw new WandGenerationException("openai_consent_required");
         // Conversation facts remain in their revocable memory source. They are
         // supplied ephemerally to a claimed provider call, never retained here.
-        var request = new WandGenerationRequest(accountId, operationId, profile, readyMask, openAiConsent, []);
+        var request = new WandGenerationRequest(accountId, operationId, profile, readyMask, openAiConsent, [], outputLanguage);
         var hash = Hash(Serialize(request with { Profile = profile with { CapturedAt = 0 } }));
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
@@ -259,6 +259,18 @@ internal sealed partial class WandGenerationStore
             ("$prompt", promptVersion), ("$input", input), ("$output", output), ("$now", Now), ("$reported", usageReported ? 1 : 0));
     }
 
+    internal bool CanRetryGeneration(string accountId, string operationId)
+    {
+        using var connection = Open();
+        using var command = Command(connection, null, """
+            SELECT CASE WHEN s.state='unavailable' AND NOT EXISTS (
+                SELECT 1 FROM wand_generation_usage u WHERE u.session_id=s.id AND u.usage_reported=0
+            ) THEN 1 ELSE 0 END
+            FROM wand_generation_sessions s WHERE s.account_id=$account AND s.operation_id=$operation
+            """, ("$account", accountId), ("$operation", operationId));
+        return Convert.ToInt32(command.ExecuteScalar() ?? 0) == 1;
+    }
+
     internal void DeleteAccount(string accountId) => Revoke(accountId, "*");
     internal void DeleteProfile(string accountId, string profileId) => Revoke(accountId, profileId);
     internal void DeleteOperation(string accountId, string operationId)
@@ -274,6 +286,7 @@ internal sealed partial class WandGenerationStore
     {
         using var connection = Open();
         EnsureMobile(connection);
+        EnsureWorkshop(connection);
         using var transaction = connection.BeginTransaction();
         Execute(connection, transaction,
             "INSERT OR IGNORE INTO wand_generation_revocations VALUES($account,$profile)",
@@ -283,6 +296,8 @@ internal sealed partial class WandGenerationStore
                 selected_json=NULL,lease_token=NULL,lease_until=0,error_code=NULL
                 WHERE account_id=$account AND ($profile='*' OR profile_id=$profile)
             """, ("$account", accountId), ("$profile", profileId));
+        Execute(connection, transaction, "DELETE FROM mobile_wand_workshops WHERE account_id=$account AND ($profile='*' OR profile_id=$profile)",
+            ("$account", accountId), ("$profile", profileId));
         Execute(connection, transaction, "DELETE FROM mobile_wand_crafts WHERE account_id=$account AND ($profile='*' OR profile_id=$profile)",
             ("$account", accountId), ("$profile", profileId));
         Execute(connection, transaction, "DELETE FROM mobile_wand_voice_leases WHERE account_id=$account", ("$account", accountId));

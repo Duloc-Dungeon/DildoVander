@@ -1,9 +1,11 @@
 using Kufr.Backend.Features.Observability;
+using Kufr.Backend.Features.Customers;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Security.Cryptography;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.OpenAi;
 using OpenAI.Responses;
@@ -88,11 +90,25 @@ internal sealed class OpenAiWandGenerationProvider : IWandGenerationProvider, ID
                 spells = new { type = "array", minItems = 3, maxItems = 3, items = spell } },
             required = new[] { "name", "material", "core", "temperament", "lore", "designDescription", "affinity", "weakness", "combatArchetype", "spells" }
         };
-        // Only the minimal permitted fictional context is sent; ownership/session
-        // identifiers, account details and authorization proofs never leave here.
+        // Full authorized fictional context is required for personalized design;
+        // account identity, operation IDs and authorization proofs never leave here.
         var profile = request.Profile;
-        var facts = profile.Enrichment?.Facts.Where(fact => fact.SourceUrls.Length > 0)
-            .Take(6).Select(fact => fact.Text[..Math.Min(fact.Text.Length, 400)]).ToArray() ?? [];
+        var enrichment = profile.Enrichment is { } found ? new
+        {
+            found.RecognizedName,
+            found.World,
+            found.Summary,
+            facts = found.Facts.Select(fact => new
+            {
+                factId = StableFactId(profile, fact), fact.Text, sources = fact.SourceUrls
+            }).ToArray(),
+            found.ConversationIdeas,
+            found.Ambiguities,
+            found.NeedsClarification,
+            sources = found.Sources.Select(source => new { source.Title, source.Url }).ToArray(),
+            found.EvidenceKind,
+            found.InputRevision
+        } : null;
         var payload = JsonSerializer.Serialize(new
         {
             model, store = false, max_output_tokens = 9000,
@@ -106,10 +122,20 @@ internal sealed class OpenAiWandGenerationProvider : IWandGenerationProvider, ID
                 + "The server owns all numerical stats and balance. Affinity and weakness are narrative only. No numerical powers, real hardware specifications, device commands, "
                 + "claims of physical changes, or guaranteed researched facts. Never use legacy catalogue names. "
                 + "Keep every field within its schema length and exclude control characters. Do not include private conversation quotes in lore. "
-                + "Use the profile, verified fictional facts and permitted evidence as inspiration without disclosing private details.",
-            input = JsonSerializer.Serialize(new { character = profile.UserInput, verifiedFictionalFacts = facts,
-                interpretation = profile.Enrichment?.Summary[..Math.Min(profile.Enrichment.Summary.Length, 600)],
-                evidence = request.Evidence, candidateCount = count }, Json),
+                + "Use the complete supplied profile, every enrichment fact, ambiguity, source-backed interpretation and all three workshop answers. "
+                + "Apply explicit corrections over older interpretation. Do not silently omit later facts, turn uncertainty into canon, or treat jokes as facts. "
+                + "Every answer must materially inform wand design or temperament, not only the commentary. "
+                + "Use this context as inspiration without disclosing source URLs or private details. "
+                + (request.OutputLanguage == "cs"
+                    ? "This mobile workshop requires Czech for every natural-language output field, wand name, spell name and story, regardless of the profile language."
+                    : ""),
+            input = JsonSerializer.Serialize(new
+            {
+                character = profile.UserInput,
+                enrichment,
+                correctionsAndAnswers = request.Evidence,
+                candidateCount = count
+            }, Json),
             text = new { format = new { type = "json_schema", name = "character_wand_candidates", strict = true,
                 schema = new { type = "object", additionalProperties = false,
                     properties = new { candidates = new { type = "array", minItems = count, maxItems = count, items = candidate } },
@@ -140,6 +166,10 @@ internal sealed class OpenAiWandGenerationProvider : IWandGenerationProvider, ID
         return parsed.Candidates;
     }
     private static object TextSchema(int maximum) => new { type = "string", minLength = 1, maxLength = maximum };
+    private static string StableFactId(CharacterConversationSnapshot profile, CharacterFact fact) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(profile.ProfileId + "\n" + profile.Revision
+            + "\n" + fact.Text + "\n" + string.Join("\n", fact.SourceUrls.Order(StringComparer.Ordinal)))))
+            .ToLowerInvariant();
     private sealed record ProviderResult(WandCandidateContent[] Candidates);
     public void Dispose() { http.Dispose(); concurrency.Dispose(); }
 }

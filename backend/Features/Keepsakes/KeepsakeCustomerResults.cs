@@ -3,9 +3,11 @@ using Microsoft.Data.Sqlite;
 namespace Kufr.Backend.Features.Keepsakes;
 
 internal sealed record OwnedWandArtworkReference(string Locator, string? AssetId, string Status = "ready",
-    bool CanRetry = false, string? ErrorCode = null, int Version = 1, bool Synthetic = false);
+    bool CanRetry = false, string? ErrorCode = null, int Version = 1, bool Synthetic = false,
+    string? Sha256 = null, bool CanRepair = false, string? SourceAssetId = null, string? SourceSha256 = null);
 internal sealed record WandArtworkSnapshot(string WandId, string AssetId, int Version, bool Synthetic,
-    string Provider, string Model, string PromptVersion, DateTimeOffset CreatedAt);
+    string Provider, string Model, string PromptVersion, DateTimeOffset CreatedAt,
+    string? SourceAssetId = null, string? SourceSha256 = null, string? GenerationParameters = null);
 
 internal sealed partial class KeepsakeStore
 {

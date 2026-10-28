@@ -66,6 +66,17 @@ describe.each([false, true])('invitation error detail (native=%s)', native => {
 });
 
 describe('native account archive transport limits', () => {
+  it('bounds workshop recordings and approved speech to exact authenticated routes', async () => {
+    const identity = await import('./session');
+    const root = `/app/v1/customer/wand/workshop/sessions/${'a'.repeat(32)}`;
+    expect(identity.accountTransportBodyLimit(`${root}/transcribe`, 'POST', 'audio/webm;codecs=opus')).toBe(8 * 1024 * 1024);
+    expect(identity.accountTransportResponseLimit(`${root}/audio`, 'POST')).toBe(8 * 1024 * 1024);
+    for (const suffix of ['\n', '?other=1', '/', '/extra']) {
+      expect(identity.accountTransportBodyLimit(`${root}/transcribe${suffix}`, 'POST', 'audio/webm')).toBe(262144);
+      expect(identity.accountTransportResponseLimit(`${root}/audio${suffix}`, 'POST')).toBe(1024 * 1024);
+    }
+    expect(identity.accountTransportBodyLimit(`${root}/transcribe`, 'POST', 'application/json')).toBe(262144);
+  });
   const archiveId = '123e4567-e89b-42d3-a456-426614174000';
   const uploadPath = `/app/v1/archive/owned/${archiveId}/portrait-uploads`;
   const uploadResponse = {status: 201, headers: {'content-type': 'application/json'}, bodyBase64: btoa('{}')};

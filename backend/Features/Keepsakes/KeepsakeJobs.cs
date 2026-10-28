@@ -6,7 +6,9 @@ namespace Kufr.Backend.Features.Keepsakes;
 internal sealed partial class KeepsakeStore
 {
     private sealed record JobRequest(KeepsakeBrief Brief, string? EditionId = null,
-        string? UploadId = null, string? Variant = null, int ConsentVersion = 0);
+        string? UploadId = null, string? Variant = null, int ConsentVersion = 0,
+        string? ArtworkWandId = null, int? ArtworkSourceVersion = null,
+        string? ArtworkSourceAssetId = null, string? ArtworkSourceSha256 = null);
     internal sealed record LeasedJob(string Id, string KeepsakeId, string Kind, int Fence,
         int Epoch, int PhotoEpoch, string RequestJson);
 
@@ -321,7 +323,8 @@ internal sealed partial class KeepsakeStore
     internal bool Complete(LeasedJob job, KeepsakeProviderOutput output)
     {
         // Personalized story jobs reuse bytes already validated by the artwork job.
-        if (job.Kind != "base" || output.ImageBytes.Length != 0) ValidateGeneratedImage(output);
+        if (job.Kind == "wand_artwork") ValidateWandArtwork(output);
+        else if (job.Kind != "base" || output.ImageBytes.Length != 0) ValidateGeneratedImage(output);
         lock (gate)
         {
             using var connection = Open();
@@ -341,7 +344,7 @@ internal sealed partial class KeepsakeStore
             var publish = state == "dispatched" && Eligible(connection, transaction, job, document, request) && (job.Kind == "base"
                 ? document.CurrentBaseJob == job.Id : job.Kind == "wand_artwork"
                 ? document.CurrentArtworkJob == job.Id : document.CurrentPortraitJob == job.Id);
-            if (job.Kind == "wand_artwork") return CompleteWandArtwork(connection, transaction, job, document, output, publish);
+            if (job.Kind == "wand_artwork") return CompleteWandArtwork(connection, transaction, job, document, request, output, publish);
             var editionId = request.EditionId!;
             var canonical = job.Kind == "base" ? CanonicalGeneratedArtworkId(document) : null;
             var asset = canonical is not null ? document.Assets.Single(item => item.Id == canonical)
