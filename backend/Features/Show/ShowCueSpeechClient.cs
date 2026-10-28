@@ -20,10 +20,9 @@ internal sealed class ShowCueSpeechClient
     private readonly ILogger<ShowCueSpeechClient>? logger;
     private readonly Func<CancellationToken, Task<WebSocket>> connect;
 
-    public ShowCueSpeechClient(HttpClient httpClient, string apiKey, ILogger<ShowCueSpeechClient>? logger = null)
+    public ShowCueSpeechClient(string apiKey, ILogger<ShowCueSpeechClient>? logger = null)
         : this(apiKey, logger, token => ConnectAsync(apiKey, token))
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
     }
 
     internal ShowCueSpeechClient(

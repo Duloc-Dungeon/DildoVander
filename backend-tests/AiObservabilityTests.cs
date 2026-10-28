@@ -56,13 +56,12 @@ internal static class AiObservabilityTests
         Require(Tag(activity, "gen_ai.usage.input_tokens") == "11"
             && Tag(activity, "gen_ai.usage.output_tokens") == "7", "only actual provider usage is recorded");
 
-        using var failingHttp = new HttpClient(new Handler(_ => new(HttpStatusCode.TooManyRequests)
-        {
-            Content = new StringContent(Private, Encoding.UTF8, "application/json")
-        }));
+        var providerFailure = await BoundedSdkTransportTests.FailureAsync(429);
+        var speech = new ShowCueSpeechClient("offline-key", null,
+            _ => Task.FromException<WebSocket>(providerFailure));
         try
         {
-            await new ShowCueSpeechClient(failingHttp, "offline-key").GenerateAsync(Private, CancellationToken.None);
+            await speech.GenerateAsync(Private, CancellationToken.None);
             throw new InvalidOperationException("Provider failure was accepted.");
         }
         catch (System.ClientModel.ClientResultException) { }

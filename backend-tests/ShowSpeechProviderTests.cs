@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Kufr.Backend.Features.Show;
 using Kufr.Backend.Features.Speech;
+using Microsoft.Extensions.Configuration;
 
 internal static class ShowSpeechProviderTests
 {
@@ -13,8 +14,30 @@ internal static class ShowSpeechProviderTests
         await InvalidInputDoesNotConnectAsync();
         await BoundedAndMalformedRealtimeResponsesAsync();
         await FailedResponseDoesNotPublishPartialAudioAsync();
+        VerifyLateLeaseReleaseDuringShutdown();
         await CancellationDisposesRealtimeSocketAsync();
         Console.WriteLine("Show speech Realtime tests passed: text/voice/speed, bounded PCM, malformed frames, cancellation and disposal (no network).");
+    }
+
+    private static void VerifyLateLeaseReleaseDuringShutdown()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["OPENAI_API_KEY"] = "offline-key" }).Build();
+        var provider = new ShowSpeechProvider(configuration, new Lifetime(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ShowCueSpeechClient>.Instance);
+        Check(provider.TryAcquire(), "device cue work holds a speech lease before shutdown");
+        provider.Dispose();
+        provider.Release();
+        Check(provider.TryAcquire(), "late cancelled cue cleanup can release its managed speech lease after disposal");
+        provider.Release();
+    }
+
+    private sealed class Lifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+        public void StopApplication() { }
     }
 
     private static async Task RealtimeRequestAndDeviceAudioContractAsync()
