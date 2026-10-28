@@ -23,7 +23,10 @@ uveď původní licenci a zachovej jejich oznámení.
    Rozlišuj fake/simulaci, hardware, iPhone a živý provider. Chybějící hardware
    nebo Apple identita nebrání příspěvku do nezávislého softwaru.
    Ještě před založením nebo aktualizací PR spusť
-   `python scripts/ci/preflight.py --scope local`. Návod
+   `python scripts/ci/preflight.py --profile quick --scope local`. Výchozí režim
+   spouští rychlé backendové kontroly, npm testy a typecheck; podle změny přidej
+   cílené ověření. Android/iOS buildy, balení a dlouhé integrace jsou v plném
+   release CI nebo ve volitelném režimu `--profile full`. Návod
    [lokálních kontrol](docs/local-preflight.md) popisuje reporty, instalaci
    připnutých závislostí a zbývající ověření pro Linux, macOS a nativní buildy.
    Lokální chyby oprav před odesláním; nedostupné platformy v PR výslovně uveď.

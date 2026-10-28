@@ -1,3 +1,5 @@
+import contextlib
+import io
 import subprocess
 import tempfile
 import unittest
@@ -13,8 +15,22 @@ class PreflightPlanTests(unittest.TestCase):
 
         self.assertIn("Contracts test suite", names)
         self.assertIn("Frontend Node and Vitest tests", names)
-        self.assertIn("Backend harness: default", names)
-        self.assertIn("Android debug build", names)
+        self.assertIn("Frontend typecheck", names)
+        for group in ("operation-epochs", "mobile-game", "push", "sealed-case-rules",
+                      "customer-availability", "character-labels"):
+            self.assertIn(f"Backend quick harness: {group}", names)
+        self.assertNotIn("Backend harness: default", names)
+        self.assertNotIn("Android debug build", names)
+        self.assertNotIn("Backend HTTP smoke", names)
+        self.assertNotIn("Publish local backend smoke binary", names)
+        self.assertNotIn("Frontend production build and generated contract checks", names)
+        self.assertNotIn("Browser journey: Owner flows", names)
+        self.assertNotIn("CI Python helper tests", names)
+        self.assertFalse(any("--push-http" in check.command or "--identity" in check.command for check in checks))
+        quick_harnesses = [check for check in checks if check.name.startswith("Backend quick harness:")]
+        self.assertTrue(all(check.command[0] == "dotnet" and check.command[1].endswith("BackendTests.dll")
+                            for check in quick_harnesses))
+        self.assertFalse(any(check.command[:2] == ("dotnet", "run") for check in quick_harnesses))
         self.assertNotIn("iOS simulator build", names)
         self.assertNotIn("Firmware image build", names)
         self.assertNotIn("CAD host tests", names)
@@ -22,9 +38,10 @@ class PreflightPlanTests(unittest.TestCase):
         self.assertNotIn("Build simulator native test host", names)
         self.assertNotIn("Stage backend test simulator", names)
         self.assertTrue(all(check.platform in ("portable", "windows") for check in checks))
+        self.assertEqual("quick", preflight.parse_args([]).profile)
 
     def test_all_plan_keeps_nonlocal_release_groups_visible(self):
-        checks = preflight.build_plan("all", "windows")
+        checks = preflight.build_plan("all", "windows", profile="full")
         names = {check.name for check in checks}
 
         self.assertIn("iOS unsigned simulator build", names)
@@ -41,13 +58,26 @@ class PreflightPlanTests(unittest.TestCase):
     def test_dependency_install_commands_only_appear_when_explicit(self):
         default = preflight.build_plan("local", "linux")
         installed = preflight.build_plan("local", "linux", install_dependencies=True)
+        full_installed = preflight.build_plan("local", "linux", install_dependencies=True, profile="full")
 
         self.assertFalse(any(check.group == "setup" for check in default))
         installs = [check for check in installed if check.group == "setup"]
-        self.assertEqual(4, len(installs))
+        self.assertEqual(2, len(installs))
         npm_installs = [check for check in installs if check.name.startswith("Install ") and "Playwright" not in check.name]
         self.assertTrue(all(check.command[1] == "ci" for check in npm_installs))
-        self.assertTrue(any("playwright" in check.command for check in installs))
+        self.assertFalse(any("playwright" in check.command for check in installs))
+        self.assertEqual(4, len([check for check in full_installed if check.group == "setup"]))
+
+    def test_all_scope_requires_full_profile_and_full_reports_are_opt_in(self):
+        with self.assertRaisesRegex(ValueError, "requires --profile full"):
+            preflight.build_plan("all", "windows")
+        self.assertEqual("full", preflight.parse_args(["--profile", "full"]).profile)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(2, preflight.main(["--scope", "all", "--dry-run"]))
+        quick = preflight.build_plan("local", "windows")
+        self.assertFalse(any(check.name == "Gitleaks checkout history scan" for check in quick))
+        full = preflight.build_plan("local", "windows", profile="full")
+        self.assertTrue(any(check.name == "Gitleaks checkout history scan" for check in full))
 
 
 class PreflightExecutionTests(unittest.TestCase):
@@ -83,8 +113,8 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertEqual(Path("/repo"), runner_calls[0][1]["cwd"])
 
     def test_backend_plan_uses_locked_runtime_ids_without_simulator_prerequisites(self):
-        windows = preflight.build_plan("local", "windows", architecture="AMD64")
-        mac = preflight.build_plan("local", "macos", architecture="arm64")
+        windows = preflight.build_plan("local", "windows", architecture="AMD64", profile="full")
+        mac = preflight.build_plan("local", "macos", architecture="arm64", profile="full")
         windows_build = next(check for check in windows if check.name == "Build backend executable harness")
         mac_build = next(check for check in mac if check.name == "Build backend executable harness")
         default_harness = next(check for check in windows if check.name == "Backend harness: default")
@@ -106,7 +136,7 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertNotIn("--twin-media", preflight.BACKEND_GROUPS)
 
     def test_account_fixture_receives_built_release_harness_and_missing_outputs_are_reported(self):
-        checks = preflight.build_plan("local", "windows", architecture="AMD64")
+        checks = preflight.build_plan("local", "windows", architecture="AMD64", profile="full")
         account = next(check for check in checks if check.name == "Account fixture browser journey")
         build = next(check for check in checks if check.name == "Build backend executable harness")
 
@@ -130,7 +160,7 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertEqual("file:missing/BackendTests.dll", missing[0]["tool"])
 
     def test_site_ci_and_pure_ai_eval_checks_are_planned(self):
-        checks = preflight.build_plan("local", "windows")
+        checks = preflight.build_plan("local", "windows", profile="full")
         names = {check.name for check in checks}
 
         self.assertIn("AI evaluation pure Python tests", names)
@@ -146,13 +176,13 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertTrue(all(check.command[1] == "scripts/ci/local_package.py" for check in package_checks))
         owner = next(check for check in checks if check.name == "Browser journey: Owner flows")
         self.assertFalse(Path(dict(owner.env)["APP_SCREENSHOTS"]).is_relative_to(preflight.ROOT))
-        all_checks = preflight.build_plan("all", "windows")
+        all_checks = preflight.build_plan("all", "windows", profile="full")
         memory_posix = next(check for check in all_checks if check.name == "Backend memory provision POSIX tests")
         self.assertEqual("linux", memory_posix.platform)
 
     def test_default_plans_exclude_hardware_cad_and_native_simulator_checks(self):
-        arm_local = preflight.build_plan("local", "linux", architecture="aarch64")
-        all_checks = preflight.build_plan("all", "linux", architecture="x86_64")
+        arm_local = preflight.build_plan("local", "linux", architecture="aarch64", profile="full")
+        all_checks = preflight.build_plan("all", "linux", architecture="x86_64", profile="full")
         for checks in (arm_local, all_checks):
             names = {check.name for check in checks}
             self.assertNotIn("Build simulator native test host", names)
@@ -168,7 +198,7 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertNotIn("Linux x64 CI host coverage", {check.name for check in arm_local})
 
     def test_mac_native_commands_use_mobile_root_and_unsigned_simulator_build(self):
-        checks = preflight.build_plan("local", "macos", architecture="arm64")
+        checks = preflight.build_plan("local", "macos", architecture="arm64", profile="full")
         native = next(check for check in checks if check.name == "iOS native test: test-native-transport.sh")
         sync = next(check for check in checks if check.name == "Sync iOS Capacitor project")
         build = next(check for check in checks if check.name == "iOS unsigned simulator build")
@@ -196,7 +226,7 @@ class PreflightExecutionTests(unittest.TestCase):
 
     def test_fresh_but_incomplete_report_is_not_accepted(self):
         identity = {"head": "abc", "tree": "def", "worktree_status_sha256": "ghi"}
-        report = {**identity, "scope": "all", "selection": "scope", "ci_coverage_complete": True, "complete": True,
+        report = {**identity, "profile": "full", "scope": "all", "selection": "scope", "ci_coverage_complete": True, "complete": True,
                   "missing_platform_coverage": [{"tool": "pio"}]}
         self.assertFalse(preflight.report_is_current_and_complete(report, identity))
         report["missing_platform_coverage"] = []
@@ -204,6 +234,9 @@ class PreflightExecutionTests(unittest.TestCase):
         report["scope"] = "local"
         report["ci_coverage_complete"] = False
         self.assertTrue(preflight.report_is_current_and_complete(report, identity))
+        report["profile"] = "quick"
+        self.assertTrue(preflight.report_is_current_and_complete(report, identity))
+        self.assertFalse(preflight.report_is_current_and_complete(report, identity, profile="full"))
         report["selection"] = "group-filtered"
         self.assertFalse(preflight.report_is_current_and_complete(report, identity))
         self.assertTrue(preflight.identity_changed(identity, {**identity, "worktree_status_sha256": "changed"}))

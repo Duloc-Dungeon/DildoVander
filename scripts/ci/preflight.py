@@ -29,6 +29,18 @@ BACKEND_GROUPS = (
     "--mobile-game-boss", "--mobile-game-teams", "--mobile-game-progress",
     "--sealed-case-runtime", "--account-deletion",
 )
+QUICK_BACKEND_GROUPS = (
+    "--operation-epochs", "--mobile-game", "--push", "--sealed-case-rules",
+    "--customer-availability", "--character-labels",
+)
+QUICK_CHECKS = {
+    "Pinned Node.js version", "global.json .NET SDK version",
+    "Workflow contract tests", "Whitespace and conflict-marker check",
+    "Workflow actionlint validation", "Contracts test suite",
+    "Frontend Node and Vitest tests", "Frontend typecheck",
+    "Restore backend executable harness", "Build backend executable harness",
+    "Backend lifecycle and SQLite diagnostics tests",
+}
 GROUPS = ("repository", "design", "contracts", "frontend", "backend", "browser",
           "android", "ios", "site", "coverage", "setup")
 
@@ -89,12 +101,17 @@ def version_matches(expectation: str, reported: str) -> bool:
     return False
 
 
-def report_is_current_and_complete(report: dict[str, object], identity: dict[str, str]) -> bool:
+def report_is_current_and_complete(report: dict[str, object], identity: dict[str, str],
+                                   profile: str = "quick", scope: str = "local") -> bool:
     return (all(report.get(key) == value for key, value in identity.items())
             and report.get("complete") is True
             and report.get("scope") in ("local", "all")
+            and report.get("profile") in ("quick", "full")
+            and (profile != "full" or report.get("profile") == "full")
+            and (scope != "all" or report.get("scope") == "all")
             and report.get("selection") == "scope"
-            and (report.get("scope") != "all" or report.get("ci_coverage_complete") is True)
+            and (report.get("scope") != "all" or
+                 (report.get("profile") == "full" and report.get("ci_coverage_complete") is True))
             and not report.get("missing_platform_coverage"))
 
 
@@ -103,8 +120,13 @@ def identity_changed(start: dict[str, str], end: dict[str, str]) -> bool:
 
 
 def build_plan(scope: str, host: str, install_dependencies: bool = False,
-               groups: Sequence[str] | None = None, architecture: str | None = None) -> list[Check]:
-    """Return the complete command plan, without probing or changing the machine."""
+               groups: Sequence[str] | None = None, architecture: str | None = None,
+               profile: str = "quick") -> list[Check]:
+    """Return a command plan without probing or changing the machine."""
+    if profile not in ("quick", "full"):
+        raise ValueError(f"unsupported validation profile: {profile}")
+    if scope == "all" and profile != "full":
+        raise ValueError("--scope all requires --profile full")
     checks: list[Check] = []
     run_tag = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     py = "python" if host == "windows" else "python3"
@@ -112,12 +134,15 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
     node = "node.exe" if host == "windows" else "node"
     npm_prefix = [npm]
     if install_dependencies:
-        for folder in ("contracts", "design-system", "mobilni-aplikace"):
+        folders = ("contracts", "mobilni-aplikace") if profile == "quick" else (
+            "contracts", "design-system", "mobilni-aplikace")
+        for folder in folders:
             checks.append(_check(f"Install {folder} locked dependencies", "setup", "portable",
                                  [*npm_prefix, "ci", "--prefix", folder], tools=[npm]))
-        npx = "npx.cmd" if host == "windows" else "npx"
-        checks.append(_check("Install Playwright Chromium", "setup", "portable",
-                             [npx, "--prefix", "mobilni-aplikace", "playwright", "install", "chromium"], tools=[npx]))
+        if profile == "full":
+            npx = "npx.cmd" if host == "windows" else "npx"
+            checks.append(_check("Install Playwright Chromium", "setup", "portable",
+                                 [npx, "--prefix", "mobilni-aplikace", "playwright", "install", "chromium"], tools=[npx]))
 
     def add(name: str, group: str, platform_name: str, command: Sequence[str],
             cwd: str = ".", tools: Sequence[str] = (), reason: str = "",
@@ -314,6 +339,18 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
 
     if scope == "local":
         checks = [check for check in checks if check.platform in ("portable", host)]
+    if profile == "quick":
+        checks = [check for check in checks if check.name in QUICK_CHECKS or check.group == "setup"]
+        for filename in ("test_preflight.py", "test_select_projects.py",
+                         "test_branch_workflow.py", "test_local_package.py"):
+            checks.append(_check(f"Quick Python helper: {filename}", "repository", "portable",
+                                 [py, "-m", "unittest", "discover", "-s", "scripts/ci", "-p", filename],
+                                 tools=[py]))
+        for group in QUICK_BACKEND_GROUPS:
+            label = group.removeprefix("--")
+            checks.append(_check(f"Backend quick harness: {label}", "backend", "portable",
+                                 ["dotnet", str(test_dll), group], tools=["dotnet"],
+                                 required_files=(str(test_dll),)))
     if groups:
         selected_groups = set(groups)
         if install_dependencies:
@@ -428,6 +465,8 @@ def default_report_path() -> Path:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profile", choices=("quick", "full"), default="quick",
+                        help="quick is the default local PR loop; full restores all local validation checks")
     parser.add_argument("--scope", choices=("local", "all"), default="local",
                         help="local runs portable checks and this host's native checks; all requires every platform group")
     parser.add_argument("--list", action="store_true", help="print planned commands without executing them")
@@ -446,6 +485,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.scope == "all" and args.profile != "full":
+        print("--scope all requires --profile full for complete platform coverage.", file=sys.stderr)
+        return 2
     if args.scope == "all" and args.group:
         print("--group is available with --scope local; --scope all always retains strict full coverage.", file=sys.stderr)
         return 2
@@ -465,15 +507,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, json.JSONDecodeError) as error:
             print(f"Cannot read report: {error}", file=sys.stderr)
             return 2
-        current_and_complete = report_is_current_and_complete(report, identity)
-        if args.scope == "all":
-            current_and_complete = current_and_complete and report.get("ci_coverage_complete") is True
-        print(f"current and complete {report.get('scope')} coverage" if current_and_complete else "stale, partial, or incomplete")
+        current_and_complete = report_is_current_and_complete(report, identity, args.profile, args.scope)
+        description = f"current and complete {report.get('profile')} {report.get('scope')} validation"
+        print(description if current_and_complete else "stale, partial, or incomplete")
         return 0 if current_and_complete else 1
 
-    checks = build_plan(args.scope, args.host, args.install_dependencies, args.group)
+    checks = build_plan(args.scope, args.host, args.install_dependencies, args.group, profile=args.profile)
     if args.list or args.dry_run:
-        print(json.dumps({"scope": args.scope, "host": args.host,
+        print(json.dumps({"profile": args.profile, "scope": args.scope, "host": args.host,
                           "groups": sorted({check.group for check in checks}),
                           "checks": [{**asdict(check), "command": list(check.command)} for check in checks]}, indent=2))
         return 0
@@ -491,7 +532,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "platform": "portable", "command": [], "status": "failed",
                         "reason": "Git HEAD, tree, or worktree contents changed while checks were running"})
     report = {**final_identity, "starting_identity": identity, "ending_identity": final_identity,
-              "scope": args.scope, "host": args.host, "architecture": platform.machine(),
+              "profile": args.profile, "scope": args.scope, "host": args.host, "architecture": platform.machine(),
               "groups": sorted({check.group for check in checks}),
               "selection": "group-filtered" if args.group else "scope",
               "report_path": str(args.report) if args.report else None,
@@ -499,7 +540,8 @@ def main(argv: Sequence[str] | None = None) -> int:
               "checks": results, "missing_platform_coverage": missing,
               "source_changed_during_checks": source_changed,
               "complete": not failed and not missing and not source_changed,
-              "ci_coverage_complete": args.scope == "all" and not failed and not missing and not source_changed}
+              "ci_coverage_complete": args.profile == "full" and args.scope == "all"
+              and not failed and not missing and not source_changed}
     print(json.dumps(report, indent=2))
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)

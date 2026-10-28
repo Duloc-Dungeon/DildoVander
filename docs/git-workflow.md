@@ -59,7 +59,10 @@ nespouští stejné testovací sady. Znovu sestaví distribuční balíčky, ov�
 binárku a zachová kontrolu historie na tajné údaje. Chybějící, neúplný nebo
 zastaralý doklad znamená plné testy. Podrobnosti jsou v
 [ověření vydání](release-validation.md). Před PR platí
-[lokální preflight](local-preflight.md).
+[rychlý lokální preflight](local-preflight.md): backendové regresní skupiny,
+npm testy, typecheck a krátké kontroly repozitáře. Nativní buildy, balení
+a dlouhé HTTP/browserové integrace zůstávají v plném PR CI nebo ve volitelném
+lokálním režimu `--profile full`.
 
 ## První aktivace
 

@@ -63,7 +63,8 @@ PR artifacts are never promoted to production. `main-release.cjs`, the app and
 private `verify-build.cjs` guards, private deployment workflows, signing
 credentials and release serialization retain their existing contracts. The main
 controller continues to correlate a genuine direct-main CI child and signed
-children. Local preflight reports cannot authorize test reuse or deployment.
+children. The default local preflight is a fast backend/npm subset. Local reports cannot
+authorize test reuse or deployment; the complete PR CI receipt remains required.
 
 The optimization becomes available when this source change is later promoted to
 main. Delivering it into development does not trigger a release or deployment.
