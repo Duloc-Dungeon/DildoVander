@@ -7,16 +7,16 @@ vi.mock('./workshopVoice', () => ({ WorkshopVoice: class { constructor(private o
 import WandWorkshop from './WandWorkshop.vue';
 import { account } from '../identity/session';
 const base = '/app/v1/customer/wand/workshop'; const id = 'b'.repeat(32);
-let session: any; let reason: string | null; let view: VueWrapper | undefined;
-const saved = () => ({ id, profileId: 'profile', profileRevision: 1, tier: 1, status: 'asking', question: null, steps: [], messages: [], wand: null, artwork: null });
+let session: any; let reason: string | null; let view: VueWrapper | undefined; let profileRevision: number;
+const saved = () => ({ id, profileId: 'profile', profileRevision, tier: 1, status: 'asking', question: null, steps: [], messages: [], wand: null, artwork: null });
 const render = async () => { view = mount(WandWorkshop, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); await flushPromises(); return view; };
 const click = async (text: string) => { await view!.findAll('button').find(button => button.text() === text)!.trigger('click'); await flushPromises(); };
 beforeEach(() => {
   account.value = { ...account.value!, id: 'alice', openAiConsent: true };
-  vi.clearAllMocks(); reason = null; session = null;
+  vi.clearAllMocks(); reason = null; session = null; profileRevision = 1;
   api.request.mockImplementation(async (path: string, method = 'GET', body?: any) => {
-    if (path === base) return { eligible: !reason, reason, tier: 0, profile: { profileId: 'profile', revision: 1, name: 'Sever', world: 'Přístav', status: reason ? 'running' : 'ready' }, session: structuredClone(session) };
-    if (path === `${base}/sessions`) { session ??= saved(); return { session: structuredClone(session) }; }
+    if (path === base) return { eligible: !reason, reason, tier: 0, profile: { profileId: 'profile', revision: profileRevision, name: 'Sever', world: 'Přístav', status: reason ? 'running' : 'ready' }, session: structuredClone(session) };
+    if (path === `${base}/sessions`) { session ??= { ...saved(), id: body.operationId }; return { session: structuredClone(session) }; }
     if (path.endsWith('/ticket')) return { url: 'wss://example.test/live', path: '/live', expiresAt: '' };
     if (path.endsWith('/messages')) { session.messages.push({ messageId: body.messageId, revision: 1, role: 'user', text: body.text }); session.messages.push({ messageId: `reply${session.messages.length}`, revision: 1, role: 'assistant', text: 'Co má hůlka zachránit?' }); }
     if (path.endsWith('/finish')) session.status = 'generating';
@@ -33,7 +33,7 @@ describe('customer Live workshop', () => {
     reason = value; await render(); expect(view!.findAll('button').some(button => ['Promluvit s kufrem', 'Raději psát'].includes(button.text()))).toBe(false); expect(api.connect).not.toHaveBeenCalled();
   });
   it('explicitly connects customer workshop Live with its own ticket', async () => {
-    await render(); await click('Promluvit s kufrem'); expect(api.connect).toHaveBeenCalledOnce(); expect(api.connect.mock.calls[0][3]).toEqual({ purpose: 'workshop' }); expect(api.request.mock.calls.some(call => call[0] === `${base}/sessions/${id}/ticket`)).toBe(true); expect(api.request.mock.calls.some(call => String(call[0]).includes('persona-lab'))).toBe(false);
+    await render(); await click('Promluvit s kufrem'); expect(api.connect).toHaveBeenCalledOnce(); expect(api.connect.mock.calls[0][3]).toEqual({ purpose: 'workshop' }); expect(api.request.mock.calls.some(call => call[0] === `${base}/sessions/${session.id}/ticket`)).toBe(true); expect(api.request.mock.calls.some(call => String(call[0]).includes('persona-lab'))).toBe(false);
   });
   it('supports four exchanges before a separate finish event', async () => {
     await render(); await click('Raději psát'); expect(api.connect).not.toHaveBeenCalled();
@@ -73,7 +73,7 @@ describe('customer Live workshop', () => {
     const reads = api.request.mock.calls.length;
     await vi.advanceTimersByTimeAsync(30000);
     expect(api.request).toHaveBeenCalledTimes(reads);
-    resolve({ eligible: true, reason: null, tier: 0, profile: { name: 'Sever', world: 'Přístav' }, session: null });
+    resolve({ eligible: true, reason: null, tier: 0, profile: { profileId: 'profile', revision: 1, name: 'Sever', world: 'Přístav' }, session: null });
     await flushPromises(); expect(view!.text()).not.toContain('Stav se nepodařilo načíst');
   });
   it('bounds a hung status request and recovers without ending Live', async () => {
@@ -98,8 +98,8 @@ describe('customer Live workshop', () => {
     let resolve!: (value: unknown) => void;
     api.request.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
     await vi.advanceTimersByTimeAsync(3000);
-    api.observer.workshopSession({ ...saved(), status: 'generating' }); await flushPromises();
-    resolve({ eligible: true, reason: null, tier: 0, profile: { name: 'Sever', world: 'Přístav' }, session: saved() });
+    api.observer.workshopSession({ ...structuredClone(session), status: 'generating' }); await flushPromises();
+    resolve({ eligible: true, reason: null, tier: 0, profile: { profileId: 'profile', revision: 1, name: 'Sever', world: 'Přístav' }, session: structuredClone(session) });
     await flushPromises();
     expect(view!.text()).toContain('Hůlka dostává tvar');
     expect(view!.text()).not.toContain('Pokračovat hlasem');
@@ -126,6 +126,44 @@ describe('customer Live workshop', () => {
     expect(api.dispose.mock.calls.length).toBeGreaterThan(disposed);
     expect(view!.text()).not.toContain('Soukromá předchozí replika.');
     expect(view!.text()).not.toContain('Ztlumit mikrofon');
+    expect(api.connect).toHaveBeenCalledOnce();
+  });
+  it.each(['voice', 'text'])('restarts %s with a fresh operation after the profile revision changes during a poll', async nextMode => {
+    vi.useFakeTimers(); await render(); await click('Promluvit s kufrem');
+    const previous = structuredClone(session); const disposed = api.dispose.mock.calls.length;
+    let resolve!: (value: unknown) => void;
+    api.request.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    await vi.advanceTimersByTimeAsync(3000);
+    // A late state event must not defeat a confirmed profile-context change.
+    api.observer.workshopSession({ ...previous, messages: [{ messageId: 'old', role: 'assistant', text: 'Stará otázka.' }] });
+    api.observer.transcript('assistant', 'Stará replika.'); await flushPromises();
+    profileRevision = 2; session = null;
+    resolve({ eligible: true, reason: null, tier: 0, profile: { profileId: 'profile', revision: 2, name: 'Sever', world: 'Přístav' }, session: null });
+    await flushPromises();
+    expect(api.dispose.mock.calls.length).toBeGreaterThan(disposed);
+    expect(view!.text()).not.toContain('Stará replika.');
+    expect(view!.text()).not.toContain('Stará otázka.');
+    expect(api.connect).toHaveBeenCalledOnce();
+    await click(nextMode === 'voice' ? 'Promluvit s kufrem' : 'Raději psát');
+    const starts = api.request.mock.calls.filter(call => call[0] === `${base}/sessions`);
+    expect(starts).toHaveLength(2);
+    expect(starts[1][2].operationId).not.toBe(previous.id);
+    expect(session.profileRevision).toBe(2);
+    expect(api.connect).toHaveBeenCalledTimes(nextMode === 'voice' ? 2 : 1);
+  });
+  it('keeps a new preparing revision blocked and starts only after its preparation completes', async () => {
+    vi.useFakeTimers(); await render(); await click('Promluvit s kufrem');
+    const previousId = session.id;
+    profileRevision = 2; reason = 'wand_character_preparing'; session = null;
+    await vi.advanceTimersByTimeAsync(3000); await flushPromises();
+    expect(view!.text()).toContain('Ještě připravujeme tvoji postavu.');
+    expect(view!.findAll('button').some(button => ['Promluvit s kufrem', 'Raději psát'].includes(button.text()))).toBe(false);
+    expect(api.request.mock.calls.filter(call => call[0] === `${base}/sessions`)).toHaveLength(1);
+    reason = null;
+    await vi.advanceTimersByTimeAsync(2000); await flushPromises();
+    expect(api.connect).toHaveBeenCalledOnce();
+    await click('Raději psát');
+    expect(session.id).not.toBe(previousId); expect(session.profileRevision).toBe(2);
     expect(api.connect).toHaveBeenCalledOnce();
   });
   it('cancels a pending final verdict and cannot replay its late audio response', async () => {

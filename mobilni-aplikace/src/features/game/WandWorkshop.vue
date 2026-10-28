@@ -32,7 +32,7 @@ const live = new LabVoice({
   outputLevel(value) { outputLevel.value = value; },
   error(code) {
     error.value = code === 'wand_workshop_boss_captured' ? 'Baron uzavřel dílnu. Po osvobození navážeš na stejný rozhovor.'
-      : code === 'wand_session_busy' ? 'Předchozí spojení ještě ukládá rozpracovanou odpověď. Chvíli počkej a pokračuj ve stejném rozhovoru.'
+      : code === 'wand_session_busy' ? 'Předchozí spojení ještě končí. Chvíli počkej a zkus pokračovat.'
       : code.startsWith('microphone') || code === 'permission_denied' ? 'Mikrofon není dostupný. Můžeš pokračovat psaním.'
       : 'Živé spojení se přerušilo. Můžeš ho obnovit nebo pokračovat psaním.';
     mode.value = 'text'; void refresh();
@@ -106,6 +106,15 @@ function refresh(): Promise<void> {
     try {
       const value = await loadWorkshop(request.signal, props.upgrade);
       if (scope !== controller || scope.signal.aborted) return;
+      const previousProfile = entry.value?.profile;
+      if (previousProfile && (!value.profile || previousProfile.profileId !== value.profile.profileId
+        || previousProfile.revision !== value.profile.revision)) {
+        // The old operation and async requests belong to the old knowledge
+        // revision. Keep its durable history, but do not reuse it for this one.
+        resetWorkshopContext();
+        entry.value = value; applySession(value.session); loading.value = false; schedule();
+        return;
+      }
       syncFailures = 0; syncError.value = ''; entry.value = value;
       // A socket event or command accepted during this GET is newer than its
       // snapshot. Keep that state; eligibility is still checked below.
@@ -217,12 +226,15 @@ async function artworkAction(repair = false) {
   finally { if (scope === controller) busy.value = false; }
 }
 function visibility() { if (document.hidden) stopMedia(); }
-watch([() => account.value?.id, () => account.value?.openAiConsent, () => props.upgrade], () => {
+function resetWorkshopContext() {
   controller.abort(); controller = new AbortController(); refreshInFlight = null;
   syncFailures = 0; syncError.value = ''; error.value = ''; artworkError.value = '';
   stopMedia(); releaseArtwork(); session.value = null; entry.value = undefined;
   operation = ''; messageId = ''; retryId = ''; draft.value = ''; partial.value = ''; partialRole = '';
   correction.value = null; correctionText.value = ''; mode.value = 'voice'; busy.value = false;
+}
+watch([() => account.value?.id, () => account.value?.openAiConsent, () => props.upgrade], () => {
+  resetWorkshopContext();
   void refresh();
 });
 onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); });

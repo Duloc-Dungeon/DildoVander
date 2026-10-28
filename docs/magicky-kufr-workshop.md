@@ -37,6 +37,9 @@ i při výsledném verdiktu. Odchod, skrytí aplikace, změna účtu/souhlasu ne
 uvolní audio a mikrofon. Pozdní svolení k mikrofonu neobnoví opuštěnou relaci.
 Běžné obnovení údajů stejného účtu se stejným souhlasem hovor ani rozepsaný
 text neresetuje. Při skutečné změně vlastníka se odstraní i místní titulky a opravy.
+Při změně profilu nebo jeho revize na otevřené stránce se starý místní kontext
+odpojí a přijme aktuální stav serveru. Další vědomé spuštění použije operaci
+aktuální revize; rozpracovaná starší operace zůstává uložená u původního kontextu.
 
 Střídání řeči řídí GPT Live. Zákaznická větev neposílá Stop podle samotné
 hlasitosti mikrofonu: ozvěna reproduktoru ani nárazový hluk nesmějí ukončit
