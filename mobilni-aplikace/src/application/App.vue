@@ -7,6 +7,7 @@ import AwButton from '../components/AwButton.vue';
 import AwNotice from '../components/AwNotice.vue';
 import { notifications, dismissNotice, notify } from './notifications';
 import { startPushRuntime } from './pushRuntime';
+import { focusRouteContent } from './routeFocus';
 import { account, accountDeletionRequested, offlineSession, refreshIdentity } from '../features/identity/session';
 import AccountAiConsent from '../features/identity/AccountAiConsent.vue';
 import { deviceSession } from '../features/suitcase/deviceSession';
@@ -122,7 +123,7 @@ watch(customerMembershipState, state => {
 watch(() => route.path, () => {
   viewError.value = '';
   // Announce route changes while leaving same-route form/telemetry focus intact.
-  requestAnimationFrame(() => main.value?.focus({ preventScroll: true }));
+  requestAnimationFrame(() => focusRouteContent(main.value));
 });
 const removeRouterError = router.onError(() => { viewError.value = customerCopy.text('shell.page-error'); });
 // The native version gate mounts the shell after the root's mounted hook.
