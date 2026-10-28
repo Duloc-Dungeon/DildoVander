@@ -52,6 +52,9 @@ internal sealed class MobileWandRuntime(IServiceScopeFactory scopes, WandGenerat
             || !await db.Sessions.AsNoTracking().AnyAsync(s => s.Id == a.AccountSession && s.UserId == a.Owner && s.ExpiresAt > now, token)) return false;
         var tier = wands.MobileOperationTier(a.Owner, a.Operation);
         if (tier is not (1 or 2)) return false;
+        if (!await MobileWandWorkshopAccess.IsAllowedAsync(user, tier, scope.ServiceProvider, token)
+            || user.LaunchGroupId is null || !wands.WorkshopMatchesLaunchSnapshot(a.Owner,
+                a.Operation, user.LaunchGroupId, user.LaunchGroupAccessRevision)) return false;
         if (tier == 2)
         {
             if (user.LaunchGroupId is null || scope.ServiceProvider.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId)?.OpenedAt is null

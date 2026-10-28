@@ -1,11 +1,7 @@
-using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Game;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Keepsakes;
-using Kufr.Backend.Features.Launch;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Wands;
@@ -33,7 +29,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
     }
 
     private static async Task<bool> CurrentAuthorityAsync(string accountId, string groupId,
-        long accessRevision, IServiceProvider services, CancellationToken token)
+        long accessRevision, int tier, IServiceProvider services, CancellationToken token)
     {
         var accounts = services.GetRequiredService<AccountDatabase>();
         var user = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == accountId
@@ -42,19 +38,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             && !accounts.DeletionRequests.Any(deletion => deletion.UserId == accountId), token);
         if (user is null || !AccountAiConsent.HasConsent(user)
             || !await HasActiveSessionAsync(accounts, accountId, token)) return false;
-        var userManager = services.GetRequiredService<UserManager<AccountUser>>();
-        var roles = await userManager.GetRolesAsync(user);
-        if (!roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)) return false;
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, accountId), new(AccountIdentity.SessionClaim, "workshop-worker")
-        };
-        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "workshop"));
-        var access = await services.GetRequiredService<LaunchAccessService>().EvaluateAsync(principal);
-        if (!access.Allowed || services.GetRequiredService<LaunchPolicyStore>().ReadGroup(groupId)?.OpenedAt is null)
-            return false;
-        return true;
+        return await MobileWandWorkshopAccess.IsAllowedAsync(user, tier, services, token);
     }
 
     private async Task ProcessAsync(MobileWandWorkshopJob job, CancellationToken token)
@@ -67,7 +51,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             store.DeferWorkshop(job.AccountId, job.OperationId);
             return;
         }
-        if (!await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, services, token))
+        if (!await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, job.Tier, services, token))
         {
             store.FailWorkshop(job.AccountId, job.OperationId, "workshop_authority_revoked");
             return;
@@ -86,8 +70,8 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             return;
         }
 
-        if (user.LaunchGroupId is null
-            || services.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId)?.OpenedAt is null)
+        if (user.LaunchGroupId != job.LaunchGroupId
+            || user.LaunchGroupAccessRevision != job.LaunchAccessRevision)
         {
             store.FailWorkshop(job.AccountId, job.OperationId, "game_group_inactive");
             return;
@@ -158,7 +142,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
 
     private static async Task<bool> ContextAuthorityAsync(MobileWandWorkshopJob job,
         IServiceProvider services, CancellationToken token) =>
-        await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, services, token)
+        await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, job.Tier, services, token)
         && await services.GetRequiredService<CharacterProfileStore>().CapturePreparedAsync(job.AccountId,
             job.Profile.ProfileId, job.Profile.Revision, token) is not null;
 

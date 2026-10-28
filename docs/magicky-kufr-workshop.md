@@ -84,7 +84,12 @@ Oficiální protokol: [Live sessions](https://developers.openai.com/api/docs/gui
 ## API a výroba
 
 Základ `/app/v1/customer/wand/workshop`, zákaznické přihlášení, souhlas a aktuální
-herní oprávnění. JSON má camelCase. Cesty v tabulce jsou relativní k základu.
+členství ve skupině. První hůlku lze po odhalení připravené postavy vytvořit
+i před otevřením noci; text, Live, výroba, obnovení a ilustrace používají stejné
+ověření vlastníka, souhlasu, skupiny a revize členství. Po uložení se host vrací
+do čekání. Otevření stejné skupiny nezakládá novou operaci. Upgrade dál vyžaduje
+otevřenou noc a původní herní podmínky; dílna neodemyká hry ani obecný archiv.
+JSON má camelCase. Cesty v tabulce jsou relativní k základu.
 
 | Metoda a cesta | Význam |
 | --- | --- |
@@ -99,6 +104,7 @@ herní oprávnění. JSON má camelCase. Cesty v tabulce jsou relativní k zákl
 | `POST /sessions/{id}/retry` | Jen serverem povolená obnova známého bezpečného selhání výroby |
 | `POST /sessions/{id}/audio` | `{wandId}`, pomocné předčítání uloženého verdiktu |
 | `POST /sessions/{id}/artwork/retry` | Jen chybějící/nezdařený obrázek, UUID `Idempotency-Key` |
+| `GET /sessions/{id}/artwork/assets/{assetId}` | Jen aktuální kanonická ilustrace vlastní dokončené dílny, dostupná i před otevřením noci |
 | `POST /sessions/{id}/artwork/repair` | Explicitní oprava hotové ilustrace, očekávaná verze a zdroj, UUID `Idempotency-Key` |
 
 Aktivní stavy jsou `asking`, `generating`, `complete`, `paused`, `failed`.
@@ -173,6 +179,7 @@ Relevantní příkazy z kořene produktu:
 
 ```text
 dotnet build backend-tests/BackendTests.csproj --no-restore
+dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --prelaunch-workshop-http
 dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-wands
 dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-workshop-socket
 dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-workshop-live-http
