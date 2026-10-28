@@ -12,6 +12,9 @@ internal static class CharacterPortraitTests
         var root = Path.Combine(Path.GetTempPath(), "dv-portrait-tests-" + Guid.NewGuid().ToString("N"));
         try
         {
+            await CharacterPortraitFallbackTests.RunAsync();
+            await AccountIdentityTests.RunPortraitFallbackAsync();
+            await AttributionMigrationAsync(Path.Combine(root, "attribution"));
             await ExperienceWireContractAsync();
             WelcomeContract();
             await ConsentAndDurabilityAsync(Path.Combine(root, "durable"));
@@ -408,6 +411,33 @@ internal static class CharacterPortraitTests
         Check((await store.ReadAsync("alice"))?.Status == "failed"
             && store.ReadPortrait("alice", profile.ProfileId, profile.Revision)?.Status == "ready",
             "research and portrait retain their independent truthful statuses");
+    }
+
+    private static async Task AttributionMigrationAsync(string root)
+    {
+        var store = new CharacterProfileStore(root);
+        var profile = await store.SaveAsync("owner", new(0, new("Raven", "Fiction"),
+            OpenAiConsent: true, PortraitConsent: true));
+        var enrichment = (await store.ClaimAsync())!;
+        await store.CompleteAsync(enrichment, Result(enrichment), null);
+        var job = store.ClaimPortrait()!;
+        var source = new CharacterPortraitSource("https://commons.wikimedia.org/wiki/File:Raven.jpg", "Raven portrait",
+            "Artist", "CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/");
+        Check(store.CompletePortrait(job, [1, 2, 3], null, null, null, source), "attribution is committed with image");
+        var restarted = new CharacterProfileStore(root);
+        Check(restarted.ReadPortrait("owner", profile.ProfileId, profile.Revision)?.Source == source,
+            "image attribution survives store restart");
+        using (var connection = new SqliteConnection("Data Source=" + Path.Combine(root, "customer-characters.sqlite")))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "ALTER TABLE character_portraits DROP COLUMN source_json";
+            command.ExecuteNonQuery();
+        }
+        var upgraded = new CharacterProfileStore(root);
+        Check(upgraded.ReadPortrait("owner", profile.ProfileId, profile.Revision) is { Status: "ready", Source: null }
+            && upgraded.ReadPortraitImage("owner", profile.ProfileId, profile.Revision)!.SequenceEqual(new byte[] { 1, 2, 3 }),
+            "legacy portrait schema gains nullable attribution without changing existing images");
     }
 
     private static CharacterEnrichment Result(CharacterJob job) => new(job.UserInput.Name, job.UserInput.World,

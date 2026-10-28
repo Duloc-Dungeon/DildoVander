@@ -5,6 +5,14 @@ export interface PrelaunchWelcome {
   teaser: string;
 }
 
+export interface PrelaunchArtworkSource {
+  url: string;
+  title: string;
+  author: string;
+  license: string;
+  licenseUrl: string;
+}
+
 export interface PrelaunchArtwork {
   status: string;
   loadingMessage?: string | null;
@@ -12,6 +20,7 @@ export interface PrelaunchArtwork {
   finalMessage?: string | null;
   welcome?: PrelaunchWelcome | null;
   url?: string | null;
+  source?: PrelaunchArtworkSource | null;
 }
 
 export interface PrelaunchCharacterResponse {

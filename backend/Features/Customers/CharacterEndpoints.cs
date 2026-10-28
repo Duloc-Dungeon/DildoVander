@@ -21,6 +21,7 @@ internal static class CharacterEndpoints
         services.TryAddSingleton<ICharacterEnrichmentProvider, OpenAiCharacterEnrichmentProvider>();
         services.AddHostedService<CharacterEnrichmentWorker>();
         services.TryAddSingleton<ICharacterPortraitProvider, OpenAiCharacterPortraitProvider>();
+        services.TryAddSingleton<ICharacterPortraitFallbackProvider, WikimediaCharacterPortraitFallbackProvider>();
         services.AddHostedService<CharacterPortraitWorker>();
         return services;
     }
