@@ -215,16 +215,20 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
         [py, "-m", "unittest", "discover", "-s", "backend/tests", "-p", "test_*.py"], tools=[py])
     add("Voice provisioning script tests", "backend", "portable",
         [py, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_provision_dv01_voice.py"], tools=[py])
-    add("Backend deployment configuration tests", "backend", "portable",
-        [py, "-m", "unittest", "discover", "-s", "backend/deploy", "-p", "test_*.py"], tools=[py])
+    for filename in ("test_deploy_helper.py", "test_keepsake_delivery.py",
+                     "test_firmware_publish.py", "test_firmware_artifact.py"):
+        add(f"Backend deployment tests: {filename}", "backend", "portable",
+            [py, "-m", "unittest", "discover", "-s", "backend/deploy", "-p", filename], tools=[py])
+    add("Backend memory provision POSIX tests", "backend", "linux",
+        [py, "-m", "unittest", "discover", "-s", "backend/deploy", "-p", "test_memory_provision.py"], tools=[py])
     add("Backend twin release tests", "backend", "portable",
         [py, "-m", "unittest", "discover", "-s", "backend/deploy/twin", "-p", "test_twin_release.py"], tools=[py])
     harness_output = ROOT / "backend-tests/bin/Release/net10.0" / rid if rid else ROOT / "backend-tests/bin/Release/net10.0"
     add("Backend harness diagnostic package provenance", "backend", "portable",
-        [py, "scripts/ci/package.py", "pack", str(harness_output), str(checkout_temp_dir() / f"diagnostics-package-{run_tag}")],
+        [py, "scripts/ci/local_package.py", str(harness_output), str(checkout_temp_dir() / f"diagnostics-package-{run_tag}")],
         tools=[py], required_files=(str(test_dll),))
     add("Backend publish package provenance", "backend", "portable",
-        [py, "scripts/ci/package.py", "pack", str(publish_dir), str(checkout_temp_dir() / f"backend-package-{run_tag}")],
+        [py, "scripts/ci/local_package.py", str(publish_dir), str(checkout_temp_dir() / f"backend-package-{run_tag}")],
         tools=[py], required_files=(str(published_backend),))
 
     # Browser journeys used by the site CI job. Browser installation is an explicit
@@ -235,20 +239,30 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
         ("Application updates", "test:updates:browser"),
     )
     for label, script in browser_commands:
+        screenshot_root = checkout_temp_dir() / f"browser-{label.lower().replace(' ', '-')}-{run_tag}"
+        screenshot_key = "PERSONA_LAB_SCREENSHOTS" if label == "Persona lab" else "APP_SCREENSHOTS"
         add(f"Browser journey: {label}", "browser", "portable", [npm, "run", script, "--prefix", "mobilni-aplikace"],
-            tools=[npm], required_files=("mobilni-aplikace/dist/index.html",))
+            tools=[npm], env=((screenshot_key, str(screenshot_root)),),
+            required_files=("mobilni-aplikace/dist/index.html",))
     for label, script in (("Debug", "tests/debug.browser.mjs"), ("Director", "tests/director.browser.mjs"),
                           ("Archive show", "scripts/archive-show.browser.mjs"),
                           ("Personal wand duel", "tests/personal-wand-duel.browser.mjs"),
                           ("Workshop offline", "tests/workshop-offline.browser.mjs"),
                           ("Workshop media", "tests/workshop-media.browser.mjs")):
+        screenshot_key = "ARCHIVE_SCREENSHOTS" if label == "Archive show" else "APP_SCREENSHOTS"
+        screenshot_root = checkout_temp_dir() / f"browser-{label.lower().replace(' ', '-')}-{run_tag}"
         add(f"Browser journey: {label}", "browser", "portable", [node, script], "mobilni-aplikace", [node],
+            env=((screenshot_key, str(screenshot_root)),),
             required_files=("mobilni-aplikace/dist/index.html",))
+    account_screenshots = checkout_temp_dir() / f"browser-account-fixture-{run_tag}"
     add("Account fixture browser journey", "browser", "portable", [npm, "run", "test:accounts:fixture", "--prefix", "mobilni-aplikace"],
-        tools=[npm], env=(("KUFR_TESTS_DLL", str(test_dll)),),
+        tools=[npm], env=(("KUFR_TESTS_DLL", str(test_dll)),
+                         ("ACCOUNT_BROWSER_SCREENSHOTS", str(account_screenshots))),
         required_files=(str(test_dll), "mobilni-aplikace/dist/index.html"))
+    game_screenshots = checkout_temp_dir() / f"browser-game-{run_tag}"
     add("Game browser journey", "browser", "portable", [npm, "run", "test:game:browser", "--prefix", "mobilni-aplikace"],
-        tools=[npm], required_files=("mobilni-aplikace/dist/index.html",))
+        tools=[npm], env=(("APP_SCREENSHOTS", str(game_screenshots)),),
+        required_files=("mobilni-aplikace/dist/index.html",))
     web_dist = ROOT / "mobilni-aplikace/dist"
     add("Compiled site input tests", "site", "portable",
         [py, "-m", "unittest", "discover", "-s", "web", "-p", "test_site_inputs.py"], tools=[py],
@@ -259,10 +273,10 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
         [py, "web/build-site.py", "--destination", str(site_source), "--web-dist", str(web_dist)],
         tools=[py], required_files=(str(web_dist / "index.html"),))
     add("Package local site with provenance", "site", "portable",
-        [py, "scripts/ci/package.py", "pack", str(site_source), str(site_package)], tools=[py],
+        [py, "scripts/ci/local_package.py", str(site_source), str(site_package)], tools=[py],
         required_files=(str(site_source),))
     add("Package compiled web build with provenance", "site", "portable",
-        [py, "scripts/ci/package.py", "pack", str(web_dist), str(checkout_temp_dir() / f"web-package-{run_tag}")],
+        [py, "scripts/ci/local_package.py", str(web_dist), str(checkout_temp_dir() / f"web-package-{run_tag}")],
         tools=[py], required_files=(str(web_dist / "index.html"),))
 
     # Native platform checks mirror their workflow's test/build entry points.

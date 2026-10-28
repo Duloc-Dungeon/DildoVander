@@ -34,7 +34,9 @@ class PreflightPlanTests(unittest.TestCase):
         repository_checks = [check for check in checks if check.group == "repository"]
         self.assertTrue(any(check.name == "Workflow actionlint validation" for check in repository_checks))
         self.assertTrue(any(check.name == "Gitleaks checkout history scan" for check in repository_checks))
-        self.assertFalse(any("firmware" in check.name.lower() or "cad" in check.name.lower() for check in checks))
+        self.assertFalse(any(("firmware" in check.name.lower()
+                              and not check.name.startswith("Backend deployment tests:"))
+                             or "cad" in check.name.lower() for check in checks))
 
     def test_dependency_install_commands_only_appear_when_explicit(self):
         default = preflight.build_plan("local", "linux")
@@ -112,6 +114,8 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertEqual(expected_dll, dict(account.env)["KUFR_TESTS_DLL"])
         self.assertIn(expected_dll, account.required_files)
         self.assertLess(checks.index(build), checks.index(account))
+        account_screenshots = Path(dict(account.env)["ACCOUNT_BROWSER_SCREENSHOTS"])
+        self.assertFalse(account_screenshots.is_relative_to(preflight.ROOT))
         keepsake = next(check for check in checks if check.name == "Keepsake HTTP integration")
         self.assertNotIn("KUFR_TWIN_TEST_NATIVE", dict(keepsake.env))
 
@@ -136,6 +140,15 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertIn("Site fixtures: Web application packaging and inputs", names)
         self.assertIn("Site fixtures: Web deploy test_application_routes.py", names)
         self.assertNotIn("Site fixtures: Web deploy test_cad_host.py", names)
+        package_checks = [check for check in checks if "package provenance" in check.name.lower()
+                          or check.name.startswith("Package ")]
+        self.assertEqual(4, len(package_checks))
+        self.assertTrue(all(check.command[1] == "scripts/ci/local_package.py" for check in package_checks))
+        owner = next(check for check in checks if check.name == "Browser journey: Owner flows")
+        self.assertFalse(Path(dict(owner.env)["APP_SCREENSHOTS"]).is_relative_to(preflight.ROOT))
+        all_checks = preflight.build_plan("all", "windows")
+        memory_posix = next(check for check in all_checks if check.name == "Backend memory provision POSIX tests")
+        self.assertEqual("linux", memory_posix.platform)
 
     def test_default_plans_exclude_hardware_cad_and_native_simulator_checks(self):
         arm_local = preflight.build_plan("local", "linux", architecture="aarch64")

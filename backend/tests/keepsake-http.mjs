@@ -50,12 +50,13 @@ async function stop() {
   await stopChildProcess(processHandle);
 }
 async function ready() {
-  for (let n = 0; n < 150; n++) {
+  const deadline = performance.now() + 30_000;
+  while (performance.now() < deadline) {
     if (processHandle.exitCode !== null || processHandle.signalCode !== null) { throw new Error(`listener exited: ${serverLog}`); }
-    try { await fetch(`http://127.0.0.1:${port}/`); return; } catch {}
+    try { await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(1000) }); return; } catch {}
     await new Promise(r => setTimeout(r, 50));
   }
-  throw new Error('listener startup timed out');
+  throw new Error(`listener startup timed out: ${serverLog}`);
 }
 class Browser {
   cookie = ''; csrf = '';
