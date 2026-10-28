@@ -56,6 +56,19 @@ ověřuje dostupnost, revizi, kalibraci a Stop. Telefon není cloudový prostře
 `GptLive` vlastní aktivní protokol; `Conversations` společný lifecycle. `Realtime` zůstává neaktivní záloha.
 [Provisioning vlastního hlasu a fallback](../docs/dv01-voice.md) je pouze backendová operace.
 
+`GET /app/v1/application-version` je veřejný před-přihlašovací endpoint pro
+instalované aplikace. Vrací `ios` a `android`, každý s řetězcovými
+`minimumBuild`, `latestBuild` a `updateUrl`; odpověď má `Cache-Control: no-store`.
+`minimumBuild` určuje nejnižší podporovanou verzi a `latestBuild` nejnovější
+doporučenou. iOS používá jeden až tři číselné komponenty, například `10.9.1`,
+Android jeden číselný komponent odpovídající version code (nejvýše 2100000000).
+Porovnání probíhá numericky po komponentách a kratší hodnoty se doplní nulami.
+Konfigurace je v `ApplicationUpdates:Ios` a `ApplicationUpdates:Android`; oba
+buildy jsou při vydání nejprve `"0"`. iOS odkazuje na `/ios/`. Android odkaz
+zůstává prázdný, dokud není potvrzena veřejná instalační adresa; při nastavení
+nenulové Android verze je nutné zadat absolutní HTTPS adresu. Aplikace provádí
+vynucení aktualizace.
+
 - `POST /v1/conversations` založí aplikační rozhovor idempotentně.
 - `POST /v1/conversations/{id}/gpt-live` nebo `/realtime-live` otevře engine.
 - `GET /v1/conversations/{id}/{gpt-live|realtime-live}/{streamId}/audio-stream`

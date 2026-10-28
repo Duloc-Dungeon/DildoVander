@@ -23,19 +23,23 @@ try {
     const state = { configured: true, running: false, session: false, phase: 'idle', mode: 'openai', accessMode: 'account', deviceId: 'synthetic-kufr', engines, server: modes };
     window.webkit = { messageHandlers: { bridge: {} } };
     const headers = {
+      App: ['getInfo', 'addListener', 'removeListener'],
       KufrDebug: ['status', 'stop', 'configure', 'forgetProfile', 'useAccount', 'inspectServer', 'inspectBackend', 'changeServerModes', 'startConversation',
         'captureCostumePhoto', 'attachCostumePhoto', 'discardCostumePhoto', 'inspectMemory', 'deleteConversationMemory', 'speakSystem', 'readServerLogs'],
       KufrDeviceTransport: ['savedDevice'], KufrIdentity: ['request', 'cancelAccountRequest'], KufrProvisioning: [],
     };
-    window.Capacitor = { PluginHeaders: Object.entries(headers).map(([name, methods]) => ({ name, methods: methods.map(name => ({ name, rtype: 'promise' })) })),
+    window.Capacitor = { PluginHeaders: Object.entries(headers).map(([name, methods]) => ({ name, methods: methods.map(name => ({ name, rtype: name === 'addListener' ? 'callback' : 'promise' })) })),
+      nativeCallback: async () => 'synthetic-app-listener',
       nativePromise: async (plugin, method, options = {}) => {
         window.__debugCalls.push({ plugin, method, options: structuredClone(options) });
+        if (plugin === 'App' && method === 'getInfo') return { id: 'synthetic.app', name: 'Fixture', version: '1.0', build: '1' };
         if (plugin === 'KufrDeviceTransport') return { paired: true, deviceId: 'synthetic-kufr', host: '192.0.2.1' };
         if (plugin === 'KufrIdentity') {
           if (method === 'cancelAccountRequest') return { cancelled: true };
           if (method !== 'request') throw new Error('Unexpected synthetic identity method');
           let value;
           if (options.path === '/app/v1/session') value = { enabled: true, account, csrfToken: 'synthetic-csrf', origin: 'https://application.example.invalid' };
+          else if (options.path === '/app/v1/application-version') value = { ios: { minimumBuild: '0', latestBuild: '0', updateUrl: 'https://example.test/ios/' }, android: { minimumBuild: '0', latestBuild: '0', updateUrl: '' } };
           else if (options.path === '/app/v1/launch') value = { allowed: true, audience: 'privileged', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false };
           else if (options.path === '/app/v1/account') value = { grants: [], associations: [], sessions: [], passkeys: [] };
           else if (options.path === '/app/v1/admin/operations/status') value = { modes, readiness: { accounts: true, keepsakes: false, keepsakeGeneration: false, nativeAssociationConfigured: true }, archive: null };

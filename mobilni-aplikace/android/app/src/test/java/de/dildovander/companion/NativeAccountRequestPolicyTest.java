@@ -14,6 +14,15 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void applicationVersionIsReadOnlyAndHasNoQuery() {
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/application-version", "GET"));
+        for (String method : Arrays.asList("POST", "PUT", "DELETE")) {
+            assertFalse(NativeAccountRequestPolicy.allows("/app/v1/application-version", method));
+        }
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/application-version?platform=ios", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/application-version/extra", "GET"));
+    }
+
     @Test public void adminCharacterRoutesAndTransportLimitsAreExact() {
         String id = "12345678123442348234123456789abc";
         String profile = "/app/v1/admin/characters/" + id;
