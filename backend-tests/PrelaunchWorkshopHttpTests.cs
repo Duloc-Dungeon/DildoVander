@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 
 internal static partial class AccountIdentityTests
@@ -39,6 +40,9 @@ internal static partial class AccountIdentityTests
                     ["OPENAI_API_KEY"] = "synthetic-offline-workshop-key"
                 }),
             configureEndpoints: app => app.MapMobileWands());
+        Check(!fixture.App.Services.GetServices<IHostedService>()
+            .Any(service => service is KeepsakeWorker or MobileWandWorkshopWorker),
+            "workshop scenario exclusively controls its manufacture and artwork queues");
         using var owner = fixture.Client();
         using var guest = fixture.Client();
         using var movedGuest = fixture.Client();
@@ -83,7 +87,17 @@ internal static partial class AccountIdentityTests
             "closed-night text dialogue persists owner evidence");
         Check((await guest.PostAsJsonAsync(sessionPath + "/finish", new { })).IsSuccessStatusCode,
             "closed-night conversation can finish");
-        await RunWorkshopQueueAsync(() => wands.ReadWorkshopState(guestId, operation).Status == "complete");
+        await RunWorkshopQueueAsync(() =>
+        {
+            var state = wands.ReadWorkshopState(guestId, operation);
+            // The public status projects selection as complete before artwork
+            // issuance finishes. Keep the worker alive until its durable handoff.
+            return state.Status == "complete"
+                && (state.KeepsakeId is { Length: > 0 } || state.Artwork?.ErrorCode is { Length: > 0 });
+        });
+        var manufactured = wands.ReadWorkshopState(guestId, operation);
+        Check(manufactured.KeepsakeId is { Length: > 0 },
+            $"workshop durably issues its artwork archive before queue handoff (error={manufactured.Artwork?.ErrorCode ?? "none"})");
         var completed = (await JsonAsync(await guest.GetAsync(sessionPath))).GetProperty("session");
         var wandId = completed.GetProperty("wand").GetProperty("wandId").GetString();
         Check(generation.Calls == 1 && !string.IsNullOrWhiteSpace(wandId),
