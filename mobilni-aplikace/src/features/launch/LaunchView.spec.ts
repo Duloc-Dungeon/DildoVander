@@ -23,6 +23,7 @@ let persisted = false;
 let allowed = false;
 let revokedAudience = false;
 let artworkStatus = 'queued';
+let artworkSource: { url: string; title: string; author: string; license: string; licenseUrl: string } | null = null;
 let memberState: 'active' | 'unassigned' | 'revoked' = 'active';
 let memberUniverse: string | null = null;
 const character = { profileId: 'profile', revision: 1, name: 'Raven', universe: 'Fiction', status: 'queued' };
@@ -38,7 +39,7 @@ beforeEach(() => {
   api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
   image = ref(''); failed = ref(false);
   api.portrait.mockReturnValue({ url: image, failed, pending: ref(false), clear: vi.fn(() => { image.value = ''; }), retry: vi.fn(), fail: vi.fn() });
-  persisted = false; allowed = false; revokedAudience = false; artworkStatus = 'queued';
+  persisted = false; allowed = false; revokedAudience = false; artworkStatus = 'queued'; artworkSource = null;
   character.status = 'queued';
   memberState = 'active'; memberUniverse = null; customerMembershipState.value = null; customerFixedUniverse.value = null;
   api.request.mockImplementation(async (path: string, method?: string) => {
@@ -47,8 +48,27 @@ beforeEach(() => {
     if (path === '/app/v1/enrollment/default') return { available: true };
     if (path === '/app/v1/enrollment/default/admit' && method === 'POST') { memberState = 'active'; memberUniverse = 'Astronomy'; return {}; }
     if (method === 'PUT') { persisted = true; throw new Error('Response lost'); }
-    return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL' } : null };
+    return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL', ...(artworkSource ? { source: artworkSource } : {}) } : null };
   });
+});
+it('shows safe source attribution for a fallback portrait and omits it for generated artwork', async () => {
+  persisted = true; artworkStatus = 'ready'; artworkSource = {
+    url: 'https://commons.wikimedia.org/wiki/File:Portrait.jpg', title: '<em>Portrét</em>', author: 'Autor', license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/'
+  };
+  const view = entry();
+  try {
+    await flushPromises();
+    image.value = 'blob:authorised-decoded';
+    await flushPromises();
+    view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true);
+    await flushPromises();
+    expect(view.text()).toContain('Obrázek z internetu');
+    expect(view.text()).toContain('<em>Portrét</em>');
+    expect(view.find('.launch-attribution a').attributes('href')).toBe(artworkSource.url);
+    expect(view.find('.launch-attribution a').attributes('rel')).toBe('noopener noreferrer');
+    expect(view.find('.launch-attribution').html()).not.toContain('<em>Portrét</em>');
+  } finally { view.unmount(); }
 });
 afterEach(() => { selectInvitationPresentation(); vi.useRealTimers(); });
 it('reconciles a lost save response without a second registration or PUT', async () => {

@@ -4,6 +4,14 @@ import { readFile } from 'node:fs/promises';
 
 const schema = JSON.parse(await readFile(new URL('../prelaunch-welcome.schema.json', import.meta.url), 'utf8'));
 const validate = new Ajv({ allErrors: true, strict: true }).compile(schema);
+const validateArtworkSourceSchema = new Ajv({ allErrors: true, strict: true }).compile(schema.definitions.artworkSource);
+const validateArtworkSchema = new Ajv({ allErrors: true, strict: true }).compile({ $schema: schema.$schema, definitions: schema.definitions, $ref: '#/definitions/artwork' });
 export function validatePrelaunchWelcome(value) {
   return validate(value) && value.joke.length + value.identity.length + value.teaser.length + 2 <= 250;
+}
+export function validatePrelaunchArtworkSource(value) {
+  return validateArtworkSourceSchema(value);
+}
+export function validatePrelaunchArtwork(value) {
+  return validateArtworkSchema(value);
 }

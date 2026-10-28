@@ -153,7 +153,7 @@ internal static class PrelaunchCharacterEndpoints
         var owner = Owner(http);
         var profile = await store.ReadAsync(owner, http.RequestAborted);
         var portrait = profile is null ? null : store.ReadPortrait(owner, profile.ProfileId, profile.Revision);
-        // Deliberate minimal projection: never return research, sources, generated wands or provider payloads.
+        // Return only reveal content and image attribution, never research or provider payloads.
         return new
         {
             character = profile is null ? null : new { profile.ProfileId, profile.Revision,
@@ -166,6 +166,7 @@ internal static class PrelaunchCharacterEndpoints
                 welcome = portrait.Welcome is { } welcome
                     ? new { joke = welcome.Joke, identity = welcome.Identity, teaser = welcome.Teaser }
                     : null,
+                source = portrait.Status == "ready" ? portrait.Source : null,
                 url = portrait.Status == "ready"
                     ? $"/app/v1/prelaunch/character/portrait?profileId={Uri.EscapeDataString(profile!.ProfileId)}&revision={profile.Revision}" : null }
         };
@@ -204,7 +205,8 @@ internal static class PrelaunchCharacterEndpoints
 }
 
 internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, CharacterProfileStore store,
-    ICharacterPortraitProvider provider, ILogger<CharacterPortraitWorker> logger) : BackgroundService
+    ICharacterPortraitProvider provider, ICharacterPortraitFallbackProvider fallback,
+    ILogger<CharacterPortraitWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -225,7 +227,7 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
         }
     }
 
-    private async Task ProcessAsync(CharacterPortraitJob job, CancellationToken stoppingToken)
+    internal async Task ProcessAsync(CharacterPortraitJob job, CancellationToken stoppingToken)
     {
         using var activity = BackendTelemetry.StartOperation("character.portrait.process");
         activity?.SetTag("app.operation_id", job.ProfileId);
@@ -284,26 +286,64 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
         if (!store.SetPortraitExperience(job, finalMessage, welcome)) { return; }
         using var imageDeadline = CancellationTokenSource.CreateLinkedTokenSource(activeWork.Token);
         imageDeadline.CancelAfter(TimeSpan.FromSeconds(180));
+        byte[]? image = null;
+        CharacterPortraitSource? source = null;
+        Exception? generationFailure = null;
         try
         {
-            var image = await provider.GeneratePortraitAsync(job, imageDeadline.Token);
-            if (!await IsCurrentAsync())
+            image = await provider.GeneratePortraitAsync(job, imageDeadline.Token);
+            if (image is not { Length: > 0 and <= 8 * 1024 * 1024 })
+            {
+                throw new InvalidDataException("Portrait size invalid.");
+            }
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            image = null;
+            generationFailure = error;
+            var reason = CharacterProviderFailure.Code(error);
+            if (activeWork.Token.IsCancellationRequested || stoppingToken.IsCancellationRequested || !await IsCurrentAsync())
             {
                 activity?.SetTag("app.outcome", "discarded");
                 return;
             }
-            using var completionAdmission = authority.AcquireAccount(job.AccountId, stoppingToken);
-            var completed = store.CompletePortrait(job, image, null, finalMessage, welcome);
-            activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
-            logger.LogInformation("Character portrait {Outcome} {ProfileId} {Revision} {Attempt}",
-                completed ? "completed" : "discarded", job.ProfileId, job.Revision, job.Attempt);
+            logger.LogWarning("Character portrait generation failed; searching for a source image ({Reason}).", reason);
+            try
+            {
+                // Claim leases last 240s; text, image and fallback budgets total at
+                // most 220s, leaving room for admission and the fenced write.
+                using var fallbackDeadline = CancellationTokenSource.CreateLinkedTokenSource(activeWork.Token);
+                fallbackDeadline.CancelAfter(TimeSpan.FromSeconds(20));
+                var found = await fallback.FindAsync(job, fallbackDeadline.Token);
+                if (found is not null)
+                {
+                    image = found.Image;
+                    source = found.Source;
+                }
+            }
+            catch (Exception fallbackError) when (fallbackError is not OutOfMemoryException)
+            {
+                logger.LogWarning("Character portrait internet fallback unavailable ({Reason}).", CharacterProviderFailure.Code(fallbackError));
+            }
         }
-        catch (Exception error) when (error is not OutOfMemoryException)
+        if (activeWork.Token.IsCancellationRequested || stoppingToken.IsCancellationRequested || !await IsCurrentAsync())
         {
-            var reason = CharacterProviderFailure.Code(error);
-            BackendTelemetry.Failed(activity, error, stoppingToken);
-            store.CompletePortrait(job, null, reason);
-            logger.LogWarning("Character portrait failed {ProfileId} {Revision} {Reason}", job.ProfileId, job.Revision, reason);
+            activity?.SetTag("app.outcome", "discarded");
+            return;
         }
+        using var completionAdmission = authority.AcquireAccount(job.AccountId, stoppingToken);
+        if (image is not null)
+        {
+            var completed = store.CompletePortrait(job, image, null, finalMessage, welcome, source);
+            activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
+            logger.LogInformation("Character portrait {Outcome} {ProfileId} {Revision} {Attempt}; internet fallback {InternetFallback}",
+                completed ? "completed" : "discarded", job.ProfileId, job.Revision, job.Attempt, source is not null);
+            return;
+        }
+        var failure = generationFailure ?? new InvalidDataException("Portrait missing.");
+        var failureCode = CharacterProviderFailure.Code(failure);
+        BackendTelemetry.Failed(activity, failure, stoppingToken);
+        store.CompletePortrait(job, null, failureCode);
+        logger.LogWarning("Character portrait failed {ProfileId} {Revision} {Reason}", job.ProfileId, job.Revision, failureCode);
     }
 }
