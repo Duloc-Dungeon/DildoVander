@@ -1,5 +1,15 @@
 # Pod pečetí — rozpracovaný checkpoint 2026-10-27
 
+## Navazující změna: AI hráči v lobby
+
+Implementováno přidání AI míst pouze pro ownera/zakladatele před uzavřením lobby,
+bez vytváření účtů. Owner může zůstat nesoutěžícím pozorovatelem bez zákaznické
+role. AI má vlastní omezený pohled, trvalé rozhodovací lease/retry a společné
+privacy/erase ochrany. Výchozí konfigurace je vypnutá; produkční AI ani deployment
+se touto změnou nespouštějí. Nové offline HTTP/browser regrese jsou zelené.
+Detaily a provozní nastavení: [AI-PLAYERS.md](AI-PLAYERS.md).
+
+
 ## Stav pokračování — 28. 10. 2026
 
 Hotové jsou hratelné serverové a klientské celky C1–M1: obě varianty, potvrzované

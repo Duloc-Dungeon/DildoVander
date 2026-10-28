@@ -7,7 +7,7 @@ export interface Plan {
   condition?: { kind: number; evidenceId?: string } | null; fallback?: string;
   lethalConfirmed?: boolean; preparedIntent?: number | null; resourceId?: string | null; summary?: string | null; defensePolicy?: number | null; shelteredPosition?: boolean | null;
 }
-export interface PlayerCard { id: string; name: string; seat: string; state: string; location: string | null; mask: string | null; portraitUrl: string | null }
+export interface PlayerCard { id: string; name: string; seat: string; state: string; location: string | null; mask: string | null; portraitUrl: string | null; isAi?: boolean }
 export interface Item { id: string; name: string; ownerId: string; transferable: boolean }
 export interface Clue { id: string; chain: string; family: string; candidates: string[]; sourceEvent: string }
 export interface Choice { id: string; label: string; benefit: string; cost: string; risk: string; plan: Plan }
@@ -16,7 +16,7 @@ export interface Play {
   id: string; phase: string; serverNow: number; chapter: number; chapters: number;
   planningEndsAt: number | null; quietEndsAt: number | null; finaleEndsAt: number | null;
   expectedPlayers: number; readyPlayers: number; ownId: string; ownReady: boolean; ownScenarioConsent: boolean;
-  canManage: boolean; canStart: boolean; lobbyRevision: number | null; ownState: string;
+  canManage: boolean; canStart: boolean; canJoin?: boolean; canManageAi?: boolean; aiAvailable?: boolean; lobbyRevision: number | null; ownState: string;
   ownTeam: string | null; ownKit: string | null; teamMembers: string[]; location: string | null;
   locations: Record<string, string>; adjacentLocations: string[]; players: PlayerCard[];
   ownPlan: (Plan & { id: string; revision: number; actorId: string }) | null; choices: Choice[];
@@ -44,6 +44,11 @@ export const phaseNames: Record<string, string> = { lobby: 'Příprava případu
 export function errorText(error: unknown): string {
   const code = error instanceof SealedError ? error.code : '';
   const copy: Record<string, string> = {
+    sealed_case_owner_required: 'AI hráče může přidávat jen owner, který případ založil.',
+    sealed_case_ai_unavailable: 'AI pro tento večer není zapnutá nebo nemá dostupné připojení. Žádné místo se nepřidalo.',
+    sealed_case_invalid_ai_count: 'Zvol celý počet AI hráčů v mezích volných míst.',
+    sealed_case_lobby_locked: 'Obsazení už je uzavřené. AI hráče do něj teď přidat nelze.',
+    revision_conflict: 'Obsazení se mezitím změnilo. Obnov stav a porovnej počet volných míst.',
     sealed_case_character_required: 'Nejprve si ulož svou postavu.',
     sealed_case_lobby_full: 'Všechna místa už mají své hosty.',
     sealed_case_roster_invalidated: 'Obsazení se změnilo. Organizátor musí připravit nový případ.',

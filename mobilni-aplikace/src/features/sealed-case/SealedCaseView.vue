@@ -11,11 +11,19 @@ import { errorText, intentNames, intentText, resultText, reasonText, operation, 
 import '../game/game.css';
 
 const route = useRoute(); const router = useRouter();
+let mutationFailure: SealedError | undefined;
 const view = ref<Play>(); const loading = ref(false); const busy = ref(false); const error = ref('');
 const disconnectId = ref(''); const disconnectConfirmed = ref(false);
 const count = ref(8); const variant = ref('first'); const consent = ref(false);
+const tabs = computed(() => view.value?.ownState === 'Operator'
+  ? [{ id: 'story', text: 'Příběh' }, { id: 'messages', text: 'Rozhovory' }]
+  : [{ id: 'story', text: 'Příběh' }, { id: 'action', text: 'Moje akce' }, { id: 'journal', text: 'Deník' }, { id: 'messages', text: 'Rozhovory' }]);
 const tab = ref('story'); const draft = ref<Plan>(); const pending = ref<{ operationId: string; plan: Plan }>();
 const createKey = () => account.value ? `dv:sealed-create:${account.value.id}` : '';
+const aiCount = ref(1);
+const aiPending = ref<{ operationId: string; expectedRevision: number; count: number }>();
+const aiKey = () => account.value && view.value ? `dv:sealed-ai-add:${account.value.id}:${view.value.id}` : '';
+const aiRemaining = computed(() => view.value ? view.value.expectedPlayers - view.value.readyPlayers : 0);
 const oversight = ref<string | null>(null);
 const message = ref(''); const recipient = ref('PUBLIC'); const ballot = ref<string[]>([]); const personalText = ref('');
 const pane = ref<'own' | 'experienced' | 'presented' | 'planned'>('experienced');
@@ -53,6 +61,23 @@ function saveDraft() {
   if (!key()) return;
   try { localStorage.setItem(key(), JSON.stringify({ draft: draft.value, pending: pending.value, personalText: personalText.value })); } catch { /* Offline draft remains in memory. */ }
 }
+function restoreAiRequest() {
+  try { const stored = JSON.parse(localStorage.getItem(aiKey()) ?? 'null'); if (stored?.operationId) aiPending.value = stored; } catch { /* No automatic submission. */ }
+}
+async function addAiPlayers(fill = false) {
+  const v = view.value; if (!v?.canManageAi || busy.value) return;
+  aiPending.value ??= { operationId: operation(), expectedRevision: v.lobbyRevision!, count: fill ? aiRemaining.value : aiCount.value };
+  const storageKey = aiKey();
+  try { localStorage.setItem(storageKey, JSON.stringify(aiPending.value)); } catch { /* Keep the exact pending operation in memory. */ }
+  if (await mutate('/ai-players', aiPending.value)) {
+    try { localStorage.removeItem(storageKey); } catch { /* Storage may be unavailable. */ } aiPending.value = undefined;
+  } else if (mutationFailure && [400, 403, 404, 409].includes(mutationFailure.status)) {
+    // A definitive rejection never accepted this operation; a network failure
+    // keeps its exact key for recovery instead.
+    const message = error.value;
+    try { localStorage.removeItem(storageKey); } catch { /* Storage may be unavailable. */ } aiPending.value = undefined; await refresh(); error.value = message;
+  }
+}
 function restoreDraft() {
   if (!key()) return;
   try {
@@ -75,7 +100,7 @@ async function refresh() {
     const fresh = await request<Play>(`/${encodeURIComponent(id.value)}/play`, undefined, requestScope.signal);
     if (current !== generation) return;
     view.value = fresh; consent.value = fresh.ownScenarioConsent;
-    if (previousId !== fresh.id) restoreDraft();
+    if (previousId !== fresh.id) { restoreDraft(); restoreAiRequest(); }
     error.value = '';
   } catch (cause) {
     if (requestScope.signal.aborted || current !== generation) return;
@@ -90,9 +115,9 @@ async function refresh() {
 }
 async function mutate(path: string, body: unknown) {
   if (busy.value) return false;
-  busy.value = true; error.value = '';
+  busy.value = true; error.value = ''; mutationFailure = undefined;
   try { await request(`/${encodeURIComponent(id.value)}${path}`, body); await refresh(); return true; }
-  catch (cause) { error.value = errorText(cause); return false; }
+  catch (cause) { mutationFailure = cause instanceof SealedError ? cause : undefined; error.value = errorText(cause); return false; }
   finally { busy.value = false; }
 }
 async function create() {
@@ -140,8 +165,8 @@ async function vote(abstain = false) {
 const ballotCandidates = computed(() => view.value?.players.filter(p => p.id !== view.value!.ownId
   && (view.value!.finale?.phase !== 'runoff' || view.value!.finale.runoffCandidates.includes(p.id))) ?? []);
 watch(draft, saveDraft, { deep: true }); watch(personalText, saveDraft);
-watch(() => route.params.id, () => { generation++; controller?.abort(); view.value = undefined; draft.value = undefined; pending.value = undefined; loading.value = false; void refresh(); });
-watch(() => account.value?.id, () => { generation++; controller?.abort(); if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; pending.value = undefined; });
+watch(() => route.params.id, () => { generation++; controller?.abort(); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; loading.value = false; void refresh(); });
+watch(() => account.value?.id, () => { generation++; controller?.abort(); if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; });
 function resume() { if (document.visibilityState === 'visible') void refresh(); }
 onMounted(() => { void refresh(); window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume); });
 onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); });
@@ -164,18 +189,28 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
       <p role="status">{{ phaseNames[view.phase] ?? view.phase }}<template v-if="view.chapter"> · kapitola {{ view.chapter }}/{{ view.chapters }}</template><template v-if="deadline && view.phase !== 'paused'"> · do {{ deadline }}</template></p>
       <PaperSurface v-if="view.phase === 'lobby'" class="game-paper">
         <h2>Místa u stolu</h2><p>{{ view.readyPlayers }} z {{ view.expectedPlayers }} postav je připraveno.</p>
-        <label><input v-model="consent" type="checkbox" /> Přijímám scénářovou minulost své postavy, soukromý herní snapshot a závěrečnou rekonstrukci významných příkazů. Celé soukromé rozhovory se automaticky nezveřejní.</label>
+        <template v-if="view.canJoin !== false"><label><input v-model="consent" type="checkbox" /> Přijímám scénářovou minulost své postavy, soukromý herní snapshot a závěrečnou rekonstrukci významných příkazů. Celé soukromé rozhovory se automaticky nezveřejní.</label>
         <AwButton v-if="!view.ownReady || !view.ownScenarioConsent" variant="primary" :disabled="!consent" :busy="busy" @click="ready">Připojit mou postavu</AwButton>
-        <p v-else>Tvoje postava je připravená. Další výmluvy až při výslechu.</p>
+        <p v-else>Tvoje postava je připravená. Další výmluvy až při výslechu.</p></template><p v-else>Řídíš případ jako nesoutěžící pozorovatel. Nemáš přístup k soukromým pohledům hráčů.</p>
         <AwButton v-if="view.canManage" :disabled="!view.canStart" :busy="busy" @click="mutate('/start', { operationId: operation(), expectedRevision: view.lobbyRevision })">Zahájit případ</AwButton>
+        <section v-if="view.canManageAi" aria-labelledby="sealed-ai-title"><h3 id="sealed-ai-title">AI hráči</h3>
+          <p>Hrají samostatně a zabírají stejná místa jako ostatní. Po uzavření obsazení už hráče nevyměníš.</p>
+          <p v-if="!view.aiAvailable" role="status">AI pro tento večer není zapnutá. Nová místa se nepřidají.</p>
+          <template v-else-if="aiRemaining > 0"><p>Volná místa: {{ aiRemaining }}. AI služba může čerpat rozpočet večera; jeden hráč má nejvýše osm rozhodnutí za partii.</p>
+            <label>Počet AI hráčů<input v-model.number="aiCount" type="number" min="1" :max="aiRemaining" step="1" /></label>
+            <AwButton :busy="busy" :disabled="!Number.isInteger(aiCount) || aiCount < 1 || aiCount > aiRemaining || !!aiPending" @click="addAiPlayers()">Přidat AI hráče</AwButton>
+            <AwButton :busy="busy" :disabled="!!aiPending" @click="addAiPlayers(true)">Doplnit volná místa AI</AwButton>
+          </template>
+          <AwButton v-if="aiPending" :busy="busy" @click="addAiPlayers()">Ověřit původní přidání AI</AwButton>
+        </section>
         <RouterLink to="/me/character">Moje postava a portrét</RouterLink>
       </PaperSurface>
       <template v-else>
         <PaperSurface class="game-paper"><h2>Tvoje místo v případu</h2><p>{{ !view.ownTeam ? 'Organizátor případu' : view.ownTeam === 'Conspirator' ? 'Spiklenec' : 'Strážce' }} · {{ ({ Badatel: 'Badatel', Strazce: 'Strážce', Stopar: 'Stopař', Prostrednik: 'Prostředník', Iluzionista: 'Iluzionista', Rezonator: 'Rezonátor' } as Record<string, string>)[view.ownKit ?? ''] ?? view.ownKit }} · {{ view.locations[view.location ?? ''] }}</p>
-          <p>{{ ({ Awake: 'Bdělý', Sleeping: 'Spící', Unconscious: 'V bezvědomí', Echo: 'Ozvěna' } as Record<string, string>)[view.ownState] ?? view.ownState }}</p>
+          <p>{{ ({ Awake: 'Bdělý', Sleeping: 'Spící', Unconscious: 'V bezvědomí', Echo: 'Ozvěna', Operator: 'Nesoutěžící pozorovatel' } as Record<string, string>)[view.ownState] ?? view.ownState }}</p>
           <p v-if="view.ownOversight">Pro tuto kapitolu ti byl svěřen dohled.</p><p v-if="view.teamMembers.length">Tvoji Spiklenci: {{ view.teamMembers.map(name).join(', ') }}</p>
         </PaperSurface>
-        <nav aria-label="Pohledy na případ" class="sealed-tabs"><AwButton v-for="item in [{ id: 'story', text: 'Příběh' }, { id: 'action', text: 'Moje akce' }, { id: 'journal', text: 'Deník' }, { id: 'messages', text: 'Rozhovory' }]" :key="item.id" :aria-pressed="tab === item.id" @click="tab = item.id">{{ item.text }}</AwButton></nav>
+        <nav aria-label="Pohledy na případ" class="sealed-tabs"><AwButton v-for="item in tabs" :key="item.id" :aria-pressed="tab === item.id" @click="tab = item.id">{{ item.text }}</AwButton></nav>
         <PaperSurface v-if="tab === 'story'" class="game-paper"><h2>Dům má připomínky</h2><p>{{ view.publicNarration?.text ?? "Pečeť byla narušena před začátkem tvých tahů. Potvrzené příkazy teprve rozhodnou, co se stane dál." }}</p>
           <p v-if="view.phase === 'quiet'">Hotovo. Telefon teď může stranou. Další kapitola začíná v {{ deadline }}.</p>
           <p v-if="view.phase === 'paused'">Společná pauza. Potvrzené plány zůstávají uložené.</p>
@@ -183,7 +218,7 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
           <AwButton v-if="view.canManage && !['finished', 'paused'].includes(view.phase)" :busy="busy" @click="mutate('/pause', { operationId: operation() })">Společná pauza</AwButton>
           <AwButton v-if="view.canManage && view.phase === 'paused'" :busy="busy" @click="mutate('/resume', { operationId: operation() })">Obnovit případ</AwButton>
         </PaperSurface>
-        <PaperSurface v-if="tab === 'action'" class="game-paper"><h2>Moje akce</h2>
+        <PaperSurface v-if="tab === 'action' && view.ownState !== 'Operator'" class="game-paper"><h2>Moje akce</h2>
           <p v-if="view.ownPlan">Přijatá verze {{ view.ownPlan.revision }}: {{ intentNames[view.ownPlan.intent] }}. Přijetí nepotvrzuje úspěch.</p>
           <p v-else>Žádný potvrzený plán. Při uzávěrce vyčkáváš na svém místě.</p>
           <div v-if="view.phase === 'planning'" class="sealed-choices"><AwButton v-for="choice in view.choices" :key="choice.id" @click="choose(choice.plan)"><strong>{{ choice.label }}</strong><span>{{ choice.benefit }}</span><small>{{ choice.cost }} · {{ choice.risk }}</small></AwButton></div>
@@ -206,7 +241,7 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
           <template v-if="view.phase === 'planning'"><label>Nepovinné doporučení dohledu<select v-model="oversight"><option :value="null">Zdržuji se</option><option v-for="player in view.players.filter(p => p.id !== view!.ownId && !p.state.includes('Ozvěna'))" :key="player.id" :value="player.id">{{ player.name }}</option></select></label><AwButton :busy="busy" @click="mutate('/oversight', { operationId: operation(), chapter: view.chapter, nominee: oversight })">Uložit doporučení</AwButton></template>
           <AwButton v-if="pending" :busy="busy" @click="retryPending">Ověřit původní potvrzení</AwButton>
         </PaperSurface>
-        <PaperSurface v-if="tab === 'journal'" class="game-paper"><h2>Můj deník</h2>
+        <PaperSurface v-if="tab === 'journal' && view.ownState !== 'Operator'" class="game-paper"><h2>Můj deník</h2>
           <nav aria-label="Čtyři oddělené kontexty" class="sealed-tabs"><AwButton v-for="item in [{ id: 'experienced', label: 'Zažil jsem' }, { id: 'presented', label: 'Tvrdil jsem' }, { id: 'planned', label: 'Naplánoval jsem' }, { id: 'own', label: 'Doložené stopy' }]" :key="item.id" @click="selectPane(item.id)">{{ item.label }}</AwButton></nav>
           <ul v-if="pane === 'experienced'"><li v-for="(note, index) in view.notes" :key="index">{{ note }}</li></ul>
           <ul v-if="pane === 'presented'"><li v-for="statement in view.statements.filter(s => s.actor === view!.ownId)" :key="statement.id">Tvrzení: {{ statement.body }}</li></ul>
@@ -215,8 +250,8 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
         </PaperSurface>
         <PaperSurface v-if="tab === 'messages'" class="game-paper"><h2>Rozhovory</h2><p>Tvrzení není důkaz. Soukromý vzkaz dostane jen zvolený adresát.</p>
           <ol><li v-for="statement in view.statements" :key="statement.id"><strong>{{ name(statement.actor) }} · {{ statement.public ? 'veřejně' : 'soukromě' }}</strong><p>{{ statement.body }}</p></li></ol>
-          <label>Komu<select v-model="recipient"><option value="PUBLIC">Všem v případu</option><option v-for="player in view.players.filter(p => p.id !== view!.ownId)" :key="player.id" :value="player.id">{{ player.name }}</option></select></label>
-          <label>Zpráva<textarea v-model="message" maxlength="1200" /></label><AwButton :busy="busy" :disabled="!message.trim()" @click="sendMessage">Odeslat tvrzení</AwButton>
+          <template v-if="view.ownState !== 'Operator'"><label>Komu<select v-model="recipient"><option value="PUBLIC">Všem v případu</option><option v-for="player in view.players.filter(p => p.id !== view!.ownId)" :key="player.id" :value="player.id">{{ player.name }}</option></select></label>
+          <label>Zpráva<textarea v-model="message" maxlength="1200" /></label><AwButton :busy="busy" :disabled="!message.trim()" @click="sendMessage">Odeslat tvrzení</AwButton></template>
         </PaperSurface>
         <PaperSurface v-if="view.finale" class="game-paper"><h2>Poslední zvon</h2>
           <template v-if="['ballot', 'runoff'].includes(view.finale.phase)"><p>Vyber {{ view.finale.phase === 'runoff' ? view.finale.runoffPlaces : view.finale.ballotSize }} ostatní hráče, nebo se zdrž hlasu. Každý původní hráč má hlas i jako Ozvěna.</p>
@@ -224,7 +259,7 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
             <AwButton :busy="busy" @click="vote()">Potvrdit tajný hlas</AwButton><AwButton :busy="busy" @click="vote(true)">Zdržet se</AwButton><p v-if="view.finale.ownSubmitted">Tvůj hlas je uložený.</p>
           </template>
           <p v-else-if="!view.finale.winner">Hlasování nebo vyhodnocení ještě neskončilo. Dům si zkratku do pravdy nepřipravil.</p>
-          <template v-else><article v-if="medallion"><h3>Tvá stopa v případu</h3><p><strong>{{ medallion.name }}</strong> · {{ medallion.team }}</p><p>{{ medallion.text }}</p></article><AwButton @click="exportMemory(false)">Stáhnout veřejnou rekonstrukci</AwButton><AwButton @click="exportMemory(true)">Uložit vlastní vzpomínku</AwButton><p>Vlastní vzpomínka obsahuje tvé zkušenosti a získané stopy. Soukromé rozhovory se do exportu nevkládají.</p><h3>Vítězí {{ view.finale.winner }}.</h3><p>Označení: {{ view.finale.selected?.map(name).join(', ') }}. Spiklenci: {{ view.finale.conspirators?.map(name).join(', ') }}.</p>
+          <template v-else><article v-if="medallion"><h3>Tvá stopa v případu</h3><p><strong>{{ medallion.name }}</strong> · {{ medallion.team }}</p><p>{{ medallion.text }}</p></article><AwButton @click="exportMemory(false)">Stáhnout veřejnou rekonstrukci</AwButton><AwButton v-if="view.ownTeam" @click="exportMemory(true)">Uložit vlastní vzpomínku</AwButton><p>Vlastní vzpomínka obsahuje tvé zkušenosti a získané stopy. Soukromé rozhovory se do exportu nevkládají.</p><h3>Vítězí {{ view.finale.winner }}.</h3><p>Označení: {{ view.finale.selected?.map(name).join(', ') }}. Spiklenci: {{ view.finale.conspirators?.map(name).join(', ') }}.</p>
             <ol><li v-for="(entry, index) in view.finale.reconstruction" :key="index">{{ entry.chapter }} · {{ name(entry.actor) }} · {{ intentText(entry.intent) }} → {{ resultText(entry.result) }}<span v-if="entry.rolls"> · hod {{ entry.rolls.attack }} proti {{ entry.rolls.defense }}, součty {{ entry.rolls.attackTotal }} : {{ entry.rolls.defenseTotal }}</span><span v-if="entry.reason"> · {{ reasonText(entry.reason) }}</span><small> {{ entry.eventRef }}</small></li></ol>
           </template>
         </PaperSurface>
@@ -233,7 +268,7 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
         <label>Odpojená postava<select v-model="disconnectId"><option value="">Vyber postavu</option><option v-for="player in view.players" :key="player.id" :value="player.id">{{ player.name }}</option></select></label>
         <label><input v-model="disconnectConfirmed" type="checkbox" /> Potvrzuji, že tato postava už v partii nepokračuje.</label>
         <AwButton :busy="busy" :disabled="!disconnectId || !disconnectConfirmed" @click="mutate('/disconnect', { operationId: operation(), playerId: disconnectId })">Zapsat odpojení</AwButton></PaperSurface>
-      <PaperSurface class="game-paper"><h2>Postavy u stolu</h2><ul class="sealed-roster"><li v-for="player in view.players" :key="player.id"><SealedPortrait v-if="player.portraitUrl" :src="player.portraitUrl" :viewer="view.ownId" :name="player.name" /><span><strong>{{ player.name }}</strong><small>{{ player.seat }} · {{ ({ Awake: 'Bdělý', Sleeping: 'Spící', Unconscious: 'V bezvědomí', Echo: 'Ozvěna' } as Record<string, string>)[player.state] ?? player.state }}<template v-if="player.mask"> · prezentace: {{ player.mask }}</template></small></span></li></ul></PaperSurface>
+      <PaperSurface class="game-paper"><h2>Postavy u stolu</h2><ul class="sealed-roster"><li v-for="player in view.players" :key="player.id"><SealedPortrait v-if="player.portraitUrl" :src="player.portraitUrl" :viewer="view.ownId" :name="player.name" /><span><strong>{{ player.name }}<template v-if="player.isAi"> · AI</template></strong><small>{{ player.seat }} · {{ ({ Awake: 'Bdělý', Sleeping: 'Spící', Unconscious: 'V bezvědomí', Echo: 'Ozvěna', Operator: 'Nesoutěžící pozorovatel' } as Record<string, string>)[player.state] ?? player.state }}<template v-if="player.mask"> · prezentace: {{ player.mask }}</template></small></span></li></ul></PaperSurface>
     </template>
   </div></SceneShell>
 </template>

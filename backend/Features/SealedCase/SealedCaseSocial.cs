@@ -29,7 +29,7 @@ internal sealed partial class SealedCaseStore
     }
 
     internal SealedCaseActionReceipt PostStatement(string caseId, string group, string actor, string operationId,
-        string body, string[] recipients, bool isPublic, Func<CustomerAdmissionGuard> authorize)
+        string body, string[] recipients, bool isPublic, Func<IDisposable> authorize)
     {
         body = body.Trim();
         if (body.Length is < 1 or > 1200 || body.Any(c => char.IsControl(c) && c is not '\n' and not '\r' and not '\t') || recipients.Length > 30
@@ -47,7 +47,7 @@ internal sealed partial class SealedCaseStore
     }
 
     internal SealedCaseActionReceipt Vote(string caseId, string group, string actor, string operationId,
-        SealedBallot ballot, Func<CustomerAdmissionGuard> authorize)
+        SealedBallot ballot, Func<IDisposable> authorize)
         => AppendSocial(caseId, group, actor, operationId, "ballot", ballot, authorize, (connection, transaction, revision) =>
         {
             if (Disconnected(connection, transaction, caseId).Contains(actor)) { throw new SealedCasePersistenceException("sealed_case_disconnected", 409); }
@@ -69,12 +69,16 @@ internal sealed partial class SealedCaseStore
         });
 
     private SealedCaseActionReceipt AppendSocial(string caseId, string group, string actor, string operationId, string kind,
-        object request, Func<CustomerAdmissionGuard> authorize, Func<SqliteConnection, SqliteTransaction, long, object> validate, bool allowOperator = false)
+        object request, Func<IDisposable> authorize, Func<SqliteConnection, SqliteTransaction, long, object> validate, bool allowOperator = false)
     {
         if (string.IsNullOrWhiteSpace(operationId) || operationId.Length is < 8 or > 128) { throw new SealedCasePersistenceException("invalid_operation_id", 400); }
         var fingerprint = SealedScenario.Digest("request", kind, JsonSerializer.Serialize(request, Json));
         using var connection = Open(); using var transaction = connection.BeginTransaction(deferred: false);
-        using var admission = AcquireCaseAccess(connection, transaction, caseId, () => DemandPlayerAdmission(authorize, actor, group), actor);
+        using var admission = AcquireCaseAccess(connection, transaction, caseId, () =>
+        {
+            var held = authorize();
+            return DemandAiOrPlayerAdmission(connection, transaction, caseId, group, actor, () => held, held is CustomerAccountAdmission, allowOwner: allowOperator);
+        }, actor);
         var revision = ReadCaseRevision(connection, transaction, caseId, group);
         if (!allowOperator) { DemandRosterMember(connection, transaction, caseId, actor); }
         using var previous = connection.CreateCommand(); previous.Transaction = transaction;

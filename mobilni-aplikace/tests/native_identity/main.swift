@@ -1275,7 +1275,7 @@ for read in ["play", "context", "moderator", "portraits/player_1"] {
     require(AccountTransportPolicy.account(path: sealedCase + "/" + read, method: "GET"), "case read unavailable")
     require(!AccountTransportPolicy.account(path: sealedCase + "/" + read, method: "POST"), "case read became mutable")
 }
-for write in ["lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent"] {
+for write in ["lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent", "ai-players"] {
     require(AccountTransportPolicy.account(path: sealedCase + "/" + write, method: "POST"), "case write unavailable")
     require(!AccountTransportPolicy.account(path: sealedCase + "/" + write, method: "GET"), "case write became readable")
 }

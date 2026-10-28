@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kufr.Backend.Features.SealedCase;
 
-internal sealed record SealedPlayerCard(string Id, string Name, string Seat, string State, string? Location, string? Mask, string? PortraitUrl);
+internal sealed record SealedPlayerCard(string Id, string Name, string Seat, string State, string? Location, string? Mask, string? PortraitUrl, bool IsAi = false);
 internal sealed record SealedClueView(string Id, string Chain, string Family, string[] Candidates, string SourceEvent);
 internal sealed record SealedSource(string Id, string Label);
 internal sealed record SealedChoice(string Id, string Label, string Benefit, string Cost, string Risk, SealedPlanConfirmation Plan);
@@ -20,7 +20,7 @@ internal sealed record SealedPlayView(string Id, string Phase, long ServerNow, i
     string OwnState, string? OwnTeam, string? OwnKit, string[] TeamMembers, string? Location,
     Dictionary<string, string> Locations, string[] AdjacentLocations, SealedPlayerCard[] Players,
     SealedAction? OwnPlan, SealedChoice[] Choices, SealedClueView[] Clues, SealedItem[] OwnItems, SealedItem[] VisibleItems,
-    string[] Notes, SealedStatement[] Statements, SealedRecap[] OwnOutcomes, SealedFinaleView? Finale, SealedSource[]? Sources = null, bool OwnOversight = false)
+    string[] Notes, SealedStatement[] Statements, SealedRecap[] OwnOutcomes, SealedFinaleView? Finale, SealedSource[]? Sources = null, bool OwnOversight = false, bool CanManageAi = false, bool AiAvailable = false, bool CanJoin = true)
 {
     public SealedNarration PublicNarration => SealedCaseAi.Factual(this, true);
     public SealedNarration PrivateNarration => SealedCaseAi.Factual(this, false);
@@ -35,11 +35,11 @@ internal sealed partial class SealedCaseStore
         return query.ExecuteScalar() is string json ? JsonSerializer.Deserialize<SealedStoredRosterMember[]>(json, Json)! : [];
     }
 
-    private static CustomerAdmissionGuard DemandPlayerAdmission(Func<CustomerAdmissionGuard> authorize, string actor, string group)
+    private static CustomerAdmissionGuard DemandPlayerAdmission(Func<CustomerAdmissionGuard> authorize, string actor, string group, bool allowOwner = false)
     {
         var held = authorize();
         if (held.Proof.AccountId == actor && held.Proof.LaunchGroupId == group && held.Proof.LaunchGroupRevokedAt is null
-            && held.Proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)) { return held; }
+            && (held.Proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal) || allowOwner && held.Proof.Roles.Contains(AccountRoles.Owner, StringComparer.Ordinal))) { return held; }
         held.Dispose(); throw new SealedCasePersistenceException("case_not_found", 404);
     }
 
@@ -55,7 +55,7 @@ internal sealed partial class SealedCaseStore
     {
         if (string.IsNullOrWhiteSpace(operationId) || operationId.Length is < 8 or > 128) { throw new SealedCasePersistenceException("invalid_operation_id", 400); }
         using var connection = Open(); using var transaction = connection.BeginTransaction(deferred: false);
-        using var admission = AcquireCaseAccess(connection, transaction, caseId, () => DemandPlayerAdmission(authorize, actor, groupId), actor);
+        using var admission = AcquireCaseAccess(connection, transaction, caseId, () => DemandPlayerAdmission(authorize, actor, groupId, allowOwner: true), actor);
         var revision = ReadCaseRevision(connection, transaction, caseId, groupId);
         using var setupQuery = connection.CreateCommand(); setupQuery.Transaction = transaction;
         setupQuery.CommandText = "SELECT setup_json,status FROM sealed_cases WHERE id=$case"; setupQuery.Parameters.AddWithValue("$case", caseId);
@@ -80,7 +80,7 @@ internal sealed partial class SealedCaseStore
         var expected = setup.RootElement.GetProperty("expectedPlayers").GetInt32();
         if (status != "lobby" || members.Length != expected) { throw new SealedCasePersistenceException("sealed_case_lobby_not_ready", 409); }
         var allowed = eligible();
-        if (members.Any(m => !allowed.Contains(m.AccountId))) { throw new SealedCasePersistenceException("sealed_case_roster_invalidated", 409); }
+        if (members.Any(m => !m.IsAi && !allowed.Contains(m.AccountId))) { throw new SealedCasePersistenceException("sealed_case_roster_invalidated", 409); }
         var latest = LobbyEntries(connection, transaction, caseId);
         if (members.Any(m => !latest.TryGetValue(m.AccountId, out var entry) || !entry.ScenarioConsent))
         { throw new SealedCasePersistenceException("sealed_case_scenario_consent_required", 409); }
@@ -123,33 +123,55 @@ internal sealed partial class SealedCaseStore
         {
             var id = consents.GetString(0); if (latest.TryGetValue(id, out var entry)) { latest[id] = entry with { ScenarioConsent = true }; }
         }
+        consents.Close();
+        foreach (var bot in AiPlayers(connection, transaction, caseId))
+        { latest[bot.Key] = new(bot.Key, true, true, "ai:" + bot.Key, true); }
         return latest;
     }
 
     internal void AdvancePlayableCase(string caseId, string groupId, string actor, Func<CustomerAdmissionGuard> authorize)
+        => AdvancePlayableCaseCore(caseId, groupId, () => DemandPlayerAdmission(authorize, actor, groupId, allowOwner: true));
+
+    internal void AdvanceAiCase(string caseId, string groupId, Func<IDisposable> authorize)
+        => AdvancePlayableCaseCore(caseId, groupId, authorize);
+
+    private void AdvancePlayableCaseCore(string caseId, string groupId, Func<IDisposable> authorize)
     {
         for (var attempt = 0; attempt < 12; attempt++)
         {
             SealedStoredWorld world;
             try { world = ReadWorld(caseId, groupId); }
             catch (SealedCasePersistenceException error) when (error.Code == "world_not_initialized") { return; }
-            var timing = ReadTimeline(caseId, groupId, () => DemandPlayerAdmission(authorize, actor, groupId));
+            var timing = ReadTimeline(caseId, groupId, authorize);
             if (timing.PausedAt is not null) { return; }
             var schedule = SealedCaseRules.Schedule(timing.Variant, timing.OriginalPlayers);
             var next = world.LastChapter + 1;
             var deadline = timing.IntroductionEndsAt + (next - 1L) * (schedule.PlanningSeconds + schedule.QuietSeconds) + schedule.PlanningSeconds;
             if (next > schedule.Chapters || clock.GetUtcNow().ToUnixTimeSeconds() < deadline) { return; }
-            try { ResolveConfirmedChapter(caseId, groupId, next, world.Revision, () => DemandPlayerAdmission(authorize, actor, groupId)); }
+            try { ResolveConfirmedChapter(caseId, groupId, next, world.Revision, authorize); }
             catch (SealedCasePersistenceException error) when (error.Code is "revision_conflict" or "resolved_chapter_conflict") { }
         }
     }
 
     internal SealedPlayView ReadPlay(string caseId, string groupId, string actor, Func<CustomerAdmissionGuard> authorize)
+        => ReadPlayCore(caseId, groupId, actor, () => authorize(), null);
+
+    internal SealedPlayView ReadAiPlay(string caseId, string groupId, string bot, Func<CustomerAccountAdmission> authorize)
+        => ReadPlayCore(caseId, groupId, bot, () => authorize(), bot);
+
+    private SealedPlayView ReadPlayCore(string caseId, string groupId, string actor, Func<IDisposable> authorize, string? aiPlayer)
     {
         using var connection = Open(); using var transaction = connection.BeginTransaction(deferred: true);
-        CustomerAdmissionGuard? playerAdmission = null;
-        using var admission = AcquireCaseAccess(connection, transaction, caseId, () => playerAdmission = DemandPlayerAdmission(authorize, actor, groupId), actor);
-        using var eligibleQuery = playerAdmission!.AccountReservation.Command("""
+        IDisposable? playerAdmission = null;
+        using var admission = AcquireCaseAccess(connection, transaction, caseId,
+            () => playerAdmission = DemandAiOrPlayerAdmission(connection, transaction, caseId, groupId, actor, authorize, aiPlayer is not null, allowOwner: true), actor);
+        var reservation = playerAdmission switch
+        {
+            CustomerAdmissionGuard human => human.AccountReservation,
+            CustomerAccountAdmission owner => owner.AccountReservation,
+            _ => throw new SealedCasePersistenceException("case_not_found", 404)
+        };
+        using var eligibleQuery = reservation.Command("""
             SELECT user.Id FROM AspNetUsers user WHERE user.LaunchGroupId=$group AND user.LaunchGroupRevokedAt IS NULL
                 AND user.Disabled=0 AND NOT EXISTS(SELECT 1 FROM DeletionRequests deletion WHERE deletion.UserId=user.Id)
                 AND EXISTS(SELECT 1 FROM AspNetUserRoles membership JOIN AspNetRoles role ON role.Id=membership.RoleId WHERE membership.UserId=user.Id AND role.Name=$customer)
@@ -157,12 +179,16 @@ internal sealed partial class SealedCaseStore
         eligibleQuery.Parameters.AddWithValue("$group", groupId); eligibleQuery.Parameters.AddWithValue("$customer", AccountRoles.Customer);
         var eligible = new HashSet<string>(StringComparer.Ordinal);
         using (var reader = eligibleQuery.ExecuteReader()) { while (reader.Read()) { eligible.Add(reader.GetString(0)); } }
+        var bots = AiPlayers(connection, transaction, caseId);
+        eligible.UnionWith(bots.Keys);
         var revision = ReadCaseRevision(connection, transaction, caseId, groupId);
         using var query = connection.CreateCommand(); query.Transaction = transaction;
         query.CommandText = "SELECT setup_json FROM sealed_cases WHERE id=$case"; query.Parameters.AddWithValue("$case", caseId);
         using var setup = JsonDocument.Parse((string)query.ExecuteScalar()!);
         var expected = setup.RootElement.GetProperty("expectedPlayers").GetInt32(); var variant = setup.RootElement.GetProperty("variant").GetString()!;
-        var canManage = setup.RootElement.GetProperty("createdBy").GetString() == actor;
+        var canManage = aiPlayer is null && setup.RootElement.GetProperty("createdBy").GetString() == actor;
+        var canManageAi = canManage && playerAdmission is CustomerAdmissionGuard humanAdmission
+            && humanAdmission.Proof.Roles.Contains(AccountRoles.Owner, StringComparer.Ordinal);
         var latest = LobbyEntries(connection, transaction, caseId); latest.TryGetValue(actor, out var ownEntry);
         var members = RosterMembers(connection, transaction, caseId);
         var names = new Dictionary<string, string>(StringComparer.Ordinal); var portraits = new HashSet<string>(StringComparer.Ordinal);
@@ -175,6 +201,7 @@ internal sealed partial class SealedCaseStore
                 if (reader.GetBoolean(2)) { portraits.Add(reader.GetString(0)); }
             }
         }
+        foreach (var bot in bots) { names[bot.Key] = bot.Value; }
         var now = clock.GetUtcNow().ToUnixTimeSeconds();
         var locations = SealedScenario.Definition.GetProperty("map").GetProperty("zones").EnumerateArray()
             .ToDictionary(z => z.GetProperty("id").GetString()!, z => z.GetProperty("name").GetString()!, StringComparer.Ordinal);
@@ -187,24 +214,26 @@ internal sealed partial class SealedCaseStore
         {
             var lobbyPlayers = latest.Values.Where(e => e.Ready && e.SnapshotRef is not null && eligible.Contains(e.PlayerId)).Select(e =>
                 new SealedPlayerCard(e.PlayerId, names.GetValueOrDefault(e.PlayerId, "Host"), "", "Připraven", null, null,
-                    portraits.Contains(e.PlayerId) ? $"/app/v1/sealed-cases/{caseId}/portraits/{e.PlayerId}" : null)).ToArray();
+                    portraits.Contains(e.PlayerId) ? $"/app/v1/sealed-cases/{caseId}/portraits/{e.PlayerId}" : null, bots.ContainsKey(e.PlayerId))).ToArray();
             transaction.Commit();
             return new(caseId, "lobby", now, 0, schedule.Chapters, null, null, null, expected, ready, actor,
                 ownEntry is { Ready: true, Consent: true, SnapshotRef: not null }, ownEntry?.ScenarioConsent == true,
                 canManage, canManage && members.Length == expected && members.All(m => eligible.Contains(m.AccountId) && latest.GetValueOrDefault(m.AccountId)?.ScenarioConsent == true), revision,
-                "Awake", null, null, [], null, locations, [], lobbyPlayers, null, [], [], [], [], [], [], [], null);
+                "Awake", null, null, [], null, locations, [], lobbyPlayers, null, [], [], [], [], [], [], [], null, CanManageAi: canManageAi, CanJoin: playerAdmission is CustomerAdmissionGuard ownHuman && ownHuman.Proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal));
         }
-        var member = members.SingleOrDefault(m => m.AccountId == actor);
+        var member = playerAdmission is CustomerAdmissionGuard cookie && !cookie.Proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)
+            ? null : members.SingleOrDefault(m => m.AccountId == actor);
         if (member is null)
         {
             if (!canManage) { throw new SealedCasePersistenceException("case_not_found", 404); }
             var operatorTiming = ReadTiming(connection, transaction, caseId, revision, now);
-            var publicPlayers = members.Select(m => new SealedPlayerCard(m.PlayerId, names.GetValueOrDefault(m.AccountId, "Host"), m.SeatId, "Stav neznáš", null, null, null)).ToArray();
+            var publicPlayers = members.Select(m => new SealedPlayerCard(m.PlayerId, names.GetValueOrDefault(m.AccountId, "Host"), m.SeatId, "Stav neznáš", null, null, null, m.IsAi)).ToArray();
             var publicMessages = Statements(connection, transaction, caseId, actor).Where(m => m.Public).ToArray();
+            var operatorFinale = operatorTiming.Phase == "finished" ? ReadFinale(connection, transaction, caseId, members, actor, operatorTiming) : null;
             transaction.Commit();
             return new(caseId, operatorTiming.Phase, now, operatorTiming.Chapter, operatorTiming.Chapters, operatorTiming.PlanningEndsAt,
                 operatorTiming.QuietEndsAt, operatorTiming.FinaleEndsAt, expected, ready, actor, false, true, true, false, null,
-                "Operator", null, null, [], null, locations, [], publicPlayers, null, [], [], [], [], [], publicMessages, [], null);
+                "Operator", null, null, [], null, locations, [], publicPlayers, null, [], [], [], [], [], publicMessages, [], operatorFinale, CanJoin: false);
         }
         var player = world.Checkpoint.Players.Single(p => p.Id == member.PlayerId);
         var scene = world.Checkpoint.Scenario ?? throw new SealedCasePersistenceException("sealed_case_scenario_unavailable", 409);
@@ -219,7 +248,7 @@ internal sealed partial class SealedCaseStore
                 : observed.Chapter < world.LastChapter ? "Posledně: " + observed.Appearance : observed.Appearance;
             return new SealedPlayerCard(m.PlayerId, names.GetValueOrDefault(m.AccountId, "Host"), m.SeatId, label,
                 m.PlayerId == player.Id ? player.Location : observed?.Location, observed?.Mask,
-                portraits.Contains(m.AccountId) ? $"/app/v1/sealed-cases/{caseId}/portraits/{m.PlayerId}" : null);
+                portraits.Contains(m.AccountId) ? $"/app/v1/sealed-cases/{caseId}/portraits/{m.PlayerId}" : null, m.IsAi);
         }).ToArray();
         var ownPlan = ReadConfirmedPlans(connection, transaction, caseId, timing.Chapter).GetValueOrDefault(player.Id);
         var clues = scene.Clues.Where(c => scene.KnownClues.GetValueOrDefault(player.Id, []).Contains(c.Id))
