@@ -78,6 +78,9 @@ export class TestingSessionsClient {
     return this.request<TestSession>('', 'POST', { engine, inputMode, openAiConsent: consent, recordContent: true, operationId, platform });
   }
   characters() { return this.request<TestCharacter[]>('/characters'); }
+  labelCharacter(id: string, label: string, expectedLabel: string | null) {
+    return this.request<{ character: TestCharacter }>(`/characters/${encodeURIComponent(id)}/label`, 'PUT', { label, expectedLabel });
+  }
   createCharacter(userInput: CharacterInput, openAiConsent: boolean, longTermConsent = false) { return this.request<TestCharacter>('/characters', 'POST', { userInput, openAiConsent, longTermConsent }); }
   editCharacter(id: string, userInput: CharacterInput, expectedRevision: number, openAiConsent: boolean, longTermConsent = false) {
     return this.request<TestCharacter>(`/characters/${encodeURIComponent(id)}`, 'PUT', { userInput, expectedRevision, openAiConsent, longTermConsent });

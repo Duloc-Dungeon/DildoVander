@@ -16,6 +16,8 @@ import { account, accountRequest } from '../identity/session';
 import AccountArchiveList from '../identity/AccountArchiveList.vue';
 import SettingsView from '../identity/SettingsView.vue';
 import CharacterBriefAssistant from './CharacterBriefAssistant.vue';
+import CharacterLabelEditor from './CharacterLabelEditor.vue';
+import { characterDisplayName } from './characterLabel';
 import CustomerSessionResultCard from './CustomerSessionResultCard.vue';
 import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
 import CustomerWaiting from './CustomerWaiting.vue';
@@ -29,7 +31,7 @@ import { projectCustomerSessionError, type CustomerSessionFeedback } from './cus
 import { SessionRecoveryController, type SessionRecoveryState } from './sessionRecovery';
 
 interface CharacterProfile {
-  profileId: string; revision: number;
+  profileId: string; revision: number; label?: string | null;
   userInput: { name: string; world: string; version?: string; description?: string; language?: string };
   status: string; enrichment?: unknown; errorCode?: string; updatedAt?: string;
 }
@@ -504,7 +506,8 @@ onBeforeUnmount(() => {
         :keepsake-to="artworkState ? `/keepsake/?account=1&k=${artworkState.locator}` : undefined" history-to="/me/keepsakes" />
       <p v-if="artworkRetry.failed.value" role="alert">{{ customerCopy.language.value === 'en' ? 'The retry could not be confirmed. Refresh the state before trying again.' : 'Opakování se nepodařilo potvrdit. Před dalším pokusem obnov stav.' }}</p>
       <section v-if="profile" class="aw-card page-stack" aria-labelledby="character-confirmation-title">
-        <h2 id="character-confirmation-title">{{ profile.userInput.name }}</h2>
+        <h2 id="character-confirmation-title">{{ characterDisplayName(profile.userInput.name, profile.label) }}</h2>
+        <CharacterLabelEditor :profile-id="profile.profileId" :label="profile.label" @saved="profile.label = $event" />
         <p>{{ profile.userInput.world }}<span v-if="profile.userInput.version"> · {{ profile.userInput.version }}</span></p>
         <p role="status">{{ customerCopy.text(profileStatusKeys[profile.status] ?? 'customer.status-unknown') }} · {{ customerCopy.text('customer.revision', { revision: profile.revision }) }}</p>
         <p v-if="profile.status === 'saved'">{{ customerCopy.text('customer.saved-guidance') }}</p>
@@ -538,7 +541,7 @@ onBeforeUnmount(() => {
     <section v-else-if="pane === 'conversation'" class="page-stack">
       <CustomerWaiting :device-id="connected?.deviceId ?? null" :profile-id="profile?.profileId ?? null" :proximity="connected ? { bootId: connected.bootId, challenge: connected.challenge } : null" @claim="acceptWaitingClaim" />
       <AwNotice v-if="!customerBle.supported()" tone="info">{{ customerCopy.text('customer.bluetooth-unsupported') }}<br><a href="/ios/">{{ customerCopy.text('customer.install-app') }}</a></AwNotice>
-      <div class="aw-card"><h2>{{ customerCopy.text('profile.title') }}</h2><p v-if="profile">{{ profile.userInput.name }} · {{ profile.userInput.world }} ({{ customerCopy.text('customer.revision', { revision: profile.revision }) }})</p><p v-else>{{ customerCopy.text('customer.first-create') }}</p><RouterLink to="/me/character">{{ profile && !canEditCharacter ? 'Zobrazit postavu' : customerCopy.text('customer.edit-profile') }}</RouterLink></div>
+      <div class="aw-card"><h2>{{ customerCopy.text('profile.title') }}</h2><p v-if="profile">{{ characterDisplayName(profile.userInput.name, profile.label) }} · {{ profile.userInput.world }} ({{ customerCopy.text('customer.revision', { revision: profile.revision }) }})</p><p v-else>{{ customerCopy.text('customer.first-create') }}</p><RouterLink to="/me/character">{{ profile && !canEditCharacter ? 'Zobrazit postavu' : customerCopy.text('customer.edit-profile') }}</RouterLink></div>
       <div class="aw-card customer-form"><h2>{{ customerCopy.text('customer.connection') }}</h2><p>{{ customerCopy.text('customer.bluetooth-manual') }}</p>
         <AwButton variant="primary" :disabled="busy || !profile || !customerBle.supported()" @click="discover">{{ customerCopy.text('customer.find-suitcase') }}</AwButton>
         <div v-if="devices.length" class="customer-actions"><label for="customer-device">{{ customerCopy.text('customer.suitcase') }}</label><select id="customer-device" v-model="selectedDevice" class="aw-input"><option value="">{{ customerCopy.text('customer.choose-suitcase') }}</option><option v-for="device in devices" :key="device.id" :value="device.id">{{ device.name }}</option></select><AwButton :disabled="busy || !selectedDevice" @click="connect">{{ customerCopy.text('customer.connect') }}</AwButton></div>

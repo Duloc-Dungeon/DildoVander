@@ -5,6 +5,8 @@ import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from '../identity/AccountDeletion.vue';
+import CharacterLabelEditor from '../customer/CharacterLabelEditor.vue';
+import { characterDisplayName } from '../customer/characterLabel';
 import { account, accountRequest } from '../identity/session';
 import { clearInvitationRegistration, getInvitationRegistration, invitationRegistration, reconcileInvitationCharacter, saveInvitationCharacter, setInvitationDraft } from '../identity/invitationRegistration';
 import { defaultSignedInDestination } from '../customer/customerJourney';
@@ -463,7 +465,8 @@ onBeforeUnmount(() => {
           <p>{{ copy.missingPortrait }}</p>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
-        <CharacterCountdown v-if="state?.character" class="countdown" heading-id="launch-title" :name="state.character.name" :universe="state.character.universe" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
+        <CharacterCountdown v-if="state?.character" class="countdown" heading-id="launch-title" :name="characterDisplayName(state.character.name, state.character.label)" :universe="state.character.universe" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
+        <CharacterLabelEditor v-if="state?.character" :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" />
       </PaperSurface>
       <PortraitCurtain class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" @revealed="revealed = $event" @failed="portrait.fail()" />
       <div class="launch-text">

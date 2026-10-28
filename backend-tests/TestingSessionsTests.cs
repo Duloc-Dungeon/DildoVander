@@ -43,6 +43,15 @@ internal static class TestingSessionsTests
                 &&selected.Conversation.Testing.CharacterContext.Contains("Wizarding World"),
                 "a character with only its name and world remains selectable after optional enrichment fails");
             CheckCharacterProviderContext(selected.Conversation, failed.Profile);
+            var labeled = service.LabelCharacter("alice", failed.Id, new("Petr"));
+            Check(labeled.Label == "Petr" && labeled.Profile.Revision == failed.Profile.Revision,
+                "test display labels do not revise the AI profile");
+            var afterLabel = await service.DetailAsync("alice", session.Id, default);
+            Check(afterLabel.Character?.Label == "Petr"
+                && afterLabel.Conversation.Testing?.CharacterContext == selected.Conversation.Testing?.CharacterContext,
+                "frozen conversation keeps original AI context while UI gets current label");
+            Check(!await resources.ProcessNextCharacterEnrichmentAsync(default) && characterProvider.Calls == 1,
+                "label-only edit never dispatches another provider request");
             var fenced=await service.SaveCharacterAsync("bob",null,
                 new(new("Alice","Wonderland"),true),default);
             resources.SessionsStore.Fence("bob");

@@ -18,12 +18,13 @@ vi.mock('../persona-lab/voice', () => ({ LabVoice: class {
 vi.mock('../../application/diagnosticExport', () => ({ exportDiagnosticReport: api.exportReport, diagnosticExportHistory: () => [] }));
 import TestingSessionsView from './TestingSessionsView.vue';
 const person: TestCharacter = { id: 'character-1', profile: { profileId: 'profile-1', revision: 1, userInput: { name: 'Alena', world: 'Vlastní svět', description: 'Knihovnice.' }, status: 'ready', enrichment: { recognizedName: 'Alena', summary: 'Skutečně vrácené obohacení.', model: 'character-model', evidenceKind: 'provider', conversationIdeas: [], ambiguities: [] } } };
+const secondPerson: TestCharacter = { ...person, id: 'character-2', label: 'Druhá Alena' };
 function fixture() {
   return { session: { id: 'session-1', ownerId: 'tester-1', virtualDeviceId: 'virtual-1', labSessionId: 'lab-1', engine: 'gpt-live-1', inputMode: 'text', status: 'open', characterId: person.id, createdAt: '2026-10-24T10:00:00Z', endedAt: null, revision: 1 },
     conversation: { id: 'lab-1', ownerId: 'tester-1', label: 'Test', engine: 'gpt-live-1', status: 'open', createdAt: '2026-10-24T10:00:00Z', endedAt: null, turns: [] as {id:string;role:string;text:string;createdAt:string}[], events: [] as {id:string;type:string;code:string;createdAt:string}[], config: {id:'baseline'}, recordContent: true },
     character: person as typeof person | null, latestCharacter: null as TestCharacter | null, characterSnapshot: null as CharacterConversationSnapshot | null, conversationActive: false, conversationOperation: null as TestSessionDetail['conversationOperation'], hardware: { connected: true, ready: true, state: 'ready', currentAction: 'idle', compartments: Array.from({length:6},(_,index)=>({slot:index+1,state:'retracted',wandName:null})), selectedCompartment: null, ledPattern: 'idle', servoCommand:null,vibrationCommand:null,cameraAvailable:true,events:[] }, wand:null,keepsakes:[],memory:{status:'empty',records:[]},duels:[] };
 }
-let detail: ReturnType<typeof fixture>; let wrappers: VueWrapper[] = [];
+let detail: ReturnType<typeof fixture>; let wrappers: VueWrapper[] = []; let characters: TestCharacter[];
 async function render(path = '/testing-sessions?session=session-1') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{path:'/testing-sessions',component:TestingSessionsView},{path:'/persona-lab',component:{template:'<div>Lab</div>'}}] });
   await router.push(path); await router.isReady();
@@ -34,11 +35,17 @@ async function render(path = '/testing-sessions?session=session-1') {
 }
 function button(wrapper: VueWrapper, text: string) { const result = wrapper.findAll('button').find(item=>item.text()===text); if(!result)throw new Error(`Missing button ${text}`); return result; }
 beforeEach(() => {
-  vi.clearAllMocks(); api.sendText.mockReturnValue(true); api.exportReport.mockResolvedValue('downloaded'); detail = fixture(); api.setAccount({id:'tester-1',displayName:'Tester One',roles:['Tester']});
+  vi.clearAllMocks(); api.sendText.mockReturnValue(true); api.exportReport.mockResolvedValue('downloaded'); detail = fixture(); characters = [person]; api.setAccount({id:'tester-1',displayName:'Tester One',roles:['Tester']});
   Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:api.microphone}});
   api.transport.mockImplementation(async (path:string,init:RequestInit={}) => {
     const method = init.method ?? 'GET';
-    if (path === '/app/v1/testing-sessions/characters') return Response.json([person]);
+    if (path === '/app/v1/testing-sessions/characters' && method === 'GET') return Response.json(characters);
+    if (path === '/app/v1/testing-sessions/characters/character-1/label' && method === 'PUT') {
+      const body = JSON.parse(String(init.body)) as { label: string; expectedLabel: string | null };
+      const updated = { ...characters[0], label: body.label || undefined };
+      characters = [updated, ...characters.slice(1)]; detail.latestCharacter = updated;
+      return Response.json({ character: updated });
+    }
     if (path === '/app/v1/testing-sessions' && method === 'POST') return Response.json(detail.session);
     if (path === '/app/v1/testing-sessions') return Response.json([detail.session]);
     if (path === '/app/v1/testing-sessions/session-1/mode') { detail.session = {...detail.session,...JSON.parse(String(init.body)),revision:detail.session.revision+1};return Response.json(detail); }
@@ -96,6 +103,28 @@ describe('hardware-free testing journey', () => {
     expect(wrapper.get('.testing-conversation').attributes('style') ?? '').not.toContain('display: none');
     expect(api.transport.mock.calls.filter(([path]) => path.endsWith('/session-1/character'))).toHaveLength(2);
   });
+  it('distinguishes same-name characters in selection, title, and session history', async () => {
+    characters = [{ ...person, label: 'Moje verze' }, secondPerson];
+    const { wrapper } = await render();
+    await wrapper.get('.testing-steps button:nth-child(2)').trigger('click'); await flushPromises();
+    expect(wrapper.get('#testing-character-title').text()).toBe('Alena · Moje verze');
+    const options = Array.from((wrapper.get('#testing-character-choice').element as HTMLSelectElement).options).map(option => option.text);
+    expect(options).toContain('Alena · Moje verze · Vlastní svět');
+    expect(options).toContain('Alena · Druhá Alena · Vlastní svět');
+    expect(wrapper.get('.testing-session-list').text()).toContain('Alena · Moje verze');
+  });
+  it('saves a character label without AI consent or changing the AI name input', async () => {
+    const { wrapper } = await render();
+    await wrapper.get('.testing-steps button:nth-child(2)').trigger('click'); await flushPromises();
+    expect(wrapper.get('input[type=checkbox]').element).toHaveProperty('checked', false);
+    await wrapper.get('#testing-character-label').setValue('Alena pro mě');
+    await wrapper.get('.testing-character-label-form').trigger('submit'); await flushPromises();
+    const call = api.transport.mock.calls.find(([path, init]) => path.endsWith('/characters/character-1/label') && init?.method === 'PUT');
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ label: 'Alena pro mě', expectedLabel: null });
+    expect(characters[0].profile.userInput.name).toBe('Alena');
+    expect(wrapper.get('#testing-character-title').text()).toBe('Alena · Alena pro mě');
+    expect(api.transport.mock.calls.some(([path, init]) => path.endsWith('/characters/character-1') && init?.method === 'PUT')).toBe(false);
+  });
   it('sends two consecutive messages through the same saved conversation', async () => {
     const { wrapper } = await render(); await wrapper.get('input[type=checkbox]').setValue(true);
     for (const input of ['Ahoj', 'Jsem loajální a zabil jsem Nagini.']) {
@@ -131,6 +160,13 @@ describe('hardware-free testing journey', () => {
     expect(wrapper.get('.testing-character').text()).toContain('revize 1');
     expect(wrapper.get('.testing-character').text()).toContain('Tento rozhovor ji nepoužívá');
     expect(wrapper.get('.testing-character').text()).toContain('Skutečný kontext předaný rozhovoru');
+  });
+  it('keeps the frozen name while displaying a label edited during the conversation', async () => {
+    detail.conversation.turns = [{ id: 'turn', role: 'user', text: 'Ahoj', createdAt: '2026-10-24T10:00:00Z' }];
+    detail.latestCharacter = { ...person, label: 'Petr', profile: { ...person.profile, userInput: { ...person.profile.userInput, name: 'Jiná postava' } } };
+    const { wrapper } = await render();
+    await wrapper.get('.testing-steps button:nth-child(2)').trigger('click');
+    expect(wrapper.get('#testing-character-title').text()).toBe('Alena · Petr');
   });
   it('shows the server confirmed provider phase while a text operation is active', async () => {
     detail.conversationActive = true;

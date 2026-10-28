@@ -10,7 +10,7 @@ const output = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'wns-character
 await mkdir(output, { recursive: true });
 const { server, origin } = await createOpeningFixtureServer();
 const portrait = await readFile(new URL('./fixtures/characters/matylda.webp', import.meta.url));
-const character = { profileId: 'entrance-fixture', revision: 1, name: 'Mira Nocturne', universe: 'Za zrcadlem', status: 'ready' };
+const character = { profileId: 'entrance-fixture', revision: 1, name: 'Mira Nocturne', universe: 'Za zrcadlem', status: 'ready', label: 'Petr' };
 const welcome = { joke: 'Tvoje ego už dorazilo. Zabralo dvě židle.', identity: 'Mira Nocturne. Sběratelka cizích tajemství.', teaser: 'Dnes možná přijde řada na tvoje.' };
 const browser = await chromium.launch();
 const errors = [];
@@ -69,7 +69,7 @@ try {
     await page.locator('.entrance-portrait').waitFor({ state: 'attached' });
     await page.clock.fastForward(2000);
     await page.locator('[data-entrance="portrait"]').waitFor();
-    await page.getByRole('heading', { name: character.name, exact: true }).waitFor();
+    await page.getByRole('heading', { name: `${character.name} · ${character.label}`, exact: true }).waitFor();
     assert.equal(await page.locator('.entrance-portrait').getAttribute('aria-hidden'), 'false');
     await inspect('portrait');
     await page.clock.fastForward(10000);

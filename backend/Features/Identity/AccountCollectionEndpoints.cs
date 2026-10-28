@@ -221,7 +221,10 @@ internal static class AccountCollectionEndpoints
         try
         {
             var captured = JsonSerializer.Deserialize<CustomerConversationSnapshot>(session.Snapshot, Json);
-            return (EmptyToNull(captured?.Profile.UserInput.Name), session.CreatedAt);
+            var current = await profiles.ReadAsync(accountId, cancellationToken);
+            var name = captured?.Profile.UserInput.Name;
+            return (EmptyToNull(name is not null && current?.ProfileId == session.ProfileId
+                ? CharacterLabel.DisplayName(name, current.Label) : name), session.CreatedAt);
         }
         catch (JsonException) { return (null, session.CreatedAt); }
     }

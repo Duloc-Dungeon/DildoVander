@@ -24,6 +24,30 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('uses separate display labels for both sides when opening a match directly', async () => {
+    api.setAccount({ id: 'one', displayName: 'Mozkomor' });
+    api.request.mockResolvedValue({ hasCharacter: true, wand: { wandId: 'saved' }, tier: 1, characterDisplayName: 'Mozkomor · Petr' });
+    api.transport.mockResolvedValue(Response.json(snapshot({ opponent: { id: 'two', displayName: 'Mozkomor · Jana', xp: 20, matchesPlayed: 2 } })));
+    const view = await render();
+    expect(view.get('.game-score--duel').text()).toContain('Mozkomor · Petr');
+    expect(view.get('.game-score--duel').text()).toContain('Mozkomor · Jana');
+    expect(api.transport).toHaveBeenCalledTimes(1);
+  });
+  it('clears a label during a match even when an older lobby remains loaded', async () => {
+    api.setAccount({ id: 'one', displayName: 'Mozkomor' });
+    let label: string | null = 'Mozkomor · Petr';
+    api.request.mockImplementation(async () => ({ hasCharacter: true, wand: { wandId: 'saved' }, tier: 1, characterDisplayName: label }));
+    api.transport.mockImplementation(async (path: string) => Response.json(path.includes('/matches/') ? snapshot()
+      : path.endsWith('/progress') ? { pending: [] }
+        : { player: { id: 'one', displayName: 'Mozkomor · Petr', xp: 0, matchesPlayed: 1 }, opponents: [], incoming: [], active: [], history: [] }));
+    const view = await render('/play');
+    await view.vm.$router.push(`/play/match/${id}`); await flushPromises();
+    expect(view.get('.game-score--duel').text()).toContain('Mozkomor · Petr');
+    label = null;
+    window.dispatchEvent(new Event('online')); await flushPromises();
+    expect(view.get('.game-score--duel').text()).not.toContain('Petr');
+    expect(view.get('.game-score--duel').text()).toContain('Mozkomor');
+  });
   it('presents real server scores, identities, round count and stock using the responsive table art', async () => {
     api.setAccount({ id: 'one', displayName: 'Vojta' });
     api.transport.mockResolvedValue(Response.json(snapshot({ mode: 'tactical', playerScore: 2, opponentScore: 3,
