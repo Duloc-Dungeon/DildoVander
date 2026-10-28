@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router';
 import AwButton from '../components/AwButton.vue';
 import AwNotice from '../components/AwNotice.vue';
 import { notifications, dismissNotice, notify } from './notifications';
+import { startPushRuntime } from './pushRuntime';
 import { account, accountDeletionRequested, offlineSession, refreshIdentity } from '../features/identity/session';
 import { deviceSession } from '../features/suitcase/deviceSession';
 import { nativeDebug } from '../features/suitcase/nativeDebug';
@@ -21,6 +22,7 @@ import { customerMembershipState, launchAllowed, refreshCustomerMembership, refr
 
 const route = useRoute();
 const router = useRouter();
+startPushRuntime(router);
 const gameExperience = computed(() => route.path === '/play' || route.path.startsWith('/play/'));
 const launchExperience = computed(() => route.path === '/launch' || route.path === '/signin'
   || customerMembershipState.value === 'revoked'

@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import PushNotifications from '../identity/PushNotifications.vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from '../identity/AccountDeletion.vue';
-import { account, accountRequest } from '../identity/session';
+import { account, accountDeletionRequested, accountRequest } from '../identity/session';
 import { clearInvitationRegistration, getInvitationRegistration, invitationRegistration, reconcileInvitationCharacter, saveInvitationCharacter, setInvitationDraft } from '../identity/invitationRegistration';
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
@@ -380,7 +381,7 @@ onBeforeUnmount(() => {
       <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup">{{ language === 'en' ? 'Enter' : 'Vstoupit' }}</AwButton>
       <button class="launch-skip" :disabled="groupBusy" @click="enterGroup">{{ language === 'en' ? 'Skip animation' : 'Přeskočit animaci' }}</button>
     </section>
-    <footer class="launch-footer"><details class="launch-account-options"><summary>{{ copy.account }}</summary><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
+    <footer class="launch-footer"><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
   <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" labelled-by="launch-title">
     <header class="launch-masthead">
@@ -433,7 +434,7 @@ onBeforeUnmount(() => {
         <p v-else class="launch-generic">{{ copy.loading }}</p>
       </div>
     </section>
-    <footer class="launch-footer"><details v-if="account" class="launch-account-options"><summary>{{ copy.account }}</summary><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
+    <footer class="launch-footer"><details v-if="account" class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="!accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
 </template>
 
@@ -473,10 +474,11 @@ onBeforeUnmount(() => {
 .launch-retry { color: inherit; text-decoration: underline; text-underline-offset: .2em; background: none; border: 0; cursor: pointer; min-height: 44px; padding: .5rem; font: inherit; }
 .aw-button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: .85rem 1.25rem; border-radius: 8px; text-decoration: none; }
 .aw-button--primary { color: var(--aw-on-accent); background: var(--aw-accent); }
-.launch-footer { margin-top: 1.5rem; display: flex; align-items: start; justify-content: space-between; gap: 1rem; color: var(--aw-muted); font-size: .875rem; }
+.launch-footer { margin-top: 1.5rem; display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 1rem; color: var(--aw-muted); font-size: .875rem; }
 .launch-footer nav { display: flex; flex-wrap: wrap; column-gap: 1rem; }
 .launch-footer a { display: inline-flex; align-items: center; min-height: 44px; color: var(--aw-muted); }
 .launch-account-options { max-width: 100%; }
+.launch-account-options[open] { flex-basis: 100%; width: 100%; }
 .launch-account-options summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
 .group-opening { display: flex; flex-direction: column; align-items: center; overflow: hidden; }
 .group-opening-art { display: block; width: min(100%, 36rem); max-height: 58dvh; object-fit: contain; margin: 0 auto; }

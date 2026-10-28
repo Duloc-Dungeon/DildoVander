@@ -22,6 +22,13 @@ require(!AccountTransportPolicy.show(path: "\(ambientPreviewRoot)/\(ambientPrevi
 require(!AccountTransportPolicy.show(path: ambientPreviewRoot, method: "POST", query: [URLQueryItem(name: "device", value: "other")]), "preview query scope broadened")
 
 func require(_ value: Bool, _ description: String) { if !value { fatalError(description) } }
+for method in ["GET", "PUT", "DELETE"] {
+    require(AccountTransportPolicy.account(path: "/app/v1/push", method: method), "push route unavailable")
+}
+require(AccountTransportPolicy.account(path: "/app/v1/push/test", method: "POST"), "push test unavailable")
+require(!AccountTransportPolicy.account(path: "/app/v1/push", method: "POST"), "push mutation method broadened")
+require(!AccountTransportPolicy.account(path: "/app/v1/push/test", method: "GET"), "push test method broadened")
+require(!AccountTransportPolicy.account(path: "/app/v1/push?account=other", method: "PUT"), "push query admitted")
 let id = "7fc470e2-e25e-46a2-b51b-97d50275ae77"
 let conversationPreferencesPath = "/app/v1/customer/conversation-preferences"
 for method in ["GET", "PUT"] {

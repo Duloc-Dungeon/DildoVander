@@ -502,6 +502,7 @@ enum AccountTransportPolicy {
             || customerWaiting(path: path, method: method) { return true }
         if customerData(path: path, method: method) { return true }
         let exact: [String: Set<String>] = [
+            "/app/v1/push": ["GET", "PUT", "DELETE"], "/app/v1/push/test": ["POST"],
             "/app/v1/customer/enrollment/options": ["POST"],
             "/app/v1/customer/enrollment/complete": ["POST"],
             "/app/v1/customer/access": ["GET"],

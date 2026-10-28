@@ -88,5 +88,10 @@ import { launchAllowed } from '../../application/launchAccess';
       <p><RouterLink to="/support">{{ customerCopy.text('privacy.support-link') }}</RouterLink></p>
     </section>
     </template>
+    <section aria-labelledby="privacy-push">
+      <h2 id="privacy-push">Oznámení</h2>
+      <p>Oznámení jsou dobrovolná a zapínají se zvlášť na každém zařízení. Pro doručení uložíme identifikátor zařízení nebo přihlášení prohlížeče a propojíme ho s aktuálním přihlášením k účtu. Stručné zprávy o výzvách do hry, pozvánkách a večeru doručují služby Apple, Google nebo poskytovatel prohlížeče. Obsah postavy ani rozhovorů do oznámení neposíláme.</p>
+      <p>Oznámení vypneš v nastavení účtu nebo před začátkem večera v nabídce „Účet“. Po odhlášení, vypršení přihlášení nebo odebrání přístupu server další zprávy neodesílá; zpráva již předaná doručovací službě může ještě dorazit. Při odstranění účtu smažeme také jeho přihlášení k oznámením a čekající zprávy.</p>
+    </section>
   </article>
 </template>

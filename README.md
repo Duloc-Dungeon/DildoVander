@@ -4,6 +4,8 @@ Wand Night Stand: mobilní zážitek od pozvánky a vlastní postavy přes spole
 
 Vývoj fyzického kufru je pozastavený. Níže zachované technické podklady popisují existující hardware a jeho kontrakty; nejsou zadáním běžného mobilního rozhraní.
 
+[Push oznámení](docs/push-notifications.md) pokrývají herní výzvy, pozvánky existujících hostů a změny večera na webu, Androidu a iOS. Před aktivací vyžadují nastavení doručovacích služeb.
+
 [Seznam elektroniky a odkazy k nákupu](docs/elektronika.md) obsahuje podklady pro kufr a jeho montážní materiál.
 
 ## Zachované technické zázemí

@@ -54,6 +54,7 @@ try {
     if (url.origin !== origin) { await route.abort(); return; }
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (url.pathname === '/app/v1/session' && request.method() === 'GET') return json({ enabled: true, account, csrfToken: 'fake-csrf', origin });
+    if (url.pathname === '/app/v1/push' && request.method() === 'GET') return json({ web: false, android: false, ios: false, publicKey: null, enabled: false });
     if (url.pathname === '/app/v1/session' && request.method() === 'DELETE') { account = null; return route.fulfill({ status: 204, body: '' }); }
     if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'launch-fixture-beta', groupName: 'Interní beta', joinedAt: Math.floor(Date.now() / 1000), accessRevision: 1, fixedUniverse: null, recruitmentOpen: false, launchAt: null });
     if (url.pathname === '/app/v1/enrollment/default') return json({ available: true, groupId: 'launch-fixture-beta', groupName: 'Interní beta', fixedUniverse: null, universe: null });
@@ -108,6 +109,11 @@ try {
   assert.equal(await page.locator('.application-sidebar').count(), 0);
   assert.equal(await page.getByText('Rozhovor s kufrem', { exact: false }).count(), 0);
   assert.equal(await page.getByText('Památky', { exact: false }).count(), 0);
+  await page.locator('.launch-account-options > summary').click();
+  await page.getByRole('heading', { name: 'Oznámení', exact: true }).waitFor();
+  await page.getByText('Oznámení pro toto zařízení zatím nejsou připravena.').waitFor();
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Prelaunch push settings overflow');
+  await page.locator('.launch-account-options > summary').click();
   await page.goto(`${origin}/privacy`, { waitUntil: 'networkidle' });
   await page.getByRole('heading', { name: 'Soukromí před spuštěním' }).waitFor();
   assert.equal(await page.locator('.application-sidebar').count(), 0);

@@ -13,6 +13,17 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void pushRoutesAreExplicitAndMethodBound() {
+        for (String method : new String[] {"GET", "PUT", "DELETE"}) {
+            assertTrue(NativeAccountRequestPolicy.allows("/app/v1/push", method));
+        }
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/push/test", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/push", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/push/test", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/push?account=other", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/push/other", "DELETE"));
+    }
+
     @Test public void mobileGameRoutesAreExplicitAndMethodBound() {
         String match = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game", "GET"));

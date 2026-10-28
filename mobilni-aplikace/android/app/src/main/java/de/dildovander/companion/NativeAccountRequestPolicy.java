@@ -123,6 +123,8 @@ final class NativeAccountRequestPolicy {
             return false;
         }
         if ("/app/v1/launch".equals(path)) return "GET".equals(method);
+        if ("/app/v1/push".equals(path)) return "GET".equals(method) || "PUT".equals(method) || "DELETE".equals(method);
+        if ("/app/v1/push/test".equals(path)) return "POST".equals(method);
         if ("/app/v1/enrollment/default".equals(path)) return "GET".equals(method);
         if ("/app/v1/enrollment/default/admit".equals(path)) return "POST".equals(method);
         if ("/app/v1/prelaunch/character".equals(path)) return "GET".equals(method) || "PUT".equals(method);

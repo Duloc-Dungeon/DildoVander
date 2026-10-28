@@ -7,6 +7,9 @@ const config: CapacitorConfig = {
   // Native bridge calls include conversation text. Keep them out of device logs.
   loggingBehavior: 'none',
   ios: { zoomEnabled: false },
+  plugins: {
+    PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
+  },
 };
 
 export default config;
