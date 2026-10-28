@@ -92,7 +92,7 @@ afterEach(() => {
 describe('Home customer journey', () => {
   it('preserves guest and staff home actions without customer endpoint reads', async () => {
     const guest = await mountHome();
-    expect(guest.wrapper.text()).toContain('Příběh začíná');
+    expect(guest.wrapper.text()).toContain('Mobilní pobočka Ollivander Industries™');
     expect(guest.wrapper.findComponent({ name: 'CustomerJourneyCard' }).exists()).toBe(false);
     expect(guest.wrapper.text()).not.toContain('model kufru');
     expect(guest.wrapper.text()).not.toContain('Připojit kufr');

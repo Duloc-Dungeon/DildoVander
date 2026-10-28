@@ -49,7 +49,7 @@ onBeforeUnmount(() => { controller.abort(); });
   <section class="prelaunch-wand" aria-labelledby="prelaunch-wand-title">
     <template v-if="!opened">
       <h2 id="prelaunch-wand-title" ref="summary" tabindex="-1">{{ completed ? 'Postava i hůlka jsou připravené.' : 'Postavu už znáš. Teď tvoje hůlka.' }}</h2>
-      <p v-if="completed" role="status">Hůlka je uložená. Teď už jen počkat, až večer začne.</p>
+      <p v-if="completed" role="status">Hůlka je uložená. Ollivander Industries™ děkuje za důvěru. Považuje ji za odvážnou.</p>
       <p v-else>Než se večer otevře, promluv si s kufrem a vytvoř hůlku pro svoji postavu.</p>
       <p v-if="loading" role="status">Ověřujeme tvoji dílnu…</p>
       <AwNotice v-else-if="error" tone="warning">Dílnu se nepodařilo načíst. <AwButton @click="refresh">Zkusit znovu</AwButton></AwNotice>

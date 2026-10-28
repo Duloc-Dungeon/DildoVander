@@ -9,7 +9,7 @@ import {
 export const customerCopyCs = {
   'signin.brand-welcome': 'Vstup na vlastní pověst.',
   'customer.avatar-night': '{{name}}, tvoje podobizna. Olivander by ji podepsal, kdyby právě nevedl dva neslučitelné rozhovory s jedinou sklenicí.',
-  'customer.avatar-loading-night': '{{name}}, tvoje podoba se ještě připravuje. Olivander je na mol, ale já mám naštěstí vlastní víko i úsudek.',
+  'customer.avatar-loading-night': '{{name}}, tvoje podoba se ještě připravuje. Ollivander Industries™ slíbila reprezentativní portrét. Teď hledá skulinu ve smlouvě.',
   'signin.invite-slogan': 'Vstup na vlastní pověst.',
   'signin.invite-intro': 'Olivander má kocovinu a personální oddělení tvoří zrcadlo. Přihlášení tedy laskavě vyřiď sám.',
   'signin.customer-invite-purpose': 'Stačí jméno, pod kterým tě má osud vést. Přístupový klíč zůstane v tomto zařízení. O tom zbytku se před svědky nemluví.',
@@ -41,7 +41,7 @@ export const customerCopyCs = {
   'home.my-account': 'Můj účet',
   'home.web-capabilities': 'Na webu si prohlédnete model, archiv a označenou simulaci. Nativní funkce iPhonu jsou dostupné v instalované aplikaci.',
   'home.public-guidance': 'Prohlédni si svět, zahraj si a vrať se ke svým příběhům.',
-  'home.public-context': 'Příběh začíná',
+  'home.public-context': 'Mobilní pobočka Ollivander Industries™',
   'home.customer-context': 'Tvoje místo',
   'home.host-context': 'Pro hostitele',
   'home.character-path': 'Vytvoř nebo uprav svůj profil',
