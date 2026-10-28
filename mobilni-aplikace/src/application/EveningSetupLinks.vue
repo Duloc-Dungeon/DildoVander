@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue';
 import { account } from '../features/identity/session';
+import { isOwnerPlayer } from './ownerMode';
 const titleId = `evening-setup-${useId()}`;
 const canManage = computed(() => account.value?.roles.some(role => ['Owner', 'Administrator'].includes(role)) === true);
 const canInvite = computed(() => account.value?.roles.includes('Owner') === true);
 </script>
 
 <template>
-  <section v-if="canManage" class="evening-setup" :aria-labelledby="titleId">
+  <section v-if="canManage && !isOwnerPlayer(account)" class="evening-setup" :aria-labelledby="titleId">
     <header><p class="eyebrow">Pro hostitele</p><h2 :id="titleId">Tvůj večer začíná tady.</h2><p>{{ canInvite ? 'Nastav skupinu, pozvi hosty a připrav společný začátek.' : 'Nastav skupinu a připrav společný začátek.' }}</p></header>
     <nav class="evening-setup-steps" aria-label="Příprava večera">
       <RouterLink to="/settings/admin/launch#waiting-room"><span class="evening-step-number" aria-hidden="true">01</span><strong>Připravit večer</strong><span>Skupina, odpočet a otevření</span><span class="evening-step-arrow" aria-hidden="true">↗</span></RouterLink>

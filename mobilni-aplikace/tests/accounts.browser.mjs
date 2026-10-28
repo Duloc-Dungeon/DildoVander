@@ -31,7 +31,7 @@ try {
     } });
     return { context, page };
   }
-  async function enroll(page, link, name) {
+  async function enroll(page, link, name, expectedName = name) {
     await page.goto(link);
     await page.getByLabel('Jméno postavy', { exact: true }).fill(name);
     await page.getByLabel('Univerzum', { exact: true }).fill('Izolovaný testovací svět');
@@ -48,12 +48,15 @@ try {
     await page.getByRole('checkbox', { name: /Souhlasím.*OpenAI/ }).check();
     await accept.click();
     await page.waitForURL(url => url.pathname === '/settings');
-    await page.getByRole('heading', { name, exact: true }).waitFor();
+    await page.getByRole('heading', { name: expectedName, exact: true }).waitFor();
   }
   const owner = await participant();
-  await enroll(owner.page, bootstrap.href, 'Izolovaný vlastník');
+  await enroll(owner.page, bootstrap.href, 'Izolovaný vlastník', 'Olivander');
   const ownerSession = await owner.context.request.get(origin.origin + '/app/v1/session');
-  assert.equal(ownerSession.status(), 200); assert((await ownerSession.json()).account.roles.includes('Owner'));
+  assert.equal(ownerSession.status(), 200);
+  const ownerAccount = (await ownerSession.json()).account;
+  assert(ownerAccount.roles.includes('Owner'));
+  assert.equal(ownerAccount.displayName, 'Olivander', 'Owner keeps its fixed name despite a different registration input');
   await owner.page.goto(origin.origin + '/settings/admin');
   await owner.page.locator('.invitation-group summary').click();
   await owner.page.getByLabel('Název skupiny', { exact: true }).fill('Izolovaná skupina');

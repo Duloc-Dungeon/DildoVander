@@ -19,6 +19,8 @@ try {
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => errors.push(error.message));
     let sessionMode = 'ok';
+    let caseJoined = false;
+    const caseId = `sc_${'1'.repeat(32)}`;
     await context.route('**/*', async route => {
       const url = new URL(route.request().url());
       if (url.origin !== origin) return route.abort();
@@ -29,6 +31,25 @@ try {
         return json({ enabled: true, account: sessionMode === 'anonymous' ? null : account, csrfToken: 'synthetic' });
       }
       if (url.pathname === '/app/v1/customer/character') return json({ profile: null });
+      if (url.pathname === '/app/v1/sealed-cases/current') return json({ id: caseId });
+      if (url.pathname === `/app/v1/sealed-cases/${caseId}/lobby`) {
+        const body = route.request().postDataJSON();
+        assert.equal(body.scenarioConsent, true);
+        assert.equal(body.ready, true);
+        caseJoined = true;
+        return json({ accepted: true });
+      }
+      if (url.pathname === `/app/v1/sealed-cases/${caseId}/play`) return json({
+        id: caseId, phase: 'lobby', ownId: 'one', ownState: 'Alive', ownTeam: null,
+        ownReady: caseJoined, ownScenarioConsent: caseJoined, canJoin: true, canManage: false,
+        expectedPlayers: 8, readyPlayers: caseJoined ? 3 : 2, lobbyRevision: 1, chapter: 0, chapters: 4,
+        players: [], ownOutcomes: [], clues: [], notes: [], statements: [], choices: [],
+      });
+      if (url.pathname === '/app/v1/archive/collection') return json({ schemaVersion: 1, items: [], nextCursor: null });
+      if (url.pathname === '/app/v1/customer/duels') return json({ items: [] });
+      if (url.pathname === '/app/v1/sealed-cases/rewards') return json({ schemaVersion: 1, items: [
+        { caseId: `sc_${'1'.repeat(32)}`, releasedAt: '2026-10-22T12:00:00Z', team: 'Guardian', confirmedPlans: 3, successfulPlans: 2 },
+      ] });
       if (['/app/v1/customer/sessions', '/app/v1/customer/completion-updates', '/app/v1/archive'].includes(url.pathname)) return json({ items: [] });
       if (url.pathname === '/app/v1/account') return json({ sessions: [], grants: [], associations: [], passkeys: [], passkeyCount: 0 });
       return route.continue();
@@ -55,6 +76,15 @@ try {
     await page.getByRole('heading', { name: 'Nejdřív vlastní hůlku.' }).waitFor();
     await checkNavigation('Večer');
     await page.screenshot({ path: path.join(output, `play-${width}.png`) });
+    await page.getByRole('link', { name: 'Pod pečetí', exact: true }).click();
+    await page.waitForURL(`**/play/pod-peceti/${caseId}`);
+    await page.getByRole('heading', { name: 'Místa u stolu', exact: true }).waitFor();
+    await page.getByRole('checkbox', { name: 'Přijímám scénářovou minulost', exact: false }).check();
+    await page.getByRole('button', { name: 'Připojit mou postavu', exact: true }).click();
+    await page.getByText('Tvoje postava je připravená.', { exact: false }).waitFor();
+    await page.reload();
+    await page.getByText('Tvoje postava je připravená.', { exact: false }).waitFor();
+    await checkNavigation('Večer');
     await navigation.getByRole('link', { name: 'Já', exact: true }).click();
     await page.waitForURL('**/me/account');
     await page.locator('#customer-account-title').waitFor();
@@ -64,6 +94,15 @@ try {
       await navigation.getByRole('link', { name: label, exact: true }).click();
       await page.waitForURL(`**/me/${route}`);
       await checkNavigation(label);
+      if (route === 'keepsakes') {
+        await page.locator('.game-titles__badge').getByText('Soupeř s pamětí', { exact: true }).waitFor();
+        await page.locator('.case-rewards__badge').getByText('Strážce', { exact: true }).waitFor();
+        await page.getByText('Potvrzené hlavní plány: 3 · Provedené zásahy: 2', { exact: true }).waitFor();
+        await page.reload();
+        await page.locator('.case-rewards__badge').getByText('Strážce', { exact: true }).waitFor();
+        await checkNavigation(label);
+        await page.screenshot({ path: path.join(output, `keepsakes-rewards-${width}.png`), fullPage: true });
+      }
     }
     await navigation.getByRole('link', { name: 'Já', exact: true }).click();
     await page.waitForURL('**/me/account');

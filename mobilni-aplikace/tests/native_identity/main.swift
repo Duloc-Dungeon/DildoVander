@@ -29,6 +29,13 @@ require(!AccountTransportPolicy.show(path: "\(ambientPreviewRoot)/\(ambientPrevi
 require(!AccountTransportPolicy.show(path: ambientPreviewRoot, method: "POST", query: [URLQueryItem(name: "device", value: "other")]), "preview query scope broadened")
 
 func require(_ value: Bool, _ description: String) { if !value { fatalError(description) } }
+for method in ["GET", "PUT", "DELETE"] {
+    require(AccountTransportPolicy.account(path: "/app/v1/push", method: method), "push route unavailable")
+}
+require(AccountTransportPolicy.account(path: "/app/v1/push/test", method: "POST"), "push test unavailable")
+require(!AccountTransportPolicy.account(path: "/app/v1/push", method: "POST"), "push mutation method broadened")
+require(!AccountTransportPolicy.account(path: "/app/v1/push/test", method: "GET"), "push test method broadened")
+require(!AccountTransportPolicy.account(path: "/app/v1/push?account=other", method: "PUT"), "push query admitted")
 let id = "7fc470e2-e25e-46a2-b51b-97d50275ae77"
 let conversationPreferencesPath = "/app/v1/customer/conversation-preferences"
 for method in ["GET", "PUT"] {
@@ -1267,6 +1274,28 @@ require(!AccountTransportPolicy.account(path: "/app/v1/account/ai-consent", meth
 require(AccountTransportPolicy.account(path: "/app/v1/customer/wand", method: "GET"), "wand snapshot unavailable")
 require(AccountTransportPolicy.account(path: "/app/v1/customer/wand/sessions", method: "POST"), "wand session unavailable")
 let wandTicket = "/app/v1/customer/wand/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/ticket"
+let workshopOperation = String(repeating: "a", count: 32)
+let workshopArtworkAsset = "123e4567-e89b-42d3-a456-426614174000"
+let workshopArtworkRead = "/app/v1/customer/wand/workshop/sessions/\(workshopOperation)/artwork/assets/\(workshopArtworkAsset)"
+require(AccountTransportPolicy.account(path: workshopArtworkRead, method: "GET"), "workshop artwork read unavailable")
+require(AccountTransportPolicy.account(path: workshopArtworkRead.replacingOccurrences(of: workshopArtworkAsset, with: workshopArtworkAsset.uppercased()), method: "GET"), "valid artwork UUID casing rejected")
+require(AccountTransportPolicy.accountResponseLimit(path: workshopArtworkRead, method: "GET") == 32 * 1024 * 1024, "workshop artwork cap differs from archive assets")
+require(AccountTransportPolicy.accountResponseAllowed(path: workshopArtworkRead, method: "GET", size: 32 * 1024 * 1024)
+    && !AccountTransportPolicy.accountResponseAllowed(path: workshopArtworkRead, method: "GET", size: 32 * 1024 * 1024 + 1), "workshop artwork exact response cap violated")
+for method in ["POST", "PUT", "DELETE", "HEAD"] {
+    require(!AccountTransportPolicy.account(path: workshopArtworkRead, method: method), "workshop artwork became mutable")
+    require(AccountTransportPolicy.accountResponseLimit(path: workshopArtworkRead, method: method) == 1024 * 1024, "non-GET artwork cap broadened")
+}
+for malformed in [workshopArtworkRead + "?x=1", workshopArtworkRead + "?", workshopArtworkRead + "/extra", workshopArtworkRead + "/", workshopArtworkRead + "\n",
+    workshopArtworkRead.replacingOccurrences(of: workshopOperation, with: String(repeating: "a", count: 31)),
+    workshopArtworkRead.replacingOccurrences(of: workshopOperation, with: String(repeating: "a", count: 33)),
+    workshopArtworkRead.replacingOccurrences(of: workshopArtworkAsset, with: "bad"),
+    workshopArtworkRead.replacingOccurrences(of: "-42d3-", with: "-02d3-"),
+    workshopArtworkRead.replacingOccurrences(of: "-a456-", with: "-0456-"),
+    workshopArtworkRead.replacingOccurrences(of: "/artwork/assets/", with: "/assets/")] {
+    require(!AccountTransportPolicy.account(path: malformed, method: "GET"), "malformed workshop artwork route admitted")
+    require(AccountTransportPolicy.accountResponseLimit(path: malformed, method: "GET") == 1024 * 1024, "malformed workshop artwork cap broadened")
+}
 require(AccountTransportPolicy.account(path: wandTicket, method: "POST"), "wand ticket unavailable")
 for malformed in [wandTicket + "?extra=1", wandTicket + "/extra", wandTicket + "\n", wandTicket.replacingOccurrences(of: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", with: "bad")] {
     require(!AccountTransportPolicy.account(path: malformed, method: "POST"), "wand ticket path broadened")

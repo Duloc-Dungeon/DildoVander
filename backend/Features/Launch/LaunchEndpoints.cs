@@ -228,6 +228,7 @@ internal static class LaunchEndpoints
             return Results.StatusCode(allowed ? 204 : 403);
         });
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) { return; }
+        app.MapOwnerPlayerGroups();
         app.MapGet("/app/v1/enrollment/default", (HttpContext context, LaunchPolicyStore store) =>
         {
             context.Response.Headers.CacheControl = "no-store";
@@ -249,6 +250,7 @@ internal static class LaunchEndpoints
             LaunchPolicyStore store) =>
         {
             context.Response.Headers.CacheControl = "no-store";
+            await OwnerPlayerGroups.EnsureSelectionAsync(context, db, store);
             var id = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
             var user = id is null ? null : await db.Users.SingleOrDefaultAsync(x => x.Id == id);
             if (user is null) { return ApiProblem.Create(context, 401, "account_access_unavailable"); }
@@ -342,13 +344,17 @@ internal static class LaunchEndpoints
             LaunchPolicyStore store) =>
         {
             if (store.ReadGroup(id) is not { } group) { return ApiProblem.Create(context, 404, "launch_group_unavailable"); }
-            var members = await (from user in db.Users
-                join membership in db.UserRoles on user.Id equals membership.UserId
-                join role in db.Roles on membership.RoleId equals role.Id
-                where user.LaunchGroupId == id && role.Name == AccountRoles.Customer
-                orderby user.LaunchGroupJoinedAt, user.Id
-                select new BetaMember(user.Id, user.DisplayName, user.LaunchGroupJoinedAt ?? user.CreatedAt,
-                    user.LaunchGroupRevokedAt == null && !user.Disabled, user.LaunchGroupAccessRevision))
+            var members = await db.Users.Where(user =>
+                    (user.LaunchGroupId == id && db.UserRoles.Any(membership => membership.UserId == user.Id
+                        && db.Roles.Any(role => role.Id == membership.RoleId && role.Name == AccountRoles.Customer))
+                    || db.UserRoles.Any(membership => membership.UserId == user.Id
+                        && db.Roles.Any(role => role.Id == membership.RoleId && role.Name == AccountRoles.Owner)))
+                    && !db.DeletionRequests.Any(deletion => deletion.UserId == user.Id))
+                .OrderBy(user => user.LaunchGroupJoinedAt).ThenBy(user => user.Id)
+                .Select(user => new BetaMember(user.Id, user.DisplayName, user.LaunchGroupJoinedAt ?? user.CreatedAt,
+                    !user.Disabled && (user.LaunchGroupRevokedAt == null || db.UserRoles.Any(membership => membership.UserId == user.Id
+                        && db.Roles.Any(role => role.Id == membership.RoleId && role.Name == AccountRoles.Owner))),
+                    user.LaunchGroupAccessRevision))
                 .Take(500).ToArrayAsync();
             return Results.Ok(new { group, members });
         });
@@ -508,6 +514,7 @@ internal static class LaunchEndpoints
         || path.Equals("/twin", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsPrelaunchSafe(PathString path) =>
+        path.StartsWithSegments("/app/v1/push", StringComparison.OrdinalIgnoreCase) ||
         path.Equals("/app/v1/session", StringComparison.OrdinalIgnoreCase)
         || path.Equals("/app/v1/account/ai-consent", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/app/v1/customer/wand", StringComparison.OrdinalIgnoreCase)
@@ -525,6 +532,7 @@ internal static class LaunchEndpoints
         || path.StartsWithSegments("/app/v1/admin/launch", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsRevokedSafe(PathString path) =>
+        path.StartsWithSegments("/app/v1/push", StringComparison.OrdinalIgnoreCase) ||
         path.Equals("/app/v1/session", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/app/v1/passkeys", StringComparison.OrdinalIgnoreCase)
         || path.Equals("/app/v1/account", StringComparison.OrdinalIgnoreCase)

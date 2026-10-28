@@ -2,7 +2,7 @@ name: Generate Dependabot dependency artifacts
 
 on:
   pull_request:
-    branches: [main]
+    branches: [development]
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - 'backend/**'

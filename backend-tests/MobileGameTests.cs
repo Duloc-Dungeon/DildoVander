@@ -113,7 +113,45 @@ internal static partial class MobileGameTests
         }
         Check(commandRateLimited, "the read polling allowance does not widen authenticated command limits");
         await RunWorkshopStaleReadyRaceHttpAsync();
+        await RunWorkshopMissingDelegationHttpAsync(disconnectDuringDecision: false);
+        await RunWorkshopMissingDelegationHttpAsync(disconnectDuringDecision: true);
         Console.WriteLine("Mobile workshop customer Live bridge checks passed.");
+    }
+
+    private static async Task RunWorkshopMissingDelegationHttpAsync(bool disconnectDuringDecision)
+    {
+        await using var fixture = await HttpFixture.StartAsync(withLiveTransport: true,
+            workshopProvider: new TextWorkshopProvider(delayFirstReply: true, firstReplyReady: true),
+            includeSecondTurnAutomatically: false, includeLiveDelegations: false);
+        using var client = fixture.Client();
+        await fixture.LoginAsync(client, fixture.ForeignId);
+        client.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(client));
+        await fixture.MarkForeignCharacterPreparedAsync();
+        const string path = "/app/v1/customer/wand/workshop/sessions";
+        var operation = Guid.NewGuid().ToString("N");
+        using var created = await client.PostAsJsonAsync(path, new { operationId = operation });
+        Check(created.StatusCode == HttpStatusCode.OK, "missing-delegation fixture opens a workshop");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var socket = await ConnectWorkshopSocketAsync(client, fixture, path, operation, timeout.Token);
+        Check((await ReceiveSocketJsonAsync(socket, timeout.Token)).GetProperty("type").GetString() == "ready",
+            "missing-delegation socket reaches ready");
+        await fixture.TextWorkshopProvider.WaitForReplyAsync(1, timeout.Token);
+        if (disconnectDuringDecision)
+        {
+            await SendFragmentedAsync(socket, WebSocketMessageType.Text, Encoding.UTF8.GetBytes("{\"type\":\"end\"}"), timeout.Token);
+            await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "leave after request", timeout.Token);
+        }
+        fixture.TextWorkshopProvider.ReleaseReply(1);
+        await WaitUntilAsync(() => fixture.Wands.ReadWorkshopState(fixture.ForeignId, operation).Status == "generating", timeout.Token);
+        Check(fixture.TextDialogueCalls == 1
+            && fixture.Wands.PendingWorkshops().Count(job => job.OperationId == operation) == 1,
+            "settled speech starts one manufacture without a provider delegation or a repeated user request");
+        if (!disconnectDuringDecision)
+        {
+            await SendFragmentedAsync(socket, WebSocketMessageType.Text, Encoding.UTF8.GetBytes("{\"type\":\"end\"}"), timeout.Token);
+            await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "test complete", timeout.Token);
+        }
+        await WaitUntilAsync(() => !fixture.LiveRuntime.IsActive(fixture.ForeignId, operation), timeout.Token);
     }
 
     private static async Task RunWorkshopStaleReadyRaceHttpAsync()
@@ -791,6 +829,8 @@ internal static partial class MobileGameTests
         await fixture.LoginAsync(paused, fixture.PausedId);
 
         Check((await alice.GetAsync("/app/v1/game")).StatusCode == HttpStatusCode.OK, "active launch group reads game lobby");
+        Check((await alice.GetAsync("/app/v1/game/progress")).StatusCode == HttpStatusCode.OK,
+            "active participant can read saved game progress without a wand");
         var aliceProfile = (await fixture.Profiles.ReadAsync(fixture.AliceId))!;
         var bobProfile = (await fixture.Profiles.ReadAsync(fixture.BobId))!;
         await fixture.Profiles.WriteLabelAsync(fixture.AliceId, new(aliceProfile.ProfileId, "Petr"));
@@ -799,8 +839,58 @@ internal static partial class MobileGameTests
         Check(labeledLobby.GetProperty("player").GetProperty("displayName").GetString() == aliceProfile.UserInput.Name + " · Petr"
             && labeledLobby.GetProperty("opponents").EnumerateArray().Any(opponent =>
                 opponent.GetProperty("id").GetString() == fixture.BobId
-                && opponent.GetProperty("displayName").GetString() == bobProfile.UserInput.Name + " · Jana"),
+                && opponent.GetProperty("displayName").GetString() == bobProfile.UserInput.Name + " · Jana"
+                && opponent.GetProperty("hasWand").GetBoolean()
+                && opponent.GetProperty("wandTier").GetInt32() == 1
+                && !opponent.GetProperty("tacticalUnlocked").GetBoolean()),
             "lobby displays separate labels for self and challenge targets");
+        await fixture.SeedWandTierAsync(fixture.BobId, 2);
+        fixture.SetGameXp(fixture.BobId, 30);
+        var upgradedLobby = await alice.GetFromJsonAsync<JsonElement>("/app/v1/game");
+        var upgradedBob = upgradedLobby.GetProperty("opponents").EnumerateArray()
+            .Single(opponent => opponent.GetProperty("id").GetString() == fixture.BobId);
+        Check(upgradedBob.GetProperty("wandTier").GetInt32() == 2
+            && upgradedBob.GetProperty("tacticalUnlocked").GetBoolean(),
+            "opponent tactical eligibility reflects both the XP and tier-two wand gates");
+
+        // Exercise the real tier-two admission and customer conversation over HTTP.
+        // The background worker is intentionally not hosted in this fixture, so
+        // manufacture and selection use the registered offline provider/store
+        // after the durable HTTP finish transition.
+        fixture.SetGameXp(fixture.AliceId, 30);
+        await fixture.MarkCharacterPreparedAsync(fixture.AliceId);
+        alice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(alice));
+        const string upgradePath = "/app/v1/customer/wand/workshop/sessions";
+        var upgradeOperation = Guid.NewGuid().ToString("N");
+        using var upgradeStarted = await alice.PostAsJsonAsync(upgradePath,
+            new { operationId = upgradeOperation, upgrade = true });
+        Check(upgradeStarted.StatusCode == HttpStatusCode.OK
+            && (await upgradeStarted.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("session").GetProperty("tier").GetInt32() == 2,
+            "30 XP admits the existing tier-one wand owner to the tier-two HTTP workshop");
+        for (var turn = 0; turn < 4; turn++)
+        {
+            using var message = await alice.PostAsJsonAsync(upgradePath + "/" + upgradeOperation + "/messages",
+                new { messageId = Guid.NewGuid().ToString("N"), text = $"Vylepšení odpověď {turn + 1}." });
+            Check(message.StatusCode == HttpStatusCode.OK, $"tier-two workshop accepts offline conversation turn {turn + 1}");
+        }
+        using var upgradeFinished = await alice.PostAsJsonAsync(upgradePath + "/" + upgradeOperation + "/finish", new { });
+        Check(upgradeFinished.StatusCode == HttpStatusCode.OK
+            && fixture.Wands.PendingWorkshops().Any(job => job.AccountId == fixture.AliceId && job.OperationId == upgradeOperation),
+            "tier-two HTTP finish durably queues manufacture");
+        await fixture.RunWorkshopWorkerAsync(fixture.AliceId, upgradeOperation);
+        Check(fixture.Wands.MobileTier(fixture.AliceId, aliceProfile.ProfileId, aliceProfile.Revision) == 2
+            && fixture.Wands.ReadWorkshopState(fixture.AliceId, upgradeOperation).Status == "complete",
+            "the offline workshop worker generates, selects, and persists the tier-two wand");
+        var aliceAfterUpgrade = await alice.GetFromJsonAsync<JsonElement>("/app/v1/game");
+        Check(aliceAfterUpgrade.GetProperty("player").GetProperty("wandTier").GetInt32() == 2
+            && aliceAfterUpgrade.GetProperty("player").GetProperty("tacticalUnlocked").GetBoolean(),
+            "selected tier-two wand and 30 XP unlock tactical play in the account lobby");
+        var reloadedUpgrade = await alice.GetFromJsonAsync<JsonElement>(upgradePath + "/" + upgradeOperation);
+        Check(reloadedUpgrade.GetProperty("session").GetProperty("status").GetString() == "complete"
+            && !string.IsNullOrWhiteSpace(reloadedUpgrade.GetProperty("session").GetProperty("wand").GetProperty("wandId").GetString())
+            && (await fixture.Profiles.ReadAsync(fixture.AliceId))?.Revision == aliceProfile.Revision,
+            "reloading the completed workshop preserves its selected upgrade and profile binding");
+        alice.DefaultRequestHeaders.Remove("X-DV-CSRF");
         await fixture.Profiles.WriteLabelAsync(fixture.AliceId, new(aliceProfile.ProfileId, null, "Petr"));
         await fixture.Profiles.WriteLabelAsync(fixture.BobId, new(bobProfile.ProfileId, null, "Jana"));
         var pausedResponse = await paused.GetAsync("/app/v1/game");
@@ -820,6 +910,7 @@ internal static partial class MobileGameTests
             && fixture.Wands.MobileOperation(fixture.ForeignId, foreignProfile.ProfileId, foreignProfile.Revision, 1) is null,
             "saved but unfinished character preparation cannot create a workshop or reserve generation");
         await fixture.MarkForeignCharacterPreparedAsync();
+        var dialogueCallsBeforeForeign = fixture.TextDialogueCalls;
         using var workshopStarted = await foreign.PostAsJsonAsync(workshopPath,
             new { operationId = workshopOperation });
         Check(workshopStarted.StatusCode == HttpStatusCode.OK,
@@ -864,7 +955,8 @@ internal static partial class MobileGameTests
                     "two user turns do not auto-finish or start wand generation");
             }
         }
-        Check(fixture.TextDialogueCalls == 4, "text replies use the injected fake; no GPT Live socket or provider network call is opened");
+        Check(fixture.TextDialogueCalls == dialogueCallsBeforeForeign + 4,
+            "text replies use the injected fake; no GPT Live socket or provider network call is opened");
         var fourTurnState = await foreign.GetAsync(workshopPath + "/" + workshopOperation);
         var fourTurnBody = await fourTurnState.Content.ReadFromJsonAsync<JsonElement>();
         Check(fourTurnState.StatusCode == HttpStatusCode.OK
@@ -978,6 +1070,8 @@ internal static partial class MobileGameTests
         Check((await foreign.GetAsync($"/app/v1/game/boss/attempts/{bossAttempt}")).StatusCode == HttpStatusCode.NotFound,
             "foreign launch group cannot read a boss attempt");
         await fixture.RemoveWandAsync();
+        Check((await alice.GetAsync("/app/v1/game/progress")).StatusCode == HttpStatusCode.OK,
+            "saved game progress remains readable after the participant loses their wand");
         var bossState = await (await alice.GetAsync($"/app/v1/game/boss/attempts/{bossAttempt}")).Content.ReadFromJsonAsync<JsonElement>();
         var bossChoice = await alice.PostAsJsonAsync($"/app/v1/game/boss/attempts/{bossAttempt}/choose", new {operationId=Guid.NewGuid().ToString("D"),expectedRevision=bossState.GetProperty("revision").GetInt64(),choice="strike"});
         Check(bossChoice.StatusCode == HttpStatusCode.OK,
@@ -1040,7 +1134,8 @@ internal static partial class MobileGameTests
         }
 
         internal static async Task<HttpFixture> StartAsync(bool withLiveTransport = false, GptLiveClient? liveClient = null,
-            TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true)
+            TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true,
+            bool includeLiveDelegations = true)
         {
             var root = Path.Combine(Path.GetTempPath(), "mobile-game-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
             using var rsa = RSA.Create(2048);
@@ -1067,7 +1162,7 @@ internal static partial class MobileGameTests
             });
             var textWorkshopProvider = workshopProvider ?? new TextWorkshopProvider();
             var liveSocketFactory = withLiveTransport && liveClient is null
-                ? new ScriptedLiveSocketFactory(includeSecondTurnAutomatically)
+                ? new ScriptedLiveSocketFactory(includeSecondTurnAutomatically, includeLiveDelegations)
                 : null;
             builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
             builder.Services.AddAccountIdentity(builder.Configuration);
@@ -1089,7 +1184,7 @@ internal static partial class MobileGameTests
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
-            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive();
+            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
             app.MapGet("/test/csrf", (HttpContext context, IAntiforgery antiforgery) => Results.Json(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
             app.MapPost("/test/login/{id}", async (string id, HttpContext context, AccountDatabase db, SignInManager<AccountUser> signIn) =>
@@ -1148,6 +1243,111 @@ internal static partial class MobileGameTests
             return client;
         }
 
+        internal async Task MakeOwnerAsync(string id)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<AccountUser>>();
+            var user = await db.Users.SingleAsync(user => user.Id == id);
+            await users.RemoveFromRoleAsync(user, AccountRoles.Customer);
+            await users.AddToRoleAsync(user, AccountRoles.Owner);
+            user.LaunchGroupId = null;
+            user.LaunchGroupAccessRevision++;
+            await db.SaveChangesAsync();
+        }
+
+        internal async Task LabelCharacterAsync(string id)
+        {
+            var profile = await Profiles.ReadAsync(id) ?? throw new InvalidOperationException("Profile missing");
+            await Profiles.WriteLabelAsync(id, new(profile.ProfileId, "Kartograf", null));
+        }
+
+        internal async Task BondOwnerWandAsync(string id)
+        {
+            var profile = (await Profiles.ReadAsync(id))!;
+            var wand = MobileWandSessions.Current(Wands, id, profile.ProfileId, profile.Revision)
+                ?? throw new InvalidOperationException("Owner wand missing");
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var session = await db.Sessions.FirstAsync(session => session.UserId == id);
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Backend:DatabasePath"] = Path.Combine(root, "journal.sqlite"),
+                ["Keepsake:DataRoot"] = Path.Combine(root, "archives"),
+                ["Keepsake:DataProtectionRoot"] = Path.Combine(root, "keys")
+            }).Build();
+            var keepsakes = new Kufr.Backend.Features.Keepsakes.KeepsakeStore(configuration, TimeProvider.System);
+            keepsakes.Issue(MobileWandWorkshopWorker.ArtworkSnapshot(wand), new(id, session.Id));
+        }
+
+        internal async Task RequireWorkshopLiveAuthorityAsync(string ticketUrl, string operationId)
+        {
+            var token = new Uri(ticketUrl).Query["?ticket=".Length..];
+            var admission = app.Services.GetRequiredService<MobileWandRuntime>()
+                .Take(token, operationId, "https://localhost");
+            await LiveRuntime.RequireAuthorityAsync(admission, CancellationToken.None);
+        }
+
+        internal void SetBossCaptured(string groupId, bool captured)
+        {
+            app.Services.GetRequiredService<GameStore>().ReadBoss(groupId, ForeignId);
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Path.Combine(app.Services.GetRequiredService<AccountConfiguration>().DataRoot, "mobile-game.sqlite") }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO game_boss_groups(group_id,reference_xp,rescued,revision) VALUES($group,10,$rescued,1) ON CONFLICT(group_id) DO UPDATE SET rescued=$rescued,revision=revision+1";
+            command.Parameters.AddWithValue("$group", groupId);
+            command.Parameters.AddWithValue("$rescued", captured ? 0 : 1);
+            command.ExecuteNonQuery();
+        }
+
+        internal async Task<GameYoloProfile> ReadYoloProfileAsync(string id)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var user = await db.Users.SingleAsync(user => user.Id == id);
+            return await GameYoloWorker.ReadPublicProfile(id, user.DisplayName, Profiles, Wands, db, CancellationToken.None);
+        }
+
+        internal async Task<GameTeamView> SeedOwnerTeamAsync()
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var fourth = await db.Users.SingleAsync(user => user.Id == PausedId);
+            fourth.LaunchGroupId = ActiveGroupId;
+            fourth.LaunchGroupAccessRevision++;
+            await db.SaveChangesAsync();
+            var participants = new[] { AliceId, ForeignId, BobId, PausedId };
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Path.Combine(app.Services.GetRequiredService<AccountConfiguration>().DataRoot, "mobile-game.sqlite") }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO game_players(group_id,user_id,xp,matches) VALUES($group,$user,50,3) ON CONFLICT(group_id,user_id) DO UPDATE SET xp=50,matches=3";
+            command.Parameters.AddWithValue("$group", ActiveGroupId);
+            var userParameter = command.Parameters.Add("$user", SqliteType.Text);
+            foreach (var id in participants)
+            {
+                userParameter.Value = id;
+                command.ExecuteNonQuery();
+            }
+            var store = app.Services.GetRequiredService<GameStore>();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var team = store.CreateTeamMatch(ActiveGroupId, AliceId,
+                new(ForeignId, [BobId, PausedId], "owner-team-switch-create"), now);
+            foreach (var id in participants.Skip(1))
+            {
+                team = store.MutateTeam(team.Id, ActiveGroupId, id, "accept",
+                    new("owner-team-switch-accept-" + id, team.Revision), now);
+            }
+            return team;
+        }
+
+        internal string OtherActiveGroupId => app.Services.GetRequiredService<LaunchPolicyStore>()
+            .ReadGroups().Single(group => group.Name == "Mobile Game Foreign").Id;
+
+        internal string PausedGroupId => app.Services.GetRequiredService<LaunchPolicyStore>()
+            .ReadGroups().Single(group => group.Name == "Mobile Game Paused").Id;
+
         internal CookieContainer CookiesFor(HttpClient client) => clientCookies[client];
 
         internal async Task LoginAsync(HttpClient client, string id)
@@ -1158,8 +1358,13 @@ internal static partial class MobileGameTests
 
         internal async Task MarkForeignCharacterPreparedAsync()
         {
-            var profile = await Profiles.ReadAsync(ForeignId)
-                ?? throw new InvalidOperationException("Foreign character fixture is missing.");
+            await MarkCharacterPreparedAsync(ForeignId);
+        }
+
+        internal async Task MarkCharacterPreparedAsync(string owner)
+        {
+            var profile = await Profiles.ReadAsync(owner)
+                ?? throw new InvalidOperationException("Character fixture is missing.");
             var enrichment = new CharacterEnrichment(profile.UserInput.Name, profile.UserInput.World,
                 "Syntetický ověřený profil pro zákaznický workshop.",
                 [new CharacterFact("Při nejistotě nejprve ověřuje mapu.", [])], [], [], false, [],
@@ -1172,11 +1377,28 @@ internal static partial class MobileGameTests
             command.CommandText = "UPDATE character_profiles SET status='ready',enrichment_json=$enrichment WHERE account_id=$account AND profile_id=$profile AND revision=$revision";
             command.Parameters.AddWithValue("$enrichment", JsonSerializer.Serialize(enrichment,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web)));
-            command.Parameters.AddWithValue("$account", ForeignId);
+            command.Parameters.AddWithValue("$account", owner);
             command.Parameters.AddWithValue("$profile", profile.ProfileId);
             command.Parameters.AddWithValue("$revision", profile.Revision);
             if (command.ExecuteNonQuery() != 1)
-                throw new InvalidOperationException("Foreign character preparation revision changed during test setup.");
+                throw new InvalidOperationException("Character preparation revision changed during test setup.");
+        }
+
+        internal async Task RunWorkshopWorkerAsync(string owner, string operationId)
+        {
+            var worker = new MobileWandWorkshopWorker(app.Services.GetRequiredService<IServiceScopeFactory>(),
+                Wands, new WandGenerationService(Wands, new SingleCandidateWorkshopProvider()),
+                app.Services.GetRequiredService<ILogger<MobileWandWorkshopWorker>>());
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            await worker.StartAsync(timeout.Token);
+            try
+            {
+                await WaitUntilAsync(() => Wands.ReadWorkshopState(owner, operationId).Status == "complete", timeout.Token);
+            }
+            finally
+            {
+                await worker.StopAsync(CancellationToken.None);
+            }
         }
 
         internal async Task<string> CsrfAsync(HttpClient client)
@@ -1208,6 +1430,24 @@ internal static partial class MobileGameTests
             var profile = (await app.Services.GetRequiredService<CharacterProfileStore>().ReadAsync(AliceId))!;
             app.Services.GetRequiredService<WandGenerationStore>().DeleteProfile(AliceId, profile.ProfileId);
         }
+        internal Task SeedWandTierAsync(string owner, int tier) =>
+            MobileWandTests.Seed(Profiles, Wands, owner, tier);
+        internal void SetGameXp(string owner, int xp)
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+                { DataSource = Path.Combine(root, "accounts", "mobile-game.sqlite") }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO game_players(group_id,user_id,xp,matches)
+                VALUES($group,$user,$xp,0)
+                ON CONFLICT(group_id,user_id) DO UPDATE SET xp=$xp
+                """;
+            command.Parameters.AddWithValue("$group", ActiveGroupId);
+            command.Parameters.AddWithValue("$user", owner);
+            command.Parameters.AddWithValue("$xp", xp);
+            command.ExecuteNonQuery();
+        }
         internal async Task<string> CreateBossAttemptAsync()
         {
             var store = app.Services.GetRequiredService<GameStore>();
@@ -1232,22 +1472,30 @@ internal static partial class MobileGameTests
         }
     }
 
+    private sealed class SingleCandidateWorkshopProvider : IWandGenerationProvider
+    {
+        public Task<WandCandidateContent[]> GenerateAsync(WandGenerationJob job, CancellationToken cancellationToken) =>
+            Task.FromResult(MobileWandTests.Candidates().Take(1).ToArray());
+    }
+
     private sealed class ScriptedLiveSocketFactory
     {
         private readonly System.Collections.Concurrent.ConcurrentQueue<string> events = new();
         private readonly bool includeSecondTurnAutomatically;
+        private readonly bool includeLiveDelegations;
         private ScriptedLiveSocket? current;
         internal string Diagnostics => string.Join(",", events);
 
-        internal ScriptedLiveSocketFactory(bool includeSecondTurnAutomatically = true)
+        internal ScriptedLiveSocketFactory(bool includeSecondTurnAutomatically = true, bool includeLiveDelegations = true)
         {
             this.includeSecondTurnAutomatically = includeSecondTurnAutomatically;
+            this.includeLiveDelegations = includeLiveDelegations;
         }
 
         internal Task<WebSocket> ConnectAsync(CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            current = new ScriptedLiveSocket(events, includeSecondTurnAutomatically);
+            current = new ScriptedLiveSocket(events, includeSecondTurnAutomatically, includeLiveDelegations);
             return Task.FromResult<WebSocket>(current);
         }
 
@@ -1255,7 +1503,7 @@ internal static partial class MobileGameTests
     }
 
     private sealed class ScriptedLiveSocket(System.Collections.Concurrent.ConcurrentQueue<string> events,
-        bool includeSecondTurnAutomatically) : WebSocket
+        bool includeSecondTurnAutomatically, bool includeLiveDelegations) : WebSocket
     {
         private readonly System.Threading.Channels.Channel<ProviderFrame> input =
             System.Threading.Channels.Channel.CreateUnbounded<ProviderFrame>();
@@ -1329,7 +1577,10 @@ internal static partial class MobileGameTests
             var text = turn == 1 ? "Nejprve zkontroluji most." : "Pokud selže, opravím cestu.";
             Enqueue(new { type = "session.input_transcript.delta", event_id = $"user-{turn}", delta = text,
                 start_ms = turn * 1000, end_ms = turn * 1000 + 350 });
-            Enqueue(new { type = "session.delegation.created", delegation = new { target = "client", id = $"delegation-{turn}" } });
+            if (includeLiveDelegations)
+            {
+                Enqueue(new { type = "session.delegation.created", delegation = new { target = "client", id = $"delegation-{turn}" } });
+            }
         }
 
         private void Enqueue(object value)

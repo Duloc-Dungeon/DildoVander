@@ -28,6 +28,7 @@ const oversight = ref<string | null>(null);
 const message = ref(''); const recipient = ref('PUBLIC'); const ballot = ref<string[]>([]); const personalText = ref('');
 const pane = ref<'own' | 'experienced' | 'presented' | 'planned'>('experienced');
 let timer: ReturnType<typeof setTimeout> | undefined; let controller: AbortController | undefined; let generation = 0;
+let disposed = false;
 const id = computed(() => typeof route.params.id === 'string' ? route.params.id : '');
 const name = (player: string) => view.value?.players.find(p => p.id === player)?.name ?? 'Host';
 const key = () => view.value ? `dv:sealed-draft:${view.value.ownId}:${view.value.id}` : '';
@@ -87,14 +88,15 @@ function restoreDraft() {
   } catch { /* A malformed local draft never becomes a server action. */ }
 }
 async function refresh() {
-  if (loading.value) return;
+  if (loading.value || disposed || !account.value) return;
   loading.value = true; const current = generation;
   controller?.abort(); const requestScope = controller = new AbortController();
   try {
     if (!id.value) {
       const latest = await request<{ id: string | null }>('/current', undefined, requestScope.signal);
+      if (current !== generation || requestScope.signal.aborted) return;
       if (latest.id) { await router.replace(`/play/pod-peceti/${encodeURIComponent(latest.id)}`); return; }
-      view.value = undefined; return;
+      view.value = undefined; error.value = ''; return;
     }
     const previousId = view.value?.id;
     const fresh = await request<Play>(`/${encodeURIComponent(id.value)}/play`, undefined, requestScope.signal);
@@ -109,8 +111,10 @@ async function refresh() {
       if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; pending.value = undefined;
     }
   } finally {
-    loading.value = false;
-    clearTimeout(timer); timer = setTimeout(refresh, 5000);
+    if (current === generation && !disposed) {
+      loading.value = false;
+      clearTimeout(timer); timer = setTimeout(refresh, 5000);
+    }
   }
 }
 async function mutate(path: string, body: unknown) {
@@ -165,11 +169,11 @@ async function vote(abstain = false) {
 const ballotCandidates = computed(() => view.value?.players.filter(p => p.id !== view.value!.ownId
   && (view.value!.finale?.phase !== 'runoff' || view.value!.finale.runoffCandidates.includes(p.id))) ?? []);
 watch(draft, saveDraft, { deep: true }); watch(personalText, saveDraft);
-watch(() => route.params.id, () => { generation++; controller?.abort(); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; loading.value = false; void refresh(); });
-watch(() => account.value?.id, () => { generation++; controller?.abort(); if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; });
+watch(() => route.params.id, () => { generation++; controller?.abort(); clearTimeout(timer); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; loading.value = false; error.value = ''; void refresh(); });
+watch(() => account.value?.id, () => { generation++; controller?.abort(); clearTimeout(timer); if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; loading.value = false; error.value = ''; void refresh(); });
 function resume() { if (document.visibilityState === 'visible') void refresh(); }
 onMounted(() => { void refresh(); window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume); });
-onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); });
+onBeforeUnmount(() => { disposed = true; generation++; controller?.abort(); clearTimeout(timer); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); });
 </script>
 
 <template>

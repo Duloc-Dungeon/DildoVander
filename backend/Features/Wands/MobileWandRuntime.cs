@@ -48,16 +48,17 @@ internal sealed class MobileWandRuntime(IServiceScopeFactory scopes, WandGenerat
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == a.Owner && !u.Disabled
             && u.SecurityStamp == a.Stamp && !db.DeletionRequests.Any(d => d.UserId == a.Owner), token);
-        if (user is null || user.LaunchGroupRevokedAt != null || !AccountAiConsent.HasConsent(user)
+        if (user is null || !AccountAiConsent.HasConsent(user)
             || !await db.Sessions.AsNoTracking().AnyAsync(s => s.Id == a.AccountSession && s.UserId == a.Owner && s.ExpiresAt > now, token)) return false;
         var tier = wands.MobileOperationTier(a.Owner, a.Operation);
         if (tier is not (1 or 2)) return false;
+        if (!await MobileWandWorkshopAccess.IsAllowedForWorkshopAsync(user, a.Operation, wands, scope.ServiceProvider, token)) return false;
         if (tier == 2)
         {
             if (user.LaunchGroupId is null || scope.ServiceProvider.GetRequiredService<LaunchPolicyStore>().ReadGroup(user.LaunchGroupId)?.OpenedAt is null
                 || scope.ServiceProvider.GetRequiredService<GameStore>().Stats(user.LaunchGroupId, a.Owner, "").Xp < 30) return false;
             var principal = await scope.ServiceProvider.GetRequiredService<IUserClaimsPrincipalFactory<AccountUser>>().CreateAsync(user);
-            if (!principal.IsInRole(AccountRoles.Customer) || !(await scope.ServiceProvider.GetRequiredService<LaunchAccessService>().EvaluateAsync(principal)).Allowed) return false;
+            if (!AccountRoles.IsPlayer(principal) || !(await scope.ServiceProvider.GetRequiredService<LaunchAccessService>().EvaluateAsync(principal)).Allowed) return false;
         }
         var profile = await scope.ServiceProvider.GetRequiredService<CharacterProfileStore>().ReadAsync(a.Owner, token);
         return profile?.ProfileId == a.Profile.ProfileId && profile.Revision == a.Profile.Revision;

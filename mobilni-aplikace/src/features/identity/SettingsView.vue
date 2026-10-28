@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import AccountDeletion from './AccountDeletion.vue';
 import RequestDiagnostics from './RequestDiagnostics.vue';
+import PushNotifications from './PushNotifications.vue';
 import CustomerDataPanel from '../customer/CustomerDataPanel.vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
@@ -64,6 +65,7 @@ function trust(session: AccountSession) {
     <section v-if="!customerSurface" class="aw-card"><h2>{{ customerCopy.text('settings.appearance') }}</h2><label for="account-theme">{{ customerCopy.text('settings.theme') }}</label><select id="account-theme" v-model="preferences.theme" class="aw-select"><option v-for="theme in preferences.themes" :key="theme.id" :value="theme.id">{{ themeLabel(theme) }}</option></select></section>
     <section v-if="!account" class="aw-card"><h2>{{ customerCopy.text('settings.signin-heading') }}</h2><p>{{ customerCopy.text('settings.signin-intro') }}</p><RouterLink to="/signin" class="aw-button aw-button--primary">{{ customerCopy.text('settings.signin-link') }}</RouterLink></section>
     <template v-else>
+      <PushNotifications v-if="!accountDeletionRequested" />
       <section class="aw-card"><h2>{{ account.displayName }}</h2><p v-if="details">{{ customerCopy.text('settings.passkey-count', { count: details.passkeyCount }) }}</p><AwButton :busy="busy" @click="action(() => authenticatePasskey('add'), 'settings.passkey-added')">{{ customerCopy.text('settings.add-passkey') }}</AwButton><p v-if="!customerSurface && hasRole('Administrator')"><RouterLink to="/settings/admin/launch">Večer a pozvánky</RouterLink></p></section>
       <section v-if="details" class="aw-card">
         <h2>{{ customerCopy.text('settings.passkeys') }}</h2>

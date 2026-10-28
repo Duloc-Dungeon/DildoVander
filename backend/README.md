@@ -17,6 +17,22 @@ to the canonical URL and retains its `KUFR_BACKEND_URL` override.
 
 # Backend kufru
 
+## Vlastník ve hře
+
+Účet s rolí `Owner` má pevné zobrazované jméno `Olivander` a členství ve všech
+hráčských skupinách. Uložené `LaunchGroupId` vybírá jeho aktuální hráčský kontext;
+přepnutí neodebírá členství v ostatních skupinách. Ostatní účty nadále vyžadují
+roli `Customer`, přiřazení ke skupině a platný přístup.
+
+Owner-only `GET /app/v1/customer/groups` vrací `{ groups, groupId, accessRevision }`
+a při chybějící volbě vybere první existující skupinu. `PUT` na
+`/app/v1/customer/groups/active` přijímá `{ groupId, expectedRevision }`;
+souběžná změna vrací `409`. Používá stávající ověření relace, originu a CSRF.
+Owner může připravit postavu a první hůlku před otevřením skupiny. Samotná hra
+a vyšší úrovně hůlky zachovávají podmínky spuštění a postupu.
+
+Cílené HTTPS regrese spouští backend harness přes `--owner-player-http`.
+
 [AI Persona Lab](Features/PersonaLab/README.md) poskytuje oddělené testování
 postavy přihlášeným účtům, verzované instrukce, hodnocení a diagnostiku obou
 podporovaných hlasových enginů.
@@ -39,9 +55,37 @@ GPT Live ani hlasové přehrávání. Produkční textový poskytovatel potřebu
 `OPENAI_API_KEY`; offline fixture konfigurace musí volbu výslovně vypnout.
 
 Produkční rozhovor používá jedinou osobnost **DV01** a **GPT Live `gpt-live-1`**.
-GPT Realtime 2.1 `gpt-realtime-2.1` je neaktivní zdrojová záloha. Live tvoří
-běžnou řeč sám. Sol rozhoduje jen o skutečné hůlce; samostatná vision služba
-zpracovává fotografie. Deterministické adaptéry jsou testovací pomůcky.
+GPT Realtime 2.1 `gpt-realtime-2.1` zůstává neaktivní zdrojovou zálohou pro
+obousměrný rozhovor. Samostatná syntéza hotového textu používá Realtime API
+model `gpt-realtime-2.1-mini`; výsledkem zůstává WAV. Live tvoří běžnou řeč sám.
+Luna rozhoduje o volbě hůlky, Terra obsluhuje textový dialog, výzkum a delší
+autorské texty. Samostatná vision služba zpracovává fotografie.
+Deterministické adaptéry jsou testovací pomůcky.
+
+Výchozí modely aplikace jsou nastavené v `backend/appsettings.json`; odpovídající
+proměnné prostředí s `__` místo `:` je mohou přepsat. Při nasazení mají přednost
+existující explicitní provozní hodnoty.
+
+| Úloha | Výchozí model | Konfigurace |
+| --- | --- | --- |
+| Textový dialog, výzkum a autorské texty | `gpt-6.1-terra` | dialog má vestavěný výchozí model; `Backend:Vision:Model`, `Keepsake:StoryModel`, `CustomerCharacters:Model`, `Wands:Model` |
+| Úzké rozhodnutí Live a hráči Pod pečetí | `gpt-6-luna` | `Backend:GptLive:DecisionModel`, `SealedCase:AiPlayers:Model` |
+| Obrázky portrétů a hůlek | `gpt-image-2.5-flare` | `CustomerCharacters:PortraitModel`, `Keepsake:ImageModel` |
+| Plně duplexní rozhovor | `gpt-live-1` | `Backend:Conversation:LiveModel` |
+| Syntéza hotového textu pro uložené odpovědi a krátké pokyny | `gpt-realtime-2.1-mini` | `ShowCueSpeechClient` |
+
+Generování obrázků posílá `moderation=low`, včetně portrétů a průhledných hůlek;
+parametr se ukládá také do provenance hůlky. Textové a hlasové požadavky tento
+obrazový parametr nepřijímají. Starší volba hlasu `onyx` se při samostatné syntéze
+překládá na podporovaný `cedar`.
+
+Mobilní dílna vyhodnotí ustálený uložený přepis i bez delegace hlasového modelu.
+Stejný přepis znovu automaticky nevyhodnocuje; počet rozhodnutí v jednom spojení
+je omezený. Opravené odpovědi a aktuální oprávnění se kontrolují před přijetím
+výroby. Odpojení nezahodí již rozběhnuté rozhodnutí, pokud jeho podklady a
+oprávnění stále platí. Uložení hůlky a její obrázek mají samostatný stav;
+neúspěšný obrázek nevyžaduje novou hůlku. Diagnostika odmítnutí uchovává HTTP
+status, nikoli text těla odpovědi poskytovatele.
 
 [Aktuální architektura a provozní kontrakt](../docs/autonomous-live-memory.md)
 popisuje paměť, transport, migraci a akceptaci.

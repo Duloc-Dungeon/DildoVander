@@ -6,6 +6,8 @@ import { useRoute, useRouter } from 'vue-router';
 import AwButton from '../components/AwButton.vue';
 import AwNotice from '../components/AwNotice.vue';
 import { notifications, dismissNotice, notify } from './notifications';
+import { startPushRuntime } from './pushRuntime';
+import { focusRouteContent } from './routeFocus';
 import { account, accountDeletionRequested, offlineSession, refreshIdentity } from '../features/identity/session';
 import AccountAiConsent from '../features/identity/AccountAiConsent.vue';
 import { deviceSession } from '../features/suitcase/deviceSession';
@@ -21,13 +23,16 @@ import { customerCopy } from './customerCopy';
 import { customerMembershipState, launchAllowed, refreshCustomerMembership, refreshLaunchAccess } from './launchAccess';
 import ApplicationUpdateGate from './ApplicationUpdateGate.vue';
 import { applicationUpdates } from './nativeApplicationUpdates';
+import OwnerPlayerControls from './OwnerPlayerControls.vue';
+import { isOwnerPlayer, setOwnerPlayer } from './ownerMode';
 
 const route = useRoute();
 const router = useRouter();
+startPushRuntime(router);
 const gameExperience = computed(() => route.path === '/play' || route.path.startsWith('/play/'));
 const launchExperience = computed(() => route.path === '/launch' || route.path === '/signin'
   || customerMembershipState.value === 'revoked'
-  || (customerAccount.value && customerMembershipState.value !== 'active')
+  || (customerAccount.value && !isOwnerPlayer(account.value) && customerMembershipState.value !== 'active')
   || (launchAllowed.value !== true && (['/privacy', '/support', '/account-deletion'].includes(route.path)
     || !canEnterStaffArea(account.value) && !account.value?.roles.includes('Tester'))));
 const browserMode = !Capacitor.isNativePlatform();
@@ -36,6 +41,7 @@ const navigationElement = ref<HTMLElement>();
 const navigationHeight = ref('calc(5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))');
 let navigationObserver: ResizeObserver | undefined;
 const viewError = ref('');
+const groupContextRevision = ref(0);
 const customerAccount = computed(() => isCustomerAccount(account.value));
 const showCustomerNavigation = computed(() => customerAccount.value && !launchExperience.value
   && !/^\/play\/(?:match|team)\//.test(route.path) && !route.path.startsWith('/play/boss/') && route.path !== '/play/practice');
@@ -51,12 +57,16 @@ const navigation = computed(() => canEnterStaffArea(account.value) || account.va
   { to: '/signin', label: customerCopy.text('shell.nav-account'), symbol: '⚙' },
 ]);
 const identityKey = computed(() => account.value ? `${account.value.id}:${account.value.roles.join(',')}` : 'public');
+watch(() => account.value?.id, () => setOwnerPlayer(null, false));
+watch(() => route.meta.staff, staff => {
+  if (staff && isOwnerPlayer(account.value)) setOwnerPlayer(account.value, false);
+});
 const activeNavigationPath = computed(() => navigation.value
   .filter(item => item.to === '/' ? route.path === '/' : route.path === item.to || route.path.startsWith(`${item.to}/`))
   .sort((left, right) => right.to.length - left.to.length)[0]?.to);
 function renderedViewKey(renderedRoute: { name?: string | symbol | null; fullPath: string; meta: { requiresAccount?: boolean } }): string {
   const identity = renderedRoute.meta.requiresAccount ? identityKey.value : 'public';
-  return `${String(renderedRoute.name)}:${identity}:${androidNavigationKey(renderedRoute.fullPath)}`;
+  return `${String(renderedRoute.name)}:${identity}:${groupContextRevision.value}:${androidNavigationKey(renderedRoute.fullPath)}`;
 }
 function revealActiveNavigation(): void {
   const navigation = navigationElement.value;
@@ -120,7 +130,7 @@ watch(customerMembershipState, state => {
 watch(() => route.path, () => {
   viewError.value = '';
   // Announce route changes while leaving same-route form/telemetry focus intact.
-  requestAnimationFrame(() => main.value?.focus({ preventScroll: true }));
+  requestAnimationFrame(() => focusRouteContent(main.value));
 });
 const removeRouterError = router.onError(() => { viewError.value = customerCopy.text('shell.page-error'); });
 // The native version gate mounts the shell after the root's mounted hook.
@@ -191,11 +201,12 @@ onBeforeUnmount(() => {
       </header>
       <div v-if="!launchExperience" class="notification-stack" :aria-label="customerCopy.text('shell.notifications')"><AwNotice v-for="notice in notifications" :key="notice.id" :tone="notice.tone"><div class="notification-content">{{ notice.message }}<button :aria-label="customerCopy.text('shell.close-notice')" @click="dismissNotice(notice.id)">×</button></div></AwNotice></div>
       <main id="main-content" ref="main" class="application-main" tabindex="-1">
+        <OwnerPlayerControls v-if="route.matched.length > 0 && route.name !== 'customer-demo'" @context-changed="groupContextRevision++" />
         <AwNotice v-if="offlineSession && !launchExperience" tone="warning">{{ customerCopy.text('shell.offline') }}</AwNotice>
         <AwNotice v-if="viewError" tone="danger"><p>{{ viewError }}</p><AwButton @click="router.go(0)">{{ customerCopy.text('shell.reload') }}</AwButton></AwNotice>
         <AccountAiConsent v-else-if="account?.openAiConsent === false && !['/privacy', '/support', '/account-deletion'].includes(route.path)" />
         <RouterView v-else-if="routeAccessible" v-slot="{ Component, route: renderedRoute }">
-          <KeepAlive :key="identityKey"><component :is="Component" v-if="renderedRoute.meta.keepAlive" :key="renderedRoute.name" /></KeepAlive>
+          <KeepAlive :key="`${identityKey}:${groupContextRevision}`"><component :is="Component" v-if="renderedRoute.meta.keepAlive" :key="renderedRoute.name" /></KeepAlive>
           <component :is="Component" v-if="!renderedRoute.meta.keepAlive" :key="renderedViewKey(renderedRoute)" />
         </RouterView>
       </main>

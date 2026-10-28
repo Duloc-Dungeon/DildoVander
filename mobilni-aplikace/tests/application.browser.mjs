@@ -157,12 +157,17 @@ try {
   // The public walkthrough is synthetic even for authenticated customer/staff
   // visitors. App-wide session refresh may read identity; demo actions may not
   // read private content or issue any request/command.
-  for (const identity of [null, { id: 'demo-customer', displayName: 'Ukázkový host', roles: ['Customer'], openAiConsent: true }, ownerAccount]) {
+  const demoIdentities = [null, { id: 'demo-customer', displayName: 'Ukázkový host', roles: ['Customer'], openAiConsent: true }, ownerAccount];
+  const demoCases = demoIdentities.flatMap(identity =>
+    ['/demo', '/demo/', '/DEMO'].map(demoPath => ({ identity, demoPath })));
+  for (const { identity, demoPath } of demoCases) {
     sessionAccount = identity;
     const beforeDemo = requests.length;
-    await page.goto(origin + '/demo');
+    await page.goto(origin + demoPath);
     await hasHeading('Příběh bez připojení');
-    assert.equal(new URL(page.url()).pathname, '/demo');
+    assert.equal(new URL(page.url()).pathname, demoPath);
+    assert.equal(await page.getByRole('region', { name: 'Režim vlastníka' }).count(), 0,
+      'demo does not mount private owner group controls');
     const demo = page.locator('.customer-demo');
     assert.match(await demo.innerText(), /Syntetická ukázka/);
     await hasHeading('Poznejte postavu');

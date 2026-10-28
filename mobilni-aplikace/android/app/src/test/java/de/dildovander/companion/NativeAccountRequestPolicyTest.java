@@ -14,6 +14,17 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void pushRoutesAreExplicitAndMethodBound() {
+        for (String method : new String[] {"GET", "PUT", "DELETE"}) {
+            assertTrue(NativeAccountRequestPolicy.allows("/app/v1/push", method));
+        }
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/push/test", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/push", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/push/test", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/push?account=other", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/push/other", "DELETE"));
+    }
+
     @Test public void applicationVersionIsReadOnlyAndHasNoQuery() {
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/application-version", "GET"));
         for (String method : Arrays.asList("POST", "PUT", "DELETE")) {
@@ -80,7 +91,31 @@ public final class NativeAccountRequestPolicyTest {
         }
     }
 
+    @Test public void workshopArtworkReadsAreBoundToExactIdentifiersAndMethod() {
+        String operation = "a".repeat(32);
+        String asset = "123e4567-e89b-42d3-a456-426614174000";
+        String path = "/app/v1/customer/wand/workshop/sessions/" + operation + "/artwork/assets/" + asset;
+        assertTrue(NativeAccountRequestPolicy.allows(path, "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(path.replace(asset, asset.toUpperCase(java.util.Locale.ROOT)), "GET"));
+        assertEquals(32 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(path, "GET"));
+        for (String method : Arrays.asList("POST", "PUT", "DELETE", "HEAD")) {
+            assertFalse(NativeAccountRequestPolicy.allows(path, method));
+        }
+        for (String invalid : Arrays.asList(path + "?x=1", path + "?", path + "/extra", path + "/", path + "\n",
+                path.replace(operation, "a".repeat(31)), path.replace(operation, "a".repeat(33)),
+                path.replace(asset, "bad"), path.replace(asset, asset.replace("-42d3-", "-02d3-")),
+                path.replace(asset, asset.replace("-a456-", "-0456-")), path.replace("/artwork/assets/", "/assets/"))) {
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "GET"));
+        }
+    }
+
     @Test public void consentAndWandWorkshopRoutesAreMethodBound() {
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/groups", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/groups/active", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/groups", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/groups/active", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/groups/active?account=other", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/groups/active/extra", "PUT"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "POST"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "GET"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/wand", "GET"));

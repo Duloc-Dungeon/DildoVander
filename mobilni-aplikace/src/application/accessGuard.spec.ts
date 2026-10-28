@@ -16,6 +16,7 @@ vi.mock('../features/identity/session', async () => {
 import { installAccessGuard } from './accessGuard';
 import { account, refreshIdentity } from '../features/identity/session';
 import { notifications } from './notifications';
+import { setOwnerPlayer } from './ownerMode';
 
 function createGuardedRouter() {
   const router = createRouter({
@@ -39,6 +40,16 @@ function createGuardedRouter() {
 beforeEach(() => { vi.clearAllMocks(); state.account = null; account.value = null; state.launchAllowed = false; state.membership = 'active'; });
 
 describe('launch access navigation', () => {
+  it('allows the owner player to prepare before launch without a customer membership', async () => {
+    state.account = { id: 'owner', displayName: 'Owner', roles: ['Owner'] };
+    setOwnerPlayer(state.account, true);
+    state.membership = 'unassigned';
+    const router = createGuardedRouter();
+    await router.push('/me');
+    expect(router.currentRoute.value.path).toBe('/me');
+    expect(account.value?.roles).toEqual(['Owner']);
+    setOwnerPlayer(null, false);
+  });
   it('cancels a transition on a connection failure and permits a verified retry without signing out', async () => {
     state.account = { id: 'guest', displayName: 'Guest', roles: ['Customer'] };
     state.launchAllowed = true;

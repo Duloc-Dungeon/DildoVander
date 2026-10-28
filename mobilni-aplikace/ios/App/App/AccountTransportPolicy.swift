@@ -56,6 +56,7 @@ enum AccountTransportPolicy {
         if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$", options: .regularExpression) != nil,
            method == "POST" { return 8 * 1024 * 1024 }
         if prelaunchPortrait(path: path, method: method) || sealedCasePortrait(path: path, method: method) { return 8 * 1024 * 1024 }
+        if wandWorkshopArtwork(path: path, method: method) { return 32 * 1024 * 1024 }
         if method == "GET", path.contains("/keepsakes/"), path.contains("/assets/"),
            testingSessions(path: path, method: method) { return 32 * 1024 * 1024 }
         if method == "GET" && (path == "/app/v1/customer/memory" || accountDataExportDownload(path: path, method: method)) {
@@ -564,6 +565,8 @@ enum AccountTransportPolicy {
             "/app/v1/customer/enrollment/options": ["POST"],
             "/app/v1/customer/enrollment/complete": ["POST"],
             "/app/v1/customer/access": ["GET"],
+            "/app/v1/customer/groups": ["GET"],
+            "/app/v1/customer/groups/active": ["PUT"],
             "/app/v1/customer/character": ["GET", "PUT", "DELETE"],
             "/app/v1/customer/conversation-preferences": ["GET", "PUT"],
             "/app/v1/customer/character/correction": ["POST"],
@@ -663,6 +666,7 @@ enum AccountTransportPolicy {
         let evening = path.split(separator: "/").map(String.init)
         if evening.count == 4, evening[0] == "v1", evening[1] == "evenings", UUID(uuidString: evening[2]) != nil, evening[3] == "active" { return method == "PUT" }
         let exact: [String: Set<String>] = [
+            "/app/v1/push": ["GET", "PUT", "DELETE"], "/app/v1/push/test": ["POST"],
             "/app/v1/session": ["GET", "DELETE"], "/app/v1/account": ["GET", "DELETE"],
             "/app/v1/account/deletion": ["GET"],
             "/app/v1/account/ai-consent": ["POST"],
@@ -873,6 +877,15 @@ enum AccountTransportPolicy {
         return false
     }
 
+    private static func wandWorkshopArtwork(path: String, method: String) -> Bool {
+        guard method == "GET" else { return false }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        return parts.count == 11
+            && Array(parts.prefix(7)) == ["", "app", "v1", "customer", "wand", "workshop", "sessions"]
+            && parts[7].count == 32 && parts[7].allSatisfy { "0123456789abcdef".contains($0) }
+            && parts[8] == "artwork" && parts[9] == "assets" && validArchiveUUID(parts[10])
+    }
+
     private static func wandWorkshop(path: String, method: String) -> Bool {
         guard !path.contains("#"), !path.contains("%"), !path.contains("\\") else { return false }
         let components = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
@@ -883,6 +896,7 @@ enum AccountTransportPolicy {
             return method == "GET" && (query == nil || query == "upgrade=0" || query == "upgrade=1")
         }
         if query != nil { return false }
+        if wandWorkshopArtwork(path: path, method: method) { return true }
         if route == "/app/v1/customer/wand/workshop/sessions" { return method == "POST" }
         let session = "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}"
         if route.range(of: session + "$", options: .regularExpression) != nil { return method == "GET" }

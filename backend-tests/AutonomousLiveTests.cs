@@ -941,7 +941,7 @@ internal static class AutonomousLiveTests
         Check((await noModel.DecideAsync(input with { ReadyMask = 63, Evidence = [] }, CancellationToken.None)).Status
             == WandDecisionStatus.NeedsInformation, "DV01 missing evidence never creates a paid selection call");
         var request = WandDecisionService.BuildRequest(input with { ReadyMask = 63 });
-        Check(!request.Contains("\"reply\"") && request.Contains("decide_wand") && request.Contains("gpt-6.1-sol"), "structured facts use existing model without a monologue contract");
+        Check(!request.Contains("\"reply\"") && request.Contains("decide_wand") && request.Contains("gpt-6-luna"), "structured facts use the Luna default without a monologue contract");
         var escaped = WandDecisionService.BuildRequest(input with { ReadyMask = 63, Evidence = Enumerable.Range(0, 8)
             .Select(i => new DecisionEvidence("answer-" + i, string.Concat(Enumerable.Repeat("\\\"\nžluťoučký", 500)))).ToArray() });
         Check(System.Text.Encoding.UTF8.GetByteCount(escaped) <= ResponsesTextDialogBudget.MaxRequestBytes,
@@ -1013,8 +1013,10 @@ internal static class AutonomousLiveTests
             && WandDecisionBudget.Price(service.Model, "default", 1, 0, service.Model) == 1
             && service.Reservation(input) > 2006, "cache-write rates, micro-dollar rounding and conservative reservation");
         Check(WandDecisionBudget.Price(ResponsesTextDialogBudget.Model, "default", 14000, 1200, ResponsesTextDialogBudget.Model)
-            == ResponsesTextDialogBudget.CalculateUsageMicroUsd(ResponsesTextDialogBudget.Model, "default", 14000, 1200),
-            "Sol pricing compatibility");
+            == ResponsesTextDialogBudget.CalculateUsageMicroUsd(ResponsesTextDialogBudget.Model, "default", 14000, 1200)
+            && WandDecisionBudget.Price(ResponsesTextDialogBudget.LegacyModel, "default", 14000, 1200, ResponsesTextDialogBudget.LegacyModel)
+            == ResponsesTextDialogBudget.CalculateUsageMicroUsd(ResponsesTextDialogBudget.LegacyModel, "default", 14000, 1200,
+                ResponsesTextDialogBudget.LegacyModel), "Terra and explicit legacy Sol pricing compatibility");
         var reasons = new[] { new DecisionReason("a", "Improvizuji", "Host popsal improvizaci.") };
         using var response = JsonDocument.Parse(JsonSerializer.Serialize(new
         {
@@ -1038,7 +1040,7 @@ internal static class AutonomousLiveTests
             try { WandDecisionBudget.Price(model, tier, count, 1, service.Model); throw new Exception("Unknown usage accepted"); }
             catch (TextDialogUnavailableException) { }
         }
-        try { WandDecisionService.Parse(response.RootElement, input); throw new Exception("Unexpected model accepted"); }
+        try { WandDecisionService.Parse(response.RootElement, input, ResponsesTextDialogBudget.Model); throw new Exception("Unexpected model accepted"); }
         catch (TextDialogUnavailableException) { }
         foreach (var model in new[] { "gpt-6-astra", "arbitrary-model" })
         {

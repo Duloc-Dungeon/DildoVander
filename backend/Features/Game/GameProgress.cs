@@ -58,13 +58,30 @@ internal sealed partial class GameStore
                 && state.Result == (state.ChallengerId == peer.Key ? "challenger" : "opponent"));
             yolo.Add(new(peer.Key, peer.Value, 0, wins, 0));
         }
-        var rankedCombat = combat.OrderByDescending(row => row.Xp).ThenBy(row => row.Id, StringComparer.Ordinal).Select((row, index) => row with { Rank = index + 1 }).ToArray();
-        var rankedYolo = yolo.OrderByDescending(row => row.Wins).ThenBy(row => row.Id, StringComparer.Ordinal).Select((row, index) => row with { Rank = index + 1 }).ToArray();
+        var rankedCombat = Rank(combat, row => row.Xp);
+        var rankedYolo = Rank(yolo, row => row.Wins);
         return new(ProgressRevision(stats.Xp, stats.Matches, seen.Count), tactical,
             boss.Revealed ? boss.Rescued ? "rescued" : "captured" : "available",
             milestones.Where(milestone => !seen.Contains(milestone.Id)).ToArray(), titles,
             rankedCombat, rankedYolo, milestones);
     }
+
+    private static GameRanking[] Rank(IEnumerable<GameRanking> rows, Func<GameRanking, int> score)
+    {
+        var ordered = rows.OrderByDescending(score).ThenBy(row => row.Id, StringComparer.Ordinal).ToArray();
+        var ranked = new GameRanking[ordered.Length];
+        var previousScore = int.MinValue;
+        var currentRank = 0;
+        for (var index = 0; index < ordered.Length; index++)
+        {
+            var value = score(ordered[index]);
+            if (index == 0 || value != previousScore) { currentRank = index + 1; }
+            ranked[index] = ordered[index] with { Rank = currentRank };
+            previousScore = value;
+        }
+        return ranked;
+    }
+
     internal void AcknowledgeProgress(string groupId, string userId, GameProgressCommand request, int eligiblePlayers)
     {
         if (!Guid.TryParse(request.OperationId, out _)) { throw new GameFault(400, "game_operation_invalid"); }
@@ -173,7 +190,7 @@ internal static class GameProgressEndpoints
             var peers = await ProgressPeersAsync(db, groupId, context.RequestAborted);
             var progress = store.ReadProgress(groupId,
                 context.User.FindFirstValue(ClaimTypes.NameIdentifier)!, peers);
-            return Results.Ok(await GameDisplayNames.DecorateAsync(progress, profiles, context.RequestAborted));
+            return Results.Ok(await GameDisplayNames.DecorateAsync(progress, profiles, db, context.RequestAborted));
         });
         routes.MapPost("/ack", async (GameProgressCommand request, HttpContext context, AccountDatabase db, GameStore store) =>
         {
@@ -184,10 +201,6 @@ internal static class GameProgressEndpoints
         });
     }
     private static async Task<Dictionary<string, string>> ProgressPeersAsync(AccountDatabase db, string groupId, CancellationToken token) =>
-        await (from user in db.Users.AsNoTracking()
-            join member in db.UserRoles on user.Id equals member.UserId
-            join role in db.Roles on member.RoleId equals role.Id
-            where user.LaunchGroupId == groupId && user.LaunchGroupRevokedAt == null && !user.Disabled
-                && role.Name == AccountRoles.Customer && !db.DeletionRequests.Any(deletion => deletion.UserId == user.Id)
-            select new { user.Id, user.DisplayName }).ToDictionaryAsync(user => user.Id, user => user.DisplayName, token);
+        await GameParticipants.Members(db, groupId)
+            .ToDictionaryAsync(user => user.Id, user => user.DisplayName, token);
 }

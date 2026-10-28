@@ -111,10 +111,11 @@ jobs:
                     || current.pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`)) {
               throw new Error('Dispatch must build the same-repository PR branch');
             }
-      - name: Select builds from the complete PR diff
+      - name: Select all builds for main promotion
         id: projects
         env:
           CI_EVENT_NAME: ${{ github.event_name }}
+          CI_HEAD_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
           CI_BASE_SHA: ${{ github.event.pull_request.stack.base.sha || github.event.pull_request.base.sha || github.event.merge_group.base_sha || inputs.expected_base_sha }}
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || inputs.expected_head_sha }}
           CI_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
@@ -127,7 +128,9 @@ jobs:
           CI_PROJECT: ${{ inputs.project || 'all' }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          if [ "$CI_EVENT_NAME" = workflow_dispatch ] && [ -z "$CI_PR_NUMBER" ]; then
+          if [ "$CI_HEAD_REF" = development ] && [ -n "$CI_PR_NUMBER" ]; then
+            python3 scripts/ci/select_projects.py select --project all
+          elif [ "$CI_EVENT_NAME" = workflow_dispatch ] && [ -z "$CI_PR_NUMBER" ]; then
             python3 scripts/ci/select_projects.py select --project "$CI_PROJECT"
           elif [ "$CI_EVENT_NAME" = pull_request ] && [ -n "$CI_STACK_NUMBER" ]; then
             python3 scripts/ci/select_projects.py select --base "$CI_BASE_SHA" --head "$CI_HEAD_SHA" \

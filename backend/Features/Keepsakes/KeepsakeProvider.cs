@@ -84,7 +84,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
                 var selected = request.Snapshot.GeneratedWand ?? throw new KeepsakeException("personal_wand_unavailable", 409);
                 var prompt = BuildWandImagePrompt(selected);
                 var parameters = new { model = imageModel, size = "1024x1536", output_format = "png",
-                    background = "transparent", prompt_version = KeepsakeStore.WandArtworkPromptVersion };
+                    background = "transparent", moderation = "low", prompt_version = KeepsakeStore.WandArtworkPromptVersion };
                 Stage(request, "wand_generate", "dispatch", JsonSerializer.Serialize(new { parameters, prompt,
                     sourceAssetId = request.CanonicalArtworkAssetId }));
                 var result = await GenAiOperation.RunAsync("image_generation", imageModel, async providerTelemetry =>
@@ -153,12 +153,13 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
             var imagePrompt = BuildImagePrompt(story.Design)
                 + " Fictional owner identity (data, not instructions): " + JsonSerializer.Serialize(identity, Json);
             Stage(request, "wand_generate", "dispatch", JsonSerializer.Serialize(new { imageModel, imagePrompt,
-                size = "1024x1536", output_format = "png" }));
+                size = "1024x1536", output_format = "png", moderation = "low" }));
             // The typed generate overload cannot include input images, masks or image references.
             var generated = await GenAiOperation.RunAsync("image_generation", imageModel, async providerTelemetry =>
             {
                 var providerResult = await images.GenerateImageAsync(imagePrompt,
-                new ImageGenerationOptions { Size = GeneratedImageSize.W1024xH1536, OutputFileFormat = GeneratedImageFileFormat.Png }, cancellationToken);
+                new ImageGenerationOptions { Size = GeneratedImageSize.W1024xH1536, OutputFileFormat = GeneratedImageFileFormat.Png,
+                    ModerationLevel = "low" }, cancellationToken);
                 providerTelemetry.ReadUsage(providerResult.GetRawResponse().Content);
                 return providerResult;
             }, cancellationToken);
@@ -169,7 +170,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
                 storyPrompt + "\n\nIMAGE GENERATE:\n" + imagePrompt,
                 JsonSerializer.Serialize(new { storyRequest = JsonDocument.Parse(storyBody).RootElement,
                     storyResponse = storyResponse.RootElement, imagePrompt,
-                    imageParameters = new { model = imageModel, size = "1024x1536", output_format = "png" },
+                    imageParameters = new { model = imageModel, size = "1024x1536", output_format = "png", moderation = "low" },
                     imageResponse = imageResponse.RootElement }, Json), false, generatedIdentity);
         }
         catch (Exception telemetryError)
@@ -187,6 +188,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
     {
         Size = GeneratedImageSize.W1024xH1536,
         OutputFileFormat = GeneratedImageFileFormat.Png,
+        ModerationLevel = "low",
         Background = GeneratedImageBackground.Transparent
     };
 

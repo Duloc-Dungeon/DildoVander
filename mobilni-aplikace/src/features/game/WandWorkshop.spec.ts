@@ -9,7 +9,7 @@ import { account } from '../identity/session';
 const base = '/app/v1/customer/wand/workshop'; const id = 'b'.repeat(32);
 let session: any; let reason: string | null; let view: VueWrapper | undefined; let profileRevision: number;
 const saved = () => ({ id, profileId: 'profile', profileRevision, tier: 1, status: 'asking', question: null, steps: [], messages: [], wand: null, artwork: null });
-const render = async () => { view = mount(WandWorkshop, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); await flushPromises(); return view; };
+const render = async (prelaunch = false) => { view = mount(WandWorkshop, { props: { prelaunch }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); await flushPromises(); return view; };
 const click = async (text: string) => { await view!.findAll('button').find(button => button.text() === text)!.trigger('click'); await flushPromises(); };
 beforeEach(() => {
   account.value = { ...account.value!, id: 'alice', openAiConsent: true };
@@ -26,6 +26,15 @@ beforeEach(() => {
 });
 afterEach(() => { view?.unmount(); view = undefined; vi.useRealTimers(); });
 describe('customer Live workshop', () => {
+  it('returns prelaunch guests to their countdown and stops media without linking to the game', async () => {
+    await render(true);
+    expect(view!.find('a').exists()).toBe(false);
+    await click('Promluvit s kufrem');
+    await click('Zpět k odpočtu');
+    expect(view!.emitted('exit')).toEqual([[]]);
+    expect(api.dispose).toHaveBeenCalled();
+    expect(view!.emitted('saved')).toBeUndefined();
+  });
   it('only reads on entry and offers Live first plus typing without acquiring audio', async () => {
     await render(); expect(api.request.mock.calls.map(call => call[0])).toEqual([base]); expect(api.connect).not.toHaveBeenCalled(); expect(view!.text()).toContain('Promluvit s kufrem'); expect(view!.text()).toContain('Raději psát'); expect(view!.text()).not.toMatch(/Otázka .* ze 3/);
   });
@@ -171,6 +180,7 @@ describe('customer Live workshop', () => {
     let deliver!: (response: Response) => void;
     api.transport.mockImplementation(() => new Promise<Response>(resolve => { deliver = resolve; }));
     await render(); await click('Přehrát verdikt kufru');
+    expect(view!.emitted('saved')).toEqual([[]]);
     expect(view!.findAll('button').find(button => button.text() === 'Přehrát verdikt kufru')!.attributes('disabled')).toBeDefined();
     await click('Stop řeč'); deliver(new Response(new Blob(['late audio'], { type: 'audio/wav' }))); await flushPromises();
     expect(api.play).not.toHaveBeenCalled(); expect(view!.text()).toContain('Hůlka je uložená');

@@ -13,6 +13,7 @@ import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import { secureUuid } from '../../application/identifiers.mjs';
 import { account, accountRequest } from '../identity/session';
+import { isOwnerPlayer } from '../../application/ownerMode';
 import AccountArchiveList from '../identity/AccountArchiveList.vue';
 import SettingsView from '../identity/SettingsView.vue';
 import CharacterBriefAssistant from './CharacterBriefAssistant.vue';
@@ -23,6 +24,8 @@ import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
 import CustomerWaiting from './CustomerWaiting.vue';
 import CustomerDuelHistory from './CustomerDuelHistory.vue';
 import CustomerCompletionUpdates from './CustomerCompletionUpdates.vue';
+import CustomerGameTitles from './CustomerGameTitles.vue';
+import CustomerSealedCaseRewards from './CustomerSealedCaseRewards.vue';
 import ConversationPreferences from './ConversationPreferences.vue';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { customerCopy, type CustomerCopyKey } from '../../application/customerCopy';
@@ -89,7 +92,7 @@ const devices = ref<CustomerBleDevice[]>([]);
 const connected = ref<CustomerBleStatus | null>(null);
 const selectedDevice = ref('');
 const personalMemoryConsent = ref(false);
-const canEditCharacter = computed(() => account.value?.roles.some(role => role === 'Owner' || role === 'Administrator') === true);
+const canEditCharacter = computed(() => !isOwnerPlayer(account.value) && account.value?.roles.some(role => role === 'Owner' || role === 'Administrator') === true);
 const hasAiConsent = computed(() => account.value?.openAiConsent === true);
 const form = ref({ name: '', world: '', version: '', description: '', language: '' });
 let generation = 0;
@@ -573,6 +576,8 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else-if="pane === 'keepsakes'" class="page-stack">
+      <CustomerGameTitles :locale="interfaceLanguage" />
+      <CustomerSealedCaseRewards :locale="interfaceLanguage" />
       <CustomerCompletionUpdates :locale="interfaceLanguage" />
       <AccountArchiveList :locale="interfaceLanguage" />
       <CustomerDuelHistory />

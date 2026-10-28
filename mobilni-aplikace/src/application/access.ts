@@ -1,4 +1,5 @@
 import type { Account } from '../features/identity/session';
+import { isOwnerPlayer } from './ownerMode';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -17,6 +18,7 @@ export interface AccessMeta { requiresAccount?: unknown; operation?: unknown; ad
 export type AccessDenial = 'signin' | 'operator' | 'administrator' | 'online' | 'customer' | 'staff' | 'tester';
 
 export function isCustomerAccount(account: Account | null): boolean {
+  if (isOwnerPlayer(account)) return true;
   return !!account?.roles.some(role => ['Customer', 'Beta'].includes(role))
     && !account.roles.some(role => ['Owner', 'Administrator', 'Operator', 'Viewer'].includes(role));
 }

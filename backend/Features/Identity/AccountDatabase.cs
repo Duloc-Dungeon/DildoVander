@@ -142,6 +142,7 @@ internal sealed class AccountDatabase(DbContextOptions<AccountDatabase> options)
 internal static class AccountRoles
 {
     public const string Owner = "Owner";
+    public const string OwnerDisplayName = "Olivander";
     public const string Administrator = "Administrator";
     public const string Operator = "Operator";
     public const string Viewer = "Viewer";
@@ -152,6 +153,8 @@ internal static class AccountRoles
     public static string[] AssignedRoles(string role) => role == Beta ? [Customer, Beta] : [role];
     public static bool CanUsePersonaLab(System.Security.Claims.ClaimsPrincipal principal) =>
         IsStaff(principal) || principal.Identity?.IsAuthenticated == true && principal.IsInRole(Tester);
+    public static bool IsPlayer(System.Security.Claims.ClaimsPrincipal principal) =>
+        principal.Identity?.IsAuthenticated == true && (principal.IsInRole(Customer) || principal.IsInRole(Owner));
     public static bool IsStaff(System.Security.Claims.ClaimsPrincipal principal) =>
         principal.Identity?.IsAuthenticated == true &&
         (principal.IsInRole(Owner) || principal.IsInRole(Administrator)

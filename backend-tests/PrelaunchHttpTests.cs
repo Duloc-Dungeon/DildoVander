@@ -50,11 +50,11 @@ internal static partial class AccountIdentityTests
             "before-launch consent is persisted on the account, not inferred by the interface");
     }
 
-    internal static async Task RunPrelaunchHttpAsync()
+    internal static async Task RunPrelaunchHttpAsync(bool delayArtwork = false)
     {
         await RunLegacyConsentBeforeLaunchAsync();
         await using var fixture = await Fixture.StartAsync(customerFeatures: true, betaRecruitmentOpen: false,
-            configureServices: services => services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider()));
+            configureServices: services => services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider(delayArtwork)));
         using var owner = fixture.Client();
         using var customer = fixture.Client();
         using var unassignedClient = fixture.Client();
@@ -80,10 +80,17 @@ internal static partial class AccountIdentityTests
         var update = new LaunchConfigurationUpdate(0, true, future, false, true, future, false,
             "Europe/Prague", "Hvězdy drží tajemství.", "Někdo právě leští souhvězdí.", true, "One mysterious sentence.");
         Check((await owner.PutAsJsonAsync("/app/v1/admin/launch", update)).IsSuccessStatusCode, "administrator can configure launch over real authenticated HTTPS");
+        var ownerSession = await JsonAsync(await owner.GetAsync("/app/v1/session"));
+        Check(ownerSession.GetProperty("account").GetProperty("displayName").GetString() == "Olivander",
+            "Owner enrollment ignores a custom display name and uses fixed Olivander identity");
+        Check((await owner.PutAsJsonAsync("/app/v1/prelaunch/character",
+            new { expectedRevision = 0, name = "Aragorn", universe = "Middle-earth", openAiConsent = true })).IsSuccessStatusCode,
+            "Owner creates a fictional character before global application launch");
         var invitation = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Customer" })))
             .GetProperty("token").GetString()!;
         await EnrollAsync(customer, customerKey, invitation, "Invited guest");
-        await CsrfAsync(customer);
+        var customerSession = await CsrfAsync(customer);
+        var customerUserId = customerSession.GetProperty("account").GetProperty("id").GetString()!;
         var access = await JsonAsync(await customer.GetAsync("/app/v1/launch"));
         Check(!access.GetProperty("allowed").GetBoolean() && access.GetProperty("audience").GetString() == "production",
             "invited regular account receives production policy");
@@ -284,12 +291,15 @@ internal static partial class AccountIdentityTests
         Check((await customer.PutAsJsonAsync("/app/v1/prelaunch/character",
             new { expectedRevision = 0, name = "Other", universe = "Fiction", openAiConsent = true })).StatusCode == HttpStatusCode.Conflict,
             "second concurrent client cannot create a second character");
+        var profiles = fixture.App.Services.GetRequiredService<CharacterProfileStore>();
+        // Waiting for the offline worker must not spend this multi-account
+        // journey's shared IP command allowance. Verify the HTTP projection once ready.
         for (var attempt = 0; attempt < 25; attempt++)
         {
-            saved = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character"));
-            if (saved.GetProperty("artwork").GetProperty("status").GetString() == "ready") { break; }
+            if (profiles.ReadPortrait(customerUserId, profileId, revision)?.Status == "ready") { break; }
             await Task.Delay(300);
         }
+        saved = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character"));
         var text = saved.GetRawText();
         Check(saved.GetProperty("artwork").GetProperty("status").GetString() == "ready", "durable enrichment then fake image provider completes automatically");
         Check(saved.GetProperty("artwork").GetProperty("loadingMessage").GetString() == "Hvězdy se domlouvají.",
@@ -406,9 +416,13 @@ internal static partial class AccountIdentityTests
         Console.WriteLine("Prelaunch invitation, audience, immediate save, background artwork, private asset and manual launch HTTPS checks passed.");
     }
 
-    private sealed class PrelaunchTestPortraitProvider : ICharacterPortraitProvider
+    private sealed class PrelaunchTestPortraitProvider(bool delayArtwork = false) : ICharacterPortraitProvider
     {
-        public Task<byte[]> GeneratePortraitAsync(CharacterPortraitJob job, CancellationToken token) => Task.FromResult(new byte[] { 1, 2, 3 });
+        public async Task<byte[]> GeneratePortraitAsync(CharacterPortraitJob job, CancellationToken token)
+        {
+            if (delayArtwork) { await Task.Delay(TimeSpan.FromSeconds(2), token); }
+            return [1, 2, 3];
+        }
         public Task<string?> GenerateMessageAsync(CharacterUserInput input, CharacterEnrichment? enrichment,
             string creativePrompt, CancellationToken token) => creativePrompt == PortraitContentPolicy.FinalMessagePrompt
                 ? Task.FromException<string?>(new InvalidOperationException("synthetic optional text failure"))

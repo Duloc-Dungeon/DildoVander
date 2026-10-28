@@ -4,6 +4,8 @@ Wand Night Stand: mobilní zážitek od pozvánky a vlastní postavy přes spole
 
 Vývoj fyzického kufru je pozastavený. Níže zachované technické podklady popisují existující hardware a jeho kontrakty; nejsou zadáním běžného mobilního rozhraní.
 
+[Push oznámení](docs/push-notifications.md) pokrývají herní výzvy, pozvánky existujících hostů a změny večera na webu, Androidu a iOS. Před aktivací vyžadují nastavení doručovacích služeb.
+
 [Seznam elektroniky a odkazy k nákupu](docs/elektronika.md) obsahuje podklady pro kufr a jeho montážní materiál.
 
 ## Zachované technické zázemí
@@ -57,11 +59,12 @@ Pro zahájení další práce stačí: **„Začni implementovat aplikaci podle 
 
 ## CI a standardy repozitáře
 
-PR CI ověřuje dotčené projekty; změny samotné dokumentace nevyžadují
-nesouvisející buildy. Každý push na `main` spouští ověřené release buildy
+Pracovní PR směřují do `development`, kde běží rychlé kontroly repozitáře
+a tajných údajů bez kompilace aplikací. Samostatný PR `development → main`
+spouští všechny běžné buildy. Každý push na `main` spouští ověřené release buildy
 a podpis IPA; oddělená soukromá orchestrace nasazuje úspěšný aktuální `main`
 včetně TestFlight. Živé placené testy vyžadují samostatné zadání. Konfiguraci popisuje
-[CI/CD návod](docs/ci-cd.md). Pravidla předání jsou v [CONTRIBUTING.md](CONTRIBUTING.md)
+[Git workflow](docs/git-workflow.md). Pravidla předání jsou v [CONTRIBUTING.md](CONTRIBUTING.md)
 a hlášení zranitelností v [SECURITY.md](SECURITY.md).
 
 Zdrojový repozitář je od 12. 10. 2026 veřejný. Buildy používají standardní

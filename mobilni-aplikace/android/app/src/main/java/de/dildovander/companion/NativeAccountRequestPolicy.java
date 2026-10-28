@@ -173,6 +173,8 @@ final class NativeAccountRequestPolicy {
             return false;
         }
         if ("/app/v1/launch".equals(path)) return "GET".equals(method);
+        if ("/app/v1/push".equals(path)) return "GET".equals(method) || "PUT".equals(method) || "DELETE".equals(method);
+        if ("/app/v1/push/test".equals(path)) return "POST".equals(method);
         if ("/app/v1/application-version".equals(path)) return "GET".equals(method);
         if ("/app/v1/enrollment/default".equals(path)) return "GET".equals(method);
         if ("/app/v1/enrollment/default/admit".equals(path)) return "POST".equals(method);
@@ -208,6 +210,8 @@ final class NativeAccountRequestPolicy {
             "/app/v1/customer/enrollment/options".equals(path) || "/app/v1/customer/enrollment/complete".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/character".equals(path)) return Arrays.asList("GET", "PUT", "DELETE").contains(method);
         if ("/app/v1/customer/access".equals(path)) return "GET".equals(method);
+        if ("/app/v1/customer/groups".equals(path)) return "GET".equals(method);
+        if ("/app/v1/customer/groups/active".equals(path)) return "PUT".equals(method);
         if ("/app/v1/customer/conversation-preferences".equals(path)) return "GET".equals(method) || "PUT".equals(method);
         if ("/app/v1/customer/character/correction".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/sessions".equals(path) || "/app/v1/customer/duels".equals(path) ||
@@ -262,6 +266,9 @@ final class NativeAccountRequestPolicy {
         if (query != null) return false;
         String session = "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}";
         if (path.matches(session)) return "GET".equals(method);
+        if (path.matches(session + "/artwork/assets/[^/]+") && isArchiveUuid(path.substring(path.lastIndexOf('/') + 1))) {
+            return "GET".equals(method);
+        }
         if (path.matches(session + "/messages/[A-Za-z0-9_-]{1,160}")) return "PUT".equals(method);
         if (path.matches(session + "/(messages|finish|ticket|artwork/repair)")) return "POST".equals(method);
         if (path.matches(session + "/(answers|skip|audio|transcribe|artwork/retry)")) return "POST".equals(method);

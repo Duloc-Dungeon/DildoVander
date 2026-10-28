@@ -24,6 +24,65 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('keeps the owner name Olivander even when the character has another label', async () => {
+    api.setAccount({ id: 'one', displayName: 'Old name', roles: ['Owner'] });
+    api.request.mockResolvedValue({ hasCharacter: true, wand: { wandId: 'saved' }, tier: 1, characterDisplayName: 'Jiná postava' });
+    api.transport.mockResolvedValue(Response.json(snapshot()));
+    const view = await render();
+    expect(view.get('.game-score--duel').text()).toContain('Olivander');
+    expect(view.get('.game-score--duel').text()).not.toContain('Jiná postava');
+  });
+  it('shows saved rankings without a wand and exposes progress failures instead of an empty ranking', async () => {
+    api.request.mockResolvedValue({ hasCharacter: true, wand: null, tier: 0 });
+    const lobby = { player: { id: 'one', displayName: 'Mira', xp: 0, matchesPlayed: 0 }, opponents: [], incoming: [], active: [], history: [] };
+    let fail = true;
+    api.transport.mockImplementation(async (path: string) => path.endsWith('/progress')
+      ? fail ? Response.json({ code: 'unavailable' }, { status: 503 }) : Response.json({ pending: [], combatRanking: [{ id: 'one', displayName: 'Mira', xp: 10, wins: 0, rank: 1 }], yoloRanking: [] })
+      : Response.json(lobby));
+    const view = await render('/play/ranking');
+    expect(view.text()).toContain('Pořadí a postup se nepodařilo obnovit');
+    expect(view.find('.game-standings').exists()).toBe(false);
+    expect(view.find('a[href="/play/wand"]').exists()).toBe(false);
+    fail = false;
+    await view.findAll('button').find(button => button.text() === 'Obnovit pořadí')!.trigger('click');
+    await flushPromises();
+    expect(view.get('.game-ranking-own').text()).toContain('Mira');
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+  });
+
+  it('applies challenge query mode immediately when navigating within the game', async () => {
+    const lobby = { player: { id: 'one', displayName: 'Mira', xp: 50, matchesPlayed: 5, tacticalUnlocked: true, yoloUnlocked: true }, opponents: [{ id: 'two', displayName: 'Eliška', xp: 50, matchesPlayed: 5 }], incoming: [], active: [], history: [] };
+    api.transport.mockImplementation(async (path: string) => Response.json(path.endsWith('/progress') ? { pending: [] } : lobby));
+    const view = await render('/play/challenge');
+    await view.vm.$router.push('/play/challenge?mode=yolo&opponent=two');
+    await flushPromises();
+    expect((view.get('input[value="yolo"]').element as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('requires the selected opponent to have actually unlocked tactics', async () => {
+    const lobby = { player: { id: 'one', xp: 50, matchesPlayed: 5, tacticalUnlocked: true }, opponents: [{ id: 'two', displayName: 'Eliška', xp: 50, matchesPlayed: 5, tacticalUnlocked: false }], incoming: [], active: [], history: [] };
+    api.transport.mockImplementation(async (path: string) => Response.json(path.endsWith('/progress') ? { pending: [] } : lobby));
+    const view = await render('/play/challenge?mode=tactical&opponent=two');
+    expect(view.get('input[value="tactical"]').attributes('disabled')).toBeDefined();
+    expect(view.findAll('button').find(button => button.text() === 'Poslat výzvu')!.attributes('disabled')).toBeDefined();
+    expect(view.text()).toContain('hůlku II');
+  });
+
+  it('shows the reduced boss energy for an exhibition attempt', async () => {
+    api.transport.mockResolvedValue(Response.json(snapshot({ mode: 'boss', exhibition: true, playerEnergy: 6, opponentEnergy: 2 })));
+    const view = await render();
+    expect(view.text()).toContain('Baronova energie2 / 3');
+  });
+
+  it('does not offer a challenge to a player who is still making a wand', async () => {
+    const lobby = { player: { id: 'one', xp: 20, matchesPlayed: 2 }, opponents: [{ id: 'two', displayName: 'Eliška', xp: 50, matchesPlayed: 5, hasWand: false }], incoming: [], active: [], history: [] };
+    api.transport.mockImplementation(async (path: string) => Response.json(path.endsWith('/progress') ? { pending: [] } : lobby));
+    const view = await render('/play/challenge');
+    expect(view.get('option[value="two"]').attributes('disabled')).toBeDefined();
+    expect(view.findAll('button').find(button => button.text() === 'Poslat výzvu')!.attributes('disabled')).toBeDefined();
+    expect(view.text()).toContain('Ostatní si zatím připravují hůlky');
+  });
+
   it('uses separate display labels for both sides when opening a match directly', async () => {
     api.setAccount({ id: 'one', displayName: 'Mozkomor' });
     api.request.mockResolvedValue({ hasCharacter: true, wand: { wandId: 'saved' }, tier: 1, characterDisplayName: 'Mozkomor · Petr' });
@@ -161,7 +220,8 @@ describe('mobile game interaction', () => {
     expect(first.find('a[href="/play/wand"]').exists()).toBe(false);
     first.unmount();
     const boss = await render('/play/boss');
-    expect(boss.text()).toContain('Jde o exhibici');
+    expect(boss.text()).toContain('V exhibici dostaneš neomezená kouzla');
+    expect(boss.text()).toContain('6 energie proti 3');
     expect(boss.findAll('button').some(button => button.text() === 'Vyzvat bosse')).toBe(true);
     expect(boss.find('a[href="/play/wand"]').exists()).toBe(false);
   });

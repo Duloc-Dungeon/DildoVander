@@ -1,6 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
+    target-branch: development
     directory: /
     schedule:
       interval: weekly
@@ -9,6 +10,7 @@ updates:
         patterns: ['*']
     open-pull-requests-limit: 3
   - package-ecosystem: nuget
+    target-branch: development
     directories:
       - /backend
       - /backend-tests
@@ -19,6 +21,7 @@ updates:
         patterns: ['*']
     open-pull-requests-limit: 3
   - package-ecosystem: npm
+    target-branch: development
     directories:
       - /mobilni-aplikace
       - /contracts

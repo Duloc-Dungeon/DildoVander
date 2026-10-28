@@ -7,7 +7,6 @@ namespace Kufr.Backend.Features.Show;
 internal sealed class ShowSpeechProvider : IDisposable
 {
     internal const long SpeechReservationMicroUsd = 50_000;
-    private readonly HttpClient? http;
     private readonly SemaphoreSlim slot = new(1, 1);
     private readonly Func<bool> enabled;
     private readonly Func<bool> acquire;
@@ -22,8 +21,7 @@ internal sealed class ShowSpeechProvider : IDisposable
         acquire = () => Enabled && slot.Wait(0);
         release = () => slot.Release();
         Stopping = lifetime.ApplicationStopping;
-        http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
-        var client = new ShowCueSpeechClient(http, key ?? "", logger);
+        var client = new ShowCueSpeechClient(key ?? "", logger);
         speak = client.GenerateAsync;
     }
 
@@ -46,5 +44,9 @@ internal sealed class ShowSpeechProvider : IDisposable
         return speak(text, options, token);
     }
 
-    public void Dispose() => http?.Dispose();
+    public void Dispose()
+    {
+        // Each utterance owns its socket. Keep the managed-only slot alive so
+        // cancelled device cue work can release its lease during shutdown.
+    }
 }

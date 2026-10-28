@@ -7,6 +7,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--push"]) { await PushTests.RunAsync(); return; }
+if (args is ["--push-http"]) { await AccountIdentityTests.RunPushHttpAsync(); return; }
 if (args is ["--application-updates"]) { await ApplicationUpdateTests.RunAsync(); return; }
 if (args is ["--sealed-case-context-persistence"]) { SealedCaseContextPersistenceTests.Run(); return; }
 if (args is ["--sealed-case-projections"]) { SealedCaseProjectionTests.Run(); return; }
@@ -45,6 +47,7 @@ if (args is ["--mobile-workshop-socket"]) { await MobileWorkshopSocketTests.RunA
 if (args is ["--mobile-workshop-voice-verify"]) { await MobileWorkshopLiveTests.VerifySpokenTurnsAsync(); return; }
 if (args is ["--mobile-workshop-artwork-verify", var sourceDatabase, var imageModel]) { await MobileWorkshopLiveTests.VerifyArtworkAsync(sourceDatabase, imageModel); return; }
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); return; }
+if (args is ["--owner-player-http"]) { await MobileGameTests.RunOwnerPlayerHttpAsync(); return; }
 if (args is ["--mobile-game-http"]) { await MobileGameTests.RunHttpAsync(); return; }
 if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); return; }
 if (args is ["--mobile-game-teams"]) { GameTeamTests.Run(); return; }
@@ -54,10 +57,13 @@ if (args is ["--dv01-consolidation"]) { GptLiveVoiceTests.Run(); await Autonomou
 if (args is ["--character-portraits"]) { await CharacterPortraitTests.RunAsync(); return; }
 if (args is ["--character-administration"]) { await CharacterAdministrationTests.RunAsync(); return; }
 if (args is ["--prelaunch-http"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(); return; }
+if (args is ["--prelaunch-http-slow-artwork"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(delayArtwork: true); return; }
+if (args is ["--prelaunch-workshop-http"]) { await AccountIdentityTests.RunPrelaunchWorkshopHttpAsync(); return; }
 if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await AiObservabilityTests.RunAsync(); await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--observability-logs"]) { await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--ai-observability"]) { await AiObservabilityTests.RunAsync(); return; }
 if (args is ["--bounded-sdk-transport"]) { await BoundedSdkTransportTests.RunAsync(); return; }
+if (args is ["--text-dialog-budget"]) { ResponsesTextDialogBudgetTests.Run(); Console.WriteLine("Text dialogue model budgets passed."); return; }
 if (args is ["--tester-identity"]) { await AccountIdentityTests.RunTesterIdentityAsync(); return; }
 if (args is ["--passkey-labels"]) { await AccountIdentityTests.RunPasskeyLabelsAsync(); return; }
 if (args is ["--testing-hardware"]) { await TestingHardwareTests.RunAsync(); return; }
@@ -259,6 +265,8 @@ await AutonomousLiveTests.RunVoiceFallbackAsync();
 await GptLiveTests.RunAsync();
 await DeviceMediaTransportTests.RunAsync();
 await AccountIdentityTests.RunTesterIdentityAsync();
+await PushTests.RunAsync();
+await AccountIdentityTests.RunPushHttpAsync();
 await TestingConversationTests.RunAsync();
 await TestingMultiTurnTests.RunAsync();
 await TestingHardwareTests.RunAsync();

@@ -205,7 +205,7 @@ async function plan(api, { number = api.context.payload.pull_request?.number, dr
     const fullName = `${context.repo.owner}/${context.repo.repo}`;
     requireValid(pr.user?.login === 'dependabot[bot]' && pr.head.repo?.full_name === fullName
       && pr.base.repo?.full_name === fullName && pr.head.ref.startsWith('dependabot/')
-      && pr.base.ref === 'main' && !pr.draft && (pr.state === 'open' || dryRun),
+      && pr.base.ref === 'development' && !pr.draft && (pr.state === 'open' || dryRun),
     'Only same-repository Dependabot dependency PRs are supported');
     if (head !== undefined) {
       const commits = await github.paginate(github.rest.pulls.listCommits, {
@@ -215,12 +215,12 @@ async function plan(api, { number = api.context.payload.pull_request?.number, dr
         'Revision is not a complete, known PR commit');
     }
     const revision = head || pr.head.sha;
-    const { data: branch } = await github.rest.repos.getBranch({ ...context.repo, branch: 'main' });
+    const { data: branch } = await github.rest.repos.getBranch({ ...context.repo, branch: 'development' });
     const base = branch.commit.sha;
     requireValid(SHA.test(revision) && SHA.test(base), 'Expected immutable revisions');
     const { data: comparison } = await github.rest.repos.compareCommits({ ...context.repo, base, head: revision });
     requireValid(SHA.test(comparison.merge_base_commit?.sha), 'Missing merge base');
-    requireValid(dryRun || comparison.behind_by === 0, 'PR must be synchronized with main first');
+    requireValid(dryRun || comparison.behind_by === 0, 'PR must be synchronized with development first');
     const [before, after] = await Promise.all([
       tree(api, comparison.merge_base_commit.sha), tree(api, revision),
     ]);
@@ -296,7 +296,7 @@ async function payloadFiles(directory, current) {
 }
 
 async function dispatch(api, current, head) {
-  await api.github.rest.actions.createWorkflowDispatch({ ...api.context.repo, workflow_id: 'ci.yml', ref: current.branch,
+  await api.github.rest.actions.createWorkflowDispatch({ ...api.context.repo, workflow_id: 'development-ci.yml', ref: current.branch,
     inputs: { project: 'all', pr_number: String(current.number), expected_head_sha: head,
       expected_base_sha: current.base } });
 }

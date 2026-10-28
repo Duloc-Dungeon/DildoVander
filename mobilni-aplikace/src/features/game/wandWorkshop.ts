@@ -65,7 +65,7 @@ export async function transcribeWorkshopAudio(id: string, question: WorkshopQues
 
 /** A provider URL is never accepted as artwork. Native clients fetch through the account bridge. */
 export async function workshopArtwork(path: string, signal: AbortSignal): Promise<Blob> {
-  if (!/^\/app\/v1\/archive\/owned\/[a-f0-9-]{36}\/assets\/[a-f0-9-]{36}$/i.test(path)) {
+  if (!/^\/app\/v1\/customer\/wand\/workshop\/sessions\/[a-f0-9]{32}\/artwork\/assets\/[a-f0-9-]{36}$/i.test(path)) {
     throw new Error('Ilustrace nemá platnou chráněnou adresu.');
   }
   const response = await accountTransport(path, { signal });

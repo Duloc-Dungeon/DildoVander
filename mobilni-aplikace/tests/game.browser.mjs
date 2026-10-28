@@ -15,7 +15,7 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: width < 500, hasTouch: width < 500, reducedMotion: 'reduce' });
     await context.addInitScript(theme => localStorage.setItem('dildovander.theme', theme), width < 390 ? 'lord-voldemort' : 'olivander');
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
-    for (const state of ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'task-without-wand', 'yolo', 'error', 'empty', 'long','tactical','loadout','boss','boss-setup','captured','rescue','teams','team-choice','team-half','messages','ranking','first-wand','upgrade-wand']) {
+    for (const state of ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'task-without-wand', 'yolo', 'error', 'empty', 'long','tactical','loadout','boss','boss-setup','captured','rescue','teams','team-choice','team-half','messages','ranking','ranking-long','ranking-empty','ranking-error','first-wand','upgrade-wand']) {
       await page.goto(`${origin}/__game/${state}`); await page.locator('.game-content').waitFor();
       await page.locator('h1, [role="alert"]').first().waitFor();
       await page.evaluate(() => document.fonts.ready);
@@ -68,6 +68,28 @@ try {
       if (state === 'tactical') assert.equal(await page.getByRole('radio', {name:/Štít/}).isDisabled(), true);
       if (state === 'loadout') { await page.getByRole('radio', {name:/Nátlak/}).check(); await page.getByText('Může ti zbýt jediný typ kouzla.', {exact:false}).waitFor(); }
       if (state === 'captured') assert.equal(await page.getByRole('link', {name:'Vyzvat bosse',exact:true}).count(), 1);
+      if (state === 'boss-setup') {
+        await page.getByRole('button', { name: 'Vyzvat bosse', exact: true }).click();
+        await page.waitForURL(`**/play/boss/${'a'.repeat(32)}`);
+        await page.getByRole('button', { name: 'Potvrdit tah' }).waitFor();
+      }
+      if (state === 'ranking') {
+        assert.equal(await page.locator('.game-ranking-own').count(), 1);
+        await page.getByRole('radio', { name: 'YOLO výhry', exact: true }).check();
+        await page.getByText('2 výhry', { exact: true }).first().waitFor();
+      }
+      if (state === 'ranking-long') {
+        assert.equal(await page.locator('.game-ranking li').count(), 12);
+        await page.getByLabel('Najít hráče').fill('mira');
+        assert.equal(await page.locator('.game-ranking li').count(), 1);
+        assert.equal(await page.locator('.game-ranking-own').getAttribute('value'), '11');
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `ranking search ${width}`);
+      }
+      if (state === 'ranking-empty') await page.getByText('V této disciplíně zatím nejsou žádní hráči.', { exact: false }).waitFor();
+      if (state === 'ranking-error') {
+        await page.getByRole('button', { name: 'Obnovit pořadí', exact: true }).waitFor();
+        assert.equal(await page.locator('.game-ranking').count(), 0);
+      }
       if (state === 'team-half') { await page.getByRole('button', {name:'Předat 1 jiskru',exact:true}).click(); await page.getByText('Volba uložena.', {exact:false}).waitFor(); }
       await page.screenshot({ path: path.join(output, `${state}-${width}.png`), fullPage: true }); captures++;
     }

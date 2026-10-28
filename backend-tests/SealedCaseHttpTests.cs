@@ -343,6 +343,33 @@ internal static partial class SealedCaseHttpTests
         internal void FreezeClock() => ((LobbyProbeClock)app.Services.GetRequiredService<TimeProvider>()).FrozenAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         internal void AdvanceSeconds(long seconds) => Interlocked.Add(ref ((LobbyProbeClock)app.Services.GetRequiredService<TimeProvider>()).OffsetSeconds, seconds);
         internal string DataRoot => Path.Combine(root, "accounts");
+        internal void AddUnreleasedRewardCandidates(string sourceCaseId, int count)
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+                { DataSource = Path.Combine(DataRoot, "sealed-case.sqlite") }.ToString());
+            connection.Open();
+            using var transaction = connection.BeginTransaction();
+            for (var index = 0; index < count; index++)
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = """
+                    INSERT INTO sealed_cases(id,group_id,status,revision,started_at,chapter,chapter_deadline,setup_json,lobby_json,created_at)
+                    SELECT $id,group_id,'running',revision,started_at,chapter,chapter_deadline,setup_json,lobby_json,created_at+$offset
+                    FROM sealed_cases WHERE id=$source;
+                    INSERT INTO sealed_case_rosters(case_id,server_seed,roster_json,frozen_at)
+                    SELECT $id,server_seed,roster_json,frozen_at FROM sealed_case_rosters WHERE case_id=$source;
+                    INSERT INTO sealed_case_timing(case_id,variant,original_players,started_at)
+                    SELECT $id,variant,original_players,$future FROM sealed_case_timing WHERE case_id=$source;
+                    """;
+                command.Parameters.AddWithValue("$id", $"sc_{index + 1:x32}");
+                command.Parameters.AddWithValue("$source", sourceCaseId);
+                command.Parameters.AddWithValue("$offset", index + 1);
+                command.Parameters.AddWithValue("$future", DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 1_000_000);
+                command.ExecuteNonQuery();
+            }
+            transaction.Commit();
+        }
         internal Task<CharacterProfile?> CharacterAsync(string id) => app.Services.GetRequiredService<CharacterProfileStore>().ReadAsync(id);
         internal async Task AdvanceCharacterAsync(string id)
         {
@@ -395,6 +422,16 @@ internal static partial class SealedCaseHttpTests
             app.UseMobileGameAuthentication(); app.UseSealedCaseAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapSealedCase();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
             app.MapGet("/test/csrf", (HttpContext h, IAntiforgery csrf) => Results.Json(new { token = csrf.GetAndStoreTokens(h).RequestToken }));
+            app.MapGet("/test/reopened-sealed-case-rewards", async (HttpContext h, AccountDatabase db,
+                CustomerAdmissionAuthority admission, TimeProvider clock) =>
+            {
+                var account = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+                var group = await db.Users.AsNoTracking().Where(user => user.Id == account)
+                    .Select(user => user.LaunchGroupId).SingleAsync(h.RequestAborted);
+                var store = new SealedCaseStore(Path.Combine(root, "accounts", "sealed-case.sqlite"), clock: clock);
+                return Results.Ok(store.ReadPersonalRewards(group!, account,
+                    () => admission.AcquireCookie(h, token: h.RequestAborted)));
+            }).RequireAuthorization();
             app.MapPost("/test/login/{id}", async (string id, HttpContext h, AccountDatabase db, SignInManager<AccountUser> signIn) =>
             {
                 var user = await db.Users.SingleAsync(u => u.Id == id); var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

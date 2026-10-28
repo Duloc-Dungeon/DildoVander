@@ -5,6 +5,7 @@ using System.Threading.Channels;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.GptLive;
 using Kufr.Backend.Features.Identity;
+using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.Wands;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Identity;
@@ -49,6 +50,7 @@ internal static class MobileWandTests
             ["Backend:DatabasePath"] = Path.Combine(root, "wands.sqlite"), ["OPENAI_API_KEY"] = "synthetic-not-a-provider-key"
         });
         builder.Services.AddAccountIdentity(builder.Configuration);
+        builder.Services.AddLaunchManagement(builder.Configuration);
         builder.Services.AddSingleton<IMobileWandQuestionProvider, OpenAiMobileWandQuestionProvider>();
         var profiles = new CharacterProfileStore(Path.Combine(root, "profiles"));
         builder.Services.AddSingleton(profiles);
@@ -56,17 +58,22 @@ internal static class MobileWandTests
         try
         {
             await AccountProvisioning.MigrateAsync(app.Services);
+            await app.InitializeAccountsAsync();
             _ = app.Services.GetRequiredService<IMobileWandQuestionProvider>();
             await using var scope = app.Services.CreateAsyncScope();
             var users = scope.ServiceProvider.GetRequiredService<UserManager<AccountUser>>();
+            var launch = app.Services.GetRequiredService<LaunchPolicyStore>();
+            var group = launch.CreateGroup("test", new("Closed workshop night", null),
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             var user = new AccountUser { Id = "alice", UserName = "alice", DisplayName = "Alice", OpenAiConsentAt = 1,
+                LaunchGroupId = group.Id, LaunchGroupAccessRevision = 1,
                 OpenAiConsentVersion = AccountAiConsent.CurrentVersion };
             Check((await users.CreateAsync(user)).Succeeded, "create synthetic owner");
+            Check((await users.AddToRoleAsync(user, AccountRoles.Customer)).Succeeded, "create customer workshop owner");
             var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
             db.Sessions.Add(new AccountSession { Id = "cookie", UserId = user.Id, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(), AuthenticatedAt = 1 });
             await db.SaveChangesAsync();
-            var profile = await profiles.SaveAsync(user.Id, new(0, new("Raven", "Original"), OpenAiConsent: true));
-            var captured = (await profiles.CaptureAsync(user.Id, profile.ProfileId, profile.Revision))!;
+            var (profile, captured) = await PrepareProfileAsync(profiles, user.Id, new("Raven", "Original"));
             var wands = new WandGenerationStore(builder.Configuration, TimeProvider.System);
             var secondStore = new WandGenerationStore(builder.Configuration, TimeProvider.System);
             await WorkshopStateMachineAsync(profiles, wands, builder.Configuration);
@@ -89,6 +96,7 @@ internal static class MobileWandTests
             Check(wands.MobileOperation("revision-test", captured.ProfileId, 2, 1) == fresh, "admin revision gets a fresh pending craft");
             var operation = Guid.NewGuid().ToString("N");
             wands.BeginMobile("alice", operation, captured, 1); wands.Begin("alice", operation, captured, 63, true);
+            wands.BeginWorkshop("alice", operation, captured, 1, group.Id, user.LaunchGroupAccessRevision);
             try { wands.BeginMobile("alice", Guid.NewGuid().ToString("N"), captured, 1); throw new Exception("duplicate pending craft"); }
             catch (WandGenerationException e) when (e.Code == "wand_operation_conflict") { }
             var runtime = new MobileWandRuntime(app.Services.GetRequiredService<IServiceScopeFactory>(), wands);
@@ -112,6 +120,26 @@ internal static class MobileWandTests
         const string owner = "workshop-owner";
         var (profile, captured) = await PrepareProfileAsync(profiles, owner,
             new("Havran", "Fikční svět", "verze A", "Loví ztracené mapy"));
+        var promptMessage = new MobileWandWorkshopMessage("humor-user", 1, "user", "Vyrob mi hůlku.", "text", 1);
+        using (var draft = JsonDocument.Parse(OpenAiMobileWandQuestionProvider.BuildReplyRequest(captured,
+            [promptMessage], "gpt-6.1-terra")))
+        using (var live = JsonDocument.Parse(JsonSerializer.Serialize(MobileWorkshopLiveRuntime.Start(
+            new(owner, "humor-operation", "session", "stamp", "https://localhost", DateTimeOffset.UtcNow.AddMinutes(1), captured),
+            [promptMessage], "vesper", "humor-start"))))
+        {
+            var instructions = draft.RootElement.GetProperty("instructions").GetString()!;
+            var liveInstructions = live.RootElement.GetProperty("session").GetProperty("instructions").GetString()!;
+            Check(instructions.Contains(WorkshopHumorInstructions.Text)
+                && liveInstructions.Contains(WorkshopHumorInstructions.Text),
+                "live voice and delegated dialogue receive the same character-based roast policy");
+            Check(draft.RootElement.GetProperty("reasoning").GetProperty("effort").GetString() == "none",
+                "the short authored reply does not consume its small output budget on hidden reasoning");
+            using var input = JsonDocument.Parse(draft.RootElement.GetProperty("input").GetString()!);
+            var fact = input.RootElement.GetProperty("enrichment").GetProperty("facts")[0];
+            Check(fact.GetProperty("text").GetString() == captured.Enrichment!.Facts[0].Text
+                && fact.GetProperty("sourceUrls")[0].GetString() == "https://example.test/map",
+                "the roast prompt receives actual researched facts and evidence rather than an invented character summary");
+        }
         Check(await profiles.CapturePreparedAsync(owner, profile.ProfileId, profile.Revision + 1) is null,
             "a completion for an older profile revision cannot capture the current character");
         var waitingProfile = await profiles.SaveAsync("workshop-profile-preparing",

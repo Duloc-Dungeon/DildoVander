@@ -86,7 +86,7 @@ internal static class CostumeImageTests
             return Response(ProviderBody());
         }));
         var result = await new CostumeImageClient(http, "fixture-key", ResponsesTextDialogBudget.Model).AnalyzeAsync(Jpeg(), default);
-        Check(result.Description == "green cloak" && result.CostMicroUsd == 450 && requests == 1, "description and usage priced");
+        Check(result.Description == "green cloak" && result.CostMicroUsd == 225 && requests == 1, "description and Terra usage priced");
         foreach (var mutation in new Action<JsonObject>[] {
             root => root["status"] = "incomplete",
             root => root["model"] = "unpriced-model",

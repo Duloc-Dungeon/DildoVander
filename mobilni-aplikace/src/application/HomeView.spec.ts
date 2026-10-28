@@ -47,6 +47,7 @@ async function mountHome() {
       { path: '/suitcase', component: { template: '<div />' } },
       { path: '/workshop', component: { template: '<div />' } },
       { path: '/play', component: { template: '<div />' } },
+      { path: '/play/pod-peceti', component: { template: '<div />' } },
       { path: '/demo', component: { template: '<div />' } },
       { path: '/settings', component: { template: '<div />' } },
       { path: '/archive', component: { template: '<div />' } },
@@ -91,7 +92,7 @@ afterEach(() => {
 describe('Home customer journey', () => {
   it('preserves guest and staff home actions without customer endpoint reads', async () => {
     const guest = await mountHome();
-    expect(guest.wrapper.text()).toContain('Příběh začíná');
+    expect(guest.wrapper.text()).toContain('Mobilní pobočka Ollivander Industries™');
     expect(guest.wrapper.findComponent({ name: 'CustomerJourneyCard' }).exists()).toBe(false);
     expect(guest.wrapper.text()).not.toContain('model kufru');
     expect(guest.wrapper.text()).not.toContain('Připojit kufr');
@@ -146,6 +147,8 @@ describe('Home customer journey', () => {
     expect(wrapper.text()).toContain('Váš další krok');
     expect(wrapper.get('a[href="/me/character"]').text()).toBe('Vytvořit postavu');
     expect(wrapper.get('a[href="/me/keepsakes"]').text()).toContain('Památky');
+    expect(wrapper.findAll('a[href="/play"]').some(link => link.text().includes('Souboje'))).toBe(true);
+    expect(wrapper.get('a[href="/play/pod-peceti"]').text()).toContain('Pod pečetí');
     expect(wrapper.find('a[href="/me/conversation"]').exists()).toBe(false);
     expect(api.request.mock.calls.map(([path, method]) => [path, method])).toEqual([
       ['/app/v1/customer/character', 'GET'],
