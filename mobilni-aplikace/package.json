@@ -15,6 +15,7 @@
     "test:character:browser": "node tests/character.browser.mjs",
     "test:character-admin:browser": "node tests/character-admin.browser.mjs",
     "test:launch:browser": "node tests/launch.browser.mjs",
+    "test:prelaunch-wand:browser": "node tests/prelaunch-wand.browser.mjs",
     "test:testing-sessions:browser": "node tests/testing-sessions.browser.mjs",
     "test:persona-lab:browser": "node tests/persona-lab.browser.mjs",
     "test:accounts": "node tests/accounts.browser.mjs",

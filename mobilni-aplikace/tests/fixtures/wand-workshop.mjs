@@ -14,20 +14,31 @@ export async function createWorkshopFixtureServer(port = 0) {
   let session = null;
   let state = 'ready';
   let exchange = 0;
+  let nightAllowed = true;
   const requests = [];
   const complete = () => ({ ...session, status: 'complete', question: null, wand, verdict: 'Tichý přístav je hotový. Tvoje cesta do mlhy má konečně kvalifikovaný doprovod.', artwork: { locator, assetId: null, status: 'failed', canRetry: true, version: 1, synthetic: true } });
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     const json = (value, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(value)); };
+    if (url.pathname === '/__workshop/open-night') { nightAllowed = true; return json({}); }
     if (url.pathname.startsWith('/__workshop/')) {
       state = url.pathname.split('/').at(-1); session = null; requests.length = 0; exchange = 0;
-      response.writeHead(302, { Location: '/play/wand' }); response.end(); return;
+      nightAllowed = state !== 'prelaunch';
+      response.writeHead(302, { Location: nightAllowed ? '/play/wand' : '/launch' }); response.end(); return;
     }
     if (url.pathname === '/app/v1/session') return json({ enabled: true, account: { id: 'synthetic', displayName: 'Test', roles: ['Customer'], openAiConsent: true }, csrfToken: 'synthetic' });
     if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'synthetic', accessRevision: 1 });
-    if (url.pathname === '/app/v1/launch') return json({ allowed: true });
+    if (url.pathname === '/app/v1/launch') return json({ allowed: nightAllowed, audience: 'beta', launchAt: Date.now() + 86400000, serverNow: Date.now() });
+    if (url.pathname === '/app/v1/prelaunch/character') return json({ character: { profileId: 'synthetic-profile', revision: 1, name: 'Sever', universe: 'Půlnoční přístav', status: 'ready' }, artwork: { status: 'ready', welcome: { joke: 'Tvá pověst dorazila před tebou. Už jsme se jí omluvili.', identity: 'Sever z Půlnočního přístavu.', teaser: 'Večer se připravuje.' } } });
+    if (url.pathname === '/app/v1/prelaunch/character/portrait') {
+      response.writeHead(200, { 'Content-Type': 'image/png' });
+      response.end(await readFile(new URL('../../src/assets/wns-v2/art/wand-violet.png', import.meta.url))); return;
+    }
     if (url.pathname === base && session?.status === 'generating') session = complete();
     if (url.pathname === base) return json({ eligible: !['captured', 'preparing'].includes(state), reason: state === 'captured' ? 'wand_workshop_boss_captured' : state === 'preparing' ? 'wand_character_preparing' : null, profile: { profileId: 'synthetic-profile', revision: 1, name: 'Sever', world: 'Půlnoční přístav', version: 'Fiktivní testovací postava', description: 'Mluví s havrany.' }, tier: 0, session });
+    if (url.pathname === `${base}/sessions/${id}/artwork/assets/${locator}`) {
+      response.writeHead(200, { 'Content-Type': 'image/svg+xml' }); response.end('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500"><text x="30" y="240" fill="#b8f3d4">Syntetická testovací ilustrace</text></svg>'); return;
+    }
     if (url.pathname.startsWith(`${base}/sessions`)) {
       let body = '';
       for await (const chunk of request) body += chunk;

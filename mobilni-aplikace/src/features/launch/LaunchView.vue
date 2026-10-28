@@ -14,6 +14,7 @@ import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrai
 import { launchCopy as copy } from './launchCopy';
 import PortraitCurtain from './PortraitCurtain.vue';
 import CharacterEntrance from './CharacterEntrance.vue';
+import PrelaunchWand from './PrelaunchWand.vue';
 import SceneShell from '../../components/scene/SceneShell.vue';
 import PaperSurface from '../../components/scene/PaperSurface.vue';
 import CharacterCountdown from '../../components/scene/CharacterCountdown.vue';
@@ -40,6 +41,10 @@ const busy = ref(false);
 const error = ref('');
 const remaining = ref(0);
 const revealed = ref(false);
+const workshopOpen = ref(false);
+const canPrepareWand = computed(() => isCustomerAccount(account.value)
+  && customerMembershipState.value === 'active' && !!state.value?.character
+  && (revealed.value && hasPortrait.value || phase.value === 'failed'));
 const groupOpening = ref(false);
 const groupPresenting = ref(false);
 const groupBusy = ref(false);
@@ -135,7 +140,12 @@ watch(() => registration.value?.status, status => {
   if (status === 'confirmed' && controller) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
 });
 watch(hasPortrait, ready => { if (ready) finishInvitationPresentation(); });
-watch(() => state.value?.character?.profileId, () => { revealed.value = false; }, { flush: 'sync' });
+watch(characterIdentity, () => { revealed.value = false; workshopOpen.value = false; }, { flush: 'sync' });
+watch(canPrepareWand, available => { if (!available) workshopOpen.value = false; }, { flush: 'sync' });
+function onWorkshopOpen(open: boolean): void {
+  workshopOpen.value = open;
+  if (!open) void refreshPolicy().catch(() => {});
+}
 function rememberDraft(): void {
   if (account.value && !state.value?.character && !writing.value && !uncertain.value) setInvitationDraft(account.value.id, name.value, universe.value);
 }
@@ -177,7 +187,7 @@ async function refreshPolicy(): Promise<void> {
     await router.replace(defaultSignedInDestination(account.value));
     return;
   }
-  if (value.allowed && account.value && customerMembershipState.value === 'active') {
+  if (value.allowed && account.value && customerMembershipState.value === 'active' && !workshopOpen.value) {
     const seenKey = `wand.group-opening-seen.v1.${account.value.id}`;
     let alreadySeen = false;
     try { alreadySeen = sessionStorage.getItem(seenKey) === 'seen'; } catch { /* Static presentation remains safe without storage. */ }
@@ -430,7 +440,7 @@ onBeforeUnmount(() => {
     </template>
     <footer class="launch-footer"><details class="launch-account-options"><summary>{{ copy.account }}</summary><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
-  <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" labelled-by="launch-title">
+  <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
     <header class="launch-masthead">
       <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><span>Wand<br />Night Stand</span></RouterLink>
       <span class="launch-language" aria-label="Jazyk rozhraní">Čeština</span>
@@ -446,7 +456,7 @@ onBeforeUnmount(() => {
         <AwButton v-if="betaEnrollmentAvailable === true" variant="primary" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>
       </PaperSurface>
     </section>
-    <section v-else class="launch-card">
+    <section v-else v-show="!workshopOpen" class="launch-card">
       <PaperSurface class="launch-copy">
         <h1 v-if="!state?.character" id="launch-title">{{ draftProvided ? name : copy.title }}</h1>
         <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
@@ -479,6 +489,7 @@ onBeforeUnmount(() => {
         <p v-else class="launch-generic">{{ copy.loading }}</p>
       </div>
     </section>
+    <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" />
     <footer class="launch-footer"><details v-if="account" class="launch-account-options"><summary>{{ copy.account }}</summary><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
 </template>
@@ -517,7 +528,7 @@ onBeforeUnmount(() => {
 .launch-data-details { color: var(--aw-game-muted-ink, #625340); font-size: .875rem; line-height: 1.6; }
 .launch-data-details summary { min-height: 44px; padding-block: .6rem; cursor: pointer; }
 .launch-data-details a { display: inline-flex; min-height: 44px; align-items: center; }
-.countdown { margin-block: 0; color: var(--aw-game-ink, #2a2019); }
+.countdown { margin-block: 0; color: var(--wns-text, #f5f5f0); }
 .launch-retry { color: inherit; text-decoration: underline; text-underline-offset: .2em; background: none; border: 0; cursor: pointer; min-height: 44px; padding: .5rem; font: inherit; }
 .aw-button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: .85rem 1.25rem; border-radius: 8px; text-decoration: none; }
 .aw-button--primary { color: var(--aw-on-accent); background: var(--aw-accent); }

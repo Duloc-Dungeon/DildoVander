@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: 
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
 vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', props: ['image'], template: '<div class="portrait-stage" />' } }));
+vi.mock('./PrelaunchWand.vue', () => ({ default: { name: 'PrelaunchWand', emits: ['open-change'], template: '<section><button @click="$emit(\'open-change\', true)">Vytvořit hůlku</button><button @click="$emit(\'open-change\', false)">Zpět k odpočtu</button></section>' } }));
 vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
@@ -50,6 +51,48 @@ beforeEach(() => {
     if (method === 'PUT') { persisted = true; throw new Error('Response lost'); }
     return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL', ...(artworkSource ? { source: artworkSource } : {}) } : null };
   });
+});
+it('offers wand creation only after revealing the saved character', async () => {
+  persisted = true; artworkStatus = 'ready';
+  const view = entry();
+  try {
+    await flushPromises(); image.value = 'blob:portrait'; await flushPromises();
+    expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
+    view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
+    expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true);
+    await view.findComponent({ name: 'PrelaunchWand' }).get('button').trigger('click');
+    expect(view.get('.launch-card').attributes('style')).toContain('display: none');
+    expect(api.request.mock.calls.some(call => call[1] === 'POST')).toBe(false);
+  } finally { view.unmount(); }
+});
+it('keeps an open workshop through night opening, then presents the night when the guest returns', async () => {
+  persisted = true; artworkStatus = 'ready';
+  const view = entry();
+  try {
+    await flushPromises(); image.value = 'blob:portrait'; await flushPromises();
+    view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
+    await view.findComponent({ name: 'PrelaunchWand' }).get('button').trigger('click');
+    allowed = true; await vi.advanceTimersByTimeAsync(15000); await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(false);
+    expect(api.replace).not.toHaveBeenCalled();
+    view.findComponent({ name: 'PrelaunchWand' }).vm.$emit('open-change', false); await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(true);
+  } finally { view.unmount(); }
+});
+it('allows the saved character to proceed when its portrait fails', async () => {
+  persisted = true; artworkStatus = 'failed';
+  const view = entry();
+  try { await flushPromises(); expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true); }
+  finally { view.unmount(); }
+});
+it('removes the workshop when admission is revoked', async () => {
+  persisted = true; artworkStatus = 'failed';
+  const view = entry();
+  try {
+    await flushPromises(); expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true);
+    revokedAudience = true; await vi.advanceTimersByTimeAsync(15000); await flushPromises();
+    expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
+  } finally { view.unmount(); }
 });
 it('shows safe source attribution for a fallback portrait and omits it for generated artwork', async () => {
   persisted = true; artworkStatus = 'ready'; artworkSource = {
