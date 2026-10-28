@@ -1,6 +1,9 @@
 # PR validation and main release
 
-The full `development` → `main` PR validates all eight existing projects.
+The full `development` → `main` PR validates all seven active application projects.
+Physical firmware, CAD and the hardware simulator are paused and excluded from automatic PR/release jobs.
+An explicit manual `ci.yml` request with `project=firmware` and the separate
+manual CAD workflow remain available; `project=all` does not include hardware.
 After every selected project and the secret scan pass, `CI required` records
 `pr-validation.json` in the attempt-specific `pr-validation-N` artifact for
 14 days. Metadata-only events, stacks, forks and partial checks cannot produce
@@ -36,19 +39,25 @@ retains full validation.
 
 ## What still runs on main
 
-With valid evidence, main builds the backend, firmware, web and site payloads
+With valid evidence, main builds the backend, web and site payloads
 again, preserving the exact main commit and existing package provenance. It
 retains history secret scanning, workflow/whitespace checks, production builds,
 fresh backend HTTP smoke and isolated guest integration, compiled-site input
-checks, firmware version/OTA checks and normal package/signature verification.
+checks and normal package/signature verification.
 The backend diagnostic assembly is still built and packaged.
 
-Previously completed unit, browser, model-fixture and firmware host suites are
+Previously completed application unit and browser suites are
 not repeated. Unsigned iOS simulator/debug Android validation and the offline AI
 evaluation job are omitted from this artifact-only main CI run after their full
 PR coverage has been proved. iOS distribution workflows still compile/sign the
 native distribution and keep their release-specific checks. Android distribution
 retains its independent signed workflow.
+
+The private product controller no longer requires a firmware artifact or starts
+firmware publication. Its standalone manual firmware path remains independent.
+The backend does not compile or bundle the portable simulator by default.
+Simulator-specific tests remain available manually; active product checks run
+without a C++ compiler.
 
 PR artifacts are never promoted to production. `main-release.cjs`, the app and
 private `verify-build.cjs` guards, private deployment workflows, signing

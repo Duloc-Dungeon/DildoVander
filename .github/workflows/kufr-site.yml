@@ -43,24 +43,15 @@ jobs:
             contracts/package-lock.json
       - name: Guard application and viewer CI independence
         run: python scripts/ci/ui_boundary.py
-      - name: Validate application packaging and viewer fixtures
+      - name: Validate application packaging fixtures
         if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |
           python scripts/generate_design_tokens.py --check
           npm test --prefix design-system
           python -m unittest discover -s web -p 'test_*.py'
-          python -m unittest discover -s web/deploy -p 'test_*.py'
-          python -m unittest discover -s mechanika/final -p test_viewer_style.py
-          python -m unittest discover -s mechanika/final -p test_viewer_document.py
-          python -m unittest discover -s mechanika/final -p test_twin_manifest.py
-          python mechanika/final/generate_effects.py --check
-          python -m unittest discover -s mechanika/final -p test_effects.py
-          python -m unittest discover -s mechanika/final -p test_model_bundle_export.py
-          python -m unittest discover -s mechanika/final -p test_model_verification.py
-          node --test mechanika/final/test_viewer.cjs mechanika/final/test_twin_viewer.cjs mechanika/final/test_twin_media.cjs mechanika/final/test_show_timeline.cjs
-          node --test firmware/diagnostics/servo-bench/web/tests/*.test.mjs
-          python -m unittest discover -s firmware/diagnostics/servo-bench/web/tests -p 'test_*.py'
-          node firmware/simulator/verify-dashboard.mjs
+          for test in test_application_routes.py test_character_admin_proxy.py test_distribution_store.py test_keepsake_proxy.py test_launch_resource_gate.py test_private_pipeline_preparation.py test_release_store.py; do
+            python -m unittest discover -s web/deploy -p "$test"
+          done
       - name: Install shared application browser dependencies
         working-directory: mobilni-aplikace
         run: |

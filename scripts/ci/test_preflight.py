@@ -16,7 +16,11 @@ class PreflightPlanTests(unittest.TestCase):
         self.assertIn("Backend harness: default", names)
         self.assertIn("Android debug build", names)
         self.assertNotIn("iOS simulator build", names)
-        self.assertIn("Firmware image build", names)
+        self.assertNotIn("Firmware image build", names)
+        self.assertNotIn("CAD host tests", names)
+        self.assertNotIn("Generated effects and tests", names)
+        self.assertNotIn("Build simulator native test host", names)
+        self.assertNotIn("Stage backend test simulator", names)
         self.assertTrue(all(check.platform in ("portable", "windows") for check in checks))
 
     def test_all_plan_keeps_nonlocal_release_groups_visible(self):
@@ -24,13 +28,13 @@ class PreflightPlanTests(unittest.TestCase):
         names = {check.name for check in checks}
 
         self.assertIn("iOS unsigned simulator build", names)
-        self.assertIn("Firmware image build", names)
+        self.assertNotIn("Firmware image build", names)
         self.assertIn("Android debug build", names)
         self.assertTrue(any(check.group == "browser" for check in checks))
         repository_checks = [check for check in checks if check.group == "repository"]
         self.assertTrue(any(check.name == "Workflow actionlint validation" for check in repository_checks))
         self.assertTrue(any(check.name == "Gitleaks checkout history scan" for check in repository_checks))
-        self.assertTrue(any(check.name == "Linux firmware inline C++ host workflow coverage" for check in checks))
+        self.assertFalse(any("firmware" in check.name.lower() or "cad" in check.name.lower() for check in checks))
 
     def test_dependency_install_commands_only_appear_when_explicit(self):
         default = preflight.build_plan("local", "linux")
@@ -38,7 +42,7 @@ class PreflightPlanTests(unittest.TestCase):
 
         self.assertFalse(any(check.group == "setup" for check in default))
         installs = [check for check in installed if check.group == "setup"]
-        self.assertEqual(5, len(installs))
+        self.assertEqual(4, len(installs))
         npm_installs = [check for check in installs if check.name.startswith("Install ") and "Playwright" not in check.name]
         self.assertTrue(all(check.command[1] == "ci" for check in npm_installs))
         self.assertTrue(any("playwright" in check.command for check in installs))
@@ -46,7 +50,7 @@ class PreflightPlanTests(unittest.TestCase):
 
 class PreflightExecutionTests(unittest.TestCase):
     def test_missing_tools_are_reported_without_calling_subprocess(self):
-        check = preflight.Check("compile", "firmware", "firmware", ("pio", "run"), tools=("pio",))
+        check = preflight.Check("optional tool", "backend", "portable", ("compiler",), tools=("compiler",))
         calls = []
 
         results, missing, failed = preflight.execute_plan(
@@ -56,7 +60,7 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertEqual([], calls)
         self.assertFalse(failed)
         self.assertEqual("missing", results[0]["status"])
-        self.assertEqual("pio", missing[0]["tool"])
+        self.assertEqual("compiler", missing[0]["tool"])
 
     def test_nonzero_exit_is_not_hidden(self):
         check = preflight.Check("contracts", "contracts", "portable", ("npm", "test"), tools=("npm",))
@@ -76,26 +80,28 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertEqual(7, results[0]["exit_code"])
         self.assertEqual(Path("/repo"), runner_calls[0][1]["cwd"])
 
-    def test_backend_plan_uses_locked_runtime_ids_and_checkout_scoped_native_host(self):
+    def test_backend_plan_uses_locked_runtime_ids_without_simulator_prerequisites(self):
         windows = preflight.build_plan("local", "windows", architecture="AMD64")
         mac = preflight.build_plan("local", "macos", architecture="arm64")
         windows_build = next(check for check in windows if check.name == "Build backend executable harness")
         mac_build = next(check for check in mac if check.name == "Build backend executable harness")
-        native = next(check for check in windows if check.name == "Build simulator native test host")
-        harness = next(check for check in windows if check.name == "Backend harness: twin")
+        default_harness = next(check for check in windows if check.name == "Backend harness: default")
+        names = {check.name for check in windows}
 
         self.assertIn("win-x64", windows_build.command)
         self.assertNotIn("osx-arm64", mac_build.command)
         self.assertNotIn("-r", mac_build.command)
-        self.assertIn("dildovander-preflight-", native.command[3])
-        self.assertTrue(native.command[3].endswith("native-twin.exe"))
-        self.assertEqual(dict(harness.env)["KUFR_TWIN_TEST_NATIVE"], native.command[3])
-        self.assertEqual("cxx", native.tools[-1])
-        media_build = next(check for check in windows if check.name == "Firmware native simulator build")
-        media_tests = next(check for check in windows if check.name == "Firmware simulator media tests")
-        self.assertTrue(media_build.command[3].endswith("native-media-twin.exe"))
-        self.assertEqual(media_build.command[3], media_tests.command[3])
-        self.assertIn(media_build.command[3], media_tests.required_files)
+        self.assertIn("Backend harness: default", names)
+        self.assertNotIn("Backend harness: twin", names)
+        self.assertNotIn("Backend harness: twin-media", names)
+        self.assertFalse(any("native test host" in check.name.lower() or "stage backend test simulator" in check.name.lower()
+                             for check in windows))
+        self.assertFalse(any("cxx" in check.tools for check in windows))
+        self.assertFalse(any("KUFR_TWIN_TEST_NATIVE" in dict(check.env) for check in windows))
+        expected_dll = str(preflight.ROOT / "backend-tests/bin/Release/net10.0/win-x64/BackendTests.dll")
+        self.assertIn(expected_dll, default_harness.required_files)
+        self.assertNotIn("--twin", preflight.BACKEND_GROUPS)
+        self.assertNotIn("--twin-media", preflight.BACKEND_GROUPS)
 
     def test_account_fixture_receives_built_release_harness_and_missing_outputs_are_reported(self):
         checks = preflight.build_plan("local", "windows", architecture="AMD64")
@@ -106,6 +112,8 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertEqual(expected_dll, dict(account.env)["KUFR_TESTS_DLL"])
         self.assertIn(expected_dll, account.required_files)
         self.assertLess(checks.index(build), checks.index(account))
+        keepsake = next(check for check in checks if check.name == "Keepsake HTTP integration")
+        self.assertNotIn("KUFR_TWIN_TEST_NATIVE", dict(keepsake.env))
 
         missing_check = preflight.Check("fixture", "browser", "portable", ("node", "fixture"),
                                         required_files=("missing/BackendTests.dll",))
@@ -122,21 +130,29 @@ class PreflightExecutionTests(unittest.TestCase):
         names = {check.name for check in checks}
 
         self.assertIn("AI evaluation pure Python tests", names)
-        self.assertIn("Site viewer Node fixtures", names)
         self.assertIn("Compiled site input tests", names)
         self.assertIn("Assemble local site package", names)
         self.assertIn("Package local site with provenance", names)
+        self.assertIn("Site fixtures: Web application packaging and inputs", names)
+        self.assertIn("Site fixtures: Web deploy test_application_routes.py", names)
+        self.assertNotIn("Site fixtures: Web deploy test_cad_host.py", names)
 
-    def test_local_firmware_host_checks_run_when_portable_and_linux_gap_is_explicit(self):
+    def test_default_plans_exclude_hardware_cad_and_native_simulator_checks(self):
         arm_local = preflight.build_plan("local", "linux", architecture="aarch64")
         all_checks = preflight.build_plan("all", "linux", architecture="x86_64")
-        arm_names = {check.name for check in arm_local}
-
-        self.assertIn("Firmware CI tests", arm_names)
-        self.assertIn("Servo panel Node tests", arm_names)
-        self.assertIn("Firmware image build", arm_names)
-        self.assertNotIn("Linux x64 CI host coverage", arm_names)
-        self.assertTrue(any(check.name == "Linux firmware inline C++ host workflow coverage" for check in all_checks))
+        for checks in (arm_local, all_checks):
+            names = {check.name for check in checks}
+            self.assertNotIn("Build simulator native test host", names)
+            self.assertNotIn("Firmware image build", names)
+            self.assertNotIn("Firmware CI tests", names)
+            self.assertNotIn("Stage backend test simulator", names)
+            self.assertNotIn("Backend harness: twin", names)
+            self.assertNotIn("Backend harness: twin-media", names)
+            self.assertFalse(any("firmware/simulator/native" in " ".join(check.command) for check in checks))
+            self.assertFalse(any("CAD" in check.name or "effects" in check.name.lower() or "model" in check.name.lower()
+                                 for check in checks))
+            self.assertFalse(any("pio" in tool.lower() for check in checks for tool in check.tools))
+        self.assertNotIn("Linux x64 CI host coverage", {check.name for check in arm_local})
 
     def test_mac_native_commands_use_mobile_root_and_unsigned_simulator_build(self):
         checks = preflight.build_plan("local", "macos", architecture="arm64")
@@ -191,7 +207,7 @@ class PreflightExecutionTests(unittest.TestCase):
 
     def test_command_environment_is_passed_to_child_process(self):
         check = preflight.Check("native", "backend", "portable", ("dotnet", "run"),
-                                env=(("KUFR_TWIN_TEST_NATIVE", "/temp/native-twin"),))
+                                env=(("PREFLIGHT_TEST_VALUE", "supplied"),))
         captured = {}
 
         def runner(command, **kwargs):
@@ -199,7 +215,7 @@ class PreflightExecutionTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0)
 
         preflight.execute_plan([check], Path("/repo"), runner, lambda _: "dotnet", progress=None)
-        self.assertEqual("/temp/native-twin", captured["env"]["KUFR_TWIN_TEST_NATIVE"])
+        self.assertEqual("supplied", captured["env"]["PREFLIGHT_TEST_VALUE"])
 
     def test_git_identity_includes_tracked_tree_and_worktree_status(self):
         outputs = iter((" M tracked.py\n?? new.py", "tracked diff", "new.py\0", "abc123", "tree456"))

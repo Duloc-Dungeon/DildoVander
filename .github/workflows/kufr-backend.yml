@@ -40,16 +40,11 @@ jobs:
         run: dotnet build backend-tests/BackendTests.csproj -c Release -r linux-x64 -p:SelfContained=true --no-restore
       - name: Backend tests
         if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
-        env:
-          KUFR_TWIN_TEST_NATIVE: ${{ runner.temp }}/native-twin
         run: |
-          python3 firmware/simulator/native/build_host.py --output "$KUFR_TWIN_TEST_NATIVE"
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --observability
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --push
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --push-http
-          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --twin
-          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --twin-media
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --identity
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --prelaunch-http-slow-artwork
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --prelaunch-workshop-http

@@ -21,7 +21,7 @@ from typing import Callable, Sequence
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND_GROUPS = (
-    "--observability", "--push", "--push-http", "--twin", "--twin-media",
+    "--observability", "--push", "--push-http",
     "--identity", "--prelaunch-http-slow-artwork", "--prelaunch-workshop-http",
     "--persona-reliability", "--persona-lab", "--persona-lab-transport",
     "--mobile-game", "--mobile-game-http", "--owner-player-http",
@@ -30,7 +30,7 @@ BACKEND_GROUPS = (
     "--sealed-case-runtime", "--account-deletion",
 )
 GROUPS = ("repository", "design", "contracts", "frontend", "backend", "browser",
-          "android", "ios", "firmware", "site", "coverage", "setup")
+          "android", "ios", "site", "coverage", "setup")
 
 
 @dataclass(frozen=True)
@@ -69,16 +69,6 @@ def _check(name: str, group: str, platform_name: str, command: Sequence[str],
 def checkout_temp_dir(root: Path = ROOT) -> Path:
     checkout_key = hashlib.sha256(str(root.resolve()).encode("utf-8")).hexdigest()[:12]
     return Path(tempfile.gettempdir()) / f"dildovander-preflight-{checkout_key}"
-
-
-def native_twin_path(root: Path = ROOT, host: str | None = None) -> Path:
-    suffix = ".exe" if (host or host_platform()) == "windows" else ""
-    return checkout_temp_dir(root) / f"native-twin{suffix}"
-
-
-def media_twin_path(root: Path = ROOT, host: str | None = None) -> Path:
-    suffix = ".exe" if (host or host_platform()) == "windows" else ""
-    return checkout_temp_dir(root) / f"native-media-twin{suffix}"
 
 
 def version_matches(expectation: str, reported: str) -> bool:
@@ -122,7 +112,7 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
     node = "node.exe" if host == "windows" else "node"
     npm_prefix = [npm]
     if install_dependencies:
-        for folder in ("contracts", "design-system", "mobilni-aplikace", "firmware/simulator"):
+        for folder in ("contracts", "design-system", "mobilni-aplikace"):
             checks.append(_check(f"Install {folder} locked dependencies", "setup", "portable",
                                  [*npm_prefix, "ci", "--prefix", folder], tools=[npm]))
         npx = "npx.cmd" if host == "windows" else "npx"
@@ -157,14 +147,10 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
     add("Gitleaks checkout history scan", "repository", "portable",
         ["gitleaks", "git", "--config=.gitleaks.toml", "--redact=100", "--no-banner", "--log-opts=HEAD"],
         tools=["gitleaks"])
-    add("Fast model build tests", "repository", "portable", [py, "-m", "unittest", "discover", "-s", "mechanika/final", "-p", "test_fast_build.py"], tools=[py])
-    add("CAD host tests", "repository", "portable", [py, "-m", "unittest", "discover", "-s", "web/deploy", "-p", "test_cad_host.py"], tools=[py])
     add("Design token source check", "design", "portable", [py, "scripts/generate_design_tokens.py", "--check"], tools=[py])
     add("Design system tests", "design", "portable", [npm, "test", "--prefix", "design-system"], tools=[npm])
     add("Design system Python tests", "design", "portable", [py, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_design_system.py"], tools=[py])
     add("Design system integrity", "design", "portable", [py, "scripts/check_design_system.py"], tools=[py])
-    add("Generated effects and tests", "design", "portable", [py, "mechanika/final/generate_effects.py", "--check"], tools=[py])
-    add("Generated effects tests", "design", "portable", [py, "-m", "unittest", "discover", "-s", "mechanika/final", "-p", "test_effects.py"], tools=[py])
     add("Contracts test suite", "contracts", "portable", [npm, "test", "--prefix", "contracts"], tools=[npm])
 
     add("Frontend Node and Vitest tests", "frontend", "portable", [npm, "test", "--prefix", "mobilni-aplikace"], tools=[npm])
@@ -174,31 +160,19 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
     add("AI evaluation pure Python tests", "repository", "portable",
         [py, "-m", "unittest", "discover", "-s", "ai-eval", "-p", "test_*.py"], tools=[py])
     add("Site application/viewer boundary", "site", "portable", [py, "scripts/ci/ui_boundary.py"], tools=[py])
-    site_python_tests = (
-        ("Web", "web", "test_*.py"), ("Web deploy", "web/deploy", "test_*.py"),
-        ("Viewer style", "mechanika/final", "test_viewer_style.py"),
-        ("Viewer document", "mechanika/final", "test_viewer_document.py"),
-        ("Twin manifest", "mechanika/final", "test_twin_manifest.py"),
-        ("Effects", "mechanika/final", "test_effects.py"),
-        ("Model bundle export", "mechanika/final", "test_model_bundle_export.py"),
-        ("Model verification", "mechanika/final", "test_model_verification.py"),
-    )
+    site_python_tests = (("Web application packaging and inputs", "web", "test_*.py"),)
     for label, directory, pattern in site_python_tests:
         add(f"Site fixtures: {label}", "site", "portable",
             [py, "-m", "unittest", "discover", "-s", directory, "-p", pattern], tools=[py])
-    add("Site viewer Node fixtures", "site", "portable",
-        [node, "--test", "mechanika/final/test_viewer.cjs", "mechanika/final/test_twin_viewer.cjs",
-         "mechanika/final/test_twin_media.cjs", "mechanika/final/test_show_timeline.cjs"], tools=[node])
-    add("Site simulator dashboard validation", "site", "portable",
-        [node, "firmware/simulator/verify-dashboard.mjs"], tools=[node])
-
+    for filename in ("test_application_routes.py", "test_character_admin_proxy.py",
+                     "test_distribution_store.py", "test_keepsake_proxy.py",
+                     "test_launch_resource_gate.py", "test_private_pipeline_preparation.py",
+                     "test_release_store.py"):
+        add(f"Site fixtures: Web deploy {filename}", "site", "portable",
+            [py, "-m", "unittest", "discover", "-s", "web/deploy", "-p", filename], tools=[py])
     machine = (architecture or platform.machine()).lower()
     x64 = machine in ("x86_64", "amd64", "x64")
     rid = "linux-x64" if host == "linux" and x64 else "win-x64" if host == "windows" and x64 else None
-    native_host = native_twin_path(host=host)
-    add("Build simulator native test host", "backend", "portable",
-        [py, "firmware/simulator/native/build_host.py", "--output",
-         str(native_host)], tools=[py, "cxx"])
     restore = ["dotnet", "restore", "backend-tests/BackendTests.csproj"]
     if rid:
         restore.append("-p:SelfContained=true")
@@ -209,7 +183,7 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
         build.extend(["-r", rid, "-p:SelfContained=true"])
     build.append("--no-restore")
     add("Build backend executable harness", "backend", "portable", build, tools=["dotnet"])
-    harness_env = (("KUFR_TWIN_TEST_NATIVE", str(native_host)),)
+    test_dll = ROOT / "backend-tests/bin/Release/net10.0" / rid / "BackendTests.dll" if rid else ROOT / "backend-tests/bin/Release/net10.0/BackendTests.dll"
     for group in ("", *BACKEND_GROUPS):
         label = "default" if not group else group.removeprefix("--")
         command = ["dotnet", "run", "--project", "backend-tests/BackendTests.csproj", "-c", "Release"]
@@ -218,11 +192,10 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
         command.extend(["--no-build", "--no-restore"])
         if group:
             command.extend(["--", group])
-        tools = ["dotnet", "cxx"] if group in ("--twin", "--twin-media") else ["dotnet"]
-        add(f"Backend harness: {label}", "backend", "portable", command, tools=tools, env=harness_env)
+        add(f"Backend harness: {label}", "backend", "portable", command, tools=["dotnet"],
+            required_files=(str(test_dll),))
 
     backend_dll = ROOT / "backend/bin/Release/net10.0" / rid / "backend.dll" if rid else ROOT / "backend/bin/Release/net10.0/backend.dll"
-    test_dll = ROOT / "backend-tests/bin/Release/net10.0" / rid / "BackendTests.dll" if rid else ROOT / "backend-tests/bin/Release/net10.0/BackendTests.dll"
     publish_dir = checkout_temp_dir() / f"backend-publish-{run_tag}"
     published_backend = publish_dir / "backend.dll"
     publish = ["dotnet", "publish", "backend/backend.csproj", "-c", "Release"]
@@ -321,53 +294,6 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
          str(checkout_temp_dir() / "ios-derived-data"), "CODE_SIGNING_ALLOWED=NO", "build"],
         cwd="mobilni-aplikace", tools=["xcodebuild"])
 
-    firmware_commands = (
-        ("Firmware CI tests", [py, "-m", "unittest", "discover", "-s", "firmware/ci", "-p", "test_*.py"], [py]),
-        ("Servo bench tests", [py, "firmware/diagnostics/servo-bench/tests/run_tests.py"], [py]),
-        ("Servo panel Node tests", [node, "--test", "firmware/diagnostics/servo-bench/web/tests/*.test.mjs"], [node]),
-        ("Servo panel Python tests", [py, "-B", "-m", "unittest", "discover", "-s", "firmware/diagnostics/servo-bench/web/tests", "-p", "test_*.py", "-v"], [py]),
-        ("Firmware version and OTA tests", [py, "-m", "unittest", "discover", "-s", "firmware/tools", "-p", "test_*.py"], [py]),
-        ("Hardware service diagnostic tests", [py, "-m", "unittest", "discover", "-s", "firmware/diagnostics/hardware-service", "-p", "test_*.py"], [py]),
-        ("Network service diagnostic tests", [py, "-m", "unittest", "discover", "-s", "firmware/diagnostics/network-service", "-p", "test_*.py"], [py]),
-        ("Firmware show tests", [py, "firmware/tests/run_show_tests.py"], [py]),
-        ("Firmware host simulator tests", [py, "firmware/simulator/native/test_host.py"], [py]),
-        ("Firmware native simulator build", [py, "firmware/simulator/native/build_host.py", "--output",
-                                              str(media_twin_path(host=host))], [py, "cxx"]),
-        ("Firmware simulator media tests", [py, "firmware/simulator/native/test_media.py", "--executable",
-                                             str(media_twin_path(host=host))], [py]),
-        ("Legacy show regression comparison", [py, "firmware/tests/compare_legacy_show.py"], [py]),
-        ("DV02 model checks", [py, "scripts/check_dv02.py"], [py]),
-        ("Show timeline Node tests", [node, "--test", "mechanika/final/test_show_timeline.cjs"], [node]),
-        ("Firmware dance tests", ["bash", "tests/run_dance_tests.sh"], ["bash"], "firmware"),
-        ("Firmware image build", ["pio", "run", "-d", "firmware", "-e", "production", "-s"], ["pio"]),
-        ("Firmware OTA image gate", [py, "firmware/tools/ota_release.py", "check", "--binary",
-                                      "firmware/.pio/build/production/firmware.bin"], [py]),
-        ("Firmware board memory diagnostic build", ["pio", "run", "-d", "firmware", "-e", "diag-board-memory", "-s"], ["pio"]),
-        ("Firmware PCA9685 diagnostic build", ["pio", "run", "-d", "firmware", "-e", "diag-pca9685-logic", "-s"], ["pio"]),
-        ("Firmware servo bench diagnostic build", ["pio", "run", "-d", "firmware", "-e", "diag-servo-bench", "-s"], ["pio"]),
-        ("Prepare hardware service diagnostic example", [py, "diagnostics/hardware-service/make_config.py",
-                                                          "diagnostics/hardware-service/service_config.example.json"],
-         [py], "firmware"),
-        ("Firmware hardware service diagnostic build", ["pio", "run", "-d", "firmware", "-e", "diag-hardware-service", "-s"], ["pio"]),
-        ("Firmware network service diagnostic build", ["pio", "run", "-d", "firmware", "-e", "diag-network-service", "-s"], ["pio"]),
-    )
-    for item in firmware_commands:
-        name, command, tools, *working_directory = item
-        platform_name = "portable"
-        if name in ("Servo bench tests", "Firmware show tests", "Firmware host simulator tests",
-                    "Firmware native simulator build", "Legacy show regression comparison", "DV02 model checks"):
-            tools = [*tools, "cxx"]
-        if name == "Firmware dance tests":
-            tools = [*tools, "g++"]
-        if name == "Firmware simulator media tests":
-            working_directory = ["."]
-        add(name, "firmware", platform_name, command,
-            cwd=working_directory[0] if working_directory else ".", tools=tools,
-            required_files=(str(media_twin_path(host=host)),) if name == "Firmware simulator media tests" else ())
-    if scope == "all":
-        add("Linux firmware inline C++ host workflow coverage", "coverage", "linux", [],
-            tools=["coverage-gap:Linux firmware workflow compiles additional C++ harnesses inline; they are not represented by individual runner checks"],
-            reason="CI has additional inline GNU C++ harnesses beyond the portable firmware checks planned above")
     if scope == "all":
         add("Linux x64 CI host coverage", "coverage", "linux",
             [py, "-c", "import platform; assert platform.system() == 'Linux' and platform.machine().lower() in ('x86_64', 'amd64')"], tools=[py])
@@ -440,22 +366,6 @@ def execute_plan(checks: Sequence[Check], root: Path, runner: Callable[..., subp
                     return None
                 version = subprocess.run([java, "-version"], capture_output=True, text=True, check=False)
                 return java if re.search(r'version "21\.', version.stdout + version.stderr) else None
-            if tool == "cxx":
-                compiler = available("g++") or available("cl")
-                if compiler:
-                    return compiler
-                if host == "windows":
-                    vswhere = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Microsoft Visual Studio/Installer/vswhere.exe"
-                    if vswhere.is_file():
-                        result = subprocess.run(
-                            [str(vswhere), "-latest", "-products", "*", "-requires",
-                             "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "-property", "installationPath"],
-                            capture_output=True, text=True, check=False)
-                        if result.returncode == 0 and result.stdout.strip():
-                            setup = Path(result.stdout.strip()) / "Common7/Tools/VsDevCmd.bat"
-                            if setup.is_file():
-                                return str(setup)
-                return None
             return available(tool)
 
         missing_files = [path for path in check.required_files if not (root / path).exists()]

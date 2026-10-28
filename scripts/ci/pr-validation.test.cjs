@@ -42,7 +42,9 @@ function fixture() {
   const recordContext = { ...context, eventName: 'pull_request', runId: 200, runAttempt: 2, sha: sha('e'),
     payload: { action: 'synchronize', pull_request: pr } };
   const selected = Object.fromEntries(PROJECTS.map(name => [name, 'true']));
+  selected.firmware = 'false';
   const results = Object.fromEntries([...PROJECTS, 'changes', 'secret-scan'].map(name => [name, { result: 'success' }]));
+  results.firmware = { result: 'skipped' };
   const checkout = { sha: sha('e'), tree: sha('b'), parents: [sha('c'), sha('d')] };
   const receipt = makeReceipt(recordContext, selected, results, checkout);
   return { api, pr, context, run, runs, main, tested, artifacts, jobs, associated,
@@ -66,6 +68,8 @@ test('recording rejects metadata, forks, quick/partial CI and wrong checkouts', 
     f => { f.pr.head.repo.full_name = 'fork/repo'; },
     f => { f.pr.stack = {}; },
     f => { f.selected.ios = 'false'; },
+    f => { f.selected.firmware = 'true'; },
+    f => { f.results.firmware.result = 'success'; },
     f => { f.results.backend.result = 'skipped'; },
     f => { f.results['secret-scan'].result = 'failure'; },
     f => { f.checkout.parents.reverse(); },
@@ -112,6 +116,7 @@ test('invalid discovery evidence requires full tests', async t => {
 test('receipt, tree, steps, artifact and attempt races require full tests', async t => {
   for (const mutate of [
     f => { f.receipt.source_tree = sha('f'); },
+    f => { f.receipt.policy = 'full-pr-v1'; },
     f => { f.receipt.base_sha = sha('f'); },
     f => { f.receipt.head_sha = sha('f'); },
     f => { f.receipt.pr_number = 43; },
@@ -152,7 +157,7 @@ test('workflow optimization remains default-off, with full-test fallback and fre
   const root = path.resolve(__dirname, '../..');
   const ci = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8');
   const selector = fs.readFileSync(path.join(root, 'scripts/ci/select_projects.py'), 'utf8');
-  const projects = selector.match(/^PROJECTS = \((.+)\)$/m)[1];
+  const projects = selector.match(/^AUTOMATIC_PROJECTS = \((.+)\)$/m)[1];
   assert.deepEqual([...projects.matchAll(/"([^"]+)"/g)].map(match => match[1]), PROJECTS);
   assert.match(ci, /CI_REUSE_VALIDATION.*steps.validation.outputs.verified/);
   assert.match(ci, /if \[ "\$CI_REUSE_VALIDATION" = true \]; then/);
@@ -162,7 +167,7 @@ test('workflow optimization remains default-off, with full-test fallback and fre
   assert.match(recorder, /github.event.pull_request.head.repo.full_name == github.repository/);
   assert.match(recorder, /github.event.pull_request.base.repo.full_name == github.repository/);
   assert.match(recorder, /github.repository == 'Duloc-Dungeon\/DildoVander'/);
-  for (const file of ['kufr-backend.yml', 'kufr-web.yml', 'kufr-firmware.yml', 'kufr-site.yml']) {
+  for (const file of ['kufr-backend.yml', 'kufr-web.yml', 'kufr-site.yml']) {
     const workflow = fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8');
     assert.match(workflow, /reuse-validation:[\s\S]+type: boolean\n        default: false/);
     assert.match(workflow, /if: inputs.reuse-validation != true \|\| github.event_name != 'workflow_dispatch' \|\| github.ref != 'refs\/heads\/main'/);
@@ -171,4 +176,7 @@ test('workflow optimization remains default-off, with full-test fallback and fre
   const smoke = backend.split('      - name: HTTP smoke tests\n')[1].split('      - name:')[0];
   assert.doesNotMatch(smoke, /if:/);
   assert.match(ci, /gitleaks.*git --config=.*--log-opts=HEAD/);
+  const site = fs.readFileSync(path.join(root, '.github/workflows/kufr-site.yml'), 'utf8');
+  assert.doesNotMatch(site, /mechanika\/final|firmware\/diagnostics/);
+  assert.doesNotMatch(site, /discover -s web\/deploy -p 'test_\*\.py'/);
 });

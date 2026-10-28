@@ -33,9 +33,14 @@ locků a nativních závislostí zachovává stávající oddělené bezpečnost
 2. Při konfliktu nebo zastaralém základu sluč aktuální `main` do
    `development`, vyřeš konflikty a nech kontroly doběhnout znovu.
 3. `CI required` pro tento PR vyžaduje všechny existující běžné projekty:
-   repository, backend, firmware, web, iOS, Android, offline AI evaluace a site.
+   repository, backend, web, iOS, Android, offline AI evaluace a site.
    Platí to i pro samotnou dokumentaci. Placené evaluace a CAD generování
    zůstávají samostatné explicitní operace.
+
+   Fyzický firmware, CAD a softwarový simulátor jsou pozastavené a automatické PR/release buildy je
+   nevybírají. `project=all` je nezahrnuje. Ruční `project=firmware` a samostatné
+   ruční CAD workflow zůstávají dostupné. Backend simulátor standardně
+   nekompiluje ani nepřibaluje; ruční režim popisuje lokální preflight.
 4. Po úspěšném CI a review použij **Create a merge commit**. Squash tohoto PR
    by ztratil společnou historii a komplikoval další vydání.
 5. `development` zachovej. Následující pracovní větev znovu založ z něj.

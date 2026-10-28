@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 
 const REPOSITORY = 'Duloc-Dungeon/DildoVander';
-const PROJECTS = ['repository', 'backend', 'firmware', 'web', 'ios', 'android', 'ai-eval', 'site'];
+const PROJECTS = ['repository', 'backend', 'web', 'ios', 'android', 'ai-eval', 'site'];
 const SHA = /^[a-f0-9]{40}$/;
 const RECORD = 'Record complete PR validation';
 const SAVE = 'Save complete PR validation';
@@ -14,15 +14,13 @@ const JOBS = {
   'backend / build': ['Backend tests', 'Mobile game authority and recovery (offline providers)',
     'Sealed case privacy, plans and timing (offline providers)', 'Real HTTPS passkey and invitation browser journeys',
     'Mobile game browser journeys with synthetic data', 'HTTP smoke tests'],
-  'firmware / host-tests': ['Device control tests', 'DV02 compiler, owner replay and bounded diagnostics'],
-  'firmware / firmware-build': ['Build ESP-IDF profile'],
   'web / web': ['Run npm test', 'Run npm test --prefix ../contracts'],
   'ios / ios': ['Test native pinned LAN transport', 'Test native debug backend client and voice sessions',
     'Test secure BLE status and secret whitelist', 'Test native identity origin policy and authentication bridge',
     'Test native diagnostic export files'],
   'android / android': ['Check release verifier and native build'],
   'ai-eval / offline': ['Validate synthetic corpus and fail-closed parser'],
-  'site / build': ['Validate application packaging and viewer fixtures', 'Verify shared application browser journeys'],
+  'site / build': ['Validate application packaging fixtures', 'Verify shared application browser journeys'],
   'CI required': [RECORD, SAVE],
 };
 
@@ -41,6 +39,7 @@ function makeReceipt(context, selected, results, checkout) {
     && pr.base.repo?.full_name === REPOSITORY && pr.head.repo?.full_name === REPOSITORY,
   'Only complete canonical development-to-main PR validation can be recorded');
   requireThat(PROJECTS.every(name => selected[name] === 'true' && results[name]?.result === 'success')
+    && selected.firmware === 'false' && results.firmware?.result === 'skipped'
     && results.changes?.result === 'success' && results['secret-scan']?.result === 'success',
   'Every project and the secret scan must have executed successfully');
   requireThat([context.sha, pr.base.sha, pr.head.sha, checkout.tree].every(value => SHA.test(value || ''))
@@ -48,7 +47,7 @@ function makeReceipt(context, selected, results, checkout) {
     && checkout.parents[0] === pr.base.sha && checkout.parents[1] === pr.head.sha,
   'PR checkout must be the exact tested merge of the event base and head');
   requireThat(positive(context.runId) && positive(context.runAttempt) && positive(pr.number), 'Invalid receipt identity');
-  return { schema: 1, policy: 'full-pr-v1', repository: REPOSITORY, event: 'pull_request',
+  return { schema: 1, policy: 'full-pr-v2', repository: REPOSITORY, event: 'pull_request',
     run_id: context.runId, run_attempt: context.runAttempt, pr_number: pr.number,
     base_sha: pr.base.sha, head_sha: pr.head.sha, tested_sha: checkout.sha, source_tree: checkout.tree,
     projects: [...PROJECTS] };
@@ -132,7 +131,7 @@ async function verify(api, candidate, receipt) {
   // attempts, changed main, artifact replacement, and changed PR association.
   const current = await discover(api);
   requireThat(JSON.stringify(current) === JSON.stringify(candidate), 'Validation candidate changed');
-  requireThat(receipt.schema === 1 && receipt.policy === 'full-pr-v1' && receipt.repository === REPOSITORY
+  requireThat(receipt.schema === 1 && receipt.policy === 'full-pr-v2' && receipt.repository === REPOSITORY
     && receipt.event === 'pull_request' && receipt.run_id === current.run_id
     && receipt.run_attempt === current.run_attempt && receipt.pr_number === current.pr_number
     && receipt.head_sha === current.head_sha && receipt.base_sha === current.base_sha

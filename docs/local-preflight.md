@@ -4,15 +4,15 @@ Run `python scripts/ci/preflight.py --dry-run` from the repository root to inspe
 
 ## Scopes
 
-- `--scope local` includes portable repository, design, contracts, frontend, backend harness and browser checks, plus native checks selected for the current host. Android checks are included because the Android Gradle project can be built from supported development hosts. Missing tools are reported against their check and make the command exit nonzero; nothing is silently treated as passed.
-- `--scope all` runs available checks and requires Linux, macOS/iOS, Android and firmware coverage. A platform check that cannot run on this host or lacks required tooling is recorded as missing, and the command exits nonzero. Linux and macOS jobs need their matching hosts. Android requires JDK 21 and Android 36/build-tools 36.0.0, discovered from the same SDK locations as `scripts/android.py`. Firmware builds require PlatformIO and its configured toolchains. Run `--dry-run --scope all` to review the checks without building or writing files.
-- Repeat `--group` with `--scope local` to select a practical subset, for example `--group repository --group contracts --group frontend --group browser`. Groups are `repository`, `design`, `contracts`, `frontend`, `backend`, `browser`, `android`, `ios`, `firmware`, `site`, `coverage` and `setup`. The all-scope rejects group filtering so its platform requirements remain strict.
+- `--scope local` runs the default product validation: repository scripts, design system, contracts, frontend tests/typecheck/build, backend harness and HTTP checks, browser journeys, site input/package checks, plus native checks supported by the current host. Android checks are included because the Android Gradle project can be built from supported development hosts. Missing tools are reported against their check and make the command exit nonzero; nothing is silently treated as passed.
+- `--scope all` adds supported-platform checks for Linux, macOS/iOS, and Android. A platform check that cannot run on this host or lacks required tooling is recorded as missing, and the command exits nonzero. Linux and macOS jobs need their matching hosts. Android requires JDK 21 and Android 36/build-tools 36.0.0, discovered from the same SDK locations as `scripts/android.py`. Run `--dry-run --scope all` to review the checks without building or writing files.
+- Repeat `--group` with `--scope local` to select a practical subset, for example `--group repository --group contracts --group frontend --group browser`. Groups are `repository`, `design`, `contracts`, `frontend`, `backend`, `browser`, `android`, `ios`, `site`, `coverage` and `setup`. The all-scope rejects group filtering so its platform requirements remain strict.
 
-The shared checks follow repository CI commands: `scripts/ci` tests, actionlint, Gitleaks tests and history scan, pure Python `ai-eval` tests, model/CAD and site viewer fixture tests, design token and integrity checks, contracts tests, mobile Node/Vitest tests, typecheck and production build. Backend validation includes the executable harness groups, offline lifecycle/client/deployment tests, a local temporary publish, HTTP smoke, and keepsake integration with explicit absolute `KUFR_BACKEND_DLL` and `KUFR_TESTS_DLL` paths. The account browser fixture receives the built Release harness DLL and reports it missing if the build did not produce it. Locked runtime assets support Linux x64 and Windows x64; macOS uses the framework-dependent `net10.0` harness without an invented RID. Browser journeys require compiled web output and Playwright Chromium. iOS commands run from the mobile project root, sync/generate native assets, resolve Swift packages and build an unsigned simulator app. Firmware Python, Node, compiler-discovered simulator and PlatformIO checks run locally when their tools exist.
+The shared checks reuse application CI commands: `scripts/ci` tests, actionlint, Gitleaks tests and history scan, pure Python `ai-eval` tests, design token and integrity checks, contracts tests, mobile Node/Vitest tests, typecheck and production build, web/site input and packaging tests. Physical firmware builds, CAD/effects/model fixture checks and the software twin simulator are intentionally outside the default PR preflight while those products are inactive; their existing source workflows remain available for manual use. The backend harness validation here omits simulator-dependent Twin groups.
 
-The firmware workflow has additional inline GNU C++ harnesses not individually represented in this runner. `--scope all` reports that Linux firmware coverage gap as missing even on Linux, so it cannot issue a complete CI coverage claim until those harness commands are added. Local scope still runs the portable firmware checks and reports `ci_coverage_complete` as false.
+Backend validation includes the executable harness groups, offline lifecycle/client/deployment tests, a local temporary publish, HTTP smoke, and keepsake integration with explicit absolute `KUFR_BACKEND_DLL` and `KUFR_TESTS_DLL` paths. The account browser fixture receives the built Release harness DLL and reports it missing if the build did not produce it. Locked runtime assets support Linux x64 and Windows x64; macOS uses the framework-dependent `net10.0` harness without an invented RID. Browser journeys require compiled web output and Playwright Chromium. iOS commands run from the mobile project root, sync/generate native assets, resolve Swift packages and build an unsigned simulator app.
 
-The `local` scope's `complete` field means the selected local plan passed; `ci_coverage_complete` remains false because other platform jobs were not run. `all` needs matching platform hosts and their toolchains for complete CI coverage. No live-provider smoke, signing, production deployment, device flashing or artifact upload is part of the plan. Local site/backend packages and published binaries are written under the checkout-specific system temp directory. The runner selects only locked Linux x64 and Windows x64 .NET RIDs; other hosts use the framework-dependent `net10.0` target.
+The `local` scope's `complete` field means the selected local plan passed; `ci_coverage_complete` remains false because other platform jobs were not run. Group-filtered reports are partial and cannot satisfy full-report checks. `all` needs matching platform hosts and their toolchains for complete application CI coverage. No live-provider smoke, signing, production deployment, device flashing or artifact upload is part of the plan. Local site/backend packages and published binaries are written under the checkout-specific system temp directory. The runner selects only locked Linux x64 and Windows x64 .NET RIDs; other hosts use the framework-dependent `net10.0` target.
 
 ## Reports
 
@@ -26,3 +26,19 @@ python scripts/ci/preflight.py --scope local --group repository --group contract
 python scripts/ci/preflight.py --scope all --install-dependencies --report
 python scripts/ci/preflight.py --check-report "PATH_FROM_REPORT_OUTPUT"
 ```
+
+## Manual hardware simulator validation
+
+The paused suitcase simulator is opt-in. On Linux x64 with a C++ compiler:
+
+```sh
+dotnet restore backend-tests/BackendTests.csproj -p:SelfContained=true --locked-mode
+dotnet build backend-tests/BackendTests.csproj -c Release -r linux-x64 -p:SelfContained=true -p:IncludeHardwareSimulator=true --no-restore
+dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --hardware-simulator
+```
+
+The separate `--twin` and `--twin-media` harness groups use `KUFR_TWIN_TEST_NATIVE`
+pointing to the executable built by `firmware/simulator/native/build_host.py`.
+`--firmware` retains the firmware release checks. These manual groups are outside
+normal product validation. Persona Lab product checks remain in the default CI
+matrix. The opt-in build does not authorize firmware publication or deployment.

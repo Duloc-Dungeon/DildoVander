@@ -14,6 +14,7 @@ from cad_impact import classify_path
 
 
 PROJECTS = ("repository", "backend", "firmware", "web", "ios", "android", "ai-eval", "site")
+AUTOMATIC_PROJECTS = ("repository", "backend", "web", "ios", "android", "ai-eval", "site")
 BUILD_WORKFLOWS = {
     ".github/workflows/kufr-backend.yml": "backend",
     ".github/workflows/kufr-firmware.yml": "firmware",
@@ -121,7 +122,9 @@ def select_projects(paths):
             "Directory.Packages.props", "NuGet.Config"
         }:
             selected["backend"] = True
-        if path.startswith("firmware/simulator/"):
+        if path.startswith("firmware/simulator/native/"):
+            selected["firmware"] = True
+        elif path.startswith("firmware/simulator/"):
             if PurePosixPath(path).name in {
                 "dashboard.html", "dashboard.js", "dashboard-ui.js", "verify-dashboard.mjs",
             }:
@@ -178,6 +181,9 @@ def select_projects(paths):
                 selected[name] = True
         for name in PROJECTS:
             result[name] |= selected[name]
+    # Physical firmware is paused. Only an explicit manual project=firmware
+    # request may select its workflow; path changes never schedule hardware.
+    result["firmware"] = False
     return result
 
 
@@ -209,7 +215,7 @@ def check_results(selected, jobs, native_stack_revision=None):
 def select_recovery_projects(project):
     if project not in ("all",) + PROJECTS:
         raise ValueError("Unknown recovery project: " + project)
-    return {name: project in ("all", name) for name in PROJECTS}
+    return {name: name in AUTOMATIC_PROJECTS if project == "all" else name == project for name in PROJECTS}
 
 
 def main():
