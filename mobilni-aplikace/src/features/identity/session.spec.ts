@@ -178,6 +178,31 @@ describe('native account archive transport limits', () => {
     expect(bridge.accountTransport).not.toHaveBeenCalled();
   });
 
+  it('admits workshop artwork binaries only for the exact GET route and archive size cap', async () => {
+    bridge.native = true;
+    const identity = await import('./session');
+    const operation = 'a'.repeat(32);
+    const path = `/app/v1/customer/wand/workshop/sessions/${operation}/artwork/assets/${archiveId}`;
+    expect(identity.accountTransportResponseLimit(path, 'GET')).toBe(32 * 1024 * 1024);
+    expect(identity.accountTransportResponseAllowed(path, 'GET', 32 * 1024 * 1024)).toBe(true);
+    expect(identity.accountTransportResponseAllowed(path, 'GET', 32 * 1024 * 1024 + 1)).toBe(false);
+    expect(identity.accountTransportResponseLimit(path.replace(archiveId, archiveId.toUpperCase()), 'GET')).toBe(32 * 1024 * 1024);
+    for (const invalid of [path + '?x=1', path + '?', path + '/extra', path + '/', path + '\n',
+      path.replace(operation, 'a'.repeat(31)), path.replace(operation, 'a'.repeat(33)),
+      path.replace(archiveId, 'bad'), path.replace(archiveId, archiveId.replace('-42d3-', '-02d3-')),
+      path.replace(archiveId, archiveId.replace('-a456-', '-0456-')), path.replace('/artwork/assets/', '/assets/')]) {
+      expect(identity.accountTransportResponseLimit(invalid, 'GET')).toBe(1024 * 1024);
+    }
+    for (const method of ['POST', 'PUT', 'DELETE', 'HEAD']) {
+      expect(identity.accountTransportResponseLimit(path, method)).toBe(1024 * 1024);
+    }
+    const binary = btoa('x'.repeat(1024 * 1024 + 1));
+    bridge.accountTransport.mockResolvedValueOnce({status: 200, headers: {'content-type': 'image/png'}, bodyBase64: binary});
+    const response = await identity.accountTransport(path);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect((await response.arrayBuffer()).byteLength).toBe(1024 * 1024 + 1);
+  });
+
   it('admits large owned asset responses while keeping the generic response cap', async () => {
     bridge.native = true;
     const identity = await import('./session');
