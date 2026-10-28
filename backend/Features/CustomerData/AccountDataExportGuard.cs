@@ -38,26 +38,39 @@ internal sealed class CustomerDataSqliteGuard : IDisposable
     {
         deadline.Check();
         var settings = new SqliteConnectionStringBuilder(connectionString) { DefaultTimeout = 1 };
-        var connection = new SqliteConnection(settings.ToString());
-        SqliteTransaction? transaction = null;
-        try
+        // One fresh retry absorbs a short writer burst. The driver's one-second
+        // wait and the original shared deadline both remain bounded; admission
+        // still validates authority only after obtaining immediate reservations.
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            connection.Open();
             deadline.Check();
-            transaction = connection.BeginTransaction(deferred: false);
-            deadline.Check();
-            return new CustomerDataSqliteGuard(connection, transaction);
-        }
-        catch (Exception error)
-        {
-            transaction?.Dispose();
-            connection.Dispose();
-            if (error is SqliteException { SqliteErrorCode: 5 or 6 })
+            var connection = new SqliteConnection(settings.ToString());
+            SqliteTransaction? transaction = null;
+            var transferred = false;
+            try
             {
-                throw new CustomerDataAccessException(503, "customer_data_unavailable");
+                connection.Open();
+                deadline.Check();
+                transaction = connection.BeginTransaction(deferred: false);
+                deadline.Check();
+                var guard = new CustomerDataSqliteGuard(connection, transaction);
+                transferred = true;
+                return guard;
             }
-            throw;
+            catch (SqliteException error) when (error.SqliteErrorCode is 5 or 6)
+            {
+                deadline.Check();
+            }
+            finally
+            {
+                if (!transferred)
+                {
+                    try { transaction?.Dispose(); }
+                    finally { connection.Dispose(); }
+                }
+            }
         }
+        throw new CustomerDataAccessException(503, "customer_data_unavailable");
     }
 
     internal SqliteCommand Command(string sql)
