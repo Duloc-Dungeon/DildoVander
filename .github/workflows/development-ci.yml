@@ -1,0 +1,135 @@
+name: Development CI
+
+on:
+  pull_request:
+    branches: [development]
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Compatibility input for dependency regeneration (quick checks only)
+        type: string
+      pr_number:
+        description: Same-repository development PR number
+        required: true
+        type: string
+      expected_head_sha:
+        description: Expected PR head SHA
+        required: true
+        type: string
+      expected_base_sha:
+        description: Expected development SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: development-ci-${{ github.event.pull_request.number || inputs.pr_number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    name: Verify development candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify dispatched PR identity before accepting quick checks
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          PR_HEAD: ${{ inputs.expected_head_sha }}
+          PR_BASE: ${{ inputs.expected_base_sha }}
+        with:
+          script: |
+            const { verifyDevelopmentCandidate } = require('./scripts/ci/branch-policy.cjs');
+            await verifyDevelopmentCandidate({ github, context }, process.env);
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install verified Gitleaks
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            -o "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+      - name: Verify secret detection and false-positive regressions
+        run: GITLEAKS_BINARY="$RUNNER_TEMP/gitleaks" python3 -m unittest discover -s scripts/ci -p 'test_secret_scan.py'
+      - name: Scan checkout history without logging secret values
+        # HEAD includes the PR merge and its ancestors, including removed secrets.
+        # Other fetched branches/tags are independent of this checkout.
+        run: '"$RUNNER_TEMP/gitleaks" git --config=.gitleaks.toml --redact=100 --no-banner --log-opts=HEAD'
+
+  repository:
+    name: Repository checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: contracts/.nvmrc
+      - name: Install pinned workflow validator
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+      - name: Validate all workflows
+        run: |
+          "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes=
+      - name: Test artifact provenance and promotion guards
+        run: node --test scripts/ci/*.test.cjs
+      - name: Test artifact integrity and safe extraction
+        run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
+      - name: Test model workflow contracts with small synthetic data
+        run: |
+          python3 -m unittest discover -s mechanika/final -p test_fast_build.py
+          python3 -m unittest discover -s web/deploy -p test_cad_host.py
+      - name: Check whitespace
+        run: git diff --check HEAD^ HEAD
+      - name: Verify Vapour Chrome design integrity
+        run: |
+          python3 scripts/generate_design_tokens.py --check
+          npm test --prefix design-system
+          python3 -m unittest discover -s scripts -p 'test_design_system.py'
+          python3 scripts/check_design_system.py
+
+  required:
+    name: Development required
+    if: always()
+    needs: [candidate, secret-scan, repository]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    env:
+      RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - name: Require every quick check
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          failed = [name for name, job in results.items() if job['result'] != 'success']
+          if failed:
+              raise SystemExit('Development checks did not pass: ' + ', '.join(failed))
+          PY
