@@ -13,7 +13,7 @@ internal sealed record GptLiveOptions
     internal CharacterPolicy Character { get; init; } = new();
     internal GptLiveVoiceOptions Voice { get; init; } = new();
     internal LiveActorMode Mode { get; init; } = LiveActorMode.AutonomousActor;
-    internal string DecisionModel { get; init; } = ResponsesTextDialogBudget.Model;
+    internal string DecisionModel { get; init; } = WandDecisionBudget.Luna;
     internal bool AdultLanguage { get; init; } = true;
     internal CharacterPolicy EffectiveCharacter => !AdultLanguage && Character.HostTone > CharacterTone.Dry
         ? Character with { Enabled = true, HostTone = CharacterTone.Dry }
@@ -47,7 +47,7 @@ internal sealed record GptLiveOptions
             Character = CharacterConfiguration.Read(section.GetSection("Character")),
             Voice = GptLiveVoiceOptions.Read(section.GetSection("Voice")),
             Mode = parsed,
-            DecisionModel = section["DecisionModel"] ?? ResponsesTextDialogBudget.Model,
+            DecisionModel = section["DecisionModel"] ?? WandDecisionBudget.Luna,
             AdultLanguage = section.GetValue("AdultLanguage", true),
             TranscriptCharacterLimit = section.GetValue("TranscriptCharacterLimit", 128_000),
             DecisionContextBytes = section.GetValue("DecisionContextBytes", 8_000),

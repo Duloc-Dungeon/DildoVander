@@ -113,7 +113,45 @@ internal static partial class MobileGameTests
         }
         Check(commandRateLimited, "the read polling allowance does not widen authenticated command limits");
         await RunWorkshopStaleReadyRaceHttpAsync();
+        await RunWorkshopMissingDelegationHttpAsync(disconnectDuringDecision: false);
+        await RunWorkshopMissingDelegationHttpAsync(disconnectDuringDecision: true);
         Console.WriteLine("Mobile workshop customer Live bridge checks passed.");
+    }
+
+    private static async Task RunWorkshopMissingDelegationHttpAsync(bool disconnectDuringDecision)
+    {
+        await using var fixture = await HttpFixture.StartAsync(withLiveTransport: true,
+            workshopProvider: new TextWorkshopProvider(delayFirstReply: true, firstReplyReady: true),
+            includeSecondTurnAutomatically: false, includeLiveDelegations: false);
+        using var client = fixture.Client();
+        await fixture.LoginAsync(client, fixture.ForeignId);
+        client.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(client));
+        await fixture.MarkForeignCharacterPreparedAsync();
+        const string path = "/app/v1/customer/wand/workshop/sessions";
+        var operation = Guid.NewGuid().ToString("N");
+        using var created = await client.PostAsJsonAsync(path, new { operationId = operation });
+        Check(created.StatusCode == HttpStatusCode.OK, "missing-delegation fixture opens a workshop");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var socket = await ConnectWorkshopSocketAsync(client, fixture, path, operation, timeout.Token);
+        Check((await ReceiveSocketJsonAsync(socket, timeout.Token)).GetProperty("type").GetString() == "ready",
+            "missing-delegation socket reaches ready");
+        await fixture.TextWorkshopProvider.WaitForReplyAsync(1, timeout.Token);
+        if (disconnectDuringDecision)
+        {
+            await SendFragmentedAsync(socket, WebSocketMessageType.Text, Encoding.UTF8.GetBytes("{\"type\":\"end\"}"), timeout.Token);
+            await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "leave after request", timeout.Token);
+        }
+        fixture.TextWorkshopProvider.ReleaseReply(1);
+        await WaitUntilAsync(() => fixture.Wands.ReadWorkshopState(fixture.ForeignId, operation).Status == "generating", timeout.Token);
+        Check(fixture.TextDialogueCalls == 1
+            && fixture.Wands.PendingWorkshops().Count(job => job.OperationId == operation) == 1,
+            "settled speech starts one manufacture without a provider delegation or a repeated user request");
+        if (!disconnectDuringDecision)
+        {
+            await SendFragmentedAsync(socket, WebSocketMessageType.Text, Encoding.UTF8.GetBytes("{\"type\":\"end\"}"), timeout.Token);
+            await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "test complete", timeout.Token);
+        }
+        await WaitUntilAsync(() => !fixture.LiveRuntime.IsActive(fixture.ForeignId, operation), timeout.Token);
     }
 
     private static async Task RunWorkshopStaleReadyRaceHttpAsync()
@@ -1040,7 +1078,8 @@ internal static partial class MobileGameTests
         }
 
         internal static async Task<HttpFixture> StartAsync(bool withLiveTransport = false, GptLiveClient? liveClient = null,
-            TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true)
+            TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true,
+            bool includeLiveDelegations = true)
         {
             var root = Path.Combine(Path.GetTempPath(), "mobile-game-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
             using var rsa = RSA.Create(2048);
@@ -1067,7 +1106,7 @@ internal static partial class MobileGameTests
             });
             var textWorkshopProvider = workshopProvider ?? new TextWorkshopProvider();
             var liveSocketFactory = withLiveTransport && liveClient is null
-                ? new ScriptedLiveSocketFactory(includeSecondTurnAutomatically)
+                ? new ScriptedLiveSocketFactory(includeSecondTurnAutomatically, includeLiveDelegations)
                 : null;
             builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
             builder.Services.AddAccountIdentity(builder.Configuration);
@@ -1236,18 +1275,20 @@ internal static partial class MobileGameTests
     {
         private readonly System.Collections.Concurrent.ConcurrentQueue<string> events = new();
         private readonly bool includeSecondTurnAutomatically;
+        private readonly bool includeLiveDelegations;
         private ScriptedLiveSocket? current;
         internal string Diagnostics => string.Join(",", events);
 
-        internal ScriptedLiveSocketFactory(bool includeSecondTurnAutomatically = true)
+        internal ScriptedLiveSocketFactory(bool includeSecondTurnAutomatically = true, bool includeLiveDelegations = true)
         {
             this.includeSecondTurnAutomatically = includeSecondTurnAutomatically;
+            this.includeLiveDelegations = includeLiveDelegations;
         }
 
         internal Task<WebSocket> ConnectAsync(CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            current = new ScriptedLiveSocket(events, includeSecondTurnAutomatically);
+            current = new ScriptedLiveSocket(events, includeSecondTurnAutomatically, includeLiveDelegations);
             return Task.FromResult<WebSocket>(current);
         }
 
@@ -1255,7 +1296,7 @@ internal static partial class MobileGameTests
     }
 
     private sealed class ScriptedLiveSocket(System.Collections.Concurrent.ConcurrentQueue<string> events,
-        bool includeSecondTurnAutomatically) : WebSocket
+        bool includeSecondTurnAutomatically, bool includeLiveDelegations) : WebSocket
     {
         private readonly System.Threading.Channels.Channel<ProviderFrame> input =
             System.Threading.Channels.Channel.CreateUnbounded<ProviderFrame>();
@@ -1329,7 +1370,10 @@ internal static partial class MobileGameTests
             var text = turn == 1 ? "Nejprve zkontroluji most." : "Pokud selže, opravím cestu.";
             Enqueue(new { type = "session.input_transcript.delta", event_id = $"user-{turn}", delta = text,
                 start_ms = turn * 1000, end_ms = turn * 1000 + 350 });
-            Enqueue(new { type = "session.delegation.created", delegation = new { target = "client", id = $"delegation-{turn}" } });
+            if (includeLiveDelegations)
+            {
+                Enqueue(new { type = "session.delegation.created", delegation = new { target = "client", id = $"delegation-{turn}" } });
+            }
         }
 
         private void Enqueue(object value)

@@ -112,6 +112,26 @@ internal static class MobileWandTests
         const string owner = "workshop-owner";
         var (profile, captured) = await PrepareProfileAsync(profiles, owner,
             new("Havran", "Fikční svět", "verze A", "Loví ztracené mapy"));
+        var promptMessage = new MobileWandWorkshopMessage("humor-user", 1, "user", "Vyrob mi hůlku.", "text", 1);
+        using (var draft = JsonDocument.Parse(OpenAiMobileWandQuestionProvider.BuildReplyRequest(captured,
+            [promptMessage], "gpt-6.1-terra")))
+        using (var live = JsonDocument.Parse(JsonSerializer.Serialize(MobileWorkshopLiveRuntime.Start(
+            new(owner, "humor-operation", "session", "stamp", "https://localhost", DateTimeOffset.UtcNow.AddMinutes(1), captured),
+            [promptMessage], "vesper", "humor-start"))))
+        {
+            var instructions = draft.RootElement.GetProperty("instructions").GetString()!;
+            var liveInstructions = live.RootElement.GetProperty("session").GetProperty("instructions").GetString()!;
+            Check(instructions.Contains(WorkshopHumorInstructions.Text)
+                && liveInstructions.Contains(WorkshopHumorInstructions.Text),
+                "live voice and delegated dialogue receive the same character-based roast policy");
+            Check(draft.RootElement.GetProperty("reasoning").GetProperty("effort").GetString() == "none",
+                "the short authored reply does not consume its small output budget on hidden reasoning");
+            using var input = JsonDocument.Parse(draft.RootElement.GetProperty("input").GetString()!);
+            var fact = input.RootElement.GetProperty("enrichment").GetProperty("facts")[0];
+            Check(fact.GetProperty("text").GetString() == captured.Enrichment!.Facts[0].Text
+                && fact.GetProperty("sourceUrls")[0].GetString() == "https://example.test/map",
+                "the roast prompt receives actual researched facts and evidence rather than an invented character summary");
+        }
         Check(await profiles.CapturePreparedAsync(owner, profile.ProfileId, profile.Revision + 1) is null,
             "a completion for an older profile revision cannot capture the current character");
         var waitingProfile = await profiles.SaveAsync("workshop-profile-preparing",

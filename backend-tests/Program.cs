@@ -58,6 +58,7 @@ if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await Ai
 if (args is ["--observability-logs"]) { await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--ai-observability"]) { await AiObservabilityTests.RunAsync(); return; }
 if (args is ["--bounded-sdk-transport"]) { await BoundedSdkTransportTests.RunAsync(); return; }
+if (args is ["--text-dialog-budget"]) { ResponsesTextDialogBudgetTests.Run(); Console.WriteLine("Text dialogue model budgets passed."); return; }
 if (args is ["--tester-identity"]) { await AccountIdentityTests.RunTesterIdentityAsync(); return; }
 if (args is ["--passkey-labels"]) { await AccountIdentityTests.RunPasskeyLabelsAsync(); return; }
 if (args is ["--testing-hardware"]) { await TestingHardwareTests.RunAsync(); return; }

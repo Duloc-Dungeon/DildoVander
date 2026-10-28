@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Kufr.Backend.Features.GptLive;
 
 namespace Kufr.Backend.Features.SealedCase;
 
@@ -10,6 +11,7 @@ internal interface ISealedCaseAiPlayers
 
 internal sealed class SealedCaseAiPlayers : ISealedCaseAiPlayers, IDisposable
 {
+    internal const string DefaultModel = WandDecisionBudget.Luna;
     private readonly HttpClient http = new(new HttpClientHandler { AllowAutoRedirect = false })
         { BaseAddress = new Uri("https://api.openai.com/v1/"), Timeout = Timeout.InfiniteTimeSpan };
     private readonly SealedCaseAiClient? client;
@@ -19,7 +21,7 @@ internal sealed class SealedCaseAiPlayers : ISealedCaseAiPlayers, IDisposable
     {
         var key = configuration["OPENAI_API_KEY"];
         if (configuration.GetValue<bool>("SealedCase:AiPlayers:Enabled") && !string.IsNullOrWhiteSpace(key))
-        { client = new(http, key, configuration["SealedCase:AiPlayers:Model"] ?? "gpt-5-mini"); }
+        { client = new(http, key, configuration["SealedCase:AiPlayers:Model"] ?? DefaultModel); }
     }
 
     internal static SealedAiMove Fallback(SealedPlayView view)

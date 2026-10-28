@@ -14,7 +14,7 @@ def verify_decision_model():
         raise ValueError('Retired actor mode; use the retained autonomous engine')
     model = os.environ['LIVE_DECISION_MODEL']
     key = os.environ.get('OPENAI_API_KEY')
-    if model not in ('gpt-6.1-sol', 'gpt-6-luna') or not key:
+    if model not in ('gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna') or not key:
         raise ValueError('Configured autonomous decision model and provider credential required')
     class NoRedirects(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, request, fp, code, message, headers, url):

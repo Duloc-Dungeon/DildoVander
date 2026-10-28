@@ -21,7 +21,7 @@ internal sealed record WandDecisionResult(WandDecisionStatus Status, int? Compar
     int AvailabilityRevision, long CostMicroUsd = 0, string OperationState = "proposal_only");
 
 // Independent from the legacy comedian. A result is facts and evidence, never a
-// spoken script. Only this narrow task can use Luna; text/legacy stay on Sol.
+// spoken script. This narrow task defaults to Luna; authored text defaults to Terra.
 internal sealed class WandDecisionService : IDisposable
 {
     private readonly HttpClient? http;
@@ -99,7 +99,7 @@ internal sealed class WandDecisionService : IDisposable
         }
     }
 
-    internal static string BuildRequest(WandDecisionInput input, string model = ResponsesTextDialogBudget.Model)
+    internal static string BuildRequest(WandDecisionInput input, string model = WandDecisionBudget.Luna)
     {
         if (!WandDecisionBudget.Supports(model)) throw new InvalidOperationException("Unsupported Live decision model.");
         foreach (var total in new[] { 8_000, 6_000, 4_000, 2_000 })
@@ -177,7 +177,7 @@ internal sealed class WandDecisionService : IDisposable
         return payload;
     }
 
-    internal static WandDecisionResult Parse(JsonElement root, WandDecisionInput input, string model = ResponsesTextDialogBudget.Model)
+    internal static WandDecisionResult Parse(JsonElement root, WandDecisionInput input, string model = WandDecisionBudget.Luna)
     {
         if (root.GetProperty("status").GetString() != "completed") throw new InvalidDataException("Incomplete decision.");
         var outputs = root.GetProperty("output").EnumerateArray().Where(o => o.GetProperty("type").GetString() == "function_call").ToArray();
