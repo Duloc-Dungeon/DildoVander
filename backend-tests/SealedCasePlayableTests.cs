@@ -182,7 +182,8 @@ internal static partial class SealedCaseHttpTests
             await Task.WhenAll(clients.Select(async client =>
             {
                 var simultaneous = await client.GetAsync(prefix + "/play");
-                Check(simultaneous.IsSuccessStatusCode, "concurrent final view HTTP " + (int)simultaneous.StatusCode);
+                var failureCode = simultaneous.IsSuccessStatusCode ? "" : await FinalViewFailureCodeAsync(simultaneous);
+                Check(simultaneous.IsSuccessStatusCode, "concurrent final view HTTP " + (int)simultaneous.StatusCode + " " + failureCode);
                 var response = await client.PostAsJsonAsync(prefix + "/ballots", new { operationId = "final-abstain", round = 1, nominees = Array.Empty<string>() });
                 Check(response.IsSuccessStatusCode, "concurrent ballot HTTP " + (int)response.StatusCode + ": " + await response.Content.ReadAsStringAsync());
             }));
@@ -202,5 +203,18 @@ internal static partial class SealedCaseHttpTests
             Console.WriteLine($"PASS {variant}: {count} HTTPS clients, {schedule.Chapters} chapters, runoff and final reconstruction");
         }
         finally { foreach (var client in clients) { client.Dispose(); } }
+    }
+
+    private static async Task<string> FinalViewFailureCodeAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var code = problem.ValueKind == JsonValueKind.Object && problem.TryGetProperty("code", out var field) && field.ValueKind == JsonValueKind.String
+                ? field.GetString() : null;
+            return code is { Length: > 0 and <= 80 } && code.All(character => character is >= 'a' and <= 'z' or '_')
+                ? code : "unknown_error_code";
+        }
+        catch (JsonException) { return "non_json_error"; }
     }
 }

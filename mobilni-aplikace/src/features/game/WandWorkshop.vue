@@ -14,12 +14,14 @@ import { loadWorkshop, loadWorkshopSession, workshopSessionRequest, workshopBase
 const props = defineProps<{ upgrade?: boolean }>();
 const entry = ref<WorkshopEntry>(); const session = ref<WorkshopSession | null>(null);
 const loading = ref(true); const busy = ref(false); const error = ref(''); const draft = ref('');
+const syncError = ref('');
 const mode = ref<'voice' | 'text'>('voice'); const livePhase = ref<VoicePhase>('idle');
 const narrationPhase = ref<WorkshopVoicePhase>('off'); const narrationPending = ref(false);
 let mediaController = new AbortController(); const muted = ref(false); const outputLevel = ref(0);
 const partial = ref(''); let partialRole = ''; const artworkUrl = ref(''); const artworkError = ref('');
 const answerField = ref<HTMLTextAreaElement>(); const correction = ref<WorkshopMessage | null>(null); const correctionText = ref('');
 let controller = new AbortController(); let poll: ReturnType<typeof setTimeout> | undefined;
+let refreshInFlight: Promise<void> | null = null; let syncFailures = 0;
 let operation = ''; let artworkKey = ''; let retryId = ''; let messageId = '';
 const narration = new WorkshopVoice({ phase(value) { narrationPhase.value = value; }, level(value) { outputLevel.value = value; } });
 const live = new LabVoice({
@@ -30,6 +32,7 @@ const live = new LabVoice({
   outputLevel(value) { outputLevel.value = value; },
   error(code) {
     error.value = code === 'wand_workshop_boss_captured' ? 'Baron uzavřel dílnu. Po osvobození navážeš na stejný rozhovor.'
+      : code === 'wand_session_busy' ? 'Předchozí spojení ještě končí. Chvíli počkej a zkus pokračovat.'
       : code.startsWith('microphone') || code === 'permission_denied' ? 'Mikrofon není dostupný. Můžeš pokračovat psaním.'
       : 'Živé spojení se přerušilo. Můžeš ho obnovit nebo pokračovat psaním.';
     mode.value = 'text'; void refresh();
@@ -80,18 +83,58 @@ async function updateArtwork(value: WorkshopSession) {
 }
 function schedule() {
   clearTimeout(poll); if (controller.signal.aborted) return;
-  poll = setTimeout(() => { void refresh(); }, entry.value?.reason?.startsWith('wand_character_') ? 2000 : 3000);
+  const interval = syncFailures ? Math.min(30000, 3000 * 2 ** Math.min(syncFailures, 4))
+    : active.value ? 10000 : entry.value?.reason?.startsWith('wand_character_') ? 2000 : 3000;
+  poll = setTimeout(() => { void refresh(); }, interval);
 }
 function applySession(value: WorkshopSession | null) {
   if (value?.id !== session.value?.id) { releaseArtwork(); retryId = ''; }
   session.value = value; if (value) { operation = value.id; void updateArtwork(value); }
   if (['generating', 'complete'].includes(value?.status ?? '') && active.value) { live.setMuted(true); muted.value = true; }
 }
-async function refresh() {
+function refresh(): Promise<void> {
+  if (refreshInFlight) return refreshInFlight;
+  clearTimeout(poll);
   const scope = controller;
-  try { const value = await loadWorkshop(scope.signal, props.upgrade); if (scope !== controller || scope.signal.aborted) return; entry.value = value; applySession(value.session); if (!value.eligible) stopMedia(); }
-  catch { if (scope === controller && !scope.signal.aborted) error.value ||= 'Stav se nepodařilo načíst. Zkus ho obnovit.'; }
-  finally { if (scope === controller && !scope.signal.aborted) { loading.value = false; schedule(); } }
+  const observedSession = session.value;
+  const request = new AbortController();
+  const cancel = () => request.abort();
+  scope.signal.addEventListener('abort', cancel, { once: true });
+  if (scope.signal.aborted) cancel();
+  const deadline = setTimeout(cancel, 15000);
+  const pending = (async () => {
+    try {
+      const value = await loadWorkshop(request.signal, props.upgrade);
+      if (scope !== controller || scope.signal.aborted) return;
+      const previousProfile = entry.value?.profile;
+      if (previousProfile && (!value.profile || previousProfile.profileId !== value.profile.profileId
+        || previousProfile.revision !== value.profile.revision)) {
+        // The old operation and async requests belong to the old knowledge
+        // revision. Keep its durable history, but do not reuse it for this one.
+        resetWorkshopContext();
+        entry.value = value; applySession(value.session); loading.value = false; schedule();
+        return;
+      }
+      syncFailures = 0; syncError.value = ''; entry.value = value;
+      // A socket event or command accepted during this GET is newer than its
+      // snapshot. Keep that state; eligibility is still checked below.
+      if (session.value === observedSession) applySession(value.session);
+      if (!value.eligible) stopMedia();
+    } catch {
+      if (scope === controller && !scope.signal.aborted) {
+        syncFailures++;
+        syncError.value = active.value
+          ? 'Aktualizace stavu se opozdila. Hlasové spojení pokračuje; stav zkusíme načíst znovu.'
+          : 'Stav se nepodařilo načíst. Zkusíme ho znovu, nebo ho obnov tlačítkem.';
+      }
+    } finally {
+      clearTimeout(deadline); scope.signal.removeEventListener('abort', cancel);
+      if (scope === controller && !scope.signal.aborted) { loading.value = false; schedule(); }
+    }
+  })();
+  refreshInFlight = pending;
+  void pending.finally(() => { if (refreshInFlight === pending) refreshInFlight = null; });
+  return pending;
 }
 async function ensureSession(): Promise<WorkshopSession> {
   if (session.value) return session.value;
@@ -183,7 +226,17 @@ async function artworkAction(repair = false) {
   finally { if (scope === controller) busy.value = false; }
 }
 function visibility() { if (document.hidden) stopMedia(); }
-watch(() => [account.value?.id, account.value?.openAiConsent, props.upgrade], () => { controller.abort(); controller = new AbortController(); stopMedia(); releaseArtwork(); session.value = null; entry.value = undefined; operation = ''; draft.value = ''; busy.value = false; void refresh(); });
+function resetWorkshopContext() {
+  controller.abort(); controller = new AbortController(); refreshInFlight = null;
+  syncFailures = 0; syncError.value = ''; error.value = ''; artworkError.value = '';
+  stopMedia(); releaseArtwork(); session.value = null; entry.value = undefined;
+  operation = ''; messageId = ''; retryId = ''; draft.value = ''; partial.value = ''; partialRole = '';
+  correction.value = null; correctionText.value = ''; mode.value = 'voice'; busy.value = false;
+}
+watch([() => account.value?.id, () => account.value?.openAiConsent, () => props.upgrade], () => {
+  resetWorkshopContext();
+  void refresh();
+});
 onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); });
 onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); releaseArtwork(); document.removeEventListener('visibilitychange', visibility); });
 </script>
@@ -218,8 +271,8 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
         <AwButton v-if="session?.status === 'failed' && session.canRetry" :disabled="busy" @click="retryManufacture">Obnovit výrobu</AwButton>
         <AwButton v-if="active" @click="stopMedia">Ukončit rozhovor</AwButton>
         <AwButton v-if="speaking || narrationPending" @click="stopSpeech">Stop řeč</AwButton>
-        <p class="trunk-workshop__status" role="status">{{ status }}</p><p v-if="error" role="alert">{{ error }}</p><p v-if="artworkError" role="status">{{ artworkError }}</p>
-        <AwButton v-if="error || session?.status === 'paused' || session?.status === 'failed'" :disabled="busy" @click="refresh">Obnovit stav</AwButton>
+        <p class="trunk-workshop__status" role="status">{{ status }}</p><p v-if="error" role="alert">{{ error }}</p><p v-if="syncError" role="status">{{ syncError }}</p><p v-if="artworkError" role="status">{{ artworkError }}</p>
+        <AwButton v-if="error || syncError || session?.status === 'paused' || session?.status === 'failed'" :disabled="busy" @click="refresh">Obnovit stav</AwButton>
         <details v-if="messages.length" class="trunk-workshop__transcript"><summary>Přepis rozhovoru</summary><ol><li v-for="message in messages" :key="message.messageId"><strong>{{ message.role === 'user' ? 'Ty' : 'Kufr' }}</strong><p>{{ message.text }}</p><button v-if="mode === 'text' && canAnswer && message.role === 'user'" type="button" @click="correction = message; correctionText = message.text">Opravit sdělení</button></li></ol><form v-if="correction" @submit.prevent="saveCorrection"><label for="trunk-correction">Oprava sdělení</label><textarea id="trunk-correction" v-model="correctionText" maxlength="2000" /><AwButton type="submit" :disabled="busy || !correctionText.trim()">Uložit opravu</AwButton></form></details>
         <RouterLink v-if="session && !wand" class="trunk-workshop__leave" to="/play" @click="stopMedia">Odejít a později pokračovat</RouterLink>
       </section>

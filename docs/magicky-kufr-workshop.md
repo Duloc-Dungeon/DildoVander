@@ -35,6 +35,34 @@ ručně nenahrávají ani neodesílají. Přehrávání lze přerušit řečí n
 ztlumení mikrofonu a ukončení rozhovoru jsou samostatné akce. Stop je dostupný
 i při výsledném verdiktu. Odchod, skrytí aplikace, změna účtu/souhlasu nebo režimu
 uvolní audio a mikrofon. Pozdní svolení k mikrofonu neobnoví opuštěnou relaci.
+Běžné obnovení údajů stejného účtu se stejným souhlasem hovor ani rozepsaný
+text neresetuje. Při skutečné změně vlastníka se odstraní i místní titulky a opravy.
+Při změně profilu nebo jeho revize na otevřené stránce se starý místní kontext
+odpojí a přijme aktuální stav serveru. Další vědomé spuštění použije operaci
+aktuální revize; rozpracovaná starší operace zůstává uložená u původního kontextu.
+
+Střídání řeči řídí GPT Live. Zákaznická větev neposílá Stop podle samotné
+hlasitosti mikrofonu: ozvěna reproduktoru ani nárazový hluk nesmějí ukončit
+rozeznělou otázku. Ruční **Stop řeč** zůstává samostatným příkazem.
+Transport skládá rozdělené WebSocket zprávy s omezenou velikostí a počtem částí.
+Oprávnění průběžně ověřuje server; čtení celého profilu není součástí odeslání
+každého dvacetimilisekundového audio paketu. Provozní diagnostika zapisuje pouze
+schválenou kategorii chyby, nikdy text postavy, přepis ani odpověď poskytovatele.
+
+Čtení stavu používá oddělený `account-poll` limit; příkazy ponechávají původní
+limit `account`. Během hlasu se HTTP stav obnovuje po deseti sekundách.
+Souběžné obnovy se slučují, jeden požadavek má patnáctisekundový limit a po
+chybě následuje postupné zpomalení nejvýše na třicet sekund. Dočasná chyba čtení
+nezastaví fungující hlas ani nepřepne režim a po zotavení hláška zmizí.
+Odpojení během již odeslané delegace může do jejího dokončení (nejvýše 45 sekund)
+držet relaci obsazenou; zákazník dostane vysvětlení a obnovuje stejnou operaci.
+
+Rychlé delegace mají omezenou sériovou frontu; další požadavek se nezahazuje,
+pokud právě dobíhá předchozí. Nová sdělení mohou rozšířit podklady pokračující
+repliky, ale dokončení vyžaduje přesnou shodu uživatelských podkladů. Zastaralé
+dokončení ani závod s opravou nezahájí výrobu a neukončí hlasové spojení.
+Live dostává výslovný stav této výroby: rozhovor, přijatá výroba, nebo potvrzený
+uložený výsledek. Běžná odpověď backendu není potvrzení hotové hůlky.
 
 Průběžný přepis není potvrzená odpověď. Server slučuje a ukládá přijaté textové
 úseky se stabilním ID; dlouhou souvislou řeč dělí beze ztráty do bezpečných bloků.
@@ -146,6 +174,8 @@ Relevantní příkazy z kořene produktu:
 ```text
 dotnet build backend-tests/BackendTests.csproj --no-restore
 dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-wands
+dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-workshop-socket
+dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-workshop-live-http
 dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-game-http
 dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-game-boss
 dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --generated-wands
@@ -160,6 +190,15 @@ Skutečné placené diagnostiky jsou pouze explicitní přepínače `--mobile-wo
 `--mobile-workshop-transparent-artwork <sourceDatabase> <imageModel>`.
 Používají jen fiktivní data a kontrolují již existující operace před dispatch.
 Doklady jsou v ignorovaném `ai-eval/results/`, tajné klíče se nevypisují.
+
+`--mobile-workshop-runtime-live` je další explicitní placená diagnostika. Volá
+skutečný `gpt-live-1` přes zákaznické HTTP zahájení, ticket a
+`MobileWorkshopLiveRuntime`; používá dva mluvené fiktivní vstupy a čtení stavu.
+Backendová rozhodnutí jsou v tomto testu záměrně offline a výroba se nespouští.
+Nejde proto o nový důkaz živého generování hůlky. Cílem je 65 sekund hovoru,
+nouzový limit po připojení je 90 sekund. Ukládá WAV, přepis a technický doklad;
+značka pokusu brání slepému placenému opakování. Věcnou správnost replik ověř
+z celého přepisu a zvuku, samotné přijetí audio paketů ji nezaručuje.
 
 V této implementaci byl ověřen skutečný `gpt-live-1`: průběžný hlasový vstup,
 přepis, client delegation a jedna uložená fiktivní hůlka Modrostežka. Oddělený

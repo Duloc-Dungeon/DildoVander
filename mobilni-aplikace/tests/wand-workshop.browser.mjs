@@ -43,6 +43,18 @@ try {
       assert.equal(await overflow(), false, 'keyboard-height: no overflow');
       await page.screenshot({ path: path.join(output, 'keyboard-height-390.png'), fullPage: true }); captures++;
       await page.setViewportSize({ width, height: 844 });
+      let failNextPoll = true;
+      await page.route('**/app/v1/customer/wand/workshop', async route => {
+        if (failNextPoll) { failNextPoll = false; await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }); }
+        else await route.continue();
+      });
+      await page.getByText('Stav se nepodařilo načíst.', { exact: false }).waitFor();
+      assert.equal(await page.getByLabel('Tvoje sdělení kufru').isEnabled(), true);
+      assert.equal(await overflow(), false, 'temporary state error: no overflow');
+      await page.screenshot({ path: path.join(output, 'state-recovery-390.png'), fullPage: true }); captures++;
+      await page.getByText('Stav se nepodařilo načíst.', { exact: false }).waitFor({ state: 'hidden' });
+      assert.equal(await page.getByRole('heading', { name: /Kufr si pamatuje/ }).isVisible(), true);
+      await page.unroute('**/app/v1/customer/wand/workshop');
     }
     await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).focus(); await page.keyboard.press('Enter');
     await page.getByText('Hůlka je uložená', { exact: true }).waitFor();

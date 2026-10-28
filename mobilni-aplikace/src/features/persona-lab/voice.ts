@@ -174,7 +174,9 @@ export class LabVoice {
         if (!current() || !this.ready || this.awaitingInterrupt || this.muted || socket.readyState !== WebSocket.OPEN) return;
         const samples = event.data as Float32Array;
         const energy = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
-        if (energy > 0.035) {
+        // GPT Live owns full-duplex turn taking. A level threshold cannot tell
+        // speech from speaker echo or background noise on a phone.
+        if (options.purpose !== 'workshop' && energy > 0.035) {
           if (!this.speakingInput && this.playback.size) this.interrupt();
           this.speakingInput = true; this.quietSamples = 0;
         } else if ((this.quietSamples += samples.length) > context.sampleRate * .3) this.speakingInput = false;
@@ -204,6 +206,10 @@ export class LabVoice {
           }
           else if (value.type === 'audio_pause' && ['wand', 'workshop'].includes(options.purpose ?? '') && this.playbackMode === 'stream') {
             this.streamComplete = true; this.finishPlayback();
+          }
+          else if (value.type === 'audio_cancelled' && options.purpose === 'workshop' && this.playbackMode === 'stream') {
+            this.stopPlayback(); this.streamComplete = true;
+            if (!this.awaitingInterrupt) this.transition('listening', generation);
           }
           else if (value.type === 'text_ready') {
             if (!this.ready || !this.typedInput || this.playbackMode !== 'stream') { this.fail('invalid_server_event', false); return; }

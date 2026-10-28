@@ -36,7 +36,11 @@ if (args is ["--sealed-case-runtime"])
 if (args is ["--mobile-wands"]) { await MobileWandTests.RunAsync(); return; }
 if (args is ["--mobile-workshop-transparent-artwork", var artSource, var artModel]) { await WandArtworkLiveTests.VerifyAsync(artSource, artModel); return; }
 if (args is ["--mobile-workshop-live-playback"]) { await WorkshopLivePlaybackSmoke.RunAsync(); return; }
+if (args is ["--mobile-workshop-live-http"]) { await MobileGameTests.RunWorkshopLiveHttpAsync(); return; }
+if (args is ["--mobile-workshop-runtime-live"]) { await MobileGameTests.RunWorkshopRuntimeLiveSmokeAsync(); return; }
+if (args is ["--mobile-workshop-runtime-live", "--case", var evidenceCase] && evidenceCase is "v2" or "v3") { await MobileGameTests.RunWorkshopRuntimeLiveSmokeAsync(evidenceCase); return; }
 if (args is ["--mobile-workshop-live"]) { await MobileWorkshopLiveTests.RunAsync(); return; }
+if (args is ["--mobile-workshop-socket"]) { await MobileWorkshopSocketTests.RunAsync(); return; }
 if (args is ["--mobile-workshop-voice-verify"]) { await MobileWorkshopLiveTests.VerifySpokenTurnsAsync(); return; }
 if (args is ["--mobile-workshop-artwork-verify", var sourceDatabase, var imageModel]) { await MobileWorkshopLiveTests.VerifyArtworkAsync(sourceDatabase, imageModel); return; }
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); return; }
