@@ -41,6 +41,9 @@ Wand Night Stand is a mobile party experience: invitations, characters, shared e
 
 ## Dev environment
 
+- Use `development` as the base and PR target for ordinary product work. Reuse the injected task worktree; inspect/fetch `origin/development` and bring its revision into a clean task branch before source edits. Never switch or reset canonical checkouts to change the base.
+- Ordinary delivery ends in `development` after `Development required` and independent review. Promote only on an explicit release request through a separate `development` → `main` PR; require full `CI required` and use a merge commit. Keep `development` after promotion. A push to `main` starts the existing release/signing/deployment chain. See `docs/git-workflow.md`.
+
 - Product toolchains: .NET SDK `10.0.303` with `latestPatch` roll-forward (`global.json`); Node `24.21.0` (`mobilni-aplikace/.nvmrc`). npm packages have separate lockfiles, not a root npm workspace.
 - Run app commands from the selected product checkout/worktree, not this parent. Install both dependency trees: `npm ci --prefix contracts` and `npm ci --prefix mobilni-aplikace`.
 - From `mobilni-aplikace/`, `npm run dev` starts Vite bound to `127.0.0.1`. Native iOS compilation/signing requires macOS/Xcode, not this Linux sandbox.
