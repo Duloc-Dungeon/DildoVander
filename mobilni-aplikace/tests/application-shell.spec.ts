@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('vue-router', async () => {
   const { reactive } = await import('vue');
   return {
-    useRoute: () => reactive({ path: '/', fullPath: '/', meta: {} }),
+    useRoute: () => reactive({ path: '/', fullPath: '/', meta: {}, matched: [] }),
     useRouter: () => ({ onError: () => () => {}, go: vi.fn() }),
   };
 });
