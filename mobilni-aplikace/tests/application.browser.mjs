@@ -285,7 +285,7 @@ try {
     await hasHeading('Moje postava');
   }
   await page.goto(origin + '/me/character'); await hasHeading('Moje postava');
-  const customerNavigation = page.getByRole('navigation', { name: 'Sekce aplikace' });
+  const customerNavigation = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
   assert.equal(await customerNavigation.getByRole('link').count(), 4);
   assert.equal(await customerNavigation.getByRole('link', { name: /Večer/ }).getAttribute('href'), '/play');
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
@@ -377,8 +377,8 @@ try {
   customerProfile = originalCustomerProfile;
   await page.goto(origin);
   await page.locator('.customer-journey-card a[href="/play"]').waitFor();
-  assert(await page.getByRole('navigation', { name: 'Sekce aplikace' }).getByRole('link', { name: /Památky/ }).isVisible());
-  const customerNav = page.getByRole('navigation', { name: 'Sekce aplikace' });
+  assert(await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: /Památky/ }).isVisible());
+  const customerNav = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
   assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/play', '/me/character', '/me/keepsakes', '/me/account']);
   for (const removedEntry of ['Rozhovor', 'Kufr', 'Dílna', 'Připojení', 'Zařízení']) {
     assert.equal(await customerNav.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not part of customer navigation`);

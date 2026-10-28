@@ -8,6 +8,45 @@ let request: ReturnType<typeof vi.fn>;
 beforeEach(() => { vi.resetModules(); bridge.native = false; bridge.request.mockReset(); bridge.passkey.mockReset(); bridge.accountTransport.mockReset(); bridge.shareAccountDataFile.mockReset(); bridge.cancelAccountRequest.mockReset().mockResolvedValue({cancelled: true}); request = vi.fn(); vi.stubGlobal('fetch', request); });
 afterEach(() => { interfaceLanguagePreference.setScope(null); interfaceLanguagePreference.setLanguage('cs'); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+describe.each([false, true])('session verification recovery (native=%s)', native => {
+  function response(status: number, body: string) {
+    if (native) bridge.request.mockResolvedValueOnce({ status, body });
+    else request.mockResolvedValueOnce(new Response(body, { status }));
+  }
+
+  it.each(['network', 'json-503', 'html-503', 'malformed-success'])('retains established identity on %s and verifies a retry', async failure => {
+    bridge.native = native;
+    const identity = await import('./session');
+    response(200, JSON.stringify(user('current')));
+    await identity.refreshIdentity();
+    if (failure === 'network') (native ? bridge.request : request).mockRejectedValueOnce(new TypeError('Network unavailable'));
+    else response(failure === 'malformed-success' ? 200 : 503, failure === 'json-503' ? '{}' : '<html>Unavailable</html>');
+    await expect(identity.refreshIdentity()).rejects.toBeDefined();
+    expect(identity.account.value?.id).toBe('current');
+    expect(identity.initialized.value).toBe(true);
+    expect(identity.accountsEnabled.value).toBe(true);
+    expect(identity.loading.value).toBe(false);
+    response(200, JSON.stringify(user('current', 'renewed')));
+    await identity.refreshIdentity();
+    expect(identity.account.value?.id).toBe('current');
+  });
+
+  it.each(['anonymous', 'html-401', 'json-403'])('clears established identity after %s', async rejection => {
+    bridge.native = native;
+    const identity = await import('./session');
+    response(200, JSON.stringify(user('current')));
+    await identity.refreshIdentity();
+    if (rejection === 'anonymous') {
+      response(200, JSON.stringify(user(null)));
+      await identity.refreshIdentity();
+    } else {
+      response(rejection === 'html-401' ? 401 : 403, rejection === 'html-401' ? '<html>Unauthorized</html>' : '{}');
+      await expect(identity.refreshIdentity()).rejects.toBeDefined();
+    }
+    expect(identity.account.value).toBeNull();
+  });
+});
+
 describe.each([false, true])('request diagnostic wiring (native=%s)', native => {
   it('sends a fresh bounded traceparent through account transport without replacing request diagnostics', async () => {
     bridge.native = native;
@@ -791,7 +830,7 @@ describe('authentication generation fences', () => {
   });
 });
 
-  it('admits a bounded native offline snapshot and expires it without a network request', async () => {
+  it('preserves the native offline expiry through a failed refresh and expires without another network request', async () => {
     vi.useFakeTimers();
     try {
       bridge.native = true;
@@ -801,10 +840,13 @@ describe('authentication generation fences', () => {
       await identity.refreshIdentity();
       expect(identity.offlineSession.value).toBe(true);
       expect(identity.account.value?.id).toBe('native-owner');
+      bridge.request.mockRejectedValueOnce(new Error('Network unavailable'));
+      await expect(identity.refreshIdentity()).rejects.toThrow('Network unavailable');
+      expect(identity.account.value?.id).toBe('native-owner');
       vi.advanceTimersByTime(5001);
       expect(identity.account.value).toBeNull();
       expect(identity.offlineSession.value).toBe(false);
-      expect(bridge.request).toHaveBeenCalledTimes(1);
+      expect(bridge.request).toHaveBeenCalledTimes(2);
     } finally { vi.useRealTimers(); }
   });
 

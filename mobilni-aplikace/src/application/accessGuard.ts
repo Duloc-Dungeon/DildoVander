@@ -3,6 +3,7 @@ import { account, accountRequest, offlineSession, offlineSessionExpiresAt, refre
 import { accessDenial, isCustomerAccount } from './access';
 import { safeReturnPath } from './navigation';
 import { launchAllowed, refreshCustomerMembership } from './launchAccess';
+import { notify } from './notifications';
 
 export function accessRedirect(route: Pick<RouteLocationNormalized, 'meta' | 'fullPath'>) {
   const denied = accessDenial(route.meta, account.value, offlineSession.value);
@@ -21,7 +22,13 @@ export function installAccessGuard(router: Router): void {
       return accessRedirect(to) ?? undefined;
     }
     // A route transition checks the server session, not a remembered UI role.
-    try { await refreshIdentity(); } catch { return { path: '/signin', query: { return: safeReturnPath(to.fullPath) }, replace: true }; }
+    try { await refreshIdentity(); } catch {
+      if (account.value) {
+        notify('Připojení k účtu se nepodařilo ověřit. Zkontrolujte připojení a zkuste to znovu.', 'danger');
+        return false;
+      }
+      return { path: '/signin', query: { return: safeReturnPath(to.fullPath) }, replace: true };
+    }
     if (!account.value) {
       if (to.meta.requiresAccount || to.path === '/signin') return to.path === '/signin' ? undefined : { path: '/signin', query: { return: safeReturnPath(to.fullPath) }, replace: true };
       try {
