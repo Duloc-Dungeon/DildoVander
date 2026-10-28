@@ -30,7 +30,9 @@ internal static class WandArtworkTests
         {
             ["Backend:DatabasePath"] = Path.Combine(directory, "backend.sqlite"),
             ["Keepsake:DataRoot"] = Path.Combine(directory, "assets"), ["Keepsake:Enabled"] = "true",
-            ["Keepsake:GenerationEnabled"] = "true", ["Keepsake:Origin"] = "https://synthetic.test"
+            ["Keepsake:GenerationEnabled"] = "true", ["Keepsake:Origin"] = "https://synthetic.test",
+            ["Keepsake:ProviderMode"] = "openai", ["OPENAI_API_KEY"] = "synthetic-key",
+            ["Keepsake:ImageModel"] = "gpt-image-1.5"
         }).Build();
         var protection = DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(directory, "keys")));
         var store = new KeepsakeStore(configuration, TimeProvider.System, protection);
@@ -97,14 +99,76 @@ internal static class WandArtworkTests
         Check(ready.Editions.Single().ArtworkAssetId == canonical.AssetId
             && store.ReadCustomerSessionResult("creation-alice", owner).ArtworkAssetId == canonical.AssetId,
             "profile, customer result and keepsake all reference exact same saved artwork ID");
+        var sourceAsset = ready.Editions.Single().ArtworkAssetId;
+        var sourceBytes = store.ReadAsset(issued.Id, owner, sourceAsset).Bytes;
+        var repairSource = store.FindOwnedWandArtwork("alice", wand.WandId)!;
+        Check(repairSource.CanRepair && repairSource.Version == 1 && repairSource.Sha256 is { Length: 64 },
+            "owner receives active artwork version and source checksum for an explicit repair");
+        ExpectDenied(() => store.RepairWandArtwork(issued.Id, foreign, wand.WandId, repairSource.Version,
+            sourceAsset, repairSource.Sha256!, "foreign-repair"));
+        var repair = store.RepairWandArtwork(issued.Id, owner, wand.WandId, repairSource.Version,
+            sourceAsset, repairSource.Sha256!, "repair-key-1");
+        Check(store.RepairWandArtwork(issued.Id, owner, wand.WandId, repairSource.Version,
+            sourceAsset, repairSource.Sha256!, "repair-key-1").Id == repair.Id,
+            "duplicate repair request returns the original image-only job");
+        ExpectCode(() => store.RepairWandArtwork(issued.Id, owner, wand.WandId, repairSource.Version,
+            sourceAsset, repairSource.Sha256!, "repair-key-2"), "wand_artwork_repair_in_progress");
+        var repairLease = store.LeaseNext()!;
+        var repairRequest = store.Dispatch(repairLease)!;
+        Check(repairRequest.GenerationKind == "wand_artwork" && repairRequest.Snapshot.GeneratedWand?.WandId == wand.WandId,
+            "repair regenerates only the exact saved wand artwork");
+        Check(store.FindOwnedWandArtwork("alice", wand.WandId)?.Status == "repairing",
+            "owner keeps the current artwork while repair runs");
+        Check(store.Complete(repairLease, await provider.GenerateAsync(repairRequest, default)),
+            "validated repair activates without replacing the saved wand or story edition");
+        var repaired = store.FindOwnedWandArtwork("alice", wand.WandId)!;
+        var repairedView = store.Read(issued.Id, owner);
+        Check(repaired.AssetId != sourceAsset && repaired.Version == 2 && repaired.Sha256 is { Length: 64 }
+            && repairedView.Snapshot.GeneratedWand?.WandId == wand.WandId
+            && repairedView.Artwork is { Version: 2, SourceAssetId: not null, SourceSha256: not null },
+            "repair stores a new version and source provenance against the same wand identity");
+        Check(repairedView.Editions.Single().ArtworkAssetId == sourceAsset
+            && store.ReadAsset(issued.Id, owner, sourceAsset).Bytes.SequenceEqual(sourceBytes),
+            "published edition and shared download keep their original immutable artwork bytes");
+        Check(store.ReadCustomerSessionResult("creation-alice", owner).ArtworkAssetId == repaired.AssetId,
+            "owner profile uses the newly active canonical image version");
+        var repairedBytes = store.ReadAsset(issued.Id, owner, repaired.AssetId!).Bytes;
+        ExpectCode(() => store.RepairWandArtwork(issued.Id, owner, wand.WandId, 1,
+            sourceAsset, repairSource.Sha256!, "stale-version-repair"), "wand_artwork_source_changed");
+        var staleSource = store.FindOwnedWandArtwork("alice", wand.WandId)!;
+        var staleJob = store.RepairWandArtwork(issued.Id, owner, wand.WandId, staleSource.Version,
+            staleSource.AssetId!, staleSource.Sha256!, "repair-that-loses-race");
+        var staleLease = store.LeaseNext()!;
+        var staleRequest = store.Dispatch(staleLease)!;
+        using (var connection = new SqliteConnection("Data Source=" + configuration["Backend:DatabasePath"]))
+        {
+            connection.Open();
+            using var query = connection.CreateCommand();
+            query.CommandText = "SELECT document FROM dv10_keepsakes WHERE id=$id";
+            query.Parameters.AddWithValue("$id", issued.Id);
+            var document = JsonNode.Parse((string)query.ExecuteScalar()!)!;
+            document["artwork"]!["version"] = staleSource.Version + 1;
+            using var update = connection.CreateCommand();
+            update.CommandText = "UPDATE dv10_keepsakes SET document=$document WHERE id=$id";
+            update.Parameters.AddWithValue("$document", document.ToJsonString());
+            update.Parameters.AddWithValue("$id", issued.Id);
+            update.ExecuteNonQuery();
+        }
+        Check(store.Complete(staleLease, await provider.GenerateAsync(staleRequest, default))
+            && store.FindOwnedWandArtwork("alice", wand.WandId) is { } afterRace
+            && afterRace.AssetId == staleSource.AssetId && afterRace.Version == staleSource.Version + 1,
+            "a delayed repair result is archived without replacing a newer active image version");
+        Check(store.Read(issued.Id, owner).Assets.Count(asset => asset.Kind == "base_image") == 2,
+            "stale provider output does not append an orphan artwork asset");
         var replacement = store.EnqueueBase(issued.Id, owner, new(), "story-edition-two");
         var replacementLease = store.LeaseNext()!;
         Check(replacementLease.Id == replacement.Id, "explicit story edition leases requested job");
         Check(store.Complete(replacementLease, await provider.GenerateAsync(store.Dispatch(replacementLease)!, default)), "second story edition completes");
         ready = store.Read(issued.Id, owner);
-        Check(ready.Editions.Count == 2 && ready.Editions.All(edition => edition.ArtworkAssetId == canonical.AssetId)
-            && ready.Assets.Count(asset => asset.Kind == "base_image") == 1,
-            "new story editions preserve one immutable artwork asset per wand");
+        Check(ready.Editions.Count == 2 && ready.Editions[0].ArtworkAssetId == sourceAsset
+            && ready.Editions[1].ArtworkAssetId == repaired.AssetId
+            && ready.Assets.Count(asset => asset.Kind == "base_image") == 2,
+            "each edition keeps the immutable artwork version active when that story was generated");
         Check(store.ReadEveningGallery("device", evening).Items.Count == 0, "canonical art is private before explicit edition publication");
         var latest = ready.Editions.Last();
         ready = store.SetWandPublication(issued.Id, owner, true, latest.Id, ready.Revision);
@@ -112,12 +176,12 @@ internal static class WandArtworkTests
         var gallery = store.ReadEveningGallery("device", evening).Items.Single();
         Check(gallery.Assets.Any(asset => asset.Kind == "export_card") && gallery.Assets.Any(asset => asset.Kind == "export_zip"),
             "local collectible derivatives export successfully from canonical artwork");
-        Check(gallery.Assets.Single(asset => asset.Kind == "base_image").Id == canonical.AssetId,
-            "approved public edition reuses canonical image even though asset predates story edition");
-        using (var publicImage = store.OpenGalleryAsset("device", evening, issued.Id, latest.Id, canonical.AssetId!).Stream)
+        Check(gallery.Assets.Single(asset => asset.Kind == "base_image").Id == repaired.AssetId,
+            "approved public edition reuses the image version active when its story was generated");
+        using (var publicImage = store.OpenGalleryAsset("device", evening, issued.Id, latest.Id, repaired.AssetId!).Stream)
         {
             using var copy = new MemoryStream(); await publicImage.CopyToAsync(copy);
-            Check(copy.ToArray().SequenceEqual(savedImage.Bytes), "public image bytes equal private canonical artwork bytes");
+            Check(copy.ToArray().SequenceEqual(repairedBytes), "public image bytes equal the immutable edition artwork version");
         }
         ready = store.Read(issued.Id, owner);
         ready = store.SetWandPublication(issued.Id, owner, false, latest.Id, ready.Revision);
@@ -265,11 +329,14 @@ internal static class WandArtworkTests
 
     private static async Task ProviderBoundaries()
     {
+        Check(OpenAiKeepsakeProvider.SupportsTransparentWandArtwork("gpt-image-1.5")
+            && !OpenAiKeepsakeProvider.SupportsTransparentWandArtwork("dall-e-3"),
+            "only configured models with documented alpha output enter the wand-artwork branch");
         var wand = new GeneratedWandPublicSnapshot("canonical-wand", 1, "Astra", "Meteorite wood", "Tidal thread", "Cautiously sarcastic",
             "A fictional relic of a drowned observatory.", "Forked tip, carved lunar handle, silver inlaid rings", "Tides", "Static air",
             [new("strike", "Tidal lash", "A wave of light"), new("trick", "Moon lie", "A decoy"), new("shield", "Quiet harbor", "A barrier")]);
-        var handler = new Handler(KeepsakeCoreTests.Png());
-        using var provider = new OpenAiKeepsakeProvider(new HttpClient(handler), "synthetic-key-never-sent-to-network", "synthetic-story-model", "synthetic-image-model");
+        var handler = new Handler(DifferentPng());
+        using var provider = new OpenAiKeepsakeProvider(new HttpClient(handler), "synthetic-key-never-sent-to-network", "synthetic-story-model", "gpt-image-1.5");
         var snapshot = new KeepsakeIssueSnapshot("private-outcome", "private-device", 1, wand.WandId, wand.Name, wand.Lore, "synthetic", GeneratedWand: wand);
         var request = new KeepsakeProviderRequest(Guid.NewGuid().ToString("D"), snapshot, new(), Guid.NewGuid().ToString("D"), null, null, null, null, null)
             { GenerationKind = "wand_artwork" };
@@ -283,12 +350,24 @@ internal static class WandArtworkTests
         var image = await provider.GenerateAsync(request, default);
         Check(handler.Requests.Count == 1 && handler.Requests[0].Path.EndsWith("/images/generations") && image.Story is null,
             "actual SDK illustration dispatch performs one image generation and no story request");
+        KeepsakeStore.ValidateWandArtwork(image);
+        ExpectCode(() => KeepsakeStore.ValidateWandArtwork(image with { ImageBytes = KeepsakeCoreTests.Png() }), "wand_artwork_transparency_required");
+        ExpectCode(() => KeepsakeStore.ValidateWandArtwork(image with { ImageBytes = TransparentPng() }), "wand_artwork_transparency_required");
+        ExpectCode(() => KeepsakeStore.ValidateWandArtwork(image with { ImageBytes = Array.Empty<byte>() }), "wand_artwork_invalid");
+        using (var alphaBitmap = SKBitmap.Decode(image.ImageBytes))
+            Check(alphaBitmap is not null && Enumerable.Range(0, alphaBitmap.Height).Any(y =>
+                    Enumerable.Range(0, alphaBitmap.Width).Any(x => alphaBitmap.GetPixel(x, y).Alpha is > 0 and < 255)),
+                "valid isolated PNG retains antialiased partial-alpha edges");
         using (var parsed = JsonDocument.Parse(handler.Requests[0].Body))
         {
             var payload = parsed.RootElement;
             var prompt = payload.GetProperty("prompt").GetString()!;
-            Check(payload.GetProperty("model").GetString() == "synthetic-image-model" && !payload.TryGetProperty("image", out _),
+            Check(payload.GetProperty("model").GetString() == "gpt-image-1.5" && !payload.TryGetProperty("image", out _),
                 "image uses configured SDK generation model without another image pipeline");
+            Check(payload.GetProperty("background").GetString() == "transparent" && payload.GetProperty("output_format").GetString() == "png",
+                "serialized SDK request asks for a true transparent PNG background");
+            Check(image.GenerationParameters?.Contains("\"background\":\"transparent\"", StringComparison.Ordinal) == true,
+                "saved generation provenance records actual image parameters");
             Check(new[] { wand.Name, wand.Material, wand.Core, wand.Temperament, wand.DesignDescription, wand.Affinity, wand.Weakness, wand.Lore }.All(prompt.Contains),
                 "image prompt describes exact selected silhouette, craftsmanship, personality, lore and affinity");
             Check(!prompt.Contains("private-outcome") && !prompt.Contains("private-device"), "image prompt excludes private authorization and physical outcome IDs");
@@ -304,7 +383,16 @@ internal static class WandArtworkTests
 
     private static byte[] DifferentPng()
     {
-        using var bitmap = new SKBitmap(32, 48); bitmap.Erase(SKColors.OrangeRed);
+        using var bitmap = new SKBitmap(32, 48); bitmap.Erase(SKColors.Transparent);
+        using (var canvas = new SKCanvas(bitmap))
+        using (var paint = new SKPaint { Color = SKColors.OrangeRed, IsAntialias = true })
+            canvas.DrawCircle(16, 24, 8, paint);
+        using var image = SKImage.FromBitmap(bitmap); using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded.ToArray();
+    }
+    private static byte[] TransparentPng()
+    {
+        using var bitmap = new SKBitmap(24, 32); bitmap.Erase(SKColors.Transparent);
         using var image = SKImage.FromBitmap(bitmap); using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
         return encoded.ToArray();
     }

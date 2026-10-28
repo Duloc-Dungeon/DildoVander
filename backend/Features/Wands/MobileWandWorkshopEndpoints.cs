@@ -12,7 +12,7 @@ using Kufr.Backend.Features.Launch;
 
 namespace Kufr.Backend.Features.Wands;
 
-internal static class MobileWandWorkshopEndpoints
+internal static partial class MobileWandWorkshopEndpoints
 {
     private sealed record AudioTranscription(string Text);
     private sealed record WorkshopAudioRequest(string? QuestionId, int? QuestionRevision, string? WandId);
@@ -21,6 +21,7 @@ internal static class MobileWandWorkshopEndpoints
 
     internal static void MapMobileWandWorkshop(this RouteGroupBuilder group)
     {
+        group.MapWorkshopConversation();
         group.MapGet("/workshop", async (int? upgrade, HttpContext http, CharacterProfileStore profiles,
             WandGenerationStore wands, GameStore games) =>
         {
@@ -44,7 +45,17 @@ internal static class MobileWandWorkshopEndpoints
             var projectedProfile = new { profile.ProfileId, profile.Revision, profile.UserInput.Name,
                 profile.UserInput.World, profile.UserInput.Version, profile.UserInput.Description,
                 profile.Status };
-            var available = session?.Status == "complete" || unavailable is null;
+            if (await profiles.CapturePreparedAsync(owner, profile.ProfileId, profile.Revision, http.RequestAborted) is null)
+                unavailable = profile.Status == "needs_clarification" ? "wand_character_needs_clarification"
+                    : profile.Status == "failed" ? "wand_character_preparation_failed" : "wand_character_preparing";
+            if (operation is not null && unavailable is null) {
+                wands.ResumeWorkshopAfterBoss(owner, operation);
+                session = State(http, wands, operation, owner);
+            } else if (operation is not null && unavailable == "wand_workshop_boss_captured") {
+                wands.PauseWorkshopForBoss(owner, operation);
+                session = State(http, wands, operation, owner);
+            }
+            var available = unavailable is null;
             return Results.Ok(new WorkshopEligibility(available, available ? null : unavailable, projectedProfile, tier, session));
         });
 
@@ -60,7 +71,9 @@ internal static class MobileWandWorkshopEndpoints
             if (operation is null) return Results.Ok(new { session = (MobileWandWorkshopState?)null });
             await RequireAvailableAsync(http, games, owner, isUpgrade: tier == 2);
             await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, operation);
-            return Results.Ok(new { session = State(http, wands, operation, owner) });
+            var state = State(http, wands, operation, owner);
+            await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
+            return Results.Ok(new { session = state });
         });
 
         group.MapPost("/workshop/sessions", async (MobileWandWorkshopStart request, HttpContext http,
@@ -72,8 +85,8 @@ internal static class MobileWandWorkshopEndpoints
             var owner = Owner(http);
             var profile = await profiles.ReadAsync(owner, http.RequestAborted)
                 ?? throw new WandGenerationException("character_required", 409);
-            var captured = await profiles.CaptureAsync(owner, profile.ProfileId, profile.Revision, http.RequestAborted)
-                ?? throw new WandGenerationException("wand_profile_revision_mismatch");
+            var captured = await profiles.CapturePreparedAsync(owner, profile.ProfileId, profile.Revision, http.RequestAborted)
+                ?? throw new WandGenerationException("wand_character_preparing", 409);
             var current = MobileWandSessions.Current(wands, owner, profile.ProfileId, profile.Revision);
             var tier = request.Upgrade ? 2 : 1;
             var existing = wands.FindWorkshop(owner, profile.ProfileId, profile.Revision, tier);
@@ -128,52 +141,6 @@ internal static class MobileWandWorkshopEndpoints
             return Results.Ok(new { session = state });
         });
 
-        group.MapPost("/workshop/sessions/{id}/answers", async (string id,
-            MobileWandWorkshopAnswer answer, HttpContext http, CharacterProfileStore profiles,
-            WandGenerationStore wands, GameStore games) =>
-        {
-            var owner = Owner(http);
-            var before = State(http, wands, id, owner);
-            await RequireAvailableAsync(http, games, owner, before.Tier == 2);
-            await RequireProfileRevisionAsync(profiles, owner, before, http.RequestAborted);
-            await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, id);
-            var steps = wands.CloseWorkshopQuestion(owner, id, answer.QuestionId,
-                answer.QuestionRevision, answer.Answer, answer.SourceMode);
-            var state = await ContinueGenerationAsync(http, owner, id, steps, profiles, wands,
-                games, http.RequestAborted);
-            return Results.Ok(new { session = state });
-        });
-
-        group.MapPost("/workshop/sessions/{id}/skip", async (string id,
-            MobileWandWorkshopSkip skip, HttpContext http, CharacterProfileStore profiles,
-            WandGenerationStore wands, GameStore games) =>
-        {
-            var owner = Owner(http);
-            var before = State(http, wands, id, owner);
-            await RequireAvailableAsync(http, games, owner, before.Tier == 2);
-            await RequireProfileRevisionAsync(profiles, owner, before, http.RequestAborted);
-            await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, id);
-            var steps = wands.CloseWorkshopQuestion(owner, id, skip.QuestionId,
-                skip.QuestionRevision, null, null);
-            var state = await ContinueGenerationAsync(http, owner, id, steps, profiles, wands,
-                games, http.RequestAborted);
-            return Results.Ok(new { session = state });
-        });
-
-        group.MapPut("/workshop/sessions/{id}/answers/{answerId}", async (string id, string answerId,
-            MobileWandWorkshopCorrection correction, HttpContext http, CharacterProfileStore profiles,
-            WandGenerationStore wands, GameStore games) =>
-        {
-            var owner = Owner(http);
-            var state = State(http, wands, id, owner);
-            await RequireAvailableAsync(http, games, owner, state.Tier == 2, allowCompleted: state.Status == "complete");
-            await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
-            await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, id);
-            wands.CorrectWorkshopAnswer(owner, id, answerId, correction.AnswerRevision,
-                correction.Answer, correction.SourceMode);
-            return Results.Ok(new { session = State(http, wands, id, owner) });
-        });
-
         group.MapPost("/workshop/sessions/{id}/retry", async (string id, HttpContext http,
             CharacterProfileStore profiles, WandGenerationStore wands, GameStore games) =>
         {
@@ -182,20 +149,13 @@ internal static class MobileWandWorkshopEndpoints
             await RequireAvailableAsync(http, games, owner, state.Tier == 2);
             await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
             await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, id);
-            await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, id);
             if (state.Status != "failed" || !state.CanRetry)
                 throw new WandGenerationException("wand_generation_retry_unavailable");
-            if (state.RecoveryKind == "question_fallback")
-            {
-                if (!wands.RecoverWorkshopQuestionFallback(owner, id))
-                    throw new WandGenerationException("wand_question_recovery_unavailable");
-                return Results.Ok(new { session = State(http, wands, id, owner) });
-            }
             if (state.RecoveryKind != "generation")
                 throw new WandGenerationException("wand_generation_retry_unavailable");
             wands.ResumeWorkshop(owner, id);
-            var snapshot = await profiles.CaptureAsync(owner, state.ProfileId, state.ProfileRevision, http.RequestAborted)
-                ?? throw new WandGenerationException("wand_profile_revision_mismatch");
+            var snapshot = await profiles.CapturePreparedAsync(owner, state.ProfileId, state.ProfileRevision, http.RequestAborted)
+                ?? throw new WandGenerationException("wand_character_preparing", 409);
             _ = wands.Begin(owner, id, snapshot, 1, openAiConsent: true, outputLanguage: "cs");
             return Results.Ok(new { session = State(http, wands, id, owner) });
         });
@@ -246,115 +206,27 @@ internal static class MobileWandWorkshopEndpoints
             var state = State(http, wands, id, owner);
             await RequireAvailableAsync(http, games, owner, state.Tier == 2);
             await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
-            var completed = state.Status == "complete";
-            if (completed
-                ? string.IsNullOrWhiteSpace(request.WandId) || request.WandId != state.Wand?.WandId
-                : request.QuestionId != state.Question?.QuestionId || request.QuestionRevision != state.Question?.QuestionRevision)
+            if (state.Status != "complete" || request.WandId != state.Wand?.WandId)
                 throw new WandGenerationException("wand_audio_revision_conflict", 409);
-            var text = completed ? state.VerdictText() : state.Question?.Question;
-            if (text is null) throw new WandGenerationException("wand_speech_unavailable", 409);
+            var text = state.VerdictText();
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(http.RequestAborted);
             timeout.CancelAfter(TimeSpan.FromSeconds(15));
             var wav = await speech.SpeakAsync(text,
                 Kufr.Backend.Features.Speech.SpeechOptions.Default, timeout.Token);
             var current = State(http, wands, id, owner);
-            var currentQuestion = current.Question;
-            if (!await MatchesCurrentLaunchAsync(http, wands, owner, id)
-                || (completed ? current.Wand?.WandId != request.WandId
-                : currentQuestion?.QuestionId != request.QuestionId
-                    || currentQuestion?.QuestionRevision != request.QuestionRevision))
+            if (!await MatchesCurrentLaunchAsync(http, wands, owner, id) || current.Wand?.WandId != request.WandId)
                 throw new WandGenerationException("wand_audio_revision_conflict", 409);
             await RequireAvailableAsync(http, games, owner, state.Tier == 2);
             return Results.File(wav, "audio/wav");
         });
 
-        group.MapPost("/workshop/sessions/{id}/transcribe", async (string id, HttpContext http,
-            WandGenerationStore wands, GameStore games, CharacterProfileStore profiles) =>
-        {
-            var owner = Owner(http);
-            var state = State(http, wands, id, owner);
-            await RequireAvailableAsync(http, games, owner, state.Tier == 2);
-            await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
-            await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, id);
-            if (state.Status != "asking" || state.Question is null)
-                throw new WandGenerationException("wand_question_not_active");
-            if (http.Request.Headers["X-Wand-Question-Id"] != state.Question.QuestionId
-                || !int.TryParse(http.Request.Headers["X-Wand-Question-Revision"], out var expectedRevision)
-                || expectedRevision != state.Question.QuestionRevision)
-                throw new WandGenerationException("wand_question_revision_conflict", 409);
-            var sizeFeature = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
-            if (sizeFeature is { IsReadOnly: false }) sizeFeature.MaxRequestBodySize = 8_388_608;
-            if (http.Request.ContentLength is > 8_388_608) throw new WandGenerationException("audio_too_large", 413);
-            var mediaType = http.Request.ContentType?.Split(';', 2)[0].Trim().ToLowerInvariant();
-            if (mediaType is not ("audio/webm" or "audio/mp4" or "audio/wav" or "audio/mpeg" or "audio/ogg"))
-                throw new WandGenerationException("audio_format_unsupported", 415);
-            await using var buffer = new MemoryStream();
-            var transfer = new byte[16_384];
-            while (true)
-            {
-                var read = await http.Request.Body.ReadAsync(transfer, http.RequestAborted);
-                if (read == 0) break;
-                if (buffer.Length + read > 8_388_608) throw new WandGenerationException("audio_too_large", 413);
-                await buffer.WriteAsync(transfer.AsMemory(0, read), http.RequestAborted);
-            }
-            if (buffer.Length == 0) throw new WandGenerationException("audio_too_large", 413);
-            var key = http.RequestServices.GetRequiredService<IConfiguration>()["OPENAI_API_KEY"];
-            if (string.IsNullOrWhiteSpace(key)) throw new WandGenerationException("audio_transcription_unavailable", 503);
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(http.RequestAborted);
-            timeout.CancelAfter(TimeSpan.FromSeconds(20));
-            using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
-            using var content = new MultipartFormDataContent();
-            using var audio = new ByteArrayContent(buffer.ToArray());
-            audio.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
-            var extension = mediaType switch { "audio/webm" => "webm", "audio/mp4" => "mp4", "audio/wav" => "wav", "audio/ogg" => "ogg", _ => "mp3" };
-            content.Add(audio, "file", "answer." + extension);
-            content.Add(new StringContent("gpt-4o-mini-transcribe"), "model");
-            content.Add(new StringContent("cs"), "language");
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/audio/transcriptions")
-            { Content = content };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-            if (!response.IsSuccessStatusCode) throw new WandGenerationException("audio_transcription_unavailable", 503);
-            if (response.Content.Headers.ContentLength is > 100_000)
-                throw new WandGenerationException("audio_transcription_unavailable", 503);
-            var responseBytes = await response.Content.ReadAsByteArrayAsync(timeout.Token);
-            if (responseBytes.Length > 100_000) throw new WandGenerationException("audio_transcription_unavailable", 503);
-            using var document = JsonDocument.Parse(responseBytes);
-            var transcript = document.RootElement.TryGetProperty("text", out var text) ? text.GetString() : null;
-            if (string.IsNullOrWhiteSpace(transcript) || transcript.Length > 2000)
-                throw new WandGenerationException("audio_transcription_empty", 422);
-            var current = State(http, wands, id, owner);
-            if (current.Question?.QuestionId != state.Question.QuestionId
-                || current.Question?.QuestionRevision != state.Question.QuestionRevision
-                || !await MatchesCurrentLaunchAsync(http, wands, owner, id))
-                throw new WandGenerationException("wand_question_revision_conflict", 409);
-            await RequireAvailableAsync(http, games, owner, state.Tier == 2);
-            return Results.Ok(new AudioTranscription(transcript));
-        });
-    }
-
-    private static async Task<MobileWandWorkshopState> ContinueGenerationAsync(HttpContext http, string owner,
-        string operationId, MobileWandWorkshopStep[] steps, CharacterProfileStore profiles,
-        WandGenerationStore wands, GameStore games, CancellationToken token)
-    {
-        if (steps.Any(step => step.Answer is null && !step.Skipped)) return State(http, wands, operationId, owner);
-        var state = State(http, wands, operationId, owner);
-        if (wands.Read(owner, operationId) is not null) return state;
-
-        var groupId = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false);
-        var boss = games.ReadBoss(groupId, owner);
-        if (boss.Revealed && !boss.Rescued) throw new WandGenerationException("wand_workshop_boss_captured", 409);
-        var snapshot = await profiles.CaptureAsync(owner, state.ProfileId, state.ProfileRevision, token)
-            ?? throw new WandGenerationException("wand_profile_revision_mismatch");
-        _ = wands.Begin(owner, operationId, snapshot, 1, openAiConsent: true, outputLanguage: "cs");
-        return State(http, wands, operationId, owner);
     }
 
     private static async Task RequireProfileRevisionAsync(CharacterProfileStore profiles, string owner,
         MobileWandWorkshopState state, CancellationToken token)
     {
-        if (await profiles.CaptureAsync(owner, state.ProfileId, state.ProfileRevision, token) is null)
-            throw new WandGenerationException("wand_profile_revision_mismatch");
+        if (await profiles.CapturePreparedAsync(owner, state.ProfileId, state.ProfileRevision, token) is null)
+            throw new WandGenerationException("wand_character_preparing", 409);
     }
 
     private static async Task RequireWorkshopLaunchSnapshotAsync(HttpContext http,
@@ -437,7 +309,8 @@ internal static class MobileWandWorkshopPresentation
     internal static string VerdictText(this MobileWandWorkshopState state)
     {
         if (state.Wand is not { } wand) throw new WandGenerationException("wand_result_unavailable", 409);
-        var callback = state.Steps.LastOrDefault(step => step.Answer is not null)?.Answer;
+        var callback = state.Messages?.LastOrDefault(message => message.Role == "user" && message.Text != "Zahaj rozhovor s připravenou postavou.")?.Text
+            ?? state.Steps.LastOrDefault(step => step.Answer is not null)?.Answer;
         var detail = callback is null ? "Dílna si poznamenala i tvé velkorysé mlčení."
             : $"A k tomu tvému „{Speech(callback, 120)}“ si hůlka zjevně udělala vlastní poznámku.";
         return $"Hotovo. {Speech(wand.Name, 100)}, {Speech(wand.Material, 160)} a jádro z {Speech(wand.Core, 160)}. {detail}";

@@ -843,6 +843,12 @@ enum AccountTransportPolicy {
         if route == "/app/v1/customer/wand/workshop/sessions" { return method == "POST" }
         let session = "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}"
         if route.range(of: session + "$", options: .regularExpression) != nil { return method == "GET" }
+        if route.range(of: session + "/messages/[A-Za-z0-9_-]{1,160}$", options: .regularExpression) != nil {
+            return method == "PUT"
+        }
+        if route.range(of: session + "/(messages|finish|ticket|artwork/repair)$", options: .regularExpression) != nil {
+            return method == "POST"
+        }
         if route.range(of: session + "/(answers|skip|audio|transcribe|artwork/retry)$", options: .regularExpression) != nil {
             return method == "POST"
         }

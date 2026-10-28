@@ -12,14 +12,16 @@ export interface VoiceObserver {
   closed(): void;
   interrupted?(): void;
   wand?(value: unknown): void;
+  outputLevel?(value: number): void;
+  workshopSession?(value: unknown): void;
   providerReady?(providerSessionId: string | null): void;
 }
 
-export function socketUrl(ticket: SocketTicket, sessionId: string, origin: string, purpose: 'lab' | 'wand' = 'lab'): string {
+export function socketUrl(ticket: SocketTicket, sessionId: string, origin: string, purpose: 'lab' | 'wand' | 'workshop' = 'lab'): string {
   const expected = new URL(origin);
   const url = new URL(ticket.url, expected);
   const secureOrigin = url.protocol === 'wss:' ? 'https:' : url.protocol === 'ws:' ? 'http:' : '';
-  const expectedPath = purpose === 'wand' ? `/app/v1/customer/wand/sessions/${encodeURIComponent(sessionId)}/live` : `/app/v1/persona-lab/sessions/${encodeURIComponent(sessionId)}/live`;
+  const expectedPath = purpose === 'workshop' ? `/app/v1/customer/wand/workshop/sessions/${encodeURIComponent(sessionId)}/live` : purpose === 'wand' ? `/app/v1/customer/wand/sessions/${encodeURIComponent(sessionId)}/live` : `/app/v1/persona-lab/sessions/${encodeURIComponent(sessionId)}/live`;
   if (!secureOrigin || expected.protocol !== secureOrigin || expected.host !== url.host || url.pathname !== expectedPath
     || url.username || url.password || url.hash || !url.searchParams.get('ticket'))
     throw Object.assign(new Error('Server vrátil neplatnou adresu hlasového spojení.'), { code: 'invalid_socket_address' });
@@ -64,6 +66,8 @@ export class LabVoice {
   private source: MediaStreamAudioSourceNode | null = null;
   private processor: AudioWorkletNode | null = null;
   private silentGain: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
+  private meterFrame = 0;
   private outputGain: GainNode | null = null;
   private outputEnabled = true;
   private playback = new Map<AudioBufferSourceNode, ScheduledAudio>();
@@ -101,7 +105,7 @@ export class LabVoice {
     this.phase = next; this.observer.phase(next);
   }
 
-  async connect(ticket: () => Promise<SocketTicket>, sessionId: string | (() => string), origin: string, options: { capture?: boolean; purpose?: 'lab' | 'wand' } = {}): Promise<void> {
+  async connect(ticket: () => Promise<SocketTicket>, sessionId: string | (() => string), origin: string, options: { capture?: boolean; purpose?: 'lab' | 'wand' | 'workshop' } = {}): Promise<void> {
     this.dispose();
     const generation = this.generation;
     const capture = options.capture !== false;
@@ -117,6 +121,9 @@ export class LabVoice {
         if (current() && this.ready && ['suspended', 'interrupted', 'closed'].includes(context.state as string))
           this.failPlayback('audio_interrupted');
       };
+      // Check the exact prepared revision before requesting the microphone.
+      let credentials: SocketTicket | null = null;
+      if (options.purpose === 'workshop') { credentials = await ticket(); if (!current()) return; }
       let stream: MediaStream | null = null;
       if (capture) {
         stream = await navigator.mediaDevices.getUserMedia({ audio: {
@@ -135,8 +142,21 @@ export class LabVoice {
       if (!current()) return;
       }
       const outputGain = context.createGain(); this.outputGain = outputGain;
-      outputGain.gain.value = this.outputEnabled ? 1 : 0; outputGain.connect(context.destination);
-      const credentials = await ticket(); if (!current()) return;
+      outputGain.gain.value = this.outputEnabled ? 1 : 0;
+      if (this.observer.outputLevel) {
+      const analyser = context.createAnalyser(); analyser.fftSize = 256; this.analyser = analyser;
+      outputGain.connect(analyser); analyser.connect(context.destination);
+      const meter = new Uint8Array(analyser.fftSize);
+      const measure = () => {
+        if (!current()) return;
+        analyser.getByteTimeDomainData(meter);
+        const energy = meter.reduce((sum, sample) => sum + ((sample - 128) / 128) ** 2, 0) / meter.length;
+        this.observer.outputLevel?.(Math.min(1, Math.sqrt(energy) * 4));
+        this.meterFrame = requestAnimationFrame(measure);
+      };
+      measure();
+      } else outputGain.connect(context.destination);
+      credentials ??= await ticket(); if (!current()) return;
       const address = new URL(socketUrl(credentials, typeof sessionId === 'function' ? sessionId() : sessionId, origin, options.purpose));
       address.searchParams.set('playback', '1');
       const socket = new WebSocket(address.href);
@@ -182,13 +202,14 @@ export class LabVoice {
             this.playbackMode = value.playbackMode; this.typedInput = value.inputMode === 'text';
             this.clearTimeout(); this.ready = true; this.transition('listening', generation);
           }
-          else if (value.type === 'audio_pause' && options.purpose === 'wand' && this.playbackMode === 'stream') {
+          else if (value.type === 'audio_pause' && ['wand', 'workshop'].includes(options.purpose ?? '') && this.playbackMode === 'stream') {
             this.streamComplete = true; this.finishPlayback();
           }
           else if (value.type === 'text_ready') {
             if (!this.ready || !this.typedInput || this.playbackMode !== 'stream') { this.fail('invalid_server_event', false); return; }
             this.streamComplete = true; this.finishPlayback();
           }
+          else if (value.type === 'state' && value.session) this.observer.workshopSession?.(value.session);
           else if (value.type === 'busy') this.observer.error('lab_session_busy', false);
           else if (value.type === 'provider_ready') this.observer.providerReady?.(typeof value.providerSessionId === 'string' ? value.providerSessionId : null);
           else if (value.type === 'playback_started') this.startAcknowledgedPlayback(value.playbackId);
@@ -411,6 +432,7 @@ export class LabVoice {
     this.terminal = true; this.dispose(); this.transition('ended');
   }
   dispose(): void {
+    cancelAnimationFrame(this.meterFrame); this.analyser?.disconnect(); this.analyser = null; this.observer.outputLevel?.(0);
     ++this.generation; this.clearTimeout(); this.ready = false; this.muted = false; this.finishingWand = false;
     const socket = this.socket; this.socket = null;
     if (socket) { socket.onmessage = socket.onclose = socket.onerror = null; socket.close(); }

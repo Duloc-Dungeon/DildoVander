@@ -115,6 +115,20 @@ describe('bounded audio playback', () => {
     expect(observer.error).not.toHaveBeenCalled(); ready('stream');
     expect(observer.phase).toHaveBeenLastCalledWith('listening');
   });
+  it('checks prepared workshop admission before acquiring the microphone', async () => {
+    const microphone = vi.fn(); Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: microphone } });
+    await voice.connect(async () => { throw new Error('wand_character_preparing'); }, 'test', 'https://lab.example', { purpose: 'workshop' });
+    expect(microphone).not.toHaveBeenCalled(); expect(observer.error).toHaveBeenCalled();
+  });
+  it('routes workshop audio to its exact customer socket and emits backend state independently', async () => {
+    observer.workshopSession = vi.fn();
+    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '' }), 'test', 'https://lab.example', { purpose: 'workshop' });
+    ready('stream'); event({ type: 'state', session: { id: 'test', status: 'generating' } });
+    expect(connectedAddress).toContain('/customer/wand/workshop/sessions/test/live');
+    expect(observer.workshopSession).toHaveBeenCalledWith({ id: 'test', status: 'generating' });
+    message(new Int16Array(4800).fill(100).buffer); event({ type: 'audio_pause' }); advance(.2);
+    expect(observer.phase).toHaveBeenLastCalledWith('listening');
+  });
   it('drains a confirmed wand finale after server closure before releasing audio', async () => {
     await voice.connect(async () => ({url:'wss://lab.example/app/v1/customer/wand/sessions/test/live?ticket=one',path:'',expiresAt:''}), 'test', 'https://lab.example', {purpose:'wand'});
     stopTrack.mockClear(); observer.closed = vi.fn();

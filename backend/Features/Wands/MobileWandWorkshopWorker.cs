@@ -11,8 +11,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Kufr.Backend.Features.Wands;
 
 internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, WandGenerationStore store,
-    WandGenerationService generation, IMobileWandQuestionProvider questions,
-    ILogger<MobileWandWorkshopWorker> logger) : BackgroundService
+    WandGenerationService generation, ILogger<MobileWandWorkshopWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -21,18 +20,9 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         {
             try
             {
-                for (var count = 0; count < 8; count++)
-                {
-                    stoppingToken.ThrowIfCancellationRequested();
-                    var question = store.ClaimWorkshopQuestion();
-                    if (question is null) break;
-                    await ProcessQuestionAsync(question, stoppingToken);
-                }
-                foreach (var job in store.PendingWorkshops())
-                {
-                    stoppingToken.ThrowIfCancellationRequested();
-                    await ProcessAsync(job, stoppingToken);
-                }
+                await Parallel.ForEachAsync(store.PendingWorkshops(), new ParallelOptions
+                { MaxDegreeOfParallelism = 3, CancellationToken = stoppingToken }, async (job, token) =>
+                    await ProcessAsync(job, token));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -40,58 +30,6 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
                 logger.LogWarning("Mobile wand workshop queue pass failed ({ErrorType}).", exception.GetType().Name);
             }
         } while (await timer.WaitForNextTickAsync(stoppingToken));
-    }
-
-    private async Task ProcessQuestionAsync(MobileWandQuestionJob job, CancellationToken token)
-    {
-        await using var scope = scopes.CreateAsyncScope();
-        var services = scope.ServiceProvider;
-        var accounts = services.GetRequiredService<AccountDatabase>();
-        if (!await HasActiveSessionAsync(accounts, job.AccountId, token))
-        {
-            store.ReleaseWorkshopQuestion(job);
-            return;
-        }
-        if (!await QuestionAuthorityAsync(job, services, token))
-        {
-            store.FailWorkshopQuestion(job, "question_authoring_authority_unavailable");
-            return;
-        }
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(35));
-        try
-        {
-            var draft = await questions.AuthorAsync(job, timeout.Token);
-            if (!await QuestionAuthorityAsync(job, services, timeout.Token))
-            {
-                store.FailWorkshopQuestion(job, "question_authoring_authority_unavailable");
-                return;
-            }
-            store.CompleteWorkshopQuestion(job, draft.Question, draft.BasedOnFactIds, usedFallback: false);
-        }
-        catch (MobileWandQuestionAuthoringException exception) when (exception.SafeFallback)
-        {
-            var fallback = OpenAiMobileWandQuestionProvider.FallbackQuestion(job);
-            store.CompleteWorkshopQuestion(job, fallback, [], usedFallback: true);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            logger.LogWarning("Workshop question {QuestionId} authoring failed ({Code}).",
-                job.Step.QuestionId, exception is MobileWandQuestionAuthoringException authoring
-                    ? authoring.Code : exception.GetType().Name);
-            store.FailWorkshopQuestion(job, exception is MobileWandQuestionAuthoringException uncertain
-                ? uncertain.Code : "question_authoring_uncertain");
-        }
-    }
-
-    private static async Task<bool> QuestionAuthorityAsync(MobileWandQuestionJob job,
-        IServiceProvider services, CancellationToken token)
-    {
-        if (!await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, services, token)) return false;
-        if (await services.GetRequiredService<CharacterProfileStore>().CaptureAsync(job.AccountId,
-            job.Profile.ProfileId, job.Profile.Revision, token) is null) return false;
-        var boss = services.GetRequiredService<GameStore>().ReadBoss(job.LaunchGroupId, job.AccountId);
-        return !boss.Revealed || boss.Rescued;
     }
 
     private static async Task<bool> CurrentAuthorityAsync(string accountId, string groupId,
@@ -142,7 +80,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             return;
         }
         var profiles = services.GetRequiredService<CharacterProfileStore>();
-        if (await profiles.CaptureAsync(job.AccountId, job.Profile.ProfileId, job.Profile.Revision, token) is null)
+        if (await profiles.CapturePreparedAsync(job.AccountId, job.Profile.ProfileId, job.Profile.Revision, token) is null)
         {
             store.FailWorkshop(job.AccountId, job.OperationId, "wand_profile_revision_mismatch");
             return;
@@ -159,7 +97,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         var boss = game.ReadBoss(user.LaunchGroupId, job.AccountId);
         if (boss.Revealed && !boss.Rescued)
         {
-            store.FailWorkshop(job.AccountId, job.OperationId, "wand_workshop_boss_captured");
+            store.PauseWorkshopForBoss(job.AccountId, job.OperationId);
             return;
         }
 
@@ -173,8 +111,8 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         if (session.Status == "queued" || session.Status == "unavailable" && job.RetryRequested)
         {
             session = await generation.GenerateAsync(job.AccountId, job.OperationId,
-                ct => AuthorityAsync(job, services, ct), token, retry: session.Status == "unavailable",
-                evidence: job.Steps.Select(StepEvidence).ToArray());
+                ct => ContextAuthorityAsync(job, services, ct), token, retry: session.Status == "unavailable",
+                evidence: GenerationEvidence(job));
         }
 
         if (session.Status == "unavailable")
@@ -187,7 +125,10 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         {
             if (!await AuthorityAsync(job, services, token))
             {
-                store.FailWorkshop(job.AccountId, job.OperationId, "wand_generation_stale");
+                if (await ContextAuthorityAsync(job, services, token))
+                    store.PauseWorkshopForBoss(job.AccountId, job.OperationId);
+                else
+                    store.FailWorkshop(job.AccountId, job.OperationId, "wand_generation_stale");
                 return;
             }
             var wand = store.Select(job.AccountId, job.OperationId, job.Profile.ProfileId,
@@ -197,17 +138,34 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         }
 
         if (session.Status == "selected" && session.SelectedWand is { } selected)
+        {
+            if (!await AuthorityAsync(job, services, token))
+            {
+                if (await ContextAuthorityAsync(job, services, token))
+                    store.PauseWorkshopForBoss(job.AccountId, job.OperationId);
+                return;
+            }
             await IssueWandKeepsakeAsync(job, selected, services, token);
+        }
     }
 
     private static async Task<bool> AuthorityAsync(MobileWandWorkshopJob job, IServiceProvider services,
         CancellationToken token)
     {
-        if (!await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, services, token)) return false;
-        if (await services.GetRequiredService<CharacterProfileStore>().CaptureAsync(job.AccountId,
-            job.Profile.ProfileId, job.Profile.Revision, token) is null) return false;
-        var boss = services.GetRequiredService<GameStore>().ReadBoss(job.LaunchGroupId, job.AccountId);
-        return !boss.Revealed || boss.Rescued;
+        if (!await ContextAuthorityAsync(job, services, token)) return false;
+        return !IsBossCaptive(job.LaunchGroupId, job.AccountId, services);
+    }
+
+    private static async Task<bool> ContextAuthorityAsync(MobileWandWorkshopJob job,
+        IServiceProvider services, CancellationToken token) =>
+        await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, services, token)
+        && await services.GetRequiredService<CharacterProfileStore>().CapturePreparedAsync(job.AccountId,
+            job.Profile.ProfileId, job.Profile.Revision, token) is not null;
+
+    private static bool IsBossCaptive(string groupId, string accountId, IServiceProvider services)
+    {
+        var boss = services.GetRequiredService<GameStore>().ReadBoss(groupId, accountId);
+        return boss.Revealed && !boss.Rescued;
     }
 
     private static Task<bool> HasActiveSessionAsync(AccountDatabase accounts, string accountId, CancellationToken token) =>
@@ -246,13 +204,13 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
     internal static bool RealArtworkConfigured(IConfiguration configuration) =>
         string.Equals(configuration["Keepsake:ProviderMode"], "openai", StringComparison.OrdinalIgnoreCase)
         && !string.IsNullOrWhiteSpace(configuration["OPENAI_API_KEY"])
-        && !string.IsNullOrWhiteSpace(configuration["Keepsake:ImageModel"]);
+        && OpenAiKeepsakeProvider.SupportsTransparentWandArtwork(configuration["Keepsake:ImageModel"]);
 
     internal static KeepsakeIssueSnapshot ArtworkSnapshot(GeneratedWandSnapshot wand) => new(
         "mobile-wand:" + wand.WandId, "mobile-wand-workshop", 1, wand.WandId, wand.Name,
         // Full immutable fiction is already in GeneratedWand. Duplicating it as
         // escaped JSON can exceed the archive's 4,000-character catalog limit.
-        "Osobní hůlka vytvořená ze zvolené postavy a tří odpovědí.",
+        "Osobní hůlka vytvořená ze zvolené postavy a rozhovoru.",
         "Osobní digitální hůlka vytvořená v mobilní dílně.", GeneratedWand: wand.ToPublic());
 
     internal static string StepEvidence(MobileWandWorkshopStep step) => System.Text.Json.JsonSerializer.Serialize(new
@@ -260,4 +218,15 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         step.QuestionId, step.Question, step.AnswerId, step.AnswerRevision,
         answer = step.Answer, step.Skipped, step.SourceMode
     });
+
+    internal static string[] GenerationEvidence(MobileWandWorkshopJob job)
+    {
+        if (job.Messages.Length > 0)
+            return job.Messages.OrderBy(message => message.CreatedAt).Select(message =>
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    message.MessageId, message.Revision, message.Role, message.Text, message.SourceMode
+                })).ToArray();
+        return job.Steps.Select(StepEvidence).ToArray();
+    }
 }

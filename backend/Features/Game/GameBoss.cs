@@ -150,7 +150,10 @@ internal sealed partial class GameStore
             var attempt = new BossAttempt
             {
                 Id = Guid.NewGuid().ToString("N"), GroupId = groupId, UserId = userId,
-                Strength = (decimal)stats.Xp / profile.ReferenceXp, Exhibition = stats.Xp < 30,
+                Strength = stats.Xp < 30 ? Math.Max(1m, (decimal)stats.Xp / profile.ReferenceXp)
+                    : (decimal)stats.Xp / profile.ReferenceXp,
+                BossEnergy = stats.Xp < 30 ? 3 : 5,
+                Exhibition = stats.Xp < 30,
                 Seed = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
             };
             PrepareBossChoice(attempt);

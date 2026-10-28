@@ -214,31 +214,31 @@ internal static class WandGenerationTests
         { Profile = englishProfile, OutputLanguage = "cs" }, "fake-model");
         Check(mobileBody.Contains("requires Czech") && mobileBody.Contains("regardless of the profile language"),
             "mobile output stays Czech even when the character profile is tagged English");
-        var firstTurn = new MobileWandWorkshopStep("q1", 1, 1, "When a map vanishes, what do you do?", [],
-            "a1", 1, "I ask the stars for directions.");
-        var pending = new MobileWandWorkshopStep("q2", 1, 2, "", [], AuthoringStatus: "authoring");
-        var questionJob = new MobileWandQuestionJob("private-account", "private-operation", 1,
-            completeProfile, pending, [firstTurn, pending, new("q3", 1, 3, "", [], AuthoringStatus: "pending")],
-            "lease", "test-group", 1);
-        var questionRequest = OpenAiMobileWandQuestionProvider.BuildRequest(questionJob, "fake-model");
-        Check(questionRequest.Contains(laterFact) && questionRequest.Contains("ask the stars")
-            && questionRequest.Contains("uncertain canon") && questionRequest.Contains("previousTurns"),
-            "question authoring receives full late profile context and prior answers");
-        var approvedQuestion = QuestionResponse("When the quiet plan fails, what should the wand do first?", []);
-        using var approved = JsonDocument.Parse(approvedQuestion);
-        Check(OpenAiMobileWandQuestionProvider.Parse(approved.RootElement, questionJob).Question.Contains("wand"),
-            "single-question structured output is approved before persistence");
-        using var multiple = JsonDocument.Parse(QuestionResponse("What first, and why?", []));
-        try { OpenAiMobileWandQuestionProvider.Parse(multiple.RootElement, questionJob); throw new Exception("Multiple questions accepted"); }
-        catch (MobileWandQuestionAuthoringException error) when (!error.SafeFallback) { }
-        using var knownName = JsonDocument.Parse(QuestionResponse("Jak se jmenuješ?", []));
-        try { OpenAiMobileWandQuestionProvider.Parse(knownName.RootElement, questionJob); throw new Exception("Known identity question accepted"); }
-        catch (MobileWandQuestionAuthoringException error) when (!error.SafeFallback) { }
-        using var knownWorld = JsonDocument.Parse(QuestionResponse("Z jakého světa pocházíš?", []));
-        try { OpenAiMobileWandQuestionProvider.Parse(knownWorld.RootElement, questionJob); throw new Exception("Known world question accepted"); }
-        catch (MobileWandQuestionAuthoringException error) when (!error.SafeFallback) { }
-        using var repeated = JsonDocument.Parse(QuestionResponse(firstTurn.Question, []));
-        try { OpenAiMobileWandQuestionProvider.Parse(repeated.RootElement, questionJob); throw new Exception("Repeated question accepted"); }
+        var messages = new[]
+        {
+            new MobileWandWorkshopMessage("message-1", 1, "user", "I ask the stars for directions.", "text", 1),
+            new MobileWandWorkshopMessage("message-2", 1, "assistant", "You keep the map beside the gears.", "voice", 2),
+            new MobileWandWorkshopMessage("message-3", 2, "user", "The brass compass points toward the bridge.", "voice", 3)
+        };
+        var dialogueRequest = OpenAiMobileWandQuestionProvider.BuildReplyRequest(completeProfile with { Enrichment = completeProfile.Enrichment! with { NeedsClarification = false } }, messages, "fake-model");
+        Check(dialogueRequest.Contains(laterFact) && dialogueRequest.Contains("I ask the stars")
+            && dialogueRequest.Contains("brass compass") && dialogueRequest.Contains("uncertain canon")
+            && dialogueRequest.Contains("readyToFinish")
+            && !dialogueRequest.Contains("exactly three", StringComparison.OrdinalIgnoreCase),
+            "dialogue model receives the complete prepared profile and the full corrected transcript without a question-count rule");
+        using var continueReply = JsonDocument.Parse(ResponseText(JsonSerializer.Serialize(
+            new MobileWandDialogueDraft("To je užitečné; ten kompas míří někam konkrétně.", false),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))));
+        var continueDraft = OpenAiMobileWandQuestionProvider.ParseReply(continueReply.RootElement);
+        Check(!continueDraft.ReadyToFinish && continueDraft.Reply.Contains("kompas", StringComparison.Ordinal),
+            "a live text turn can continue the conversation naturally");
+        using var finishReply = JsonDocument.Parse(ResponseText(JsonSerializer.Serialize(
+            new MobileWandDialogueDraft("Dobrá. Hůlka může převzít orientaci, kterou kompas tolik nezvládá.", true),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))));
+        Check(OpenAiMobileWandQuestionProvider.ParseReply(finishReply.RootElement).ReadyToFinish,
+            "the dialogue may propose an explicit finish independently of exchange count");
+        using var incompleteReply = JsonDocument.Parse("{\"status\":\"incomplete\",\"output\":[]}");
+        try { OpenAiMobileWandQuestionProvider.ParseReply(incompleteReply.RootElement); throw new Exception("Incomplete dialogue accepted"); }
         catch (MobileWandQuestionAuthoringException error) when (!error.SafeFallback) { }
         var valid = Candidates(1);
         WandGenerationValidation.Validate(valid, 1);
@@ -284,8 +284,6 @@ internal static class WandGenerationTests
     private static string ResponseText(string text) =>
         JsonSerializer.Serialize(new { status = "completed", output = new[] { new { type = "message",
             content = new[] { new { type = "output_text", text } } } } });
-    private static string QuestionResponse(string question, string[] ids) => ResponseText(JsonSerializer.Serialize(
-        new MobileWandQuestionDraft(question, ids), new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     private static CharacterConversationSnapshot Profile() => new("private-profile", 1,
         new("Raven", "Original", Description: "Fictional astronomer", Language: "cs"), null, 1);
     private static WandCandidateContent[] Candidates(int mask) => WandGenerationValidation.Slots(mask).Select((_, index) =>

@@ -246,6 +246,8 @@ final class NativeAccountRequestPolicy {
         if (query != null) return false;
         String session = "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}";
         if (path.matches(session)) return "GET".equals(method);
+        if (path.matches(session + "/messages/[A-Za-z0-9_-]{1,160}")) return "PUT".equals(method);
+        if (path.matches(session + "/(messages|finish|ticket|artwork/repair)")) return "POST".equals(method);
         if (path.matches(session + "/(answers|skip|audio|transcribe|artwork/retry)")) return "POST".equals(method);
         return path.matches(session + "/answers/[0-9a-f]{32}") && "PUT".equals(method);
     }

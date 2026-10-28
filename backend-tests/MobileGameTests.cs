@@ -509,6 +509,82 @@ internal static class MobileGameTests
         Check((await foreign.GetAsync("/app/v1/game")).StatusCode == HttpStatusCode.OK, "separate active group has its own game scope");
 
         foreign.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(foreign));
+        var foreignProfile = await fixture.Profiles.ReadAsync(fixture.ForeignId)
+            ?? throw new InvalidOperationException("Foreign character fixture is missing.");
+        var workshopPath = "/app/v1/customer/wand/workshop/sessions";
+        var workshopOperation = Guid.NewGuid().ToString("N");
+        var beforePreparation = await foreign.PostAsJsonAsync(workshopPath,
+            new { operationId = workshopOperation });
+        Check(beforePreparation.StatusCode == HttpStatusCode.Conflict
+            && fixture.Wands.FindWorkshop(fixture.ForeignId, foreignProfile.ProfileId, foreignProfile.Revision, 1) is null
+            && fixture.Wands.MobileOperation(fixture.ForeignId, foreignProfile.ProfileId, foreignProfile.Revision, 1) is null,
+            "saved but unfinished character preparation cannot create a workshop or reserve generation");
+        await fixture.MarkForeignCharacterPreparedAsync();
+        using var workshopStarted = await foreign.PostAsJsonAsync(workshopPath,
+            new { operationId = workshopOperation });
+        Check(workshopStarted.StatusCode == HttpStatusCode.OK,
+            "a fully prepared current character can open the customer workshop");
+        var workshopStartBody = await workshopStarted.Content.ReadFromJsonAsync<JsonElement>();
+        var workshopSession = workshopStartBody.GetProperty("session");
+        Check(workshopSession.GetProperty("status").GetString() == "asking"
+            && workshopSession.GetProperty("profileRevision").GetInt64() == foreignProfile.Revision,
+            "workshop session binds to the prepared character revision");
+        using (var otherOwnerRead = await alice.GetAsync(workshopPath + "/" + workshopOperation))
+            Check(otherOwnerRead.StatusCode == HttpStatusCode.NotFound,
+                "a different authenticated owner cannot read the workshop transcript");
+
+        var firstMessageId = Guid.NewGuid().ToString("N");
+        using var firstMessage = await foreign.PostAsJsonAsync(workshopPath + "/" + workshopOperation + "/messages",
+            new { messageId = firstMessageId, text = "Nejdřív ověřím severní mapu." });
+        Check(firstMessage.StatusCode == HttpStatusCode.OK, "customer text message receives a synthetic trunk reply");
+        using var staleCorrection = await foreign.PutAsJsonAsync(workshopPath + "/" + workshopOperation
+            + "/messages/" + firstMessageId, new { expectedRevision = 0, text = "Zastaralá oprava." });
+        Check(staleCorrection.StatusCode == HttpStatusCode.Conflict,
+            "customer transcript correction requires its current message revision");
+        using var correctedMessage = await foreign.PutAsJsonAsync(workshopPath + "/" + workshopOperation
+            + "/messages/" + firstMessageId, new { expectedRevision = 1, text = "Oprava: ověřím severní mapu." });
+        var correctedBody = await correctedMessage.Content.ReadFromJsonAsync<JsonElement>();
+        Check(correctedMessage.StatusCode == HttpStatusCode.OK
+            && correctedBody.GetProperty("session").GetProperty("messages").EnumerateArray()
+                .Single(message => message.GetProperty("messageId").GetString() == firstMessageId)
+                .GetProperty("revision").GetInt32() == 2,
+            "the owner can correct a turn while the same dialogue is open");
+
+        for (var turn = 2; turn <= 4; turn++)
+        {
+            using var message = await foreign.PostAsJsonAsync(workshopPath + "/" + workshopOperation + "/messages",
+                new { messageId = Guid.NewGuid().ToString("N"), text = $"Rozhovor, sdělení {turn}." });
+            Check(message.StatusCode == HttpStatusCode.OK, $"natural text exchange {turn} continues through the customer session");
+            if (turn == 2)
+            {
+                var midConversation = await message.Content.ReadFromJsonAsync<JsonElement>();
+                Check(midConversation.GetProperty("session").GetProperty("status").GetString() == "asking"
+                    && fixture.Wands.PendingWorkshops().All(job => job.OperationId != workshopOperation)
+                    && fixture.Wands.Read(fixture.ForeignId, workshopOperation) is null,
+                    "two user turns do not auto-finish or start wand generation");
+            }
+        }
+        Check(fixture.TextDialogueCalls == 4, "text replies use the injected fake; no GPT Live socket or provider network call is opened");
+        var fourTurnState = await foreign.GetAsync(workshopPath + "/" + workshopOperation);
+        var fourTurnBody = await fourTurnState.Content.ReadFromJsonAsync<JsonElement>();
+        Check(fourTurnState.StatusCode == HttpStatusCode.OK
+            && fourTurnBody.GetProperty("session").GetProperty("status").GetString() == "asking"
+            && fixture.Wands.ReadWorkshopMessages(fixture.ForeignId, workshopOperation).Count(message => message.Role == "user") == 4
+            && fixture.Wands.PendingWorkshops().All(job => job.OperationId != workshopOperation),
+            "four natural user turns still wait for a distinct finish transition");
+        using var finishedWorkshop = await foreign.PostAsJsonAsync(workshopPath + "/" + workshopOperation + "/finish", new { });
+        Check(finishedWorkshop.StatusCode == HttpStatusCode.OK
+            && fixture.Wands.PendingWorkshops().Count(job => job.OperationId == workshopOperation) == 1,
+            "explicit finish after four turns enqueues exactly one workshop operation");
+        using var repeatedFinish = await foreign.PostAsJsonAsync(workshopPath + "/" + workshopOperation + "/finish", new { });
+        Check(repeatedFinish.StatusCode == HttpStatusCode.OK
+            && fixture.Wands.PendingWorkshops().Count(job => job.OperationId == workshopOperation) == 1,
+            "repeated explicit finish is idempotent and cannot create a duplicate generation");
+        using var lockedCorrection = await foreign.PutAsJsonAsync(workshopPath + "/" + workshopOperation
+            + "/messages/" + firstMessageId, new { expectedRevision = 2, text = "Příliš pozdní oprava." });
+        Check(lockedCorrection.StatusCode == HttpStatusCode.Conflict,
+            "the frozen transcript cannot be corrected after finish");
+
         var wandDenied = await foreign.PostAsJsonAsync("/app/v1/game/matches", new { opponentId = fixture.BobId, mode = "quick", operationId = "no-wand-bypass-0001" });
         Check(wandDenied.StatusCode == HttpStatusCode.Conflict
             && (await wandDenied.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "game_wand_required",
@@ -635,15 +711,21 @@ internal static class MobileGameTests
         private readonly X509Certificate2 certificate;
         private readonly string origin;
         private readonly string baseAddress;
+        private readonly TextWorkshopProvider textWorkshopProvider;
+        internal WandGenerationStore Wands => app.Services.GetRequiredService<WandGenerationStore>();
+        internal CharacterProfileStore Profiles => app.Services.GetRequiredService<CharacterProfileStore>();
+        internal int TextDialogueCalls => textWorkshopProvider.ReplyCount;
         internal string AliceId { get; } = Guid.NewGuid().ToString("N");
         internal string BobId { get; } = Guid.NewGuid().ToString("N");
         internal string ForeignId { get; } = Guid.NewGuid().ToString("N");
         internal string PausedId { get; } = Guid.NewGuid().ToString("N");
         internal string ActiveGroupId { get; private set; } = "";
 
-        private HttpFixture(WebApplication app, string root, X509Certificate2 certificate)
+        private HttpFixture(WebApplication app, string root, X509Certificate2 certificate,
+            TextWorkshopProvider textWorkshopProvider)
         {
             this.app = app; this.root = root; this.certificate = certificate;
+            this.textWorkshopProvider = textWorkshopProvider;
             origin = "https://localhost";
             baseAddress = app.Urls.Single().Replace("127.0.0.1", "localhost");
             app.Services.GetRequiredService<AccountConfiguration>().AllowedOrigins[0] = origin;
@@ -671,6 +753,7 @@ internal static class MobileGameTests
                 ["ApplicationIdentity:RequestsPerMinute"] = "120",
                 ["Backend:DatabasePath"] = Path.Combine(root, "journal.sqlite")
             });
+            var textWorkshopProvider = new TextWorkshopProvider();
             builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
             builder.Services.AddAccountIdentity(builder.Configuration);
             builder.Services.AddLaunchManagement(builder.Configuration);
@@ -684,6 +767,8 @@ internal static class MobileGameTests
             builder.Services.AddSingleton<WandDecisionService>();
             builder.Services.AddSingleton(new GptLiveOptions());
             builder.Services.AddSingleton<MobileWandRuntime>();
+            builder.Services.AddSingleton<IMobileWandQuestionProvider>(textWorkshopProvider);
+            builder.Services.AddSingleton<MobileWorkshopLiveRuntime>();
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
@@ -699,7 +784,7 @@ internal static class MobileGameTests
                 return Results.NoContent();
             });
             await app.StartAsync();
-            var fixture = new HttpFixture(app, root, certificate);
+            var fixture = new HttpFixture(app, root, certificate, textWorkshopProvider);
             await fixture.SeedAsync();
             return fixture;
         }
@@ -747,6 +832,30 @@ internal static class MobileGameTests
             var response = await client.PostAsync("/test/login/" + id, new StringContent("")); response.EnsureSuccessStatusCode();
             client.DefaultRequestHeaders.Add("Origin", origin);
         }
+
+        internal async Task MarkForeignCharacterPreparedAsync()
+        {
+            var profile = await Profiles.ReadAsync(ForeignId)
+                ?? throw new InvalidOperationException("Foreign character fixture is missing.");
+            var enrichment = new CharacterEnrichment(profile.UserInput.Name, profile.UserInput.World,
+                "Syntetický ověřený profil pro zákaznický workshop.",
+                [new CharacterFact("Při nejistotě nejprve ověřuje mapu.", [])], [], [], false, [],
+                "synthetic-test", "workshop-http-fixture-v1", DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                profile.Revision, "user_input_and_model_interpretation");
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Profiles.CustomerDataDatabasePath }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE character_profiles SET status='ready',enrichment_json=$enrichment WHERE account_id=$account AND profile_id=$profile AND revision=$revision";
+            command.Parameters.AddWithValue("$enrichment", JsonSerializer.Serialize(enrichment,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            command.Parameters.AddWithValue("$account", ForeignId);
+            command.Parameters.AddWithValue("$profile", profile.ProfileId);
+            command.Parameters.AddWithValue("$revision", profile.Revision);
+            if (command.ExecuteNonQuery() != 1)
+                throw new InvalidOperationException("Foreign character preparation revision changed during test setup.");
+        }
+
         internal async Task<string> CsrfAsync(HttpClient client)
         {
             using var response = await client.GetAsync("/test/csrf"); response.EnsureSuccessStatusCode();
@@ -797,6 +906,20 @@ internal static class MobileGameTests
         public async ValueTask DisposeAsync()
         {
             await app.StopAsync(); await app.DisposeAsync(); certificate.Dispose(); SqliteConnection.ClearAllPools(); Directory.Delete(root, true);
+        }
+    }
+
+    private sealed class TextWorkshopProvider : IMobileWandQuestionProvider
+    {
+        private int replyCount;
+        internal int ReplyCount => Volatile.Read(ref replyCount);
+
+        public Task<MobileWandDialogueDraft> ReplyAsync(CharacterConversationSnapshot profile,
+            MobileWandWorkshopMessage[] messages, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref replyCount);
+            return Task.FromResult(new MobileWandDialogueDraft("Zapsal jsem si to. Mapa zatím vede.", false));
         }
     }
 

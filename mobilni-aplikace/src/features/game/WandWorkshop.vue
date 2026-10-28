@@ -1,294 +1,226 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue';
+import { RouterLink } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
-import { account, accountTransport } from '../identity/session';
+import { account, accountOrigin, accountRequest, accountTransport } from '../identity/session';
 import { secureUuid } from '../../application/identifiers.mjs';
 import { projectMobileGeneratedWand } from '../archive/generatedWand';
 import GeneratedWand from '../archive/GeneratedWand.vue';
 import TrunkStage from './TrunkStage.vue';
+import { LabVoice, type VoicePhase } from '../persona-lab/voice';
 import { WorkshopVoice, type WorkshopVoicePhase } from './workshopVoice';
-import { loadWorkshop, loadWorkshopSession, workshopSessionRequest, workshopBase, workshopSessionPath, workshopAudio, WorkshopAudioConflict,
-  transcribeWorkshopAudio, workshopArtwork, type WorkshopEntry, type WorkshopSession, type WorkshopStep } from './wandWorkshop';
+import { loadWorkshop, loadWorkshopSession, workshopSessionRequest, workshopBase, workshopSessionPath, workshopArtwork, workshopAudio, normalizeSession, type WorkshopEntry, type WorkshopSession, type WorkshopMessage } from './wandWorkshop';
 
 const props = defineProps<{ upgrade?: boolean }>();
-const entry = ref<WorkshopEntry>();
-const session = ref<WorkshopSession | null>(null);
-const busy = ref(false);
-const loading = ref(true);
-const error = ref('');
-const draft = ref('');
-const sourceMode = ref<'text' | 'voice'>('text');
-const mode = ref<'text' | 'voice'>('text');
-const voicePhase = ref<WorkshopVoicePhase>('off');
-const microphonePending = ref(false);
-const outputLevel = ref(0);
-const artworkUrl = ref('');
-const artworkError = ref('');
-const correction = ref<WorkshopStep | null>(null);
-const correctionText = ref('');
-const answerField = ref<HTMLTextAreaElement>();
-const questionHeading = ref<HTMLHeadingElement>();
-const operation = ref('');
-let controller = new AbortController();
-let mediaController = new AbortController();
-let epoch = 0;
-let poll: ReturnType<typeof setTimeout> | undefined;
-let loadedArtwork = '';
-let artworkRetryId = '';
-const voice = new WorkshopVoice({
-  phase(value) { voicePhase.value = value; if (value === 'listening') microphonePending.value = false; },
-  level(value) { outputLevel.value = value; },
+const entry = ref<WorkshopEntry>(); const session = ref<WorkshopSession | null>(null);
+const loading = ref(true); const busy = ref(false); const error = ref(''); const draft = ref('');
+const mode = ref<'voice' | 'text'>('voice'); const livePhase = ref<VoicePhase>('idle');
+const narrationPhase = ref<WorkshopVoicePhase>('off'); const narrationPending = ref(false);
+let mediaController = new AbortController(); const muted = ref(false); const outputLevel = ref(0);
+const partial = ref(''); let partialRole = ''; const artworkUrl = ref(''); const artworkError = ref('');
+const answerField = ref<HTMLTextAreaElement>(); const correction = ref<WorkshopMessage | null>(null); const correctionText = ref('');
+let controller = new AbortController(); let poll: ReturnType<typeof setTimeout> | undefined;
+let operation = ''; let artworkKey = ''; let retryId = ''; let messageId = '';
+const narration = new WorkshopVoice({ phase(value) { narrationPhase.value = value; }, level(value) { outputLevel.value = value; } });
+const live = new LabVoice({
+  phase(value) { livePhase.value = value; },
+  transcript(role, delta) { if (partialRole !== role) { partial.value = ''; partialRole = role; } partial.value += delta; },
+  turn() {}, session() {},
+  workshopSession(value) { applySession(normalizeSession(value as Parameters<typeof normalizeSession>[0])); },
+  outputLevel(value) { outputLevel.value = value; },
+  error(code) {
+    error.value = code === 'wand_workshop_boss_captured' ? 'Baron uzavřel dílnu. Po osvobození navážeš na stejný rozhovor.'
+      : code.startsWith('microphone') || code === 'permission_denied' ? 'Mikrofon není dostupný. Můžeš pokračovat psaním.'
+      : 'Živé spojení se přerušilo. Můžeš ho obnovit nebo pokračovat psaním.';
+    mode.value = 'text'; void refresh();
+  },
+  closed() { void refresh(); },
 });
-const question = computed(() => session.value?.question);
 const wand = computed(() => projectMobileGeneratedWand(session.value?.wand));
-const completedSteps = computed(() => session.value?.steps.filter(step => Boolean(step.answerId) || step.skipped) ?? []);
-const canStart = computed(() => entry.value?.eligible && account.value?.openAiConsent === true);
-const canAnswer = computed(() => question.value && session.value?.status === 'asking' && entry.value?.eligible && !busy.value);
-const status = computed(() => {
-  if (microphonePending.value) return 'Čekáme na povolení mikrofonu.';
-  if (voicePhase.value === 'listening') return 'Mikrofon je zapnutý. Nahrává se tvoje odpověď.';
-  if (voicePhase.value === 'speaking') return 'Kufr mluví. Přednes můžeš zastavit.';
-  if (voicePhase.value === 'processing') return 'Přepisujeme nahrávku. Odpověď ještě není odeslaná.';
-  if (busy.value) return 'Zpracováváme požadavek…';
-  if (session.value?.status === 'authoring') return 'Kufr připravuje další otázku podle tvé postavy a uložených odpovědí.';
-  if (session.value?.status === 'generating') return 'Tři odpovědi jsou uložené. Kufr vyrábí tvoji hůlku.';
-  if (wand.value) return 'Hůlka je uložená a připravená ke hře.';
-  return 'Mikrofon je vypnutý.';
-});
+const messages = computed(() => session.value?.messages ?? []);
+const active = computed(() => ['connecting', 'listening', 'waiting', 'speaking'].includes(livePhase.value));
+const speaking = computed(() => livePhase.value === 'speaking' || narrationPhase.value === 'speaking');
+const canStart = computed(() => entry.value?.eligible === true && account.value?.openAiConsent === true);
+const canAnswer = computed(() => canStart.value && session.value?.status === 'asking' && !busy.value);
+const subtitle = computed(() => partial.value || [...messages.value].reverse().find(message => message.role === 'assistant')?.text || session.value?.question?.text || '');
 const unavailable = computed(() => {
   const reason = entry.value?.reason;
-  if (!entry.value?.profile) return 'Nejdřív ulož svoji postavu.';
-  if (reason?.includes('captur') || reason?.includes('boss')) return 'Dílnu uzavřel Baron. Znovu se otevře po jeho porážce.';
-  if (entry.value && !entry.value.eligible && !wand.value) return 'Dílna teď není dostupná. Vrať se do hry a ověř svůj nárok.';
-  return '';
+  if (!entry.value?.profile) return 'Nejdřív připrav svoji postavu.';
+  if (reason === 'wand_character_preparing') return 'Ještě připravujeme tvoji postavu.';
+  if (reason === 'wand_character_needs_clarification') return 'Postava potřebuje upřesnění. Doplň ji a dokonči přípravu.';
+  if (reason === 'wand_character_preparation_failed') return 'Příprava postavy se nezdařila. Zkus ji opravit nebo zopakovat.';
+  if (reason?.includes('boss') || reason?.includes('captur')) return 'Dílnu uzavřel Baron. Po jeho porážce budeš pokračovat ve stejném rozhovoru.';
+  return entry.value && !entry.value.eligible ? 'Dílna teď není dostupná. Ověř svůj nárok ve hře.' : '';
 });
-const stage = computed(() => {
-  if (wand.value) return 'revealed';
-  if (unavailable.value) return 'unavailable';
-  if (session.value?.status === 'generating') return 'forging';
-  if (voicePhase.value === 'speaking') return 'speaking';
-  if (voicePhase.value === 'listening') return 'listening';
-  return session.value ? 'waiting' : 'ready';
+const status = computed(() => {
+  if (speaking.value) return 'Kufr mluví. Jeho řeč můžeš zastavit.';
+  if (livePhase.value === 'connecting') return 'Připravujeme mikrofon a živé spojení…';
+  if (active.value) return muted.value ? 'Mikrofon je ztlumený. Spojení zůstává aktivní.' : 'Mikrofon je zapnutý. Mluv přirozeně, kufra můžeš přerušit.';
+  if (session.value?.status === 'generating') return 'Rozhovor je uložený. Kufr vyrábí tvoji hůlku.';
+  if (session.value?.status === 'paused') return 'Rozhovor je pozastavený do osvobození dílny.';
+  if (wand.value) return 'Hůlka je uložená a připravená ke hře.';
+  return busy.value ? 'Kufr zpracovává tvoje sdělení…' : 'Mikrofon je vypnutý.';
 });
-const artworkState = computed(() => {
-  if (artworkError.value) return 'failed';
-  const state = session.value?.artwork?.status;
-  if (state === 'ready' || state === 'running') return state;
-  return state === 'queued' || !wand.value ? 'queued' : 'failed';
-});
-
-function stopMedia() {
-  mediaController.abort(); mediaController = new AbortController();
-  microphonePending.value = false; voice.stop();
-}
-function releaseArtwork() {
-  if (artworkUrl.value) URL.revokeObjectURL(artworkUrl.value);
-  artworkUrl.value = ''; loadedArtwork = '';
-}
+const stage = computed(() => wand.value ? 'revealed' : unavailable.value ? 'unavailable' : session.value?.status === 'generating' ? 'forging' : speaking.value ? 'speaking' : livePhase.value === 'connecting' ? 'connecting' : active.value ? 'listening' : session.value ? 'waiting' : 'ready');
+const artworkState = computed(() => artworkError.value ? 'failed' : session.value?.artwork?.status === 'ready' ? 'ready' : session.value?.artwork?.status === 'running' ? 'running' : session.value?.artwork?.status === 'failed' ? 'failed' : 'queued');
+function stopNarration() { mediaController.abort(); mediaController = new AbortController(); narrationPending.value = false; narration.stop(); }
+function stopSpeech() { if (active.value) live.interrupt(); stopNarration(); outputLevel.value = 0; }
+function stopMedia() { live.end(); live.dispose(); stopNarration(); muted.value = false; outputLevel.value = 0; }
+function releaseArtwork() { if (artworkUrl.value) URL.revokeObjectURL(artworkUrl.value); artworkUrl.value = ''; artworkKey = ''; }
 async function updateArtwork(value: WorkshopSession) {
-  const scope = controller;
-  const art = value.artwork;
-  if (art?.status !== 'ready' || !art.assetId || !art.locator) return;
-  const key = `${value.id}/${art.assetId}/${art.version}`;
-  if (key === loadedArtwork) return;
-  loadedArtwork = key;
+  const art = value.artwork; const scope = controller;
+  if (!art?.assetId || !art.locator || art.status !== 'ready') return;
+  const key = `${value.id}/${art.assetId}/${art.version}`; if (key === artworkKey) return; artworkKey = key;
   try {
-    const blob = await workshopArtwork(`/app/v1/archive/owned/${encodeURIComponent(art.locator)}/assets/${encodeURIComponent(art.assetId)}`, scope.signal);
-    if (!currentScope(scope) || session.value?.id !== value.id || loadedArtwork !== key) return;
+    const blob = await workshopArtwork(`/app/v1/archive/owned/${art.locator}/assets/${art.assetId}`, scope.signal);
+    if (scope !== controller || scope.signal.aborted || artworkKey !== key) return;
     if (artworkUrl.value) URL.revokeObjectURL(artworkUrl.value);
     artworkUrl.value = URL.createObjectURL(blob); artworkError.value = '';
-  } catch {
-    if (currentScope(scope)) { loadedArtwork = ''; artworkError.value = 'Ilustraci se nepodařilo načíst. Hůlka zůstává uložená.'; }
-  }
+  } catch { if (scope === controller && !scope.signal.aborted) { artworkKey = ''; artworkError.value = 'Ilustraci se nepodařilo načíst. Hůlka zůstává uložená.'; } }
+}
+function schedule() {
+  clearTimeout(poll); if (controller.signal.aborted) return;
+  poll = setTimeout(() => { void refresh(); }, entry.value?.reason?.startsWith('wand_character_') ? 2000 : 3000);
 }
 function applySession(value: WorkshopSession | null) {
-  const changedQuestion = value?.question?.id !== session.value?.question?.id;
-  if (value?.id !== session.value?.id) { releaseArtwork(); artworkRetryId = ''; }
-  if (value?.question?.id !== session.value?.question?.id || value?.id !== session.value?.id) {
-    stopMedia(); draft.value = ''; sourceMode.value = 'text'; correction.value = null;
-  }
-  session.value = value;
-  if (changedQuestion && value?.question) void nextTick(() => questionHeading.value?.focus());
-  if (value) { operation.value = value.id; void updateArtwork(value); }
-  schedulePoll();
+  if (value?.id !== session.value?.id) { releaseArtwork(); retryId = ''; }
+  session.value = value; if (value) { operation = value.id; void updateArtwork(value); }
+  if (['generating', 'complete'].includes(value?.status ?? '') && active.value) { live.setMuted(true); muted.value = true; }
 }
-function schedulePoll() {
-  clearTimeout(poll);
-  const value = session.value;
-  if (controller.signal.aborted || !value) return;
-  if (['authoring', 'generating'].includes(value.status) || value.status === 'complete' && value.artwork && ['queued', 'running', 'pending'].includes(value.artwork.status)) {
-    poll = setTimeout(() => { void refreshSession(); }, 2500);
-  }
-}
-async function refreshSession() {
-  if (!session.value) return;
-  const scope = controller;
-  try { const value = await loadWorkshopSession(session.value.id, scope.signal); if (currentScope(scope)) applySession(value); }
-  catch { if (currentScope(scope)) error.value = 'Stav se nepodařilo ověřit. Obnov jej před dalším pokusem.'; }
-}
-function currentScope(scope: AbortController) { return scope === controller && !scope.signal.aborted; }
 async function refresh() {
-  const current = ++epoch;
   const scope = controller;
-  loading.value = true; error.value = '';
-  try {
-    const value = await loadWorkshop(scope.signal, props.upgrade === true);
-    if (current !== epoch || !currentScope(scope)) return;
-    entry.value = value; if (!value.eligible) stopMedia(); applySession(value.session);
-  } catch { if (currentScope(scope) && current === epoch) error.value = 'Dílnu se nepodařilo načíst. Zkus obnovit stav.'; }
-  finally { if (current === epoch) loading.value = false; }
+  try { const value = await loadWorkshop(scope.signal, props.upgrade); if (scope !== controller || scope.signal.aborted) return; entry.value = value; applySession(value.session); if (!value.eligible) stopMedia(); }
+  catch { if (scope === controller && !scope.signal.aborted) error.value ||= 'Stav se nepodařilo načíst. Zkus ho obnovit.'; }
+  finally { if (scope === controller && !scope.signal.aborted) { loading.value = false; schedule(); } }
 }
-async function start() {
-  if (!canStart.value || busy.value || session.value) return;
+async function ensureSession(): Promise<WorkshopSession> {
+  if (session.value) return session.value;
+  operation ||= secureUuid().replaceAll('-', '');
   const scope = controller;
-  busy.value = true; error.value = '';
-  operation.value ||= secureUuid().replaceAll('-', '');
-  try {
-    const value = await workshopSessionRequest(`${workshopBase}/sessions`, 'POST', { operationId: operation.value, upgrade: props.upgrade === true }, scope.signal);
-    if (currentScope(scope)) applySession(value);
-  } catch { if (currentScope(scope)) { await refresh(); if (currentScope(scope)) error.value ||= 'Ověřili jsme stav výroby. Pokud rozhovor nezačal, můžeš to zkusit znovu.'; } }
-  finally { if (currentScope(scope)) busy.value = false; }
+  const value = await workshopSessionRequest(`${workshopBase}/sessions`, 'POST', { operationId: operation, upgrade: props.upgrade === true }, scope.signal);
+  if (scope !== controller || scope.signal.aborted) throw new Error('Relace se změnila.');
+  applySession(value); return value;
 }
-async function submit(skip = false) {
-  const active = question.value;
-  const current = session.value;
-  if (!canAnswer.value || !active || !current || !skip && !draft.value.trim()) return;
+async function startVoice() {
+  if (!canStart.value || busy.value || active.value || wand.value) return;
+  mode.value = 'voice'; error.value = ''; narration.stop(); partial.value = '';
   const scope = controller;
-  stopMedia(); busy.value = true; error.value = '';
+  await live.connect(async () => {
+    const current = await ensureSession();
+    return accountRequest<import('../persona-lab/contracts').SocketTicket>(`${workshopSessionPath(current.id)}/ticket`, 'POST', { socketOrigin: window.location.origin }, scope.signal);
+  }, () => session.value?.id ?? operation, accountOrigin.value || window.location.origin, { purpose: 'workshop' });
+}
+async function useText() {
+  const scope = controller;
+  stopMedia(); mode.value = 'text'; error.value = ''; partial.value = '';
+  if (canStart.value && !session.value) {
+    busy.value = true;
+    try {
+      const current = await ensureSession();
+      if (!current.messages.length) {
+        const value = await workshopSessionRequest(`${workshopSessionPath(current.id)}/messages`, 'POST', { messageId: current.id, text: '' }, scope.signal);
+        if (scope === controller && !scope.signal.aborted) applySession(value);
+      }
+    } catch { error.value = 'Dílnu se nepodařilo otevřít. Obnov stav.'; }
+    finally { if (scope === controller) busy.value = false; }
+  }
+  void nextTick(() => answerField.value?.focus());
+}
+async function submit() {
+  if (!canAnswer.value || !draft.value.trim()) return;
+  busy.value = true; error.value = ''; const scope = controller;
+  messageId ||= secureUuid().replaceAll('-', '');
   try {
-    const body = { questionId: active.id, questionRevision: active.revision, ...(skip ? {} : { answer: draft.value.trim(), sourceMode: sourceMode.value }) };
-    const value = await workshopSessionRequest(`${workshopSessionPath(current.id)}/${skip ? 'skip' : 'answers'}`, 'POST', body, scope.signal);
-    if (currentScope(scope)) applySession(value);
-  } catch {
-    if (currentScope(scope)) { await refresh(); if (currentScope(scope)) error.value ||= 'Ověřili jsme uložený postup. Pokud je otázka stále aktivní, odešli odpověď znovu.'; }
-  } finally { if (currentScope(scope)) busy.value = false; }
+    const value = await workshopSessionRequest(`${workshopSessionPath(session.value!.id)}/messages`, 'POST', { messageId, text: draft.value.trim() }, scope.signal);
+    if (scope !== controller || scope.signal.aborted) return;
+    applySession(value); draft.value = ''; messageId = ''; partial.value = '';
+  } catch { if (!scope.signal.aborted) { await refresh(); error.value = 'Stav byl ověřen. Pokud sdělení není uložené, odešli ho znovu; průběh zůstává zachovaný.'; } }
+  finally { if (scope === controller) busy.value = false; }
+}
+async function finish() {
+  if (!canAnswer.value) return;
+  stopMedia(); busy.value = true; const scope = controller;
+  try { const value = await workshopSessionRequest(`${workshopSessionPath(session.value!.id)}/finish`, 'POST', {}, scope.signal); if (scope === controller && !scope.signal.aborted) applySession(value); }
+  catch { await refresh(); error.value = 'Dokončení se nepodařilo potvrdit. Ověř uložený stav a zkus to znovu.'; }
+  finally { if (scope === controller) busy.value = false; }
+}
+async function saveCorrection() {
+  if (!correction.value || !session.value || busy.value) return;
+  busy.value = true; const scope = controller;
+  try { const value = await workshopSessionRequest(`${workshopSessionPath(session.value.id)}/messages/${correction.value.messageId}`, 'PUT', { expectedRevision: correction.value.revision, text: correctionText.value }, scope.signal); if (scope === controller && !scope.signal.aborted) { applySession(value); correction.value = null; } }
+  catch { error.value = 'Opravu se nepodařilo uložit. Obnov aktuální přepis.'; }
+  finally { if (scope === controller) busy.value = false; }
 }
 async function speak() {
-  if (busy.value || !session.value || !question.value && !wand.value) return;
-  const scope = controller;
-  stopMedia(); const signal = mediaController.signal;
-  busy.value = true; error.value = '';
-  try {
-    await voice.unlock();
-    const proof = question.value ? { questionId: question.value.id, questionRevision: question.value.revision } : { wandId: wand.value!.wandId };
-    const audio = await workshopAudio(session.value.id, proof, signal);
-    if (!signal.aborted) await voice.play(audio);
-  } catch (cause) {
-    if (!signal.aborted && cause instanceof WorkshopAudioConflict) { await refresh(); error.value = 'Otázka se mezitím změnila. Zobrazujeme aktuální postup.'; }
-    else if (!signal.aborted) error.value = 'Přednes se nepodařilo přehrát. Titulky zůstávají dostupné.';
-  }
-  finally { if (currentScope(scope)) busy.value = false; }
-}
-async function record() {
-  const active = question.value;
-  if (!canAnswer.value || !active || voicePhase.value === 'listening' || microphonePending.value) return;
-  stopMedia(); const signal = mediaController.signal;
-  mode.value = 'voice'; microphonePending.value = true; error.value = '';
-  try {
-    const audio = await voice.record();
-    if (!audio || signal.aborted || !session.value) return;
-    microphonePending.value = false;
-    voicePhase.value = 'processing';
-    const text = await transcribeWorkshopAudio(session.value.id, active, audio, signal);
-    if (signal.aborted) return;
-    draft.value = text.trim(); sourceMode.value = 'voice';
-    if (!draft.value) error.value = 'Nahrávka neobsahuje srozumitelnou odpověď. Zkus to znovu nebo odpověz psaním.';
-    await nextTick(); answerField.value?.focus();
-  } catch { if (!signal.aborted) { mode.value = 'text'; error.value = 'Mikrofon nebo přepis není dostupný. Pokračuj psaním; postup zůstává uložený.'; } }
-  finally { if (!signal.aborted) { microphonePending.value = false; voicePhase.value = 'off'; } }
-}
-function useText() { stopMedia(); mode.value = 'text'; void nextTick(() => answerField.value?.focus()); }
-async function saveCorrection() {
-  const step = correction.value;
-  if (!step?.answerId || !session.value || busy.value || !correctionText.value.trim()) return;
-  const scope = controller;
-  busy.value = true; error.value = ''; stopMedia();
-  try {
-    const value = await workshopSessionRequest(`${workshopSessionPath(session.value.id)}/answers/${step.answerId}`, 'PUT', { answerRevision: step.answerRevision, answer: correctionText.value.trim(), sourceMode: 'text' }, scope.signal);
-    if (currentScope(scope)) { correction.value = null; applySession(value); }
-  } catch { if (currentScope(scope)) { await refresh(); if (currentScope(scope)) error.value ||= 'Opravu se nepodařilo uložit. Zkontroluj obnovený přepis.'; } }
-  finally { if (currentScope(scope)) busy.value = false; }
-}
-async function retryArtwork() {
-  const current = session.value;
-  const art = current?.artwork;
-  if (busy.value || !current || !wand.value) return;
-  const scope = controller;
-  busy.value = true; artworkError.value = ''; loadedArtwork = '';
-  try {
-    if (art?.status === 'ready') await updateArtwork(current);
-    else {
-      artworkRetryId ||= secureUuid();
-      const response = await accountTransport(`${workshopSessionPath(current.id)}/artwork/retry`, { method: 'POST', signal: scope.signal, headers: { 'Content-Type': 'application/json', 'Idempotency-Key': artworkRetryId }, body: '{}' });
-      if (!currentScope(scope)) return;
-      if (!response.ok) throw new Error('retry');
-      artworkRetryId = '';
-      await refreshSession();
-    }
-  } catch { if (currentScope(scope)) artworkError.value = 'Ilustraci se nepodařilo obnovit. Tvoje hůlka zůstává uložená.'; }
-  finally { if (currentScope(scope)) busy.value = false; }
+  if (!session.value || !wand.value || narrationPending.value) return;
+  stopMedia(); const scope = controller; const media = mediaController; narrationPending.value = true;
+  try { await narration.unlock(); const blob = await workshopAudio(session.value.id, { wandId: wand.value.wandId }, media.signal); if (scope === controller && !scope.signal.aborted && !media.signal.aborted) await narration.play(blob); }
+  catch { if (!media.signal.aborted && scope === controller) error.value = 'Přednes není dostupný. Verdikt je stále čitelný.'; }
+  finally { if (media === mediaController) narrationPending.value = false; }
 }
 async function retryManufacture() {
-  if (busy.value || !session.value?.canRetry) return;
-  const scope = controller;
-  busy.value = true; error.value = ''; stopMedia();
+  if (!session.value || busy.value) return;
+  busy.value = true; const scope = controller;
   try {
-    const current = await loadWorkshopSession(session.value.id, scope.signal);
-    if (!currentScope(scope)) return;
-    applySession(current);
-    if (current.status !== 'failed' || !current.canRetry) return;
-    const value = await workshopSessionRequest(`${workshopSessionPath(current.id)}/retry`, 'POST', {}, scope.signal);
-    if (currentScope(scope)) applySession(value);
-  } catch { if (currentScope(scope)) { await refresh(); if (currentScope(scope)) error.value ||= 'Obnovení průběhu se nepodařilo potvrdit. Zkontroluj stav stejné operace.'; } }
-  finally { if (currentScope(scope)) busy.value = false; }
+    const current = await loadWorkshopSession(session.value.id, scope.signal); if (scope !== controller || scope.signal.aborted) return; applySession(current);
+    if (current.status === 'failed' && current.canRetry) { const value = await workshopSessionRequest(`${workshopSessionPath(current.id)}/retry`, 'POST', {}, scope.signal); if (scope === controller && !scope.signal.aborted) applySession(value); }
+  } catch { error.value = 'Obnovení výroby se nepodařilo potvrdit. Ověř stejnou operaci.'; }
+  finally { if (scope === controller) busy.value = false; }
+}
+async function artworkAction(repair = false) {
+  if (!session.value || busy.value) return;
+  busy.value = true; const scope = controller;
+  try {
+    const current = await loadWorkshopSession(session.value.id, scope.signal); if (scope !== controller || scope.signal.aborted) return; applySession(current);
+    const art = current.artwork; retryId ||= secureUuid();
+    if (repair && art?.canRepair || !repair && art?.canRetry) {
+      const response = await accountTransport(`${workshopSessionPath(current.id)}/artwork/${repair ? 'repair' : 'retry'}`, { method: 'POST', signal: scope.signal, headers: { 'Content-Type': 'application/json', 'Idempotency-Key': retryId }, body: JSON.stringify(repair ? { expectedVersion: art!.version, sourceAssetId: art!.assetId, sourceSha256: art!.sha256 } : {}) });
+      if (!response.ok) throw new Error('Ilustraci se nepodařilo obnovit.');
+      retryId = '';
+    } else { artworkKey = ''; await updateArtwork(current); }
+    await refresh();
+  } catch { artworkError.value = 'Ilustraci se nepodařilo obnovit. Tvoje hůlka zůstává uložená.'; }
+  finally { if (scope === controller) busy.value = false; }
 }
 function visibility() { if (document.hidden) stopMedia(); }
-watch(() => [account.value?.id, props.upgrade], () => {
-  controller.abort(); controller = new AbortController(); busy.value = false;
-  stopMedia(); releaseArtwork(); session.value = null; entry.value = undefined; operation.value = ''; draft.value = ''; void refresh();
-});
+watch(() => [account.value?.id, account.value?.openAiConsent, props.upgrade], () => { controller.abort(); controller = new AbortController(); stopMedia(); releaseArtwork(); session.value = null; entry.value = undefined; operation = ''; draft.value = ''; busy.value = false; void refresh(); });
 onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); });
-onBeforeUnmount(() => {
-  ++epoch; controller.abort(); mediaController.abort(); clearTimeout(poll); voice.dispose(); releaseArtwork(); document.removeEventListener('visibilitychange', visibility);
-});
+onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); releaseArtwork(); document.removeEventListener('visibilitychange', visibility); });
 </script>
 
 <template>
   <section class="trunk-workshop" aria-labelledby="workshop-title">
     <header class="trunk-workshop__header"><RouterLink to="/play" @click="stopMedia">← Zpět do hry</RouterLink><span>Wand Night Stand</span></header>
-    <div class="trunk-workshop__identity"><p class="trunk-workshop__eyebrow">{{ upgrade ? 'Nová kapitola tvé hůlky' : 'Tvoje první hůlka' }}</p><h1 id="workshop-title">Kufrova dílna</h1><p v-if="entry?.profile"><strong>{{ entry.profile.name }}</strong><span v-if="entry.profile.universe"> · {{ entry.profile.universe }}</span><span v-if="entry.profile.version"> · {{ entry.profile.version }}</span></p></div>
+    <div class="trunk-workshop__identity"><p class="trunk-workshop__eyebrow">{{ upgrade ? 'Nová kapitola tvé hůlky' : 'Tvoje první hůlka' }}</p><h1 id="workshop-title">Kufrova dílna</h1><p v-if="entry?.profile"><strong>{{ entry.profile.name }}</strong> · {{ entry.profile.universe }}</p></div>
     <div class="trunk-workshop__scene">
-      <TrunkStage :stage="stage" :assistant-output-level="outputLevel" :wand-artwork-url="artworkUrl" :wand-name="wand?.name" :artwork-status="artworkState" @artwork-error="artworkError = 'Ilustraci se nepodařilo zobrazit.'" />
+      <TrunkStage :stage="stage" :assistant-output-level="outputLevel" :wand-artwork-url="artworkUrl" :wand-name="wand?.name" :artwork-status="artworkState" />
       <section class="trunk-workshop__conversation" aria-label="Rozhovor s magickým kufrem">
         <p v-if="loading" role="status">Ověřujeme tvoji postavu a dílnu…</p>
-        <template v-else-if="!session">
-          <p>Kufr už zná tvoji postavu. Tři nové otázky mu pomohou vytvořit jedinou osobní hůlku.</p><p v-if="unavailable" role="status">{{ unavailable }}</p>
-          <RouterLink v-if="!entry?.profile" class="aw-button aw-button--primary" to="/me/character">Připravit postavu</RouterLink>
-          <template v-else-if="canStart"><p>Můžeš psát nebo mluvit. Mikrofon se zapne až na tvoje přání.</p><AwButton variant="primary" :busy="busy" @click="start">Otevřít dílnu</AwButton></template>
-          <RouterLink v-else-if="account?.openAiConsent !== true" to="/me/account">Zkontrolovat souhlas se zpracováním pomocí AI</RouterLink>
-        </template>
+        <template v-else-if="unavailable"><p role="status">{{ unavailable }}</p><RouterLink to="/me/character">Upravit nebo dokončit přípravu postavy</RouterLink><RouterLink v-if="entry?.reason?.includes('boss')" to="/play">Pomoci osvobodit dílnu</RouterLink></template>
         <template v-else-if="wand">
-          <p class="trunk-workshop__eyebrow">Hůlka je uložená</p><p>{{ wand.material }} · {{ wand.core }}</p><p v-if="session.verdict" class="trunk-workshop__verdict">{{ session.verdict }}</p>
-          <RouterLink class="aw-button aw-button--primary" to="/play">Pokračovat s hůlkou</RouterLink>
-          <AwButton :disabled="busy" @click="speak">Přehrát verdikt kufru</AwButton>
-          <p v-if="artworkError" role="status">{{ artworkError }}</p>
-          <AwButton v-if="session.artwork?.canRetry || artworkError || !session.artwork" :busy="busy" @click="retryArtwork">{{ session.artwork?.status === 'ready' ? 'Načíst ilustraci znovu' : 'Zkusit ilustraci znovu' }}</AwButton>
-          <details class="trunk-workshop__properties"><summary>Vlastnosti a kouzla hůlky</summary><GeneratedWand :wand="wand" mobile :show-artwork="false" /></details>
+          <p class="trunk-workshop__eyebrow">Hůlka je uložená</p><p>{{ wand.material }} · {{ wand.core }}</p><p v-if="session?.verdict" class="trunk-workshop__verdict">{{ session.verdict }}</p>
+          <RouterLink class="aw-button aw-button--primary" to="/play" @click="stopMedia">Pokračovat s hůlkou</RouterLink>
+          <AwButton v-if="!speaking" :disabled="narrationPending" @click="speak">Přehrát verdikt kufru</AwButton>
+          <p v-if="session?.artwork?.status !== 'ready'" role="status">{{ session?.artwork?.status === 'failed' ? 'Ilustrace se nezdařila. Hůlka je stále připravená ke hře.' : 'Ilustrace ještě vzniká. Můžeš pokračovat do hry.' }}</p>
+          <AwButton v-if="session?.artwork?.canRetry || artworkError" :disabled="busy" @click="artworkAction()">Zkusit ilustraci znovu</AwButton>
+          <AwButton v-if="session?.artwork?.canRepair" :disabled="busy" @click="artworkAction(true)">Opravit ilustraci na průhledném pozadí</AwButton>
+          <details class="trunk-workshop__properties"><summary>Vlastnosti a kouzla hůlky</summary><GeneratedWand :wand="session?.wand" mobile :show-artwork="false" /></details>
         </template>
-        <template v-else-if="question">
-          <p class="trunk-workshop__eyebrow">Otázka {{ question.number }} ze {{ question.total }}</p><progress :value="completedSteps.length" :max="question.total" :aria-label="`Dokončeno ${completedSteps.length} ze ${question.total} otázek`" />
-          <h2 :key="question.id" ref="questionHeading" class="trunk-workshop__question" tabindex="-1">{{ question.text }}</h2><p v-if="unavailable" role="alert">{{ unavailable }}</p>
-          <p v-if="question.usedFallback" role="status">Kufr používá náhradní otázku. Tvoje postava i dosavadní odpovědi zůstávají součástí výroby.</p>
-          <div class="trunk-workshop__voice-controls"><AwButton v-if="voicePhase !== 'speaking'" :disabled="busy || !canAnswer || voicePhase === 'processing'" @click="speak">Přehrát otázku</AwButton><AwButton v-else @click="stopMedia">Zastavit přednes</AwButton><AwButton v-if="voicePhase === 'listening'" variant="primary" @click="voice.finishRecording()">Dokončit nahrávku</AwButton><AwButton v-else-if="mode === 'voice'" :disabled="!canAnswer || voicePhase === 'processing' || microphonePending" @click="record">Zapnout mikrofon a nahrát odpověď</AwButton></div>
-          <div class="trunk-workshop__mode"><button v-if="mode === 'voice'" type="button" @click="useText">Odpovědět psaním</button><button v-else type="button" :disabled="!canAnswer" @click="mode = 'voice'">Odpovědět hlasem</button></div>
-          <form @submit.prevent="submit()"><label for="trunk-answer">{{ sourceMode === 'voice' ? 'Přepis odpovědi · před odesláním jej můžeš upravit' : 'Tvoje odpověď' }}</label><textarea id="trunk-answer" ref="answerField" v-model="draft" rows="3" maxlength="2000" :disabled="busy || !canAnswer || voicePhase === 'listening' || voicePhase === 'processing'" @input="sourceMode = 'text'" /><AwButton type="submit" variant="primary" :disabled="!canAnswer || !draft.trim() || voicePhase !== 'off'" :busy="busy">{{ question.number === 3 ? 'Odeslat a vyrobit hůlku' : 'Odeslat odpověď' }}</AwButton></form>
-          <button class="trunk-workshop__skip" type="button" :disabled="!canAnswer" @click="submit(true)">Přeskočit tuto otázku</button>
+        <template v-else-if="session?.status === 'generating'"><h2>Hůlka dostává tvar</h2><p>Výroba poběží i po odchodu z obrazovky. Rozhovor už je uložený.</p></template>
+        <template v-else>
+          <p v-if="!session">Kufr zná připravenou postavu. Promluv si s ním o hůlce, která k ní patří.</p>
+          <h2 v-if="subtitle" class="trunk-workshop__question" aria-live="polite">{{ subtitle }}</h2>
+          <template v-if="mode === 'voice'"><AwButton v-if="!active && canStart" variant="primary" :disabled="busy" @click="startVoice">{{ session ? 'Pokračovat hlasem' : 'Promluvit s kufrem' }}</AwButton><AwButton v-if="active" @click="muted = !muted; live.setMuted(muted)">{{ muted ? 'Zapnout mikrofon' : 'Ztlumit mikrofon' }}</AwButton></template>
+          <template v-else-if="session?.status === 'asking'"><form @submit.prevent="submit"><label for="trunk-answer">Tvoje sdělení kufru</label><textarea id="trunk-answer" ref="answerField" v-model="draft" maxlength="2000" rows="3" :disabled="busy" /><AwButton type="submit" variant="primary" :disabled="!draft.trim() || busy">Odeslat</AwButton></form><AwButton :disabled="!canStart || busy" @click="startVoice">Pokračovat hlasem</AwButton></template>
+          <AwButton v-if="canStart && (mode === 'voice' || !session)" :disabled="busy" @click="useText">Raději psát</AwButton>
+          <AwButton v-if="session?.status === 'asking' && mode === 'text'" :disabled="busy" @click="finish">To stačí, vyrob hůlku</AwButton>
         </template>
-        <template v-else-if="session.status === 'authoring'"><h2>Kufr připravuje otázku.</h2><p>Uložené odpovědi zůstávají zachované. Můžeš odejít a později pokračovat.</p></template>
-        <template v-else-if="session.status === 'generating'"><h2>Teď pracuje kufr.</h2><p>Vychází z tvé postavy a všech tří odpovědí. Můžeš odejít a vrátit se ke stejné výrobě.</p></template>
-        <template v-else><p role="status">{{ completedSteps.length < 3 ? 'Přípravu otázky se nepodařilo potvrdit. Uložené odpovědi zůstávají zachované.' : 'Výroba zatím není potvrzená. Obnov stav této operace; novou výrobu nezakládej.' }}</p><AwButton v-if="session.canRetry" :busy="busy" @click="retryManufacture">{{ completedSteps.length < 3 ? 'Obnovit otázku' : 'Obnovit tuto výrobu' }}</AwButton></template>
-        <p class="trunk-workshop__status" role="status" aria-live="polite"><span :data-active="voicePhase === 'listening' || voicePhase === 'speaking'" aria-hidden="true"></span>{{ status }}</p><p v-if="error" role="alert">{{ error }}</p><AwButton v-if="error || session?.status === 'failed'" :disabled="busy || loading" @click="refresh">Obnovit stav</AwButton>
-        <details v-if="completedSteps.length" class="trunk-workshop__transcript"><summary>Přepis rozhovoru · {{ completedSteps.length }} ze 3 odpovědí</summary><ol><li v-for="step in completedSteps" :key="step.questionId"><strong>Kufr · otázka {{ step.number }}</strong><p>{{ step.question }}</p><strong>Ty</strong><p>{{ step.skipped ? 'Otázka výslovně přeskočena.' : step.answer }}</p><button v-if="session?.status === 'asking' && step.answerId && !correction" type="button" @click="correction = step; correctionText = step.answer ?? ''">Opravit odpověď {{ step.number }}</button></li></ol><form v-if="correction" @submit.prevent="saveCorrection"><label for="trunk-correction">Oprava odpovědi {{ correction.number }}</label><textarea id="trunk-correction" v-model="correctionText" maxlength="2000" rows="3" /><AwButton type="submit" :disabled="busy || !correctionText.trim()">Uložit opravu</AwButton><AwButton @click="correction = null">Zrušit opravu</AwButton></form></details>
+        <AwButton v-if="session?.status === 'failed' && session.canRetry" :disabled="busy" @click="retryManufacture">Obnovit výrobu</AwButton>
+        <AwButton v-if="active" @click="stopMedia">Ukončit rozhovor</AwButton>
+        <AwButton v-if="speaking || narrationPending" @click="stopSpeech">Stop řeč</AwButton>
+        <p class="trunk-workshop__status" role="status">{{ status }}</p><p v-if="error" role="alert">{{ error }}</p><p v-if="artworkError" role="status">{{ artworkError }}</p>
+        <AwButton v-if="error || session?.status === 'paused' || session?.status === 'failed'" :disabled="busy" @click="refresh">Obnovit stav</AwButton>
+        <details v-if="messages.length" class="trunk-workshop__transcript"><summary>Přepis rozhovoru</summary><ol><li v-for="message in messages" :key="message.messageId"><strong>{{ message.role === 'user' ? 'Ty' : 'Kufr' }}</strong><p>{{ message.text }}</p><button v-if="mode === 'text' && canAnswer && message.role === 'user'" type="button" @click="correction = message; correctionText = message.text">Opravit sdělení</button></li></ol><form v-if="correction" @submit.prevent="saveCorrection"><label for="trunk-correction">Oprava sdělení</label><textarea id="trunk-correction" v-model="correctionText" maxlength="2000" /><AwButton type="submit" :disabled="busy || !correctionText.trim()">Uložit opravu</AwButton></form></details>
         <RouterLink v-if="session && !wand" class="trunk-workshop__leave" to="/play" @click="stopMedia">Odejít a později pokračovat</RouterLink>
       </section>
     </div>

@@ -2,18 +2,19 @@ import { accountRequest, accountTransport } from '../identity/session';
 
 export interface WorkshopQuestion { id: string; revision: number; number: number; total: number; text: string; usedFallback?: boolean }
 export interface WorkshopStep {
-  questionId: string; questionRevision: number; number: number; question: string;
+  questionId: string; questionRevision: number; number: number; total?: number; question: string;
   answerId: string | null; answerRevision: number; answer: string | null; skipped: boolean; sourceMode: 'text' | 'voice'; usedFallback?: boolean;
 }
+export interface WorkshopMessage { messageId: string; revision: number; role: 'user' | 'assistant'; text: string; sourceMode: string; createdAt: number }
 export interface WorkshopSession {
   id: string; profileId: string; profileRevision: number; tier: number;
-  status: 'authoring' | 'asking' | 'generating' | 'complete' | 'failed'; question: WorkshopQuestion | null;
-  steps: WorkshopStep[]; wand: unknown; verdict?: string | null; canRetry?: boolean;
-  artwork: { locator: string; assetId: string | null; status: string; canRetry: boolean; errorCode?: string | null; version: number; synthetic?: boolean } | null;
+  status: 'authoring' | 'asking' | 'generating' | 'complete' | 'failed' | 'paused'; question: WorkshopQuestion | null;
+  steps: WorkshopStep[]; messages: WorkshopMessage[]; wand: unknown; verdict?: string | null; canRetry?: boolean;
+  artwork: { locator: string; assetId: string | null; status: string; canRetry: boolean; errorCode?: string | null; version: number; synthetic?: boolean; sha256?: string; canRepair?: boolean } | null;
 }
 export interface WorkshopEntry {
   eligible: boolean; reason: string | null; tier: number;
-  profile: { profileId: string; revision: number; name: string; universe: string; version: string; description: string } | null;
+  profile: { profileId: string; revision: number; name: string; universe: string; version: string; description: string; status?: string } | null;
   session: WorkshopSession | null;
 }
 export const workshopBase = '/app/v1/customer/wand/workshop';
@@ -28,10 +29,10 @@ interface WorkshopWireEntry extends Omit<WorkshopEntry, 'session' | 'profile'> {
   profile: (Omit<NonNullable<WorkshopEntry['profile']>, 'universe'> & { world: string }) | null;
   session: WorkshopWireSession | null;
 }
-function normalizeSession(value: WorkshopWireSession): WorkshopSession {
-  return { ...value, question: value.question ? {
+export function normalizeSession(value: WorkshopWireSession): WorkshopSession {
+  return { ...value, messages: value.messages ?? [], question: value.question ? {
     id: value.question.questionId, revision: value.question.questionRevision,
-    number: value.question.number, total: 3, text: value.question.question, usedFallback: value.question.usedFallback,
+    number: value.question.number, total: value.question.total ?? 0, text: value.question.question, usedFallback: value.question.usedFallback,
   } : null };
 }
 export async function loadWorkshop(signal: AbortSignal, upgrade = false): Promise<WorkshopEntry> {

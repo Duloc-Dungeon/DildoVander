@@ -33,6 +33,11 @@ internal static class MobileWandTests
 
     internal static async Task RunAsync()
     {
+        var longTranscript = string.Concat(Enumerable.Repeat("Dlouhá odpověď s opravou a modrou nití. ", 160)) + "🧙";
+        var chunks = MobileWorkshopLiveRuntime.TranscriptChunks(longTranscript).ToArray();
+        Check(chunks.Length > 2 && chunks.All(chunk => chunk.Length <= 1800)
+            && string.Concat(chunks) == longTranscript,
+            "continuous rich Live speech is persisted in bounded lossless surrogate-safe chunks");
         var root = Path.Combine(Path.GetTempPath(), "mobile-wands-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var builder = WebApplication.CreateBuilder(); builder.Logging.ClearProviders();
@@ -66,6 +71,7 @@ internal static class MobileWandTests
             var secondStore = new WandGenerationStore(builder.Configuration, TimeProvider.System);
             await WorkshopStateMachineAsync(profiles, wands, builder.Configuration);
             await LegacyOperationRetirementAsync(profiles, wands);
+            await InFlightManufactureCaptureAsync(profiles, wands);
             var lease = wands.ClaimMobileVoice("alice")!;
             Check(secondStore.ClaimMobileVoice("alice") is null, "voice ownership is exclusive across instances");
             secondStore.ReleaseMobileVoice("alice", "incorrect-lease");
@@ -85,50 +91,17 @@ internal static class MobileWandTests
             wands.BeginMobile("alice", operation, captured, 1); wands.Begin("alice", operation, captured, 63, true);
             try { wands.BeginMobile("alice", Guid.NewGuid().ToString("N"), captured, 1); throw new Exception("duplicate pending craft"); }
             catch (WandGenerationException e) when (e.Code == "wand_operation_conflict") { }
-            var generated = new WandGenerationService(wands, new Provider());
-            using var upstream = new Socket(); using var phone = new Socket();
-            using var live = new GptLiveClient(builder.Configuration, _ => Task.FromResult<WebSocket>(upstream));
-            using var decisions = new WandDecisionService((input, _) =>
-            {
-                Check(input.GeneratedWands?.Count == 6 && input.Evidence.Count > 0, "decision uses generated candidates and actual input");
-                var evidence = input.Evidence.Last();
-                return Task.FromResult(new WandDecisionResult(WandDecisionStatus.ValidProposal, 2,
-                    [new(evidence.Reference, evidence.Text, "Fikční zvídavost")], "", input.Revision, input.AvailabilityRevision));
-            });
-            var runtime = new MobileWandRuntime(app.Services.GetRequiredService<IServiceScopeFactory>(), wands, generated, live, decisions, new());
+            var runtime = new MobileWandRuntime(app.Services.GetRequiredService<IServiceScopeFactory>(), wands);
             var admission = new MobileWandAdmission("alice", operation, "cookie", user.SecurityStamp!, "https://localhost", DateTimeOffset.UtcNow.AddSeconds(30), captured);
             var ticket = runtime.Ticket(admission);
             Check(runtime.Take(ticket, operation, "https://localhost") == admission, "ticket binds account operation and origin");
             try { runtime.Take(ticket, operation, "https://localhost"); throw new Exception("replayed ticket"); } catch (WandGenerationException) { }
             Check(await runtime.Authorized(admission, default), "live account admission");
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            var running = runtime.Run(admission, phone, deadline.Token);
-            using var start = JsonDocument.Parse(await upstream.Command("session.start", deadline.Token));
-            upstream.Emit(new { type = "session.started", client_event_id = start.RootElement.GetProperty("event_id").GetString(), session = new { id = "synthetic_live" } });
-            await phone.Command("ready", deadline.Token);
-            upstream.Emit(new { type = "session.output_transcript.delta", delta = "Co tě vede?", start_ms = 0, end_ms = 100, event_id = "q1" });
-            upstream.Emit(new { type = "session.input_transcript.delta", delta = "Hledám hvězdy.", start_ms = 150, end_ms = 250, event_id = "a1" });
-            upstream.Emit(new { type = "session.delegation.created", delegation = new { id = "choose", target = "client" } });
-            using var selected = JsonDocument.Parse(await phone.Command("wand", deadline.Token));
-            Check(selected.RootElement.GetProperty("wand").GetProperty("physicalSlot").GetInt32() == 2, "actual validated delegated choice reaches phone");
-            var persisted = MobileWandSessions.Current(secondStore, "alice", profile.ProfileId, profile.Revision);
-            Check(persisted?.PhysicalSlot == 2 && secondStore.MobileTier("alice", profile.ProfileId, profile.Revision) == 1, "mobile selection persists without physical outcome");
-            Check(MobileWandSessions.Current(secondStore, "bob", profile.ProfileId, profile.Revision) is null, "another account never acquires this wand");
-            phone.Emit(new { type = "cancel" }); await phone.Command("interrupted", deadline.Token);
-            upstream.Emit(new {type="session.output_transcript.delta",delta="Late discarded speech",start_ms=300,end_ms=400,event_id="stale-output"});
-            upstream.Emit(new {type="session.output_audio.delta",delta=Convert.ToBase64String(new byte[]{0,32,0,32})});
-            upstream.Emit(new {type="session.input_transcript.delta",delta="Nová odpověď.",start_ms=700,end_ms=800,event_id="fresh-answer"});
-            using var afterInterrupt = JsonDocument.Parse(await phone.Command("transcript", deadline.Token));
-            Check(afterInterrupt.RootElement.GetProperty("role").GetString()=="user" && phone.BinaryWrites==0,
-                "interruption cannot be cleared by late current-turn text or audio before fresh input");
-            phone.Emit(new { type = "end" }); await running;
-            Check(wands.ClaimMobileVoice("alice") is { }, "ending voice releases durable ownership");
-            await StopDuringDecision(app.Services, builder.Configuration, profiles, wands, users, db);
             db.Sessions.Remove(await db.Sessions.SingleAsync(s => s.Id == "cookie")); await db.SaveChangesAsync();
             Check(!await runtime.Authorized(admission, default), "revoked cookie immediately loses voice authority");
             wands.DeleteProfile("alice", profile.ProfileId);
             Check(MobileWandSessions.Current(wands, "alice", profile.ProfileId, profile.Revision) is null, "deleted profile cannot retain a playable wand");
-            Console.WriteLine("Mobile wand fake voice, delegated choice, persistence, ticket, revocation and concurrency passed.");
+            Console.WriteLine("Mobile workshop admission ticket replay, session revocation and account erasure passed.");
         }
         finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
     }
@@ -137,128 +110,246 @@ internal static class MobileWandTests
         IConfiguration configuration)
     {
         const string owner = "workshop-owner";
-        var profile = await profiles.SaveAsync(owner, new(0, new("Havran", "Fikční svět", "verze A", "Loví ztracené mapy"), OpenAiConsent: true));
-        var captured = await profiles.CaptureAsync(owner, profile.ProfileId, profile.Revision)
-            ?? throw new InvalidOperationException("Workshop profile snapshot missing.");
+        var (profile, captured) = await PrepareProfileAsync(profiles, owner,
+            new("Havran", "Fikční svět", "verze A", "Loví ztracené mapy"));
+        Check(await profiles.CapturePreparedAsync(owner, profile.ProfileId, profile.Revision + 1) is null,
+            "a completion for an older profile revision cannot capture the current character");
+        var waitingProfile = await profiles.SaveAsync("workshop-profile-preparing",
+            new(0, new("Raven", "Fikční svět"), OpenAiConsent: true));
+        Check(await profiles.CapturePreparedAsync("workshop-profile-preparing",
+            waitingProfile.ProfileId, waitingProfile.Revision) is null,
+            "an unfinished preparation cannot open a workshop profile snapshot");
         var operation = Guid.NewGuid().ToString("N");
         wands.BeginMobile(owner, operation, captured, 1);
         wands.BeginWorkshop(owner, operation, captured, 1, "test-group", 1);
 
         var state = wands.ReadWorkshopState(owner, operation);
-        Check(state.Status == "authoring" && state.Question is null && state.Steps.Length == 3,
-            "workshop starts with three stable steps and waits for an approved first question");
-        var firstJob = wands.ClaimWorkshopQuestion()!;
-        Check(firstJob.Step.Number == 1 && firstJob.Steps.Length == 3,
-            "question authoring claims only the first persisted diagnostic step");
-        using (var database = new SqliteConnection("Data Source=" + configuration["Backend:DatabasePath"]))
-        {
-            database.Open();
-            using var expire = database.CreateCommand();
-            expire.CommandText = "UPDATE mobile_wand_workshops SET question_lease_until=0 WHERE account_id=$a AND operation_id=$o";
-            expire.Parameters.AddWithValue("$a", owner); expire.Parameters.AddWithValue("$o", operation); expire.ExecuteNonQuery();
-        }
-        Check(wands.ClaimWorkshopQuestion() is null, "expired uncertain authoring lease is never automatically redispatched");
-        state = wands.ReadWorkshopState(owner, operation);
-        Check(state.CanRetry && state.RecoveryKind == "question_fallback" && state.Steps.All(step => step.Answer is null),
-            "expired question has a no-paid-call fallback recovery and keeps its step count");
-        Check(wands.RecoverWorkshopQuestionFallback(owner, operation), "same durable question is recovered with disclosed fallback");
-        var lateReplyRejected = false;
-        try { wands.CompleteWorkshopQuestion(firstJob, "Pozdní odpověď?", [], false); }
-        catch (WandGenerationException) { lateReplyRejected = true; }
-        Check(lateReplyRejected, "late author response cannot replace recovered approved fallback");
-        var uncertainOperation = Guid.NewGuid().ToString("N");
-        wands.BeginMobile(owner, uncertainOperation, captured, 2);
-        wands.BeginWorkshop(owner, uncertainOperation, captured, 2, "test-group", 1);
-        var uncertainJob = wands.ClaimWorkshopQuestion()!;
-        wands.FailWorkshopQuestion(uncertainJob, "question_provider_uncertain");
-        var uncertainState = wands.ReadWorkshopState(owner, uncertainOperation);
-        Check(uncertainState.CanRetry && uncertainState.RecoveryKind == "question_fallback",
-            "actual provider transport uncertainty enables only same-step fallback recovery");
-        Check(wands.RecoverWorkshopQuestionFallback(owner, uncertainOperation),
-            "provider transport uncertainty recovers without redispatching paid authoring");
-        var uncertainLateReplyRejected = false;
-        try { wands.CompleteWorkshopQuestion(uncertainJob, "Přepsaná otázka?", [], false); }
-        catch (WandGenerationException) { uncertainLateReplyRejected = true; }
-        Check(uncertainLateReplyRejected, "late provider response after uncertain recovery is fenced");
-        var first = wands.ReadWorkshopState(owner, operation).Question!;
-        Check(first is { Number: 1, Total: 3, UsedFallback: true }, "recovered fallback is the only active first question");
-        var steps = wands.CloseWorkshopQuestion(owner, operation, first.QuestionId, first.QuestionRevision,
-            "Nejprve požádám o pomoc.", "text");
-        Check(wands.ReadWorkshopState(owner, operation).Status == "authoring" && steps[1].Question.Length == 0,
-            "accepted answer starts authoring of the next question without exposing unapproved text");
-        var secondJob = wands.ClaimWorkshopQuestion()!;
-        Check(secondJob.Step.Number == 2 && secondJob.Steps[0].Answer is not null,
-            "second question author receives the first accepted answer");
-        wands.CompleteWorkshopQuestion(secondJob, "Když zvolená pomoc selže, jakou jednu věc má hůlka udělat?", [], false);
-        var firstAnswer = steps[0];
-        wands.CorrectWorkshopAnswer(owner, operation, firstAnswer.AnswerId!, firstAnswer.AnswerRevision,
-            "Nevím, požádám o pomoc.", "text");
-        Check(wands.ReadWorkshopState(owner, operation).Steps[0].AnswerRevision == 2,
-            "answer correction advances answer revision without creating a step");
-
-        var second = wands.ReadWorkshopState(owner, operation).Question!;
-        steps = wands.CloseWorkshopQuestion(owner, operation, second.QuestionId, second.QuestionRevision,
-            "Ať mi pomůže nenápadně odejít.", "voice");
-        Check(steps.Count(step => step.Answer is not null || step.Skipped) == 2
-            && wands.Read(owner, operation) is null,
-            "two closed questions do not create a generation session");
-
-        var thirdJob = wands.ClaimWorkshopQuestion()!;
-        Check(thirdJob.Step.Number == 3 && thirdJob.Steps.Count(step => step.Answer is not null) == 2,
-            "third question author receives both accepted answers");
-        wands.CompleteWorkshopQuestion(thirdJob, "Jaký drobný rozmar může mít hůlka, který ti občas zkomplikuje den?", [], false);
-        var third = wands.ReadWorkshopState(owner, operation).Question!;
-        Check(third.Number == 3 && third.Total == 3,
-            "third approved question is the final diagnostic step");
-        steps = wands.CloseWorkshopQuestion(owner, operation, third.QuestionId, third.QuestionRevision, null, null);
-        state = wands.ReadWorkshopState(owner, operation);
-        Check(steps.Count(step => step.Answer is not null || step.Skipped) == 3
-            && state.Status == "generating" && state.Question is null && wands.Read(owner, operation) is null,
-            "closing the third step queues workshop state without premature generation work");
-        Check(steps.Select(step => step.QuestionId).Distinct(StringComparer.Ordinal).Count() == 3,
-            "every question has a distinct persisted identifier");
-
-        var generation = wands.Begin(owner, operation, captured, 1, openAiConsent: true);
-        var duplicate = wands.Begin(owner, operation, captured, 1, openAiConsent: true);
-        Check(generation.SessionId == duplicate.SessionId && generation.ReadyMask == 1,
-            "mobile generation uses one idempotent candidate while physical six-slot validation remains separate");
-        var accepted = false;
+        Check(state.Status == "asking" && state.Question is null && state.Steps.Length == 0
+            && state.Messages is { Length: 0 }, "prepared workshop opens an empty natural conversation without authoring a question");
+        var noEvidenceRejected = false;
+        try { wands.FinishWorkshopConversation(owner, operation, profile.ProfileId, profile.Revision); }
+        catch (WandGenerationException error) when (error.Code == "wand_conversation_evidence_required") { noEvidenceRejected = true; }
+        Check(noEvidenceRejected, "an empty conversation cannot start wand manufacture");
         try
         {
-            wands.CloseWorkshopQuestion(owner, operation, Guid.NewGuid().ToString("N"), 1,
-                "čtvrtá odpověď", "text");
-            accepted = true;
+            wands.BeginWorkshop(owner, Guid.NewGuid().ToString("N"), captured with { Enrichment = null }, 1, "test-group", 1);
+            throw new InvalidOperationException("Unprepared profile entered workshop.");
         }
-        catch (WandGenerationException) { }
-        Check(!accepted, "a fourth diagnostic question cannot be closed after the third step");
+        catch (WandGenerationException error) when (error.Code == "character_not_ready") { }
+
+        var first = wands.AppendWorkshopMessage(owner, operation, Guid.NewGuid().ToString("N"),
+            "user", "Nejdřív ověřím, která mapa chybí.", "text");
+        var userMessage = first[0];
+        first = wands.UpdateWorkshopMessage(owner, operation, userMessage.MessageId,
+            userMessage.Revision, "Nejdřív ověřím, která mapa se skutečně ztratila.", "text");
+        Check(first[0].Revision == 2 && first[0].Text.Contains("skutečně", StringComparison.Ordinal),
+            "message corrections advance revision and replace older interpretation");
+        var duplicate = wands.AppendWorkshopMessage(owner, operation, userMessage.MessageId,
+            "user", "Nejdřív ověřím, která mapa se skutečně ztratila.", "text");
+        Check(duplicate.Length == 1, "retried message IDs are accepted exactly once after correction");
+        var conflict = false;
+        try { wands.AppendWorkshopMessage(owner, operation, userMessage.MessageId, "user", "jiný text", "text"); }
+        catch (WandGenerationException error) when (error.Code == "wand_message_id_conflict") { conflict = true; }
+        Check(conflict, "a reused stable message ID cannot mutate a different message");
+        wands.AppendWorkshopMessage(owner, operation, Guid.NewGuid().ToString("N"),
+            "assistant", "Ta mapa se ztratila poblíž tvého oblíbeného bludiště. Dobře, aspoň je konkrétní.", "voice");
+        wands.AppendWorkshopMessage(owner, operation, Guid.NewGuid().ToString("N"),
+            "user", "To stačí, vyrob ji.", "text");
+        wands.AppendWorkshopMessage(owner, operation, Guid.NewGuid().ToString("N"),
+            "assistant", "Výtečně. Mapa se konečně našla; její sebevědomí bude složitější oprava.", "voice");
+        Check(wands.FinishWorkshopConversation(owner, operation, profile.ProfileId, profile.Revision),
+            "a short two-user-turn transcript can finish explicitly without a fixed exchange count");
+        Check(!wands.FinishWorkshopConversation(owner, operation, profile.ProfileId, profile.Revision),
+            "repeated finish dispatches only one generation operation");
+        Check(wands.ReadWorkshopState(owner, operation).Status == "generating"
+            && wands.Read(owner, operation) is null, "finishing is a separate durable transition before model dispatch");
+        var pending = wands.PendingWorkshops().Single(job => job.OperationId == operation);
+        Check(pending.Messages.Length == 4 && pending.Steps.Length == 0
+            && MobileWandWorkshopWorker.GenerationEvidence(pending).Length == 4,
+            "generation receives every accepted corrected user and assistant turn from the frozen profile");
+        Check(wands.PauseWorkshopForBoss(owner, operation)
+            && wands.ReadWorkshopState(owner, operation).Status == "paused",
+            "temporary boss captivity pauses an unfinished generation without failing the operation");
+        Check(wands.ReadWorkshopMessages(owner, operation).Length == 4
+            && wands.ResumeWorkshopAfterBoss(owner, operation)
+            && wands.ReadWorkshopState(owner, operation).Status == "generating",
+            "rescue resumes the same persisted conversation and generation operation");
+        var locked = false;
+        try { wands.AppendWorkshopMessage(owner, operation, Guid.NewGuid().ToString("N"), "user", "late", "text"); }
+        catch (WandGenerationException error) when (error.Code == "wand_message_locked") { locked = true; }
+        Check(locked, "late speech after finish cannot mutate the generation snapshot");
+
+        var (evidenceProfile, evidenceSnapshot) = await PrepareProfileAsync(profiles,
+            "workshop-evidence-race", new("Mapař", "Fikční svět"));
+        var evidenceOperation = Guid.NewGuid().ToString("N");
+        wands.BeginMobile("workshop-evidence-race", evidenceOperation, evidenceSnapshot, 1);
+        wands.BeginWorkshop("workshop-evidence-race", evidenceOperation, evidenceSnapshot, 1, "test-group", 1);
+        var evidenceUser = wands.AppendWorkshopMessage("workshop-evidence-race", evidenceOperation,
+            Guid.NewGuid().ToString("N"), "user", "Prověřím starou mapu.", "text").Single();
+        var initialEvidenceDigest = WandGenerationStore.UserEvidenceDigest(
+            wands.ReadWorkshopMessages("workshop-evidence-race", evidenceOperation));
+        wands.AppendWorkshopMessage("workshop-evidence-race", evidenceOperation,
+            Guid.NewGuid().ToString("N"), "assistant", "Rozumím.", "voice");
+        Check(initialEvidenceDigest == WandGenerationStore.UserEvidenceDigest(
+                wands.ReadWorkshopMessages("workshop-evidence-race", evidenceOperation)),
+            "assistant acknowledgements do not change the user evidence digest");
+        var editedEvidence = wands.UpdateWorkshopMessage("workshop-evidence-race", evidenceOperation,
+            evidenceUser.MessageId, evidenceUser.Revision, "Oprava: prověřím severní mapu.", "text");
+        var staleDigestRejected = false;
+        try
+        {
+            wands.FinishWorkshopConversation("workshop-evidence-race", evidenceOperation,
+                evidenceProfile.ProfileId, evidenceProfile.Revision, initialEvidenceDigest);
+        }
+        catch (WandGenerationException error) when (error.Code == "wand_conversation_changed")
+        { staleDigestRejected = true; }
+        Check(staleDigestRejected && editedEvidence[0].Revision == evidenceUser.Revision + 1
+            && wands.ReadWorkshopState("workshop-evidence-race", evidenceOperation).Status == "asking",
+            "an atomic finish rejects changed user evidence and leaves the dialogue open");
+        var latestEvidenceDigest = WandGenerationStore.UserEvidenceDigest(editedEvidence);
+        Check(wands.FinishWorkshopConversation("workshop-evidence-race", evidenceOperation,
+            evidenceProfile.ProfileId, evidenceProfile.Revision, latestEvidenceDigest),
+            "finish accepts the current corrected user evidence digest");
+
+        var (fourExchangeProfile, fourExchangeSnapshot) = await PrepareProfileAsync(profiles,
+            "workshop-four-exchanges", new("Mapař", "Fikční svět"));
+        var fourExchangeOperation = Guid.NewGuid().ToString("N");
+        wands.BeginMobile("workshop-four-exchanges", fourExchangeOperation, fourExchangeSnapshot, 1);
+        wands.BeginWorkshop("workshop-four-exchanges", fourExchangeOperation, fourExchangeSnapshot,
+            1, "test-group", 1);
+        for (var exchange = 0; exchange < 4; exchange++)
+        {
+            wands.AppendWorkshopMessage("workshop-four-exchanges", fourExchangeOperation,
+                Guid.NewGuid().ToString("N"), "user", $"Zpráva {exchange + 1}.", "text");
+            wands.AppendWorkshopMessage("workshop-four-exchanges", fourExchangeOperation,
+                Guid.NewGuid().ToString("N"), "assistant", $"Odpověď {exchange + 1}.", "voice");
+        }
+        Check(wands.FinishWorkshopConversation("workshop-four-exchanges", fourExchangeOperation,
+            fourExchangeProfile.ProfileId, fourExchangeProfile.Revision)
+            && wands.PendingWorkshops().Single(job => job.OperationId == fourExchangeOperation).Messages.Length == 8,
+            "a longer natural conversation retains all exchanges and completes without a three-turn condition");
+
+        var (legacyProfile, legacySnapshot) = await PrepareProfileAsync(profiles,
+            "workshop-legacy-recovery", new("Raven", "Fikční svět"));
+        var legacyOperation = Guid.NewGuid().ToString("N");
+        wands.BeginMobile("workshop-legacy-recovery", legacyOperation, legacySnapshot, 1);
+        wands.BeginWorkshop("workshop-legacy-recovery", legacyOperation, legacySnapshot, 1, "test-group", 1);
+        var legacySteps = new[]
+        {
+            new MobileWandWorkshopStep("legacy-q1", 1, 1, "První otázka?", [], "legacy-a1", 2, "Odpověď opravená.", SourceMode: "text"),
+            new MobileWandWorkshopStep("legacy-q2", 1, 2, "Další otázka?", [])
+        };
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        { DataSource = configuration["Backend:DatabasePath"] ?? throw new InvalidOperationException("Backend database path missing.") }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE mobile_wand_workshops SET status='authoring',steps_json=$steps WHERE account_id=$owner AND operation_id=$operation";
+            command.Parameters.AddWithValue("$steps", JsonSerializer.Serialize(legacySteps,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            command.Parameters.AddWithValue("$owner", "workshop-legacy-recovery");
+            command.Parameters.AddWithValue("$operation", legacyOperation);
+            command.ExecuteNonQuery();
+        }
+        var resumedLegacy = wands.ReadWorkshopState("workshop-legacy-recovery", legacyOperation);
+        Check(resumedLegacy.Status == "asking" && resumedLegacy.Steps.Length == 0
+            && resumedLegacy.Messages?.Select(message => (message.Role, message.Text)).SequenceEqual([
+                ("assistant", "První otázka?"), ("user", "Odpověď opravená."), ("assistant", "Další otázka?")]) == true
+            && resumedLegacy.Messages?.Single(message => message.Role == "user").Revision == 2,
+            "legacy issued questions and corrected answer revision migrate to the same resumable free-form dialogue");
+
+        var (failedQuestionProfile, failedQuestionSnapshot) = await PrepareProfileAsync(profiles,
+            "workshop-legacy-question-failure", new("Raven", "Fikční svět"));
+        var failedQuestionOperation = Guid.NewGuid().ToString("N");
+        wands.BeginMobile("workshop-legacy-question-failure", failedQuestionOperation, failedQuestionSnapshot, 1);
+        wands.BeginWorkshop("workshop-legacy-question-failure", failedQuestionOperation, failedQuestionSnapshot,
+            1, "test-group", 1);
+        var failedGenerationOperation = Guid.NewGuid().ToString("N");
+        wands.BeginMobile("workshop-legacy-generation-failure", failedGenerationOperation, failedQuestionSnapshot, 1);
+        wands.BeginWorkshop("workshop-legacy-generation-failure", failedGenerationOperation, failedQuestionSnapshot,
+            1, "test-group", 1);
+        var oldGeneration = wands.Begin("workshop-legacy-generation-failure", failedGenerationOperation,
+            failedQuestionSnapshot, 1, openAiConsent: true);
+        var oldGenerationJob = wands.Claim("workshop-legacy-generation-failure", failedGenerationOperation, false)!;
+        wands.Complete(oldGenerationJob, Candidates().Take(1).ToArray());
+        Check(wands.Read("workshop-legacy-generation-failure", failedGenerationOperation)?.Status == "ready",
+            "legacy generation fixture has a durable paid result before the transient failure");
+        var permanentFailureOperation = Guid.NewGuid().ToString("N");
+        wands.BeginMobile("workshop-legacy-permanent-failure", permanentFailureOperation, failedQuestionSnapshot, 1);
+        wands.BeginWorkshop("workshop-legacy-permanent-failure", permanentFailureOperation, failedQuestionSnapshot,
+            1, "test-group", 1);
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        { DataSource = configuration["Backend:DatabasePath"] ?? throw new InvalidOperationException("Backend database path missing.") }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE mobile_wand_workshops SET status='failed',error_code=CASE operation_id WHEN $question THEN 'question_authoring_authority_unavailable' WHEN $generation THEN 'wand_workshop_boss_captured' ELSE 'wand_generation_provider_rejected' END,steps_json=CASE WHEN operation_id=$question THEN $steps ELSE '[]' END WHERE operation_id IN ($question,$generation,$permanent)";
+            command.Parameters.AddWithValue("$question", failedQuestionOperation);
+            command.Parameters.AddWithValue("$generation", failedGenerationOperation);
+            command.Parameters.AddWithValue("$permanent", permanentFailureOperation);
+            command.Parameters.AddWithValue("$steps", JsonSerializer.Serialize(legacySteps,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            command.ExecuteNonQuery();
+        }
+        var restoredQuestion = wands.ReadWorkshopState("workshop-legacy-question-failure", failedQuestionOperation);
+        Check(restoredQuestion.Status == "paused" && restoredQuestion.ErrorCode == "wand_workshop_boss_captured"
+            && restoredQuestion.Messages?.Single(message => message.Role == "user").Revision == 2,
+            "known temporary question authority failure migrates to paused and preserves the corrected answer");
+        var restoredGeneration = wands.ReadWorkshopState("workshop-legacy-generation-failure", failedGenerationOperation);
+        Check(restoredGeneration.Status == "paused" && restoredGeneration.ErrorCode == "wand_workshop_boss_captured"
+            && wands.ResumeWorkshopAfterBoss("workshop-legacy-generation-failure", failedGenerationOperation)
+            && wands.Read("workshop-legacy-generation-failure", failedGenerationOperation)?.SessionId == oldGeneration.SessionId,
+            "known boss-captured generation failure resumes the same paid result instead of redispatching it");
+        Check(wands.ReadWorkshopState("workshop-legacy-permanent-failure", permanentFailureOperation).Status == "failed",
+            "unrecognized permanent generation failures remain failed rather than being rescued by migration");
+
+        var priorEvidence = new[]
+        {
+            new MobileWandWorkshopMessage("stable-user", 1, "user", "Ověřím mapu.", "text", 1),
+            new MobileWandWorkshopMessage("stable-assistant", 1, "assistant", "Dobře.", "voice", 2)
+        };
+        var assistantAcknowledged = priorEvidence.Append(
+            new MobileWandWorkshopMessage("ack", 1, "assistant", "Rozumím.", "voice", 3));
+        var correctedEvidence = new[]
+        {
+            priorEvidence[0] with { Revision = 2, Text = "Změna: ověřím severní mapu." }, priorEvidence[1]
+        };
+        var appendedUserEvidence = priorEvidence.Append(
+            new MobileWandWorkshopMessage("new-user", 1, "user", "To stačí.", "text", 3));
+        Check(MobileWorkshopLiveRuntime.SameUserEvidence(priorEvidence, assistantAcknowledged)
+            && !MobileWorkshopLiveRuntime.SameUserEvidence(priorEvidence, correctedEvidence)
+            && !MobileWorkshopLiveRuntime.SameUserEvidence(priorEvidence, appendedUserEvidence),
+            "assistant acknowledgements do not invalidate generation evidence, while user corrections or new input do");
+
+        var generation = wands.Begin(owner, operation, captured, 1, openAiConsent: true);
+        var duplicateGeneration = wands.Begin(owner, operation, captured, 1, openAiConsent: true);
+        Check(generation.SessionId == duplicateGeneration.SessionId && generation.ReadyMask == 1,
+            "mobile generation uses one idempotent candidate while physical six-slot validation remains separate");
         wands.DeleteProfile(owner, profile.ProfileId);
         Check(wands.FindWorkshop(owner, profile.ProfileId, profile.Revision, 1) is null,
             "profile revocation erases the workshop snapshot, issued questions and answers");
 
         const string erasedOwner = "workshop-account-erasure";
-        var erasedProfile = await profiles.SaveAsync(erasedOwner,
-            new(0, new("Raven", "Fictional world"), OpenAiConsent: true));
-        var erasedCapture = await profiles.CaptureAsync(erasedOwner, erasedProfile.ProfileId, erasedProfile.Revision)!;
+        var (erasedProfile, erasedCapture) = await PrepareProfileAsync(profiles, erasedOwner,
+            new("Raven", "Fictional world"));
         var erasedOperation = Guid.NewGuid().ToString("N");
-        wands.BeginMobile(erasedOwner, erasedOperation, erasedCapture!, 1);
-        wands.BeginWorkshop(erasedOwner, erasedOperation, erasedCapture!, 1, "test-group", 1);
+        wands.BeginMobile(erasedOwner, erasedOperation, erasedCapture, 1);
+        wands.BeginWorkshop(erasedOwner, erasedOperation, erasedCapture, 1, "test-group", 1);
         wands.DeleteAccount(erasedOwner);
         Check(wands.FindWorkshop(erasedOwner, erasedProfile.ProfileId, erasedProfile.Revision, 1) is null,
             "account erasure deletes all mobile workshop snapshots");
 
         const string interruptedOwner = "workshop-start-crash";
-        var interruptedProfile = await profiles.SaveAsync(interruptedOwner,
-            new(0, new("Raven", "Fictional world"), OpenAiConsent: true));
-        var interruptedCapture = await profiles.CaptureAsync(interruptedOwner, interruptedProfile.ProfileId,
-            interruptedProfile.Revision) ?? throw new InvalidOperationException();
+        var (interruptedProfile, interruptedCapture) = await PrepareProfileAsync(profiles, interruptedOwner,
+            new("Raven", "Fictional world"));
         var interruptedOperation = Guid.NewGuid().ToString("N");
         wands.BeginMobile(interruptedOwner, interruptedOperation, interruptedCapture, 1);
         Check(wands.MobileOperation(interruptedOwner, interruptedProfile.ProfileId,
             interruptedProfile.Revision, 1) == interruptedOperation && wands.Read(interruptedOwner, interruptedOperation) is null,
             "mobile reservation can survive a crash before any generation session exists");
         wands.BeginWorkshop(interruptedOwner, interruptedOperation, interruptedCapture, 1, "test-group", 1);
-        Check(wands.ReadWorkshopState(interruptedOwner, interruptedOperation) is { Status: "authoring", Steps.Length: 3 },
-            "explicit restart repairs the reservation crash window with three stable diagnostic steps");
+        Check(wands.ReadWorkshopState(interruptedOwner, interruptedOperation) is { Status: "asking", Steps.Length: 0 },
+            "explicit restart repairs the reservation crash window as an empty resumable conversation");
         wands.DeleteProfile(interruptedOwner, interruptedProfile.ProfileId);
 
         for (var index = 0; index < 9; index++)
@@ -272,24 +363,76 @@ internal static class MobileWandTests
             string.Join(',', nextPage.Select(job => job.AccountId)) + ")");
     }
 
-    private static async Task SeedGeneratingWorkshopAsync(CharacterProfileStore profiles,
-        WandGenerationStore wands, string owner)
+    private static async Task InFlightManufactureCaptureAsync(CharacterProfileStore profiles, WandGenerationStore wands)
     {
-        var profile = await profiles.SaveAsync(owner, new(0, new(owner, "Fictional world"), OpenAiConsent: true));
-        var captured = await profiles.CaptureAsync(owner, profile.ProfileId, profile.Revision)
-            ?? throw new InvalidOperationException();
+        const string owner = "inflight-captured-owner";
+        var (profile, captured) = await PrepareProfileAsync(profiles, owner, new("Míra", "Fiktivní most"));
         var operation = Guid.NewGuid().ToString("N");
         wands.BeginMobile(owner, operation, captured, 1);
         wands.BeginWorkshop(owner, operation, captured, 1, "test-group", 1);
-        for (var number = 1; number <= 3; number++)
+        wands.AppendWorkshopMessage(owner, operation, Guid.NewGuid().ToString("N"), "user", "Zastav most a vyrob hůlku.", "voice");
+        wands.FinishWorkshopConversation(owner, operation, profile.ProfileId, profile.Revision);
+        var job = wands.PendingWorkshops().Single(item => item.OperationId == operation);
+        wands.Begin(owner, operation, captured, 1, true, outputLanguage: "cs");
+        var provider = new DelayedWorkshopProvider();
+        var service = new WandGenerationService(wands, provider);
+        var running = service.GenerateAsync(owner, operation, _ => Task.FromResult(true), evidence: MobileWandWorkshopWorker.GenerationEvidence(job));
+        await provider.Started.Task;
+        Check(wands.PauseWorkshopForBoss(owner, operation), "capture pauses a dispatch already in flight");
+        provider.Release.TrySetResult();
+        Check((await running).Status == "ready" && wands.ReadWorkshopState(owner, operation).Status == "paused",
+            "an accepted paid manufacture is retained during capture");
+        Check(wands.ResumeWorkshopAfterBoss(owner, operation), "rescue resumes the original manufacturing operation");
+        var reused = await service.GenerateAsync(owner, operation, _ => Task.FromResult(true), evidence: MobileWandWorkshopWorker.GenerationEvidence(job));
+        Check(reused.Status == "ready" && provider.Calls == 1, "rescue reuses the result without a second provider call");
+    }
+
+    private sealed class DelayedWorkshopProvider : IWandGenerationProvider
+    {
+        internal readonly TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly TaskCompletionSource Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal int Calls;
+        public async Task<WandCandidateContent[]> GenerateAsync(WandGenerationJob job, CancellationToken token)
+        { Calls++; Started.TrySetResult(); await Release.Task.WaitAsync(token); return Candidates().Take(1).ToArray(); }
+    }
+
+    private static async Task SeedGeneratingWorkshopAsync(CharacterProfileStore profiles,
+        WandGenerationStore wands, string owner)
+    {
+        var (profile, captured) = await PrepareProfileAsync(profiles, owner, new(owner, "Fictional world"));
+        var operation = Guid.NewGuid().ToString("N");
+        wands.BeginMobile(owner, operation, captured, 1);
+        wands.BeginWorkshop(owner, operation, captured, 1, "test-group", 1);
+        wands.AppendWorkshopMessage(owner, operation, Guid.NewGuid().ToString("N"),
+            "user", "Připraveno k výrobě.", "text");
+        wands.FinishWorkshopConversation(owner, operation, profile.ProfileId, profile.Revision);
+    }
+
+    private static async Task<(CharacterProfile Profile, CharacterConversationSnapshot Snapshot)> PrepareProfileAsync(
+        CharacterProfileStore profiles, string owner, CharacterUserInput input)
+    {
+        var profile = await profiles.SaveAsync(owner, new(0, input, OpenAiConsent: true));
+        var enrichment = new CharacterEnrichment(input.Name, input.World, input.Description ?? "Synthetic prepared character.",
+            [new("Keeps finding lost maps while insisting the route was obvious.", ["https://example.test/map"] )],
+            ["A new interruption while following a map."], [], false,
+            [new("Synthetic source", "https://example.test/map")], "synthetic", "test-v1",
+            DateTimeOffset.UtcNow.ToUnixTimeSeconds(), profile.Revision, "synthetic");
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        { DataSource = profiles.CustomerDataDatabasePath }.ToString());
+        connection.Open();
+        using (var command = connection.CreateCommand())
         {
-            var authoring = wands.ClaimWorkshopQuestion()!;
-            wands.CompleteWorkshopQuestion(authoring,
-                $"Když se změní okolnosti, co uděláš v kroku {number}?", [], false);
-            var question = wands.ReadWorkshopState(owner, operation).Question!;
-            wands.CloseWorkshopQuestion(owner, operation, question.QuestionId,
-                question.QuestionRevision, null, null);
+            command.CommandText = "UPDATE character_profiles SET status='ready',enrichment_json=$enrichment WHERE account_id=$owner AND profile_id=$profile AND revision=$revision";
+            command.Parameters.AddWithValue("$enrichment", JsonSerializer.Serialize(enrichment,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            command.Parameters.AddWithValue("$owner", owner);
+            command.Parameters.AddWithValue("$profile", profile.ProfileId);
+            command.Parameters.AddWithValue("$revision", profile.Revision);
+            if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException("Could not seed prepared character context.");
         }
+        var snapshot = await profiles.CapturePreparedAsync(owner, profile.ProfileId, profile.Revision)
+            ?? throw new InvalidOperationException("Prepared character snapshot unavailable.");
+        return (profile with { Status = "ready", Enrichment = enrichment }, snapshot);
     }
 
     private static async Task LegacyOperationRetirementAsync(CharacterProfileStore profiles,
@@ -331,72 +474,14 @@ internal static class MobileWandTests
         wands.Begin(draftOwner, draftOperation, draftSnapshot, 63, true);
         wands.RetireMobileOperation(draftOwner, draftOperation);
         Check(wands.MobileOperation(draftOwner, draftProfile.ProfileId, draftProfile.Revision, 1) is null,
-            "legacy unselected six-candidate operation is retired before an exactly-three-answer craft");
+            "legacy unselected six-candidate operation is retired before a natural-dialogue mobile craft");
     }
-    private static async Task StopDuringDecision(IServiceProvider services, IConfiguration config, CharacterProfileStore profiles,
-        WandGenerationStore wands, UserManager<AccountUser> users, AccountDatabase db)
-    {
-        var user = new AccountUser {Id="stop-owner",UserName="stop-owner",DisplayName="Stop",OpenAiConsentAt=1,OpenAiConsentVersion=AccountAiConsent.CurrentVersion};
-        Check((await users.CreateAsync(user)).Succeeded, "create stop fixture owner");
-        db.Sessions.Add(new AccountSession {Id="stop-cookie",UserId=user.Id,ExpiresAt=DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),AuthenticatedAt=1});
-        await db.SaveChangesAsync();
-        var profile = await profiles.SaveAsync(user.Id,new(0,new("Stop", "Original"),OpenAiConsent:true));
-        var captured = (await profiles.CaptureAsync(user.Id,profile.ProfileId,profile.Revision))!;
-        var operation=Guid.NewGuid().ToString("N");
-        wands.BeginMobile(user.Id,operation,captured,1); wands.Begin(user.Id,operation,captured,63,true);
-        using var upstream = new Socket(); using var phone = new Socket();
-        using var live = new GptLiveClient(config,_=>Task.FromResult<WebSocket>(upstream));
-        var started = new TaskCompletionSource<WandDecisionInput>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource<WandDecisionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var decisions = new WandDecisionService((input,_)=> { started.TrySetResult(input); return release.Task; });
-        var runtime = new MobileWandRuntime(services.GetRequiredService<IServiceScopeFactory>(),wands,new(wands,new Provider()),live,decisions,new());
-        var admission = new MobileWandAdmission(user.Id,operation,"stop-cookie",user.SecurityStamp!,"https://localhost",DateTimeOffset.UtcNow.AddSeconds(30),captured);
-        using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        var run=runtime.Run(admission,phone,deadline.Token);
-        using var start=JsonDocument.Parse(await upstream.Command("session.start",deadline.Token));
-        upstream.Emit(new {type="session.started",client_event_id=start.RootElement.GetProperty("event_id").GetString()});
-        await phone.Command("ready",deadline.Token);
-        upstream.Emit(new {type="session.output_transcript.delta",delta="Co hledáš?",start_ms=0,end_ms=100,event_id="q"});
-        upstream.Emit(new {type="session.input_transcript.delta",delta="Hvězdy.",start_ms=150,end_ms=250,event_id="a"});
-        upstream.Emit(new {type="session.delegation.created",delegation=new {id="slow",target="client"}});
-        var input=await started.Task.WaitAsync(deadline.Token);
-        phone.Emit(new {type="end"}); await upstream.Command("session.close",deadline.Token);
-        var fact=input.Evidence.Last();
-        release.SetResult(new(WandDecisionStatus.ValidProposal,1,[new(fact.Reference,fact.Text,"Zvídavost")],"",input.Revision,input.AvailabilityRevision));
-        await run;
-        Check(MobileWandSessions.Current(wands,user.Id,profile.ProfileId,profile.Revision) is null,"late decision cannot create a wand after acknowledged end");
-    }
-    private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
+
     internal sealed class Provider : IWandGenerationProvider
-    { public Task<WandCandidateContent[]> GenerateAsync(WandGenerationJob job, CancellationToken token) => Task.FromResult(Candidates()); }
-    private sealed class Socket : WebSocket
     {
-        internal int BinaryWrites;
-        private readonly Channel<byte[]> input = Channel.CreateUnbounded<byte[]>();
-        private readonly Channel<string> output = Channel.CreateUnbounded<string>();
-        public override WebSocketCloseStatus? CloseStatus => null;
-        public override string? CloseStatusDescription => null;
-        public override WebSocketState State => WebSocketState.Open;
-        public override string? SubProtocol => null;
-        internal void Emit(object value) => input.Writer.TryWrite(JsonSerializer.SerializeToUtf8Bytes(value));
-        internal async Task<string> Command(string type, CancellationToken token)
-        { while (true) { var text = await output.Reader.ReadAsync(token); using var doc = JsonDocument.Parse(text); if (doc.RootElement.GetProperty("type").GetString() == type) return text; } }
-        public override void Abort() { }
-        public override void Dispose() { }
-        public override Task CloseAsync(WebSocketCloseStatus status, string? description, CancellationToken token) => Task.CompletedTask;
-        public override Task CloseOutputAsync(WebSocketCloseStatus status, string? description, CancellationToken token) => Task.CompletedTask;
-        public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType type, bool end, CancellationToken token)
-        {
-            if (type == WebSocketMessageType.Text)
-            {
-                var text = Encoding.UTF8.GetString(buffer); output.Writer.TryWrite(text);
-                using var doc = JsonDocument.Parse(text);
-                if (doc.RootElement.GetProperty("type").GetString() == "session.close") Emit(new { type = "session.closed", usage = new { seconds = 1 } });
-            }
-            else Interlocked.Increment(ref BinaryWrites);
-            return Task.CompletedTask;
-        }
-        public override async Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken token)
-        { var next = await input.Reader.ReadAsync(token); next.CopyTo(buffer.AsSpan()); return new(next.Length, WebSocketMessageType.Text, true); }
+        public Task<WandCandidateContent[]> GenerateAsync(WandGenerationJob job, CancellationToken cancellationToken)
+            => Task.FromResult(Candidates());
     }
+
+    private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 }

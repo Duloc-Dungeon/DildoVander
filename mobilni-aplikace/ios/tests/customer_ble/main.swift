@@ -63,6 +63,17 @@ precondition(CustomerBleProtocol.decode(Data(repeating: 0x20, count: 513)) == ni
 var disconnected = valid; disconnected["challenge"] = ""; disconnected["state"] = "recovering"
 precondition(CustomerBleProtocol.decode(data(disconnected)) != nil)
 precondition(AccountTransportPolicy.account(path: "/app/v1/customer/character", method: "PUT"))
+let liveWorkshop = "/app/v1/customer/wand/workshop/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+for route in ["messages", "finish", "ticket", "artwork/repair"] {
+    precondition(AccountTransportPolicy.account(path: liveWorkshop + "/" + route, method: "POST"))
+    precondition(!AccountTransportPolicy.account(path: liveWorkshop + "/" + route, method: "GET"))
+}
+precondition(AccountTransportPolicy.account(path: liveWorkshop + "/messages/live-call_7", method: "PUT"))
+precondition(!AccountTransportPolicy.account(path: liveWorkshop + "/messages/has.dot", method: "PUT"))
+precondition(!AccountTransportPolicy.account(path: liveWorkshop + "/messages/" + String(repeating: "a", count: 161), method: "PUT"))
+precondition(!AccountTransportPolicy.account(path: liveWorkshop + "/messages/live-call_7?x=1", method: "PUT"))
+precondition(AccountTransportPolicy.accountRequestBodyAllowed(path: liveWorkshop + "/ticket", method: "POST", contentType: "application/json", size: 1024))
+precondition(!AccountTransportPolicy.accountRequestBodyAllowed(path: liveWorkshop + "/ticket", method: "POST", contentType: "application/json", size: 17 * 1024))
 precondition(AccountTransportPolicy.account(path: "/app/v1/customer/enrollment/complete", method: "POST"))
 precondition(AccountTransportPolicy.account(path: "/app/v1/enrollment/default", method: "GET"))
 precondition(!AccountTransportPolicy.account(path: "/app/v1/enrollment/default", method: "POST"))

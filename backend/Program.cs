@@ -110,6 +110,7 @@ builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IWandGenerationProvide
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IMobileWandQuestionProvider, Kufr.Backend.Features.Wands.OpenAiMobileWandQuestionProvider>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.WandGenerationService>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.MobileWandRuntime>();
+builder.Services.AddSingleton<Kufr.Backend.Features.Wands.MobileWorkshopLiveRuntime>();
 builder.Services.AddHostedService<Kufr.Backend.Features.Wands.MobileWandWorkshopWorker>();
 builder.Services.AddSingleton<OpenAiVectorMemoryProvider>();
 builder.Services.AddSingleton<HybridMemoryService>();
@@ -197,6 +198,7 @@ app.UseLaunchAccessPolicy();
 app.MapAccountEndpoints();
 app.MapLaunchEndpoints();
 Kufr.Backend.Features.Wands.MobileWandEndpoints.MapMobileWands(app);
+Kufr.Backend.Features.Wands.MobileWandWorkshopEndpoints.MapWorkshopLive(app);
 app.MapMobileGame();
 app.MapSealedCase();
 app.MapMobileGameBoss();

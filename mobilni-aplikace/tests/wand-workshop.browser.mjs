@@ -16,43 +16,37 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: 'reduce', isMobile: width < 500, hasTouch: width < 500 });
     const page = await context.newPage(); lastPage = page; page.on('pageerror', error => errors.push(error.message));
     await page.goto(`${origin}/__workshop/ready`);
-    await page.getByRole('button', { name: 'Otevřít dílnu', exact: true }).waitFor();
-    assert.equal(requests.length, 0, 'opening the page creates no paid session');
-    await page.getByRole('button', { name: 'Otevřít dílnu', exact: true }).click();
-    await page.getByRole('heading', { name: /Co uděláš/ }).waitFor();
+    await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     assert.equal(await overflow(), false, `${width}: no overflow`);
     assert.equal(await page.locator('.trunk-stage__trunk').evaluate(img => img.complete && img.naturalWidth > 0), true);
-    assert.equal(await page.locator('.trunk-stage__trunk').evaluate(img => getComputedStyle(img).transform), 'none', 'reduced motion disables movement');
-    await page.getByLabel('Tvoje odpověď', { exact: true }).focus();
-    await page.keyboard.type('Cestu si overim sam.');
-    await page.getByRole('button', { name: 'Odeslat odpověď', exact: true }).focus();
-    assert.equal(await page.getByRole('button', { name: 'Odeslat odpověď', exact: true }).evaluate(button => button.matches(':focus-visible')), true);
-    await page.keyboard.press('Enter');
-    await page.getByText('Otázka 2 ze 3', { exact: true }).waitFor();
-    await page.reload(); await page.getByText('Otázka 2 ze 3', { exact: true }).waitFor();
-    await page.getByRole('button', { name: 'Odpovědět hlasem', exact: true }).click();
-    await page.getByRole('button', { name: 'Odpovědět psaním', exact: true }).click();
-    await page.getByLabel('Tvoje odpověď', { exact: true }).fill('Ukryje mě v mlze.');
-    await page.getByRole('button', { name: 'Odeslat odpověď', exact: true }).click();
-    await page.getByText('Otázka 3 ze 3', { exact: true }).waitFor();
-    assert.equal(requests.some(request => request.method === 'POST' && request.path.includes('generation')), false);
-    await page.screenshot({ path: path.join(output, `question3-${width}.png`), fullPage: true }); captures++;
+    assert.equal(await page.locator('.trunk-stage__trunk').evaluate(img => getComputedStyle(img).transform), 'none');
+    const exchanges = width === 320 ? 2 : 4;
+    for (let index = 0; index < exchanges; index++) {
+      await page.getByLabel('Tvoje sdělení kufru', { exact: true }).fill(index === 1 ? 'Nevím' : `Zachraň most ${index}.`);
+      await page.getByRole('button', { name: 'Odeslat', exact: true }).click();
+      await page.getByRole('button', { name: 'Odeslat', exact: true }).waitFor({ state: 'visible' });
+      await page.waitForFunction(() => !document.querySelector('textarea')?.disabled);
+    }
+    assert.equal(requests.some(request => request.path.endsWith('/finish')), false);
+    await page.reload(); await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
+    await page.getByRole('heading', { name: /Kufr si pamatuje/ }).waitFor();
+    assert.equal(await page.getByText(/Otázka .* ze 3/).count(), 0);
+    await page.screenshot({ path: path.join(output, `conversation-${width}.png`), fullPage: true }); captures++;
     if (width === 390) {
       await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
       assert.equal(await overflow(), false, '200% text: no overflow');
       await page.screenshot({ path: path.join(output, 'text-200-percent.png'), fullPage: true }); captures++;
       await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
       await page.setViewportSize({ width, height: 420 });
-      await page.getByLabel('Tvoje odpověď', { exact: true }).focus();
-      await page.getByRole('button', { name: 'Přeskočit tuto otázku', exact: true }).scrollIntoViewIfNeeded();
-      assert.equal(await overflow(), false, 'reduced visual height: no overflow');
+      await page.getByLabel('Tvoje sdělení kufru').focus();
+      assert.equal(await overflow(), false, 'keyboard-height: no overflow');
       await page.screenshot({ path: path.join(output, 'keyboard-height-390.png'), fullPage: true }); captures++;
       await page.setViewportSize({ width, height: 844 });
     }
-    await page.getByRole('button', { name: 'Přeskočit tuto otázku', exact: true }).click();
+    await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).focus(); await page.keyboard.press('Enter');
     await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
-    assert.equal(await page.getByRole('heading', { name: /Co uděláš/ }).count(), 0);
+
     await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
     await page.locator('.trunk-stage__wand').waitFor();
     await page.waitForFunction(() => document.querySelector('.trunk-stage__wand')?.naturalWidth > 0);
@@ -65,7 +59,10 @@ try {
     await page.screenshot({ path: path.join(output, `result-${width}.png`), fullPage: true }); captures++;
     await page.goto(`${origin}/__workshop/captured`);
     await page.getByText('Dílnu uzavřel Baron.', { exact: false }).waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Otevřít dílnu', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Promluvit s kufrem', exact: true }).count(), 0);
+    await page.goto(`${origin}/__workshop/preparing`);
+    await page.getByText('Ještě připravujeme tvoji postavu.', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Raději psát', exact: true }).count(), 0);
     await context.close();
   }
   assert.deepEqual(errors, []);

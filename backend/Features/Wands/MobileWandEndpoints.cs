@@ -34,6 +34,7 @@ internal static class MobileWandEndpoints
                 return await next(invocation);
             }
             catch (WandGenerationException e) { return ApiProblem.Create(invocation.HttpContext, e.Status, e.Code); }
+            catch (Kufr.Backend.Features.Keepsakes.KeepsakeException e) { return ApiProblem.Create(invocation.HttpContext, e.Status, e.Code); }
             catch (GameFault e) { return ApiProblem.Create(invocation.HttpContext, e.Status, e.Code); }
         });
         group.MapGet("", async (HttpContext h, CharacterProfileStore profiles, WandGenerationStore wands) =>

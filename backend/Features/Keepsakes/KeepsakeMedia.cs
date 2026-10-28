@@ -18,6 +18,53 @@ internal sealed partial class KeepsakeStore
         _ = DecodePhoto(output.ImageBytes, "image/png", normalize: false);
     }
 
+    internal static void ValidateWandArtwork(KeepsakeProviderOutput output)
+    {
+        if (output.ImageBytes.Length is 0 or > 24 * 1024 * 1024 || output.MediaType != "image/png")
+        {
+            throw new KeepsakeException("wand_artwork_invalid", 422);
+        }
+
+        using var data = SKData.CreateCopy(output.ImageBytes);
+        using var codec = SKCodec.Create(data);
+        if (codec is null || codec.EncodedFormat != SKEncodedImageFormat.Png)
+        {
+            throw new KeepsakeException("wand_artwork_invalid", 422);
+        }
+
+        var info = codec.Info;
+        if (info.Width is <= 0 or > 8192 || info.Height is <= 0 or > 8192
+            || (long)info.Width * info.Height > 24_000_000 || codec.FrameCount > 1)
+        {
+            throw new KeepsakeException("wand_artwork_invalid", 422);
+        }
+
+        using var bitmap = new SKBitmap(new SKImageInfo(info.Width, info.Height,
+            SKColorType.Rgba8888, SKAlphaType.Premul));
+        if (codec.GetPixels(bitmap.Info, bitmap.GetPixels()) != SKCodecResult.Success)
+        {
+            throw new KeepsakeException("wand_artwork_invalid", 422);
+        }
+
+        var hasTransparentPixel = false;
+        var hasVisiblePixel = false;
+        for (var y = 0; y < info.Height; y++)
+        {
+            for (var x = 0; x < info.Width; x++)
+            {
+                var alpha = bitmap.GetPixel(x, y).Alpha;
+                hasTransparentPixel |= alpha == 0;
+                hasVisiblePixel |= alpha > 0;
+                if (hasTransparentPixel && hasVisiblePixel)
+                {
+                    return;
+                }
+            }
+        }
+
+        throw new KeepsakeException("wand_artwork_transparency_required", 422);
+    }
+
     private static (byte[] Bytes, int Width, int Height) DecodePhoto(byte[] original, string mediaType, bool normalize)
     {
         using var data = SKData.CreateCopy(original);

@@ -1,145 +1,183 @@
-# Samostatná dílna magického kufru
+# Samostatná dílna magického kufru s GPT Live
 
-Mobilní cesta začíná na `/play/wand`; oprávněný upgrade používá
-`/play/wand?upgrade=1`. Vstupy jsou v herní obrazovce a u návštěvy dílny.
-Mluvčím je očarovaný kufr. ESP32, párování a mechanické příkazy nejsou potřeba.
+Cesta `/play/wand`, oprávněný upgrade `/play/wand?upgrade=1`. Mluvčím je
+magický kufr. Telefon nepotřebuje ESP32, párování ani mechanické příkazy.
+Implementace navazuje na commit `8e181d99`; nový průchod nahrazuje pevné tři
+kroky přirozeným rozhovorem. Přibližně tři otázky jsou pouze dramaturgické
+vodítko, žádná přesná garance ani podmínka výroby.
 
-## Průchod
+## Připravená postava a vědomý začátek
 
-Otevření stránky pouze načte přihlášenou postavu a existující postup. Tlačítko
-**Otevřít dílnu** založí nebo obnoví jedinou operaci pro vlastníka, profil,
-revizi a úroveň hůlky. Mikrofon je vypnutý, psaní je dostupné od začátku.
+Otevření stránky pouze čte stav. Backend před začátkem, obnovením, ticketem,
+přijetím sdělení a výrobou kontroluje aktuální profil a revizi. Připravenost
+znamená `status=ready`, dokončené obohacení se shodným `inputRevision` a žádné
+nevyřešené upřesnění. `CapturePreparedAsync` čte tyto hodnoty v jedné transakci.
+Starší dokončená revize neodemkne novější rozpracovanou postavu.
 
-Server připravuje a ukládá každý povolený tah před jeho zobrazením a přednesem.
-Stav `authoring` ještě neobsahuje otázku, kterou by smělo rozhraní přehrát.
-Otázky vycházejí z profilu a předchozích odpovědí. Každá má stabilní ID a revizi.
-První a druhá uzavřená odpověď připraví další otázku; třetí odpověď nebo výslovné
-přeskočení třetího kroku zahájí výrobu jediné hůlky. „Nevím“ je platná odpověď.
+Při přípravě, chybě nebo potřebě upřesnění nejsou dostupné hlasové ani textové
+zahájení. Obrazovka nabízí návrat k postavě. Po dokončení se objeví
+**Promluvit s kufrem** a **Raději psát**; nic se automaticky nespouští.
+Hlasová větev ověří zákaznický ticket před vyžádáním mikrofonu a oprávnění
+ověří znovu při WebSocket upgrade. Ticket je jednorázový, svázaný s vlastníkem,
+operací, přihlášením a přesným originem; platí 30 sekund.
 
-Hlasový režim přehrává schválený uložený text a nabízí nahrání odpovědi.
-Přepis je upravitelný návrh; až odeslání uzavře otázku. Ticho, chybějící
-oprávnění, chyba přepisu a přepnutí na psaní nic nezapočítávají. Nejde o volný
-GPT Live socket s následnou kontrolou již přehrané řeči. Po odchodu se mikrofon
-i přehrávání uvolní. Návrat načte stejnou operaci bez automatického přednesu.
+## Hlas a společný rozhovor
 
-Před výrobou lze v přepisu opravit přijatou odpověď. Oprava mění její revizi,
-nikoli počet kroků. Při nejistém výsledku požadavku klient nejdřív načte stav
-původní operace. Nový placený pokus smí nabídnout pouze server přes `canRetry`.
+`MobileWorkshopLiveRuntime` používá existující `GptLiveClient`,
+`GptLiveProtocol.Model` (`gpt-live-1`) a skutečný client-delegation protokol.
+Frontend sdílí nízkoúrovňový PCM resampler, AudioWorklet a omezené přehrávání
+z `persona-lab/voice.ts`, ale používá výhradně zákaznické endpointy dílny.
+Nevolá staff PersonaLab API. Starý `MobileWandRuntime` zajišťuje jen ticket a
+základní admission; jeho předgenerování kandidátů a starý rozhovor byly odstraněny.
 
-Hotový výsledek má vlastní `WandId`, název, materiál, jádro, temperament, příběh,
-vzhled, afinitu, slabost a tři kouzla. Herní čísla dál vlastní server. Mobilní
-veřejný výsledek nemá fyzický slot; původní šestikusová větev zůstává samostatná.
+Po vědomém spuštění poslouchá mikrofon průběžně. Běžné hlasové odpovědi se
+ručně nenahrávají ani neodesílají. Přehrávání lze přerušit řečí nebo **Stop řeč**;
+ztlumení mikrofonu a ukončení rozhovoru jsou samostatné akce. Stop je dostupný
+i při výsledném verdiktu. Odchod, skrytí aplikace, změna účtu/souhlasu nebo režimu
+uvolní audio a mikrofon. Pozdní svolení k mikrofonu neobnoví opuštěnou relaci.
 
-## Hranice API
+Průběžný přepis není potvrzená odpověď. Server slučuje a ukládá přijaté textové
+úseky se stabilním ID; dlouhou souvislou řeč dělí beze ztráty do bezpečných bloků.
+Sdělení mají `messageId`, `revision`, `role`, `text`, `sourceMode`, `createdAt`.
+Oprava uživatelského sdělení vyžaduje očekávanou revizi. Po zahájení výroby se
+podklady uzamknou. Přepnutí hlas → text → hlas zachová operaci i přijatou historii.
 
-Základ je `/app/v1/customer/wand/workshop`. Vyžaduje zákaznické přihlášení,
-platný souhlas a aktuální herní oprávnění. JSON používá camelCase.
+Delegace Live neobsahuje zadání; backend používá uložené aktuální přepisy,
+nikoli domnělé argumenty v události. Rozhodnutí modelu navrhne pokračování nebo
+dokončení. Backend kontroluje oprávnění a atomicky porovná digest uživatelské
+evidence. Pozdní oprava zneplatní starý návrh, běžné hlasové přitakání kufru jej
+nezneplatní. Potvrzení append události znamená doručení kontextu, nikoli skutečné
+přehrání audia. Reakce kufru vychází z měření skutečného audio výstupu.
+
+Oficiální protokol: [Live sessions](https://developers.openai.com/api/docs/guides/live-conversations),
+[client delegation](https://developers.openai.com/api/docs/guides/live-delegation),
+[playback controls](https://developers.openai.com/api/docs/guides/voice-server-controls?api=live).
+
+## API a výroba
+
+Základ `/app/v1/customer/wand/workshop`, zákaznické přihlášení, souhlas a aktuální
+herní oprávnění. JSON má camelCase. Cesty v tabulce jsou relativní k základu.
 
 | Metoda a cesta | Význam |
 | --- | --- |
-| `GET /workshop[?upgrade=1]` | `{eligible, reason, profile, tier, session}`; žádná placená operace |
-| `POST /workshop/sessions` | `{operationId, upgrade}`; explicitní začátek, odpověď `{session}` |
-| `GET /workshop/sessions/current[?upgrade=1]` | Obnovení pro aktuální profil a úroveň |
-| `GET /workshop/sessions/{id}` | Autoritativní stav stejné operace |
-| `POST /workshop/sessions/{id}/answers` | `{questionId, questionRevision, answer, sourceMode}` |
-| `POST /workshop/sessions/{id}/skip` | `{questionId, questionRevision}`; pouze aktivní krok |
-| `PUT /workshop/sessions/{id}/answers/{answerId}` | `{answerRevision, answer, sourceMode}`; oprava |
-| `POST /workshop/sessions/{id}/audio` | `{questionId, questionRevision}` nebo `{wandId}`; WAV schváleného tahu |
-| `POST /workshop/sessions/{id}/transcribe` | Syrové zvukové tělo do 8 MiB; `{text}`, bez uzavření otázky |
-| `POST /workshop/sessions/{id}/retry` | Serverem povolená obnova téže operace |
-| `POST /workshop/sessions/{id}/artwork/retry` | Obnova asociace nebo samotné ilustrace; UUID v `Idempotency-Key` |
+| `GET /[?upgrade=1]` | `{eligible,reason,profile,tier,session}` bez placeného volání |
+| `POST /sessions` | `{operationId,upgrade}`, založení/obnova, odpověď `{session}` |
+| `GET /sessions/current[?upgrade=1]`, `GET /sessions/{id}` | Obnova téže operace |
+| `POST /sessions/{id}/ticket` | `{socketOrigin}`, jednorázové zákaznické Live připojení |
+| `GET /sessions/{id}/live?ticket=…` | Autorizovaný WebSocket: PCM24kHz, přepis a oddělené backendové stavy |
+| `POST /sessions/{id}/messages` | `{messageId,text}`, idempotentní textové sdělení a odpověď kufru |
+| `PUT /sessions/{id}/messages/{messageId}` | `{expectedRevision,text}`, oprava před výrobou |
+| `POST /sessions/{id}/finish` | Samostatné idempotentní dokončení rozhovoru |
+| `POST /sessions/{id}/retry` | Jen serverem povolená obnova známého bezpečného selhání výroby |
+| `POST /sessions/{id}/audio` | `{wandId}`, pomocné předčítání uloženého verdiktu |
+| `POST /sessions/{id}/artwork/retry` | Jen chybějící/nezdařený obrázek, UUID `Idempotency-Key` |
+| `POST /sessions/{id}/artwork/repair` | Explicitní oprava hotové ilustrace, očekávaná verze a zdroj, UUID `Idempotency-Key` |
 
-Stavy průběhu jsou `authoring`, `asking`, `generating`, `complete`, `failed`.
-Otázka má `questionId`, `questionRevision`, `number`, `total`, `question`.
-Uzavřené kroky mají navíc `answerId`, `answerRevision`, `answer`, `skipped`
-a `sourceMode`. Nový socket ani opakované doručení odpovědi nevytváří další krok.
-Přepis vyžaduje `X-Wand-Question-Id` a `X-Wand-Question-Revision`, aby opožděná
-nahrávka nebyla přiřazená k otázce změněné jiným klientem.
-Původní volný mobilní `/sessions`, `/ticket` a `/live` vracejí 410.
+Aktivní stavy jsou `asking`, `generating`, `complete`, `paused`, `failed`.
+Proměnlivý počet sdělení neslouží jako výrobní čítač. `FinishWorkshopConversation`
+vyžaduje platný připravený profil a použitelný rozhovor, atomicky zamkne podklady
+a přejde do výroby nejvýše jednou. Textový model může navrhnout dokončení;
+uživatel také může zvolit **To stačí, vyrob hůlku**. Žádná třetí položka sama
+výrobu nespouští. Před opakováním klient nejdřív načte původní operaci.
 
-## Kontext, dostupnost a ilustrace
+Generuje se jediná mobilní hůlka, nikoli šest předem připravených kandidátů.
+Úplný zmrazený profil a všechny aktuálně přijaté repliky vstupují do výroby;
+herní čísla vlastní server. Výsledek obsahuje vlastní `WandId`, materiál, jádro,
+temperament, příběh, vzhled, afinitu, slabost a kouzla. Fyzická šestikusová větev
+zůstává oddělená. Odchod nebo odpojení hlasu již přijatou výrobu nezruší.
 
-Kontext je svázaný s vlastníkem a revizí profilu. Generátor dostává celé
-obohacení včetně faktů, zdrojů a nejasností, nikoli pouze souhrn nebo `Take(6)`.
-Odpovědi zůstávají oddělenou evidencí a nemění domněnku či vtip v nový fakt.
-Interní kontext nezahrnuje skrytou pravdu domény Pod pečetí.
-Současný zákaznický model neposkytuje této relaci ověřený profilový souhlas
-pro dlouhodobou paměť minulých rozhovorů; dílna proto z těchto záznamů neodvozuje
-další znalosti. Opravy používají aktuální revizi profilu a aktuální revizi
-odpovědi ve výrobě.
+Staré otevřené kroky se migrují do sdělení včetně odpovědí a revizí. Hotové hůlky
+a výrobní operace zůstávají. Rozpoznaná stará dočasná selhání při bossově zajetí
+se převádějí na pauzu; trvalá ztráta oprávnění se tím neobchází.
 
-Při zajetí dílny bossem server zakáže novou výrobu i pokračování aktivního
-rozhovoru. Uloženou hůlku lze dál zobrazit. Nový host bez hůlky má přístup
-k exhibiční záchraně proti bossovi; běžné duely stále vyžadují vlastní hůlku.
+## Kontext a dočasná nedostupnost
 
-Po potvrzeném uložení se hůlka propojí s vlastním záznamem v kanonickém archivu
-a jeho úlohou `wand_artwork`. Odkaz obsahuje vlastníka, `WandId`, locator a ID
-assetu. Obraz se stahuje autorizovaně z
-`/app/v1/archive/owned/{locator}/assets/{assetId}` a předává scéně jako lokální
-blob URL. Ilustrace má vlastní `queued/running/ready/failed` stav. Její chyba
-nezruší uloženou hůlku; opakování obrázku nevyrábí novou hůlku.
+Snapshot obsahuje celý aktuální popis, obohacení, fakta, zdroje a nejasnosti.
+Žádné `Take(6)` ani samotný Summary. Pokud se plný záznam nevejde do startu Live,
+je to výslovně uvedené a úplný backendový kontext vstupuje do delegace. Backendový
+Responses požadavek má explicitní limit 65 536 bajtů; překročení vrací chybu,
+nepředstírá úplnou znalost. Dlouhé přepisy mají také explicitní bezpečnostní limit.
+Interní zdroje, modelové domněnky a vtipy se nevydávají za další ověřená fakta.
+Žádná skrytá WORLD_TRUTH ani soukromá data jiného hosta se neposílají.
+Dlouhodobá osobní paměť se bez profilově ověřeného souhlasu nepřipojuje.
 
-## Vývojové ověření
+Bossovo zajetí pozastaví rozpracovanou operaci a hlas. Po osvobození se znovu
+kontroluje vlastník, členství, přístup, souhlas a připravená revize, poté lze
+pokračovat ve stejném rozhovoru. Již dispatchnutá rozhodnutí mají vlastní omezenou
+životnost a při dočasném zajetí se zachovají; hotový placený výrobní výsledek se
+nevolá znovu. Odebrání souhlasu, účtu či profilu relaci neoprávněně neobnoví.
 
-Použij podporovaný Node z `mobilni-aplikace/.nvmrc` a SDK z `global.json`.
-Z kořene produktového repozitáře:
+Výstavní záchrana umožní hráči bez hůlky a s 0 XP skutečně vyhrát: server má pro
+exhibici minimální sílu 1 a energii bosse 3. Pravidla běžných duelů a upgradů se
+nemění. Nejde pouze o odkaz na souboj s nulovým poškozením.
+
+## Transparentní artwork a opravy
+
+`wand_artwork` používá SDK 2.14 `Background=Transparent`, PNG1024×1536 a prompt
+`personal-wand-art-v2-transparent`. Prompt vyžaduje celou izolovanou siluetu,
+volné okraje, bez podlahy, stěny, podstavce, vržených stínů a nakreslené šachovnice.
+Materiál a magické efekty vycházejí z uložené konkrétní hůlky. Alfa se validuje
+dekódováním skutečných PNG bajtů: prázdné a plně neprůhledné obrázky jsou odmítnuté.
+Portréty toto pravidlo nedostávají. Alfa kanál se při uložení/doručení nemění.
+
+Ilustrace má nezávislé `queued/running/ready/failed`. Chyba neodstraní hůlku.
+Oprava hotové ilustrace přijímá `{expectedVersion,sourceAssetId,sourceSha256}`;
+aktivní reference obsahuje verzi, SHA a `canRepair`. Nová obrazová verze se aktivuje
+až po validaci a kontrole stále aktuálního zdroje/job ID. Původní asset i SHA zůstávají
+jako provenance. Nemění se `WandId`, vlastnosti, historie ani výrobní operace.
+Dříve publikované edice a jejich sdílené odkazy ponechávají původní neměnné bajty.
+Oprava canonical obrázku zpětně nepřepisuje vydané edice.
+
+Konfigurace vyžaduje skutečný klíč, `Keepsake:ProviderMode=openai`, povolenou
+stávající keepsake pipeline a model s podporou transparentních PNG. Chybějící
+konfigurace nesmí být vydávána za skutečně generovaný artwork.
+[Oficiální Images API](https://developers.openai.com/api/reference/resources/images/methods/generate).
+
+## Spuštění a ověření
+
+V přihlášeném vývojovém prostředí dokonči přípravu postavy, otevři `/play/wand`
+a vědomě zvol hlas nebo psaní. Nastavení produkce se tímto úkolem nemění.
+Syntetický browser preview: `node mobilni-aplikace/tests/fixtures/wand-workshop.mjs --serve`,
+`http://127.0.0.1:4805/__workshop/ready`; varianty `preparing` a `captured`.
+Preview nevolá poskytovatele.
+
+Relevantní příkazy z kořene produktu:
 
 ```text
-npm ci --prefix contracts
-npm ci --prefix mobilni-aplikace
+dotnet build backend-tests/BackendTests.csproj --no-restore
+dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-wands
+dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-game-http
+dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --mobile-game-boss
+dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --generated-wands
+dotnet run --project backend-tests/BackendTests.csproj --no-build --no-restore -- --wand-artwork
+npm test --prefix mobilni-aplikace
 npm run build --prefix mobilni-aplikace
 npm run test:wand:browser --prefix mobilni-aplikace
-dotnet build backend-tests/BackendTests.csproj
-dotnet run --project backend-tests/BackendTests.csproj --no-build -- --mobile-wands
-dotnet run --project backend-tests/BackendTests.csproj --no-build -- --generated-wands
-dotnet run --project backend-tests/BackendTests.csproj --no-build -- --mobile-game-http
 ```
 
-Pro místní vizuální ukázku sestavené aplikace:
+Skutečné placené diagnostiky jsou pouze explicitní přepínače `--mobile-workshop-live`,
+`--mobile-workshop-live-playback` a
+`--mobile-workshop-transparent-artwork <sourceDatabase> <imageModel>`.
+Používají jen fiktivní data a kontrolují již existující operace před dispatch.
+Doklady jsou v ignorovaném `ai-eval/results/`, tajné klíče se nevypisují.
 
-```text
-node mobilni-aplikace/tests/fixtures/wand-workshop.mjs --serve
-```
+V této implementaci byl ověřen skutečný `gpt-live-1`: průběžný hlasový vstup,
+přepis, client delegation a jedna uložená fiktivní hůlka Modrostežka. Oddělený
+krátký přehrávací test ověřil slyšitelný úvod se známou modrou nití a oznámení
+potvrzeného výsledku bez další výroby. TTS bylo pouze zdrojem fiktivní uživatelské
+řeči v automatickém testu; produktovou konverzaci obsluhuje GPT Live.
 
-Otevři `http://127.0.0.1:4805/__workshop/ready`. Jde o výslovně syntetický
-testovací server, který nepoužívá poskytovatele ani skutečný účet. Varianta
-`/__workshop/captured` ukazuje nedostupnost. Tato ukázka neprokazuje živé API.
-Skutečný průchod otevři v přihlášeném vývojovém prostředí přes herní vstup nebo
-výše uvedené routy; backendový klíč se do klienta nepřenáší.
+Jedna skutečná image-only oprava původní fiktivní hůlky Modrosteh přes
+`gpt-image-1.5` zachovala WandId a zdrojový checksum, vytvořila v2 ready PNG,
+a odmítla cizího vlastníka. Výřez byl prohlédnut na světlém i tmavém pozadí.
+Browser testy pokrývají 320/390/1280px, 200% text, simulovanou soft klávesnici,
+obnovu, proměnlivé výměny, reduced motion a samotný retry obrázku.
 
-Browser harness ověřuje 320/390/1280 px, text 200 %, klávesnici, sníženou výšku
-420 px, omezený pohyb, obnovení a nezávislé opakování ilustrace. Snížená výška
-simuluje prostor pro soft klávesnici; skutečná klávesnice, notche, safe areas
-a nativní přehrávání vyžadují ověření podepsané aplikace na zařízení.
-
-### Provedené ověření 28. 10. 2026
-
-- Node 24.21.0: 155 testů Node a 1 073 testů Vitest prošlo; frontendový build
-  prošel včetně kontroly generovaných kontraktů a skutečných WebP v balíku.
-- Backendový build prošel bez varování a chyb. Prošly skupiny `--mobile-wands`,
-  `--generated-wands`, `--mobile-game-http` a `--mobile-game-boss` včetně
-  zachování staré hůlky, smazání dat, revokace, souběhu a obnovy po timeoutu.
-- Syntetický browser test prošel na 320, 390 a 1280 px, s textem 200 %,
-  omezeným pohybem a sníženou výškou 420 px. Java pravidla nativního transportu
-  prošla samostatným testem; úplný Android Gradle test blokovalo prostředí
-  a iOS testy nebylo možné spustit bez Swift compileru.
-- Jediný živý průchod s fiktivní postavou položil tři schválené otázky
-  a po třech psaných odpovědích vytvořil a uložil jedinou hůlku **Modrosteh**.
-  Následná kontrola přednesu stejných tří tahů přes skutečné TTS a STT
-  dosáhla normalizované textové shody 100 %, 98,4 % a 98,9 %. V přepisech
-  zůstala vždy jedna otázka; příprava otázek ani výroba se neopakovaly.
-- Záznam stejného uloženého `WandId` pokračoval přes `KeepsakeStore` a jedinou
-  skutečnou obrazovou úlohu do vlastního kanonického PNG. Ověřilo se uložení,
-  čtení vlastníkem a odmítnutí cizího účtu. Model `gpt-image-1.5` byl ověřený
-  v dostupnosti účtu a v [oficiální dokumentaci OpenAI](https://developers.openai.com/api/docs/models/gpt-image-1.5).
-  Jeho nastavení bylo pouze v izolovaném testu; produkční konfigurace se neměnila.
-
-Živé diagnostiky jsou výslovné přepínače v `backend-tests`, nejsou součástí
-běžného offline CI. Jejich hlasové, obrazové a databázové doklady jsou lokálně
-v ignorovaném `ai-eval/results/`. Nový skutečný běh potřebuje nakonfigurovaný
-backendový klíč a reálnou obrazovou pipeline (`Keepsake:ProviderMode=openai`,
-`Keepsake:ImageModel` a ostatní nastavení stávajícího archivu). Chybějící či
-falešný poskytovatel se hostovi nevydává za ilustraci jeho hůlky.
+Živý API test není důkaz plynulosti na telefonu. Android policy je ověřená
+samostatným Java harness; úplný Android Gradle a iOS/Swift běh na tomto hostu
+nebyly provedeny. Skutečná telefonní soft klávesnice, safe areas a nativní
+mikrofon zůstávají k ověření na zařízení. Produkční nasazení a fyzické akce
+nejsou součástí úkolu.
 
 ## Výtvarné zdroje
 

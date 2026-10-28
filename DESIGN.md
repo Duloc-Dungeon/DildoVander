@@ -47,5 +47,5 @@ výsledek zůstává neznámý. FEIGN_SLEEP zachovává bdělou obranu; REST sku
 Viz `docs/wns-v2-implementation.md`. Úspěšný build ani syntetický browser server
 neprokazují živou AI, skutečný multiplayer, nativní export nebo bezpečnost hardwaru.
 
-Samostatná scéna magického kufru, její tři serverové otázky a původ použitých
+Samostatná scéna magického kufru, její přirozený GPT Live rozhovor a původ použitých
 ilustrací jsou popsané v `docs/magicky-kufr-workshop.md`.
