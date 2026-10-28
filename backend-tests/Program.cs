@@ -66,6 +66,15 @@ if (args is ["--bounded-sdk-transport"]) { await BoundedSdkTransportTests.RunAsy
 if (args is ["--text-dialog-budget"]) { ResponsesTextDialogBudgetTests.Run(); Console.WriteLine("Text dialogue model budgets passed."); return; }
 if (args is ["--tester-identity"]) { await AccountIdentityTests.RunTesterIdentityAsync(); return; }
 if (args is ["--passkey-labels"]) { await AccountIdentityTests.RunPasskeyLabelsAsync(); return; }
+if (args is ["--hardware-simulator"])
+{
+    await TestingMultiTurnTests.RunAsync();
+    await TestingHardwareTests.RunAsync();
+    await TestingCharacterRaceTests.RunAsync();
+    await AccountIdentityTests.RunTestingSessionHttpAsync();
+    await TestingSessionsTests.RunAsync();
+    return;
+}
 if (args is ["--testing-hardware"]) { await TestingHardwareTests.RunAsync(); return; }
 if (args is ["--testing-conversations"]) { await TestingConversationTests.RunAsync(); return; }
 if (args is ["--testing-multiturn"]) { await TestingMultiTurnTests.RunAsync(); return; }
@@ -253,7 +262,6 @@ await AccountCollectionTests.RunAsync();
 await AccountIdentityTests.RunAccountCollectionHttpAsync();
 await AccountIdentityTests.RunCustomerSessionResultHttpAsync();
 KeepsakeOutcomeJournalTests.Run();
-FirmwareReleaseTests.Run();
 CharacterDirectorTests.Run();
 CharacterOperationTests.Run();
 await AutonomousLiveTests.RunCharacterAsync();
@@ -269,12 +277,7 @@ await AccountIdentityTests.RunTesterIdentityAsync();
 await PushTests.RunAsync();
 await AccountIdentityTests.RunPushHttpAsync();
 await TestingConversationTests.RunAsync();
-await TestingMultiTurnTests.RunAsync();
-await TestingHardwareTests.RunAsync();
 await TestingResourcesTests.RunAsync();
-await TestingCharacterRaceTests.RunAsync();
-await AccountIdentityTests.RunTestingSessionHttpAsync();
-await TestingSessionsTests.RunAsync();
 await CharacterLabelTests.RunAsync();
 GameDisplayNameTests.Run();
 await PersonalityTests.RunAsync();

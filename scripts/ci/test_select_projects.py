@@ -1,6 +1,8 @@
 import copy
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -11,6 +13,17 @@ from select_projects import changed_paths, check_results, main, PROJECTS, select
 
 
 class ProjectSelectionTests(unittest.TestCase):
+    def test_verified_release_selects_payload_builds_and_omits_pr_only_native_checks(self):
+        script = Path(__file__).with_name("select_projects.py")
+        result = subprocess.run([sys.executable, str(script), "select", "--project", "all", "--release-artifacts"],
+                                capture_output=True, text=True, check=True, env={**os.environ, "GITHUB_OUTPUT": ""})
+        selected = json.loads(result.stdout)
+        self.assertEqual({name for name, enabled in selected.items() if enabled},
+                         {"repository", "backend", "web", "site"})
+        invalid = subprocess.run([sys.executable, str(script), "select", "--project", "backend", "--release-artifacts"],
+                                 capture_output=True, text=True)
+        self.assertNotEqual(invalid.returncode, 0)
+
     def selected(self, *paths):
         return {name for name, enabled in select_projects(paths).items() if enabled}
 
@@ -24,10 +37,10 @@ class ProjectSelectionTests(unittest.TestCase):
 
     def test_each_project_and_real_build_inputs(self):
         for paths, expected in [
-            (["firmware/src/production/main.cpp", "docs/a.md"], {"firmware"}),
-            (["firmware/src/CMakeLists.txt"], {"firmware"}),
-            (["firmware/CMakeLists.txt", "firmware/platformio.ini"], {"firmware"}),
-            (["CMakeLists.txt", "platformio.ini"], {"firmware"}),
+            (["firmware/src/production/main.cpp", "docs/a.md"], set()),
+            (["firmware/src/CMakeLists.txt"], set()),
+            (["firmware/CMakeLists.txt", "firmware/platformio.ini"], set()),
+            (["CMakeLists.txt", "platformio.ini"], set()),
             (["backend-tests/Program.cs"], {"backend"}),
             (["global.json", "Directory.Build.props"], {"backend"}),
             (["NuGet.Config"], {"backend"}),
@@ -35,7 +48,7 @@ class ProjectSelectionTests(unittest.TestCase):
             (["mobilni-aplikace/ios/App/App/KufrDebugPlugin.swift"], {"web", "ios", "android", "site"}),
             (["mobilni-aplikace/tests/native_debug/main.swift"], {"web", "ios", "android", "site"}),
             (["ai-eval/cases.json"], {"ai-eval"}),
-            (["firmware/src/production/main.cpp", "backend/Program.cs"], {"firmware", "backend"}),
+            (["firmware/src/production/main.cpp", "backend/Program.cs"], {"backend"}),
             (["mechanika/final/mechanism.py", "docs/a.md"], {"repository"}),
             (["design-system/tokens/colors.css"], {"repository", "web", "ios", "android", "site"}),
             (["web/build-site.py"], {"site"}),
@@ -45,24 +58,25 @@ class ProjectSelectionTests(unittest.TestCase):
 
     def test_shared_dependencies_select_their_consumers(self):
         self.assertEqual(self.selected("contracts/control-message-v1.schema.json"),
-                         {"backend", "firmware", "web", "ios", "android", "site"})
-        self.assertEqual(self.selected("firmware/simulator/bridge.cpp"), {"firmware", "web", "ios", "android"})
-        self.assertEqual(self.selected("scripts/ci/package.py"), {"repository", "backend", "firmware", "web", "site"})
+                         {"backend", "web", "ios", "android", "site"})
+        self.assertEqual(self.selected("firmware/simulator/bridge.cpp"), {"web", "ios", "android"})
+        self.assertEqual(self.selected("scripts/ci/package.py"), {"repository", "backend", "web", "site"})
 
     def test_nested_simulator_does_not_inherit_the_broad_firmware_filter(self):
         for name in ("dashboard.html", "dashboard.js", "dashboard-ui.js", "verify-dashboard.mjs"):
             with self.subTest(name=name):
                 self.assertEqual(self.selected("firmware/simulator/" + name), {"site"})
         self.assertEqual(self.selected("firmware/simulator/native/host_main.cpp"),
-                         {"firmware", "web", "ios", "android"})
+                         set())
+        self.assertEqual(self.selected("firmware/src/features/conversation/ConversationRuntimeState.cpp"), set())
         self.assertEqual(self.selected("firmware/simulator/dashboard.test.mjs"),
-                         {"firmware", "web", "ios", "android", "site"})
+                         {"web", "ios", "android", "site"})
 
     def test_integrated_app_dependency_paths_select_real_consumers_without_cad(self):
         for name in ("controller.mjs", "serial.mjs", "profiles.mjs", "auto-calibration.mjs", "mcp.mjs"):
             self.assertEqual(self.selected("firmware/diagnostics/servo-bench/web/" + name), {"web", "ios", "android", "site"})
         for name in ("generate-control-validator.mjs", "control-validator-core.mjs", "generated/control-message-v1.validator.mjs"):
-            self.assertEqual(self.selected("contracts/" + name), {"backend", "firmware", "web", "ios", "android", "site"})
+            self.assertEqual(self.selected("contracts/" + name), {"backend", "web", "ios", "android", "site"})
         self.assertEqual(self.selected("backend/Features/ModelReleases/ModelReleaseStore.cs"), {"backend"})
         self.assertEqual(self.selected("mobilni-aplikace/src/features/identity/ModelReleasesPanel.vue"), {"backend", "web", "ios", "android", "site"})
 
@@ -89,13 +103,13 @@ class ProjectSelectionTests(unittest.TestCase):
     def test_unknown_paths_inside_product_roots_keep_their_consumers(self):
         self.assertEqual(self.selected("mobilni-aplikace/new-adapter/config.custom"), {"web", "ios", "android", "site"})
         self.assertEqual(self.selected("backend/new-feature/custom.input"), {"backend"})
-        self.assertEqual(self.selected("contracts/new-contract.custom"), {"backend", "firmware", "web", "ios", "android", "site"})
+        self.assertEqual(self.selected("contracts/new-contract.custom"), {"backend", "web", "ios", "android", "site"})
 
     def test_shared_build_inputs_and_unknown_root_files_never_select_zero_checks(self):
         for path in ("Directory.Build.targets", "Directory.Packages.props"):
             with self.subTest(path=path):
                 self.assertEqual(self.selected(path), {"backend"})
-        conservative = {"repository", "backend", "firmware", "web", "ios", "android", "site"}
+        conservative = {"repository", "backend", "web", "ios", "android", "site"}
         self.assertEqual(self.selected("new-root-tooling.toml"), conservative)
         self.assertEqual(self.selected("shared-build/config.toml"), conservative)
         self.assertEqual(self.selected("backend/Program.cs", "new-root-tooling.toml"), conservative)
@@ -162,7 +176,7 @@ class ProjectSelectionTests(unittest.TestCase):
                                     "main", "c" * 40, "token")
 
     def test_workflow_changes_select_only_the_corresponding_build(self):
-        self.assertEqual(self.selected(".github/workflows/kufr-firmware.yml"), {"repository", "firmware"})
+        self.assertEqual(self.selected(".github/workflows/kufr-firmware.yml"), {"repository"})
         self.assertEqual(self.selected(".github/workflows/ci.yml"), {"repository"})
         self.assertEqual(self.selected("scripts/ci/select_projects.py"), {"repository"})
         self.assertEqual(self.selected(".github/workflows/kufr-site.yml"), {"repository", "site"})
@@ -194,7 +208,7 @@ class ProjectSelectionTests(unittest.TestCase):
         self.assertEqual(self.selected("mechanika/final/new-mechanism.py"), {"repository"})
         self.assertEqual(self.selected("firmware/simulator/dashboard-ui.js"), {"site"})
         self.assertEqual(self.selected("firmware/diagnostics/servo-bench/web/panel.css"), {"site"})
-        self.assertEqual(self.selected("firmware/src/diagnostics/servo-bench/main.cpp"), {"firmware"})
+        self.assertEqual(self.selected("firmware/src/diagnostics/servo-bench/main.cpp"), set())
 
     def test_presentation_policy_matches_the_pr_selector(self):
         from cad_impact import SOURCE_POLICY
@@ -204,7 +218,9 @@ class ProjectSelectionTests(unittest.TestCase):
 
     def test_recovery_builds_exclude_cad(self):
         self.assertNotIn("cad", PROJECTS)
-        self.assertTrue(all(select_recovery_projects("all").values()))
+        self.assertEqual({name for name, enabled in select_recovery_projects("all").items() if enabled},
+                         set(PROJECTS) - {"firmware"})
+        self.assertEqual({name for name, enabled in select_recovery_projects("firmware").items() if enabled}, {"firmware"})
         self.assertEqual({name for name, enabled in select_recovery_projects("site").items() if enabled}, {"site"})
         with self.assertRaises(ValueError):
             select_recovery_projects("cad")

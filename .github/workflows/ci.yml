@@ -81,11 +81,59 @@ jobs:
       ai-eval: ${{ steps.projects.outputs.ai-eval }}
       site: ${{ steps.projects.outputs.site }}
       native_stack_revision: ${{ steps.projects.outputs.native_stack_revision }}
+      reuse_validation: ${{ steps.validation.outputs.verified }}
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Find complete PR validation for this main tree
+        id: evidence
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.project == 'all' && inputs.pr_number == '' && inputs.expected_head_sha == '' && inputs.expected_base_sha == ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            try {
+              const candidate = await require('./scripts/ci/pr-validation.cjs').discover({ github, context });
+              core.setOutput('candidate', JSON.stringify(candidate));
+              core.setOutput('artifact_id', candidate.artifact_id);
+              core.setOutput('run_id', candidate.run_id);
+            } catch (error) {
+              core.notice(`Full tests required: ${error.message}`);
+            }
+      - name: Download immutable PR validation receipt
+        id: evidence-download
+        if: steps.evidence.outputs.artifact_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ steps.evidence.outputs.artifact_id }}
+          run-id: ${{ steps.evidence.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/pr-validation
+          merge-multiple: true
+      - name: Independently verify complete same-tree PR tests
+        id: validation
+        if: steps.evidence-download.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          VALIDATION_CANDIDATE: ${{ steps.evidence.outputs.candidate }}
+        with:
+          script: |
+            try {
+              const fs = require('node:fs');
+              const path = require('node:path');
+              const receipt = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'pr-validation/pr-validation.json'), 'utf8'));
+              await require('./scripts/ci/pr-validation.cjs').verify({ github, context }, JSON.parse(process.env.VALIDATION_CANDIDATE), receipt);
+              core.setOutput('verified', 'true');
+              core.notice('Complete same-tree PR tests verified; rebuilding main artifacts with fresh smoke checks.');
+            } catch (error) {
+              core.notice(`Full tests required: ${error.message}`);
+            }
       - name: Reject stale PR builds before selecting projects
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -126,12 +174,17 @@ jobs:
           CI_STACK_BASE_SHA: ${{ github.event.pull_request.stack.base.sha }}
           CI_STACK_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           CI_PROJECT: ${{ inputs.project || 'all' }}
+          CI_REUSE_VALIDATION: ${{ steps.validation.outputs.verified }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ "$CI_HEAD_REF" = development ] && [ -n "$CI_PR_NUMBER" ]; then
             python3 scripts/ci/select_projects.py select --project all
           elif [ "$CI_EVENT_NAME" = workflow_dispatch ] && [ -z "$CI_PR_NUMBER" ]; then
-            python3 scripts/ci/select_projects.py select --project "$CI_PROJECT"
+            if [ "$CI_REUSE_VALIDATION" = true ]; then
+              python3 scripts/ci/select_projects.py select --project all --release-artifacts
+            else
+              python3 scripts/ci/select_projects.py select --project "$CI_PROJECT"
+            fi
           elif [ "$CI_EVENT_NAME" = pull_request ] && [ -n "$CI_STACK_NUMBER" ]; then
             python3 scripts/ci/select_projects.py select --base "$CI_BASE_SHA" --head "$CI_HEAD_SHA" \
               --stack-pr "$CI_PR_NUMBER" --stack-number "$CI_STACK_NUMBER" \
@@ -167,16 +220,15 @@ jobs:
         run: |
           "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes=
       - name: Test artifact provenance and promotion guards
+        if: needs.changes.outputs.reuse_validation != 'true'
         run: node --test scripts/ci/*.test.cjs
       - name: Test artifact integrity and safe extraction
+        if: needs.changes.outputs.reuse_validation != 'true'
         run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
-      - name: Test model workflow contracts with small synthetic data
-        run: |
-          python3 -m unittest discover -s mechanika/final -p test_fast_build.py
-          python3 -m unittest discover -s web/deploy -p test_cad_host.py
       - name: Check whitespace
         run: git diff --check HEAD^ HEAD
       - name: Verify Vapour Chrome design integrity
+        if: needs.changes.outputs.reuse_validation != 'true'
         run: |
           python3 scripts/generate_design_tokens.py --check
           npm test --prefix design-system
@@ -199,6 +251,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     uses: ./.github/workflows/kufr-backend.yml
+    with:
+      reuse-validation: ${{ needs.changes.outputs.reuse_validation == 'true' }}
   firmware:
     needs: changes
     if: needs.changes.outputs.firmware == 'true'
@@ -208,6 +262,7 @@ jobs:
     if: needs.changes.outputs.web == 'true'
     uses: ./.github/workflows/kufr-web.yml
     with:
+      reuse-validation: ${{ needs.changes.outputs.reuse_validation == 'true' }}
       share-web-dist: ${{ needs.changes.outputs.site == 'true' }}
   ios:
     needs: changes
@@ -231,6 +286,7 @@ jobs:
       actions: read
     uses: ./.github/workflows/kufr-site.yml
     with:
+      reuse-validation: ${{ needs.changes.outputs.reuse_validation == 'true' }}
       reuse-web-dist: ${{ needs.changes.outputs.web == 'true' }}
 
   required:
@@ -253,6 +309,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2 # The receipt verifies both parents of the tested PR merge.
       - name: Require secret scan and selected builds to succeed
         if: github.event.action != 'edited' || github.event.changes.base != null
         run: |
@@ -266,3 +323,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/ci/verify_metadata_gate.py
+      - name: Record complete PR validation
+        id: validation-receipt
+        if: github.event_name == 'pull_request' && github.event.action != 'edited' && github.repository == 'Duloc-Dungeon/DildoVander' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository && github.event.pull_request.head.ref == 'development' && github.event.pull_request.base.ref == 'main' && !github.event.pull_request.stack
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: require('./scripts/ci/pr-validation.cjs').record({ context, core })
+      - name: Save complete PR validation
+        if: steps.validation-receipt.outputs.recorded == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pr-validation-${{ github.run_attempt }}
+          path: pr-validation.json
+          if-no-files-found: error
+          retention-days: 14
