@@ -129,6 +129,25 @@ describe('bounded audio playback', () => {
     message(new Int16Array(4800).fill(100).buffer); event({ type: 'audio_pause' }); advance(.2);
     expect(observer.phase).toHaveBeenLastCalledWith('listening');
   });
+  it('keeps full-duplex workshop audio through loud capture until the provider cancels playback', async () => {
+    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '' }), 'test', 'https://lab.example', { purpose: 'workshop' });
+    ready('stream');
+    message(new Int16Array(4800).fill(100).buffer);
+    const playing = sources.at(-1)!;
+    for (let index = 0; index < 20; index++) capture(new Float32Array(480).fill(.2));
+    expect(controls('cancel')).toEqual([]);
+    expect(playing.stop).not.toHaveBeenCalled();
+    expect(send.mock.calls.filter(call => call[0] instanceof ArrayBuffer).length).toBeGreaterThanOrEqual(19);
+    event({ type: 'audio_cancelled' });
+    expect(playing.stop).toHaveBeenCalledOnce();
+    expect(observer.phase).toHaveBeenLastCalledWith('listening');
+    // A later reply still plays; cancellation does not disconnect capture.
+    message(new Int16Array(4800).fill(200).buffer);
+    expect(sources.at(-1)).not.toBe(playing);
+    expect(observer.error).not.toHaveBeenCalled();
+    voice.interrupt();
+    expect(controls('cancel')).toHaveLength(1);
+  });
   it('drains a confirmed wand finale after server closure before releasing audio', async () => {
     await voice.connect(async () => ({url:'wss://lab.example/app/v1/customer/wand/sessions/test/live?ticket=one',path:'',expiresAt:''}), 'test', 'https://lab.example', {purpose:'wand'});
     stopTrack.mockClear(); observer.closed = vi.fn();

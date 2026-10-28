@@ -22,7 +22,7 @@ beforeEach(() => {
   });
   api.connect.mockImplementation(async (ticket: () => Promise<unknown>) => { api.observer.phase('connecting'); await ticket(); api.observer.phase('listening'); });
 });
-afterEach(() => { view?.unmount(); view = undefined; });
+afterEach(() => { view?.unmount(); view = undefined; vi.useRealTimers(); });
 describe('customer Live workshop', () => {
   it('only reads on entry and offers Live first plus typing without acquiring audio', async () => {
     await render(); expect(api.request.mock.calls.map(call => call[0])).toEqual([base]); expect(api.connect).not.toHaveBeenCalled(); expect(view!.text()).toContain('Promluvit s kufrem'); expect(view!.text()).toContain('Raději psát'); expect(view!.text()).not.toMatch(/Otázka .* ze 3/);
@@ -43,6 +43,64 @@ describe('customer Live workshop', () => {
   });
   it('supports Stop for real playback and releases audio on leaving', async () => {
     await render(); await click('Promluvit s kufrem'); api.observer.phase('speaking'); await flushPromises(); await click('Stop řeč'); expect(api.interrupt).toHaveBeenCalledOnce(); view!.unmount(); view = undefined; expect(api.dispose).toHaveBeenCalled();
+  });
+  it('keeps Live running through a failed poll and clears the sync message after recovery', async () => {
+    vi.useFakeTimers();
+    await render(); await click('Promluvit s kufrem');
+    api.observer.phase('speaking'); await flushPromises();
+    const disposed = api.dispose.mock.calls.length;
+    api.request.mockRejectedValueOnce(Object.assign(new Error('Limited'), { status: 429 }));
+    await vi.advanceTimersByTimeAsync(3000); await flushPromises();
+    expect(view!.text()).toContain('Hlasové spojení pokračuje');
+    expect(view!.text()).toContain('Ztlumit mikrofon');
+    expect(api.dispose).toHaveBeenCalledTimes(disposed);
+    expect(view!.find('textarea').exists()).toBe(false);
+    const reads = api.request.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5999); expect(api.request).toHaveBeenCalledTimes(reads);
+    await vi.advanceTimersByTimeAsync(1); await flushPromises();
+    expect(view!.text()).not.toContain('Aktualizace stavu se opozdila');
+    expect(api.connect).toHaveBeenCalledOnce();
+  });
+  it('coalesces manual refresh while a status request is still pending', async () => {
+    vi.useFakeTimers(); await render();
+    api.request.mockRejectedValueOnce(new Error('Offline'));
+    await vi.advanceTimersByTimeAsync(3000); await flushPromises();
+    let resolve!: (value: unknown) => void;
+    api.request.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    await click('Obnovit stav'); await click('Obnovit stav');
+    const reads = api.request.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(api.request).toHaveBeenCalledTimes(reads);
+    resolve({ eligible: true, reason: null, tier: 0, profile: { name: 'Sever', world: 'Přístav' }, session: null });
+    await flushPromises(); expect(view!.text()).not.toContain('Stav se nepodařilo načíst');
+  });
+  it('bounds a hung status request and recovers without ending Live', async () => {
+    vi.useFakeTimers(); await render(); await click('Promluvit s kufrem');
+    const disposed = api.dispose.mock.calls.length;
+    let pollSignal!: AbortSignal;
+    api.request.mockImplementationOnce((_path: string, _method: string, _body: unknown, signal: AbortSignal) => new Promise((_resolve, reject) => {
+      pollSignal = signal;
+      signal.addEventListener('abort', () => reject(new DOMException('Timed out', 'AbortError')), { once: true });
+    }));
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(15000); await flushPromises();
+    expect(pollSignal.aborted).toBe(true);
+    expect(view!.text()).toContain('Hlasové spojení pokračuje');
+    await click('Obnovit stav');
+    expect(view!.text()).not.toContain('Aktualizace stavu se opozdila');
+    expect(api.dispose).toHaveBeenCalledTimes(disposed);
+    expect(api.connect).toHaveBeenCalledOnce();
+  });
+  it('does not replace a newer Live manufacturing state with a delayed HTTP snapshot', async () => {
+    vi.useFakeTimers(); await render(); await click('Promluvit s kufrem');
+    let resolve!: (value: unknown) => void;
+    api.request.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    await vi.advanceTimersByTimeAsync(3000);
+    api.observer.workshopSession({ ...saved(), status: 'generating' }); await flushPromises();
+    resolve({ eligible: true, reason: null, tier: 0, profile: { name: 'Sever', world: 'Přístav' }, session: saved() });
+    await flushPromises();
+    expect(view!.text()).toContain('Hůlka dostává tvar');
+    expect(view!.text()).not.toContain('Pokračovat hlasem');
   });
   it('cancels a pending final verdict and cannot replay its late audio response', async () => {
     session = { ...saved(), status: 'complete', verdict: 'Uložená hůlka.', wand: { wandId: 'f'.repeat(32), name: 'Modrá nit', material: 'Jasan', core: 'Jiskra', temperament: 'Klidná', lore: 'Příběh', designDescription: 'Modrá nit.', affinity: 'Mosty', weakness: 'Spěch', combatArchetype: 'balanced', combatRulesVersion: 'wand-archetypes-v1', spells: ['strike', 'trick', 'shield'].map(action => ({ action, name: action, description: 'Kouzlo' })) } };

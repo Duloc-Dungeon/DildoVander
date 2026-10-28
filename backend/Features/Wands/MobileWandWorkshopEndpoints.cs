@@ -57,7 +57,7 @@ internal static partial class MobileWandWorkshopEndpoints
             }
             var available = unavailable is null;
             return Results.Ok(new WorkshopEligibility(available, available ? null : unavailable, projectedProfile, tier, session));
-        });
+        }).RequireRateLimiting(AccountIdentity.PollingRateLimitPolicy);
 
         group.MapGet("/workshop/sessions/current", async (int? upgrade, HttpContext http,
             CharacterProfileStore profiles, WandGenerationStore wands, GameStore games) =>
@@ -74,7 +74,7 @@ internal static partial class MobileWandWorkshopEndpoints
             var state = State(http, wands, operation, owner);
             await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
             return Results.Ok(new { session = state });
-        });
+        }).RequireRateLimiting(AccountIdentity.PollingRateLimitPolicy);
 
         group.MapPost("/workshop/sessions", async (MobileWandWorkshopStart request, HttpContext http,
             CharacterProfileStore profiles, WandGenerationStore wands, GameStore games,
@@ -139,7 +139,7 @@ internal static partial class MobileWandWorkshopEndpoints
             await RequireProfileRevisionAsync(profiles, Owner(http), state, http.RequestAborted);
             await RequireWorkshopLaunchSnapshotAsync(http, wands, Owner(http), id);
             return Results.Ok(new { session = state });
-        });
+        }).RequireRateLimiting(AccountIdentity.PollingRateLimitPolicy);
 
         group.MapPost("/workshop/sessions/{id}/retry", async (string id, HttpContext http,
             CharacterProfileStore profiles, WandGenerationStore wands, GameStore games) =>
