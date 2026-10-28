@@ -14,6 +14,12 @@ enum AccountTransportPolicy {
     }
 
     static func accountRequestBodyLimit(path: String, method: String, contentType: String?) -> Int {
+        if adminCharacterProfilePath(path) && method == "PUT" { return 256 * 1024 }
+        if adminCharacterPortrait(path: path, method: method, read: false) {
+            let type = contentType?.split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return ["image/jpeg", "image/png", "image/webp"].contains(type ?? "") ? 8 * 1024 * 1024 : 256 * 1024
+        }
         if path == "/app/v1/customer/conversation-preferences" {
             if method == "GET" { return 0 }
             if method == "PUT" { return 2 * 1024 }
@@ -21,6 +27,15 @@ enum AccountTransportPolicy {
         // These limits apply to accountTransport; the legacy JSON bridge keeps its own bound.
         if customerCompletionRead(path: path, method: method) { return 256 }
         if method == "POST", customerWaiting(path: path, method: method) { return 2 * 1024 }
+        if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/transcribe$", options: .regularExpression) != nil,
+           method == "POST", let type = contentType?.split(separator: ";", maxSplits: 1).first?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           ["audio/webm", "audio/mp4", "audio/ogg", "audio/wav"].contains(type) {
+            return 8 * 1024 * 1024
+        }
+        if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$", options: .regularExpression) != nil,
+           method == "POST" { return 16 * 1024 }
+        if path.contains("/customer/wand/workshop/") { return 16 * 1024 }
         guard accountArchivePortraitUpload(path: path, method: method),
               let type = contentType?.split(separator: ";", maxSplits: 1).first?
                 .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
@@ -33,7 +48,14 @@ enum AccountTransportPolicy {
     }
 
     static func accountResponseLimit(path: String, method: String) -> Int {
-        if prelaunchPortrait(path: path, method: method) { return 8 * 1024 * 1024 }
+        if (method == "GET" && (adminCharacterList(path) || adminCharacterProfilePath(path))) ||
+            (method == "PUT" && (adminCharacterProfilePath(path) || adminCharacterPortrait(path: path, method: method, read: false))) {
+            return 256 * 1024
+        }
+        if adminCharacterPortrait(path: path, method: method, read: true) { return 8 * 1024 * 1024 }
+        if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$", options: .regularExpression) != nil,
+           method == "POST" { return 8 * 1024 * 1024 }
+        if prelaunchPortrait(path: path, method: method) || sealedCasePortrait(path: path, method: method) { return 8 * 1024 * 1024 }
         if method == "GET", path.contains("/keepsakes/"), path.contains("/assets/"),
            testingSessions(path: path, method: method) { return 32 * 1024 * 1024 }
         if method == "GET" && (path == "/app/v1/customer/memory" || accountDataExportDownload(path: path, method: method)) {
@@ -58,20 +80,57 @@ enum AccountTransportPolicy {
         size >= 0 && size <= accountResponseLimit(path: path, method: method)
     }
 
-    static func accountResponseContentTypeAllowed(path: String, method: String, contentType: String?) -> Bool {
-        guard prelaunchPortrait(path: path, method: method) else { return true }
+    static func accountResponseContentTypeAllowed(path: String, method: String, contentType: String?, status: Int = 200) -> Bool {
+        if !(200..<300).contains(status) { return true }
+        if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$", options: .regularExpression) != nil,
+           method == "POST" {
+            guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+            return value == "audio/wav"
+        }
+        if adminCharacterPortrait(path: path, method: method, read: true) {
+            guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+            return value == "image/webp"
+        }
+        guard prelaunchPortrait(path: path, method: method) || sealedCasePortrait(path: path, method: method) else { return true }
         guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
         return ["image/png", "image/jpeg", "image/webp"].contains(value)
     }
 
     static func accountHeaderAllowed(path: String, method: String, name: String, value: String) -> Bool {
-        if name.lowercased() == "traceparent" { return validTraceparent(value) }
-        guard name.lowercased() == "x-dv10-consent" else { return true }
+        let normalizedName = name.lowercased()
+        if normalizedName == "traceparent" { return validTraceparent(value) }
+        if normalizedName == "x-wand-question-id" {
+            return wandTranscription(path: path, method: method) && value.range(of: "^[0-9a-f]{32}$", options: .regularExpression) != nil
+        }
+        if normalizedName == "x-wand-question-revision" {
+            return wandTranscription(path: path, method: method) && value.range(of: "^[1-9][0-9]{0,18}$", options: .regularExpression) != nil
+        }
+        guard normalizedName == "x-dv10-consent" else { return true }
         guard accountArchivePortraitUpload(path: path, method: method),
               value.utf8.count <= 10, value.allSatisfy({ $0.isASCII && $0.isNumber }),
               let version = Int32(value), version > 0 else { return false }
         return true
+    }
+
+    static func accountHeadersAllowed(path: String, method: String, headers: [String: Any]) -> Bool {
+        let questionIds = headers.filter { $0.key.lowercased() == "x-wand-question-id" }
+        let questionRevisions = headers.filter { $0.key.lowercased() == "x-wand-question-revision" }
+        guard wandTranscription(path: path, method: method) else {
+            return questionIds.isEmpty && questionRevisions.isEmpty
+        }
+        guard questionIds.count == 1, questionRevisions.count == 1,
+              let id = questionIds.first?.value as? String,
+              let revision = questionRevisions.first?.value as? String else { return false }
+        return accountHeaderAllowed(path: path, method: method, name: "x-wand-question-id", value: id)
+            && accountHeaderAllowed(path: path, method: method, name: "x-wand-question-revision", value: revision)
+    }
+
+    private static func wandTranscription(path: String, method: String) -> Bool {
+        method == "POST"
+            && path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/transcribe$", options: .regularExpression) != nil
     }
 
     private static func validArchiveUUID(_ value: String) -> Bool {
@@ -544,6 +603,10 @@ enum AccountTransportPolicy {
     }
 
     static func account(path: String, method: String) -> Bool {
+        if wandWorkshop(path: path, method: method) { return true }
+        if path == "/app/v1/customer/wand" { return method == "GET" }
+        if path == "/app/v1/customer/wand/sessions" { return method == "POST" }
+        if path.range(of: "^/app/v1/customer/wand/sessions/[0-9a-f]{32}/ticket\\z", options: .regularExpression) != nil { return method == "POST" }
         if path == "/app/v1/game" { return method == "GET" }
         if path == "/app/v1/game/matches" { return method == "POST" }
         if path == "/app/v1/game/progress" { return method == "GET" }
@@ -561,6 +624,7 @@ enum AccountTransportPolicy {
         if customerCompletionPage(path: path, method: method) || accountCollectionPage(path: path, method: method) { return true }
         if let parts = URLComponents(string: path), parts.scheme == nil, parts.host == nil, parts.fragment == nil,
            !parts.percentEncodedPath.contains("%"), !path.contains("\\"), path.count <= 4096 {
+            if adminCharacters(path: path, method: method) { return true }
             if prelaunchAccount(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }
             if show(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }
             if method == "DELETE", parts.path == "/app/v1/customer/character", let query = parts.queryItems,
@@ -602,6 +666,7 @@ enum AccountTransportPolicy {
         let exact: [String: Set<String>] = [
             "/app/v1/session": ["GET", "DELETE"], "/app/v1/account": ["GET", "DELETE"],
             "/app/v1/account/deletion": ["GET"],
+            "/app/v1/account/ai-consent": ["POST"],
             "/app/v1/passkeys/request-options": ["POST"], "/app/v1/passkeys/sign-in": ["POST"],
             "/app/v1/passkeys/reauthentication-options": ["POST"], "/app/v1/passkeys/reauthenticate": ["POST"],
             "/app/v1/enrollment/options": ["POST"], "/app/v1/enrollment/complete": ["POST"],
@@ -675,7 +740,48 @@ enum AccountTransportPolicy {
         return true
     }
 
+    private static func adminCharacterProfilePath(_ path: String) -> Bool {
+        path.range(of: "^/app/v1/admin/characters/(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$", options: .regularExpression) != nil
+    }
+
+    private static func adminCharacterPortrait(path: String, method: String, read: Bool) -> Bool {
+        let expectedMethod = read ? "GET" : "PUT"
+        guard method == expectedMethod else { return false }
+        let queryName = read ? "revision" : "expectedRevision"
+        return path.range(of: "^/app/v1/admin/characters/(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/portrait\\?\(queryName)=[1-9][0-9]{0,18}$", options: .regularExpression) != nil
+    }
+
+    private static func adminCharacters(path: String, method: String) -> Bool {
+        guard !path.contains(where: { $0.isWhitespace }) else { return false }
+        if adminCharacterList(path) { return method == "GET" }
+        if adminCharacterProfilePath(path) { return method == "GET" || method == "PUT" }
+        return adminCharacterPortrait(path: path, method: method, read: true) ||
+            adminCharacterPortrait(path: path, method: method, read: false)
+    }
+
+    private static func adminCharacterList(_ path: String) -> Bool {
+        !path.contains(where: { $0.isWhitespace }) && (path == "/app/v1/admin/characters" ||
+            path.range(of: "^/app/v1/admin/characters\\?after=[0-9a-f]{32}$", options: .regularExpression) != nil
+        )
+    }
+
+    private static func sealedCasePortrait(path: String, method: String) -> Bool {
+        method == "GET" && path.range(of: "^/app/v1/sealed-cases/sc_[a-f0-9]{32}/portraits/[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil
+    }
+
+    private static func sealedCase(path: String, method: String) -> Bool {
+        if path == "/app/v1/sealed-cases" { return method == "POST" }
+        if path == "/app/v1/sealed-cases/current" { return method == "GET" }
+        if sealedCasePortrait(path: path, method: method) { return true }
+        guard path.range(of: "^/app/v1/sealed-cases/sc_[a-f0-9]{32}(/[a-z-]+)?$", options: .regularExpression) != nil else { return false }
+        let parts = path.split(separator: "/").map(String.init)
+        if parts.count == 4 { return method == "GET" }
+        return method == "GET" ? ["play", "context", "moderator"].contains(parts[4])
+            : method == "POST" && ["lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent", "ai-players"].contains(parts[4])
+    }
+
     private static func prelaunchAccount(path: String, method: String, query: [URLQueryItem]) -> Bool {
+        if query.isEmpty && sealedCase(path: path, method: method) { return true }
         if path == "/app/v1/launch" { return method == "GET" && query.isEmpty }
         if path == "/app/v1/prelaunch/character" { return query.isEmpty && ["GET", "PUT"].contains(method) }
         if path == "/app/v1/prelaunch/character/retry" { return method == "POST" && query.isEmpty }
@@ -765,6 +871,31 @@ enum AccountTransportPolicy {
         if parts.count == 8, ["portraits", "generation"].contains(routeParts[5]),
            validArchiveUUID(parts[6]), routeParts[7] == "cancel" { return method == "POST" }
         return false
+    }
+
+    private static func wandWorkshop(path: String, method: String) -> Bool {
+        guard !path.contains("#"), !path.contains("%"), !path.contains("\\") else { return false }
+        let components = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        guard components.count <= 2 else { return false }
+        let route = String(components[0])
+        let query = components.count == 2 ? String(components[1]) : nil
+        if route == "/app/v1/customer/wand/workshop" || route == "/app/v1/customer/wand/workshop/sessions/current" {
+            return method == "GET" && (query == nil || query == "upgrade=0" || query == "upgrade=1")
+        }
+        if query != nil { return false }
+        if route == "/app/v1/customer/wand/workshop/sessions" { return method == "POST" }
+        let session = "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}"
+        if route.range(of: session + "$", options: .regularExpression) != nil { return method == "GET" }
+        if route.range(of: session + "/messages/[A-Za-z0-9_-]{1,160}$", options: .regularExpression) != nil {
+            return method == "PUT"
+        }
+        if route.range(of: session + "/(messages|finish|ticket|artwork/repair)$", options: .regularExpression) != nil {
+            return method == "POST"
+        }
+        if route.range(of: session + "/(answers|skip|audio|transcribe|artwork/retry)$", options: .regularExpression) != nil {
+            return method == "POST"
+        }
+        return route.range(of: session + "/answers/[0-9a-f]{32}$", options: .regularExpression) != nil && method == "PUT"
     }
 }
 

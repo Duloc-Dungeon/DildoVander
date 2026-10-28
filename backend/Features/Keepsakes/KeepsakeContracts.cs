@@ -48,7 +48,10 @@ internal sealed record KeepsakeProviderRequest(string KeepsakeId, KeepsakeIssueS
     public string? CanonicalArtworkAssetId { get; init; }
 }
 internal sealed record KeepsakeProviderOutput(KeepsakeStory? Story, byte[] ImageBytes, string MediaType,
-    string Provider, string Model, string Prompt, string ContentResponse, bool Synthetic, WizardIdentityContent? Identity = null);
+    string Provider, string Model, string Prompt, string ContentResponse, bool Synthetic, WizardIdentityContent? Identity = null)
+{
+    public string? GenerationParameters { get; init; }
+}
 internal interface IKeepsakeProvider
 {
     Task<KeepsakeProviderOutput> GenerateAsync(KeepsakeProviderRequest request, CancellationToken cancellationToken);

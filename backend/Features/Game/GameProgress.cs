@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Kufr.Backend.Features.Access;
+using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -165,11 +166,14 @@ internal static class GameProgressEndpoints
             }
             catch (GameFault fault) { return ApiProblem.Create(invocation.HttpContext, fault.Status, fault.Code); }
         });
-        routes.MapGet("", async (HttpContext context, AccountDatabase db, GameStore store) =>
+        routes.MapGet("", async (HttpContext context, AccountDatabase db, GameStore store,
+            CharacterProfileStore profiles) =>
         {
             var groupId = (string)context.Items["progress-group"]!;
             var peers = await ProgressPeersAsync(db, groupId, context.RequestAborted);
-            return Results.Ok(store.ReadProgress(groupId, context.User.FindFirstValue(ClaimTypes.NameIdentifier)!, peers));
+            var progress = store.ReadProgress(groupId,
+                context.User.FindFirstValue(ClaimTypes.NameIdentifier)!, peers);
+            return Results.Ok(await GameDisplayNames.DecorateAsync(progress, profiles, context.RequestAborted));
         });
         routes.MapPost("/ack", async (GameProgressCommand request, HttpContext context, AccountDatabase db, GameStore store) =>
         {

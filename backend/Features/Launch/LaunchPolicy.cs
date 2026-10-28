@@ -29,9 +29,12 @@ internal sealed record EffectiveLaunchAccess(bool Allowed, string Audience, long
     string Teaser, string InitialLoadingMessage, bool PersonalizedLoadingEnabled);
 internal sealed record LaunchAuditEntry(string ActorId, long ChangedAt, long Revision, string ChangeSummary);
 internal sealed record LaunchGroup(string Id, string Name, long? LaunchAt, long Revision,
-    long? CountdownDurationSeconds, bool ForceStartAtEnd, long? CountdownConfirmedAt, long? OpenedAt);
-internal sealed record LaunchGroupCreate(string Name, long? LaunchAt);
-internal sealed record LaunchGroupUpdate(long ExpectedRevision, string Name, long? LaunchAt);
+    long? CountdownDurationSeconds, bool ForceStartAtEnd, long? CountdownConfirmedAt, long? OpenedAt,
+    bool AdultContentEnabled = true, bool FlirtEnabled = true);
+internal sealed record LaunchGroupCreate(string Name, long? LaunchAt,
+    bool? AdultContentEnabled = null, bool? FlirtEnabled = null);
+internal sealed record LaunchGroupUpdate(long ExpectedRevision, string Name, long? LaunchAt,
+    bool? AdultContentEnabled = null, bool? FlirtEnabled = null);
 internal sealed record LaunchGroupCountdownUpdate(long ExpectedRevision, long DurationSeconds, bool ForceStartAtEnd);
 internal sealed record LaunchGroupRevision(long ExpectedRevision);
 internal sealed record BetaAdmissionConfiguration(long Revision, string? GroupId, bool RecruitmentOpen,
@@ -79,6 +82,7 @@ internal sealed class LaunchPolicyStore
             """;
         command.ExecuteNonQuery();
         EnsureGroupCountdownColumns(connection);
+        EnsureGroupContentColumns(connection);
         using var setup = connection.CreateCommand();
         setup.CommandText = """
             CREATE TABLE IF NOT EXISTS beta_admission (
@@ -154,6 +158,22 @@ internal sealed class LaunchPolicyStore
         migration.ExecuteNonQuery();
     }
 
+    private static void EnsureGroupContentColumns(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(launch_groups)";
+        using var reader = command.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read()) { columns.Add(reader.GetString(1)); }
+        reader.Close();
+        using var migration = connection.CreateCommand();
+        if (!columns.Contains("adult_content_enabled"))
+        { migration.CommandText += "ALTER TABLE launch_groups ADD COLUMN adult_content_enabled INTEGER NOT NULL DEFAULT 1;"; }
+        if (!columns.Contains("flirt_enabled"))
+        { migration.CommandText += "ALTER TABLE launch_groups ADD COLUMN flirt_enabled INTEGER NOT NULL DEFAULT 1;"; }
+        if (!string.IsNullOrEmpty(migration.CommandText)) { migration.ExecuteNonQuery(); }
+    }
+
     internal LaunchConfiguration Read()
     {
         using var connection = Open();
@@ -170,7 +190,7 @@ internal sealed class LaunchPolicyStore
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at FROM launch_groups ORDER BY name COLLATE NOCASE,id";
+        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at,adult_content_enabled,flirt_enabled FROM launch_groups ORDER BY name COLLATE NOCASE,id";
         using var reader = command.ExecuteReader();
         var groups = new List<LaunchGroup>();
         while (reader.Read()) { groups.Add(ReadGroup(reader)); }
@@ -382,7 +402,7 @@ internal sealed class LaunchPolicyStore
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at FROM launch_groups WHERE id=$id";
+        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at,adult_content_enabled,flirt_enabled FROM launch_groups WHERE id=$id";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadGroup(reader) : null;
@@ -392,7 +412,7 @@ internal sealed class LaunchPolicyStore
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at FROM launch_groups WHERE name=$name COLLATE NOCASE";
+        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at,adult_content_enabled,flirt_enabled FROM launch_groups WHERE name=$name COLLATE NOCASE";
         command.Parameters.AddWithValue("$name", name);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadGroup(reader) : null;
@@ -412,7 +432,7 @@ internal sealed class LaunchPolicyStore
         if (string.IsNullOrWhiteSpace(id) || id.Length > 64) { return null; }
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at FROM launch_groups WHERE id=$id";
+        command.CommandText = "SELECT id,name,launch_at,revision,countdown_duration_seconds,force_start_at_end,countdown_confirmed_at,opened_at,adult_content_enabled,flirt_enabled FROM launch_groups WHERE id=$id";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadGroup(reader) : null;
@@ -423,16 +443,18 @@ internal sealed class LaunchPolicyStore
         ValidateGroup(request.Name, request.LaunchAt);
         var draftDuration = LegacyDraftDuration(request.LaunchAt, now);
         var group = new LaunchGroup(Guid.NewGuid().ToString("N"), request.Name.Trim(), null, 1,
-            draftDuration, false, null, null);
+            draftDuration, false, null, null, request.AdultContentEnabled ?? true, request.FlirtEnabled ?? true);
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "INSERT INTO launch_groups(id,name,launch_at,revision,updated_at,countdown_duration_seconds,force_start_at_end) VALUES($id,$name,NULL,1,$now,$duration,0)";
+        command.CommandText = "INSERT INTO launch_groups(id,name,launch_at,revision,updated_at,countdown_duration_seconds,force_start_at_end,adult_content_enabled,flirt_enabled) VALUES($id,$name,NULL,1,$now,$duration,0,$adult,$flirt)";
         command.Parameters.AddWithValue("$id", group.Id);
         command.Parameters.AddWithValue("$name", group.Name);
         AddNullable(command, "$duration", group.CountdownDurationSeconds);
         command.Parameters.AddWithValue("$now", now);
+        command.Parameters.AddWithValue("$adult", group.AdultContentEnabled);
+        command.Parameters.AddWithValue("$flirt", group.FlirtEnabled);
         try { command.ExecuteNonQuery(); }
         catch (SqliteException error) when (error.SqliteErrorCode == 19)
         { throw new LaunchConfigurationException("launch_group_name_conflict", 409); }
@@ -455,14 +477,18 @@ internal sealed class LaunchPolicyStore
         { EnsureGroupCountdownEditable(connection, transaction, id, now); }
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
+        var adultContentEnabled = request.AdultContentEnabled ?? current.AdultContentEnabled;
+        var flirtEnabled = request.FlirtEnabled ?? current.FlirtEnabled;
         command.CommandText = !scheduleChanged
-            ? "UPDATE launch_groups SET name=$name,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected"
-            : "UPDATE launch_groups SET name=$name,countdown_duration_seconds=$duration,force_start_at_end=0,launch_at=NULL,countdown_confirmed_at=NULL,opened_at=NULL,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected";
+            ? "UPDATE launch_groups SET name=$name,adult_content_enabled=$adult,flirt_enabled=$flirt,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected"
+            : "UPDATE launch_groups SET name=$name,adult_content_enabled=$adult,flirt_enabled=$flirt,countdown_duration_seconds=$duration,force_start_at_end=0,launch_at=NULL,countdown_confirmed_at=NULL,opened_at=NULL,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected";
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$name", request.Name.Trim());
         if (scheduleChanged) { command.Parameters.AddWithValue("$duration", draftDuration!.Value); }
         command.Parameters.AddWithValue("$now", now);
         command.Parameters.AddWithValue("$expected", request.ExpectedRevision);
+        command.Parameters.AddWithValue("$adult", adultContentEnabled);
+        command.Parameters.AddWithValue("$flirt", flirtEnabled);
         try
         {
             if (command.ExecuteNonQuery() != 1)
@@ -590,7 +616,7 @@ internal sealed class LaunchPolicyStore
 
     private static LaunchGroup ReadGroup(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1),
         NullableInt64(reader, 2), reader.GetInt64(3), NullableInt64(reader, 4), reader.GetBoolean(5),
-        NullableInt64(reader, 6), NullableInt64(reader, 7));
+        NullableInt64(reader, 6), NullableInt64(reader, 7), reader.GetBoolean(8), reader.GetBoolean(9));
 
     private static void ValidateGroup(string? name, long? launchAt)
     {

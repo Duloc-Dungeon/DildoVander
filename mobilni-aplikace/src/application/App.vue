@@ -8,6 +8,7 @@ import AwNotice from '../components/AwNotice.vue';
 import { notifications, dismissNotice, notify } from './notifications';
 import { startPushRuntime } from './pushRuntime';
 import { account, accountDeletionRequested, offlineSession, refreshIdentity } from '../features/identity/session';
+import AccountAiConsent from '../features/identity/AccountAiConsent.vue';
 import { deviceSession } from '../features/suitcase/deviceSession';
 import { nativeDebug } from '../features/suitcase/nativeDebug';
 import { directorStop, clearDirectorStop } from '../features/director/directorStop';
@@ -36,12 +37,9 @@ const navigationHeight = ref('calc(5rem + var(--safe-area-inset-bottom, env(safe
 let navigationObserver: ResizeObserver | undefined;
 const viewError = ref('');
 const customerAccount = computed(() => isCustomerAccount(account.value));
-const navigation = computed(() => customerAccount.value ? [
-  { to: '/play', label: 'Večer', symbol: '◇' },
-  { to: '/me/character', label: customerCopy.text('shell.nav-character'), symbol: '✦' },
-  { to: '/me/keepsakes', label: customerCopy.text('shell.nav-keepsakes'), symbol: '▤' },
-  { to: '/me/account', label: 'Já', symbol: '⚙' },
-] : canEnterStaffArea(account.value) || account.value?.roles.includes('Tester') ? [
+const showCustomerNavigation = computed(() => customerAccount.value && !launchExperience.value
+  && !/^\/play\/(?:match|team)\//.test(route.path) && !route.path.startsWith('/play/boss/') && route.path !== '/play/practice');
+const navigation = computed(() => canEnterStaffArea(account.value) || account.value?.roles.includes('Tester') ? [
   { to: '/', label: 'Domů', symbol: '⌂' },
   { to: '/play', label: 'Hra', symbol: '◇' },
   ...(account.value?.roles.some(role => ['Owner', 'Administrator'].includes(role)) ? [{ to: '/settings/admin/launch', label: 'Večer', symbol: '✦' }] : []),
@@ -128,13 +126,13 @@ const removeRouterError = router.onError(() => { viewError.value = customerCopy.
 function refreshSession(): void {
   wnsSound.visible(!document.hidden);
   if (!document.hidden) {
-    void refreshIdentity().catch(() => { /* Offline local operation remains available. */ }).then(() => {
+    void refreshIdentity().then(() => {
       if (document.hidden) return;
       // Account changes reset cached access state synchronously. Fetch policies
       // after identity reconciliation so own-account routes can render the shell.
       void refreshLaunchAccess();
       void refreshCustomerMembership();
-    });
+    }).catch(() => { /* Keep established identity and policies until verification succeeds. */ });
   }
 }
 onMounted(() => {
@@ -162,8 +160,8 @@ onBeforeUnmount(() => {
 <template>
   <a class="skip-link" href="#main-content">{{ customerCopy.text('shell.skip') }}</a>
   <AwButton v-if="(launchExperience || gameExperience) && (deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" class="launch-emergency-stop" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>
-  <div class="application-shell" :class="{ 'launch-mode': launchExperience, 'game-mode': gameExperience }" :style="{ '--application-navigation-height': navigationHeight, '--application-navigation-count': navigation.length }">
-    <aside v-if="!launchExperience && !gameExperience" class="application-sidebar" :aria-label="customerCopy.text('shell.navigation')">
+  <div class="application-shell" :class="{ 'launch-mode': launchExperience, 'game-mode': gameExperience, 'customer-mode': customerAccount, 'has-customer-navigation': showCustomerNavigation }" :style="{ '--application-navigation-height': navigationHeight, '--application-navigation-count': navigation.length }">
+    <aside v-if="!customerAccount && !launchExperience && !gameExperience" class="application-sidebar" :aria-label="customerCopy.text('shell.navigation')">
       <RouterLink class="application-brand" to="/" :aria-label="customerCopy.text('shell.brand-home')"><img class="brand-mark" src="../assets/brand/emblem-small.webp" alt="" width="44" height="44" /><span>Wand Night Stand<small>{{ customerCopy.text('shell.brand-tagline') }}</small></span></RouterLink>
       <nav ref="navigationElement" class="primary-navigation" :aria-label="customerCopy.text('shell.sections')">
         <RouterLink v-for="item in navigation" :key="item.to" :to="item.to" :class="{ selected: item.to === activeNavigationPath }" :aria-current="item.to === activeNavigationPath ? 'page' : undefined">
@@ -185,12 +183,13 @@ onBeforeUnmount(() => {
       <main id="main-content" ref="main" class="application-main" tabindex="-1">
         <AwNotice v-if="offlineSession && !launchExperience" tone="warning">{{ customerCopy.text('shell.offline') }}</AwNotice>
         <AwNotice v-if="viewError" tone="danger"><p>{{ viewError }}</p><AwButton @click="router.go(0)">{{ customerCopy.text('shell.reload') }}</AwButton></AwNotice>
+        <AccountAiConsent v-else-if="account?.openAiConsent === false && !['/privacy', '/support', '/account-deletion'].includes(route.path)" />
         <RouterView v-else-if="routeAccessible" v-slot="{ Component, route: renderedRoute }">
           <KeepAlive :key="identityKey"><component :is="Component" v-if="renderedRoute.meta.keepAlive" :key="renderedRoute.name" /></KeepAlive>
           <component :is="Component" v-if="!renderedRoute.meta.keepAlive" :key="renderedViewKey(renderedRoute)" />
         </RouterView>
       </main>
-      <WnsNavigation v-if="customerAccount && !launchExperience && gameExperience && !/^\/play\/(?:match|team)\//.test(route.path) && !route.path.startsWith('/play/boss/') && route.path !== '/play/practice'" />
+      <WnsNavigation v-if="showCustomerNavigation" @resize="navigationHeight = `${$event}px`" />
       <footer v-if="!launchExperience && !gameExperience" class="application-footer"><span>Wand Night Stand</span><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink><a v-if="browserMode" class="application-install-link" href="/ios/">{{ customerCopy.text('shell.iphone') }}</a><span>{{ customerCopy.text('shell.verification') }}</span></footer>
     </div>
   </div>

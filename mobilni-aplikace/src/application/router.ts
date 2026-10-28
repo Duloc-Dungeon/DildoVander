@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteLocationNormalizedLoaded } from 'vue-router';
 import { watch } from 'vue';
 import { installAccessGuard } from './accessGuard';
+import { installInformationNavigation } from './informationNavigation';
 import { customerCopy, type CustomerCopyKey } from './customerCopy';
 
 export const router = createRouter({
@@ -14,6 +15,9 @@ export const router = createRouter({
     { path: '/account-deletion', name: 'account-deletion', component: () => import('../features/identity/AccountDeletionStatusView.vue'), meta: { title: 'Stav smazání účtu', private: true } },
     { path: '/access-revoked', name: 'access-revoked', component: () => import('../features/identity/RevokedAccessView.vue'), meta: { title: 'Přístup odebrán', private: true, requiresAccount: true } },
     { path: '/me', redirect: '/me/character' },
+    { path: '/play/pod-peceti', name: 'sealed-case-lobby', component: () => import('../features/sealed-case/SealedCaseView.vue'), meta: { title: 'Pod pečetí', private: true, requiresAccount: true } },
+    { path: '/play/pod-peceti/:id', name: 'sealed-case', component: () => import('../features/sealed-case/SealedCaseView.vue'), meta: { title: 'Pod pečetí', private: true, requiresAccount: true } },
+    { path: '/play/wand', name: 'wand-workshop', component: () => import('../features/game/WandWorkshopView.vue'), meta: { title: 'Kufrova dílna', private: true, requiresAccount: true } },
     { path: '/play/teams', name: 'game-teams', component: () => import('../features/game/TeamView.vue'), meta: { title: 'Spojenci', private: true, requiresAccount: true } },
     { path: '/play/team/:id', name: 'game-team', component: () => import('../features/game/TeamView.vue'), meta: { title: 'Týmový souboj', private: true, requiresAccount: true } },
     ...['/play', '/play/challenge', '/play/practice', '/play/chronicle', '/play/match/:id', '/play/boss', '/play/boss/:id', '/play/keeper', '/play/ranking', '/play/messages'].map((path, index) => ({ path, name: `game-${index}`, component: () => import('../features/game/PlayView.vue'), meta: { title: 'Hra', private: true, requiresAccount: true } })),
@@ -39,6 +43,7 @@ export const router = createRouter({
     { path: '/settings', name: 'settings', component: () => import('../features/identity/SettingsView.vue'), meta: { title: 'Nastavení', private: true, requiresAccount: true, lab: true } },
     { path: '/settings/admin', name: 'admin', component: () => import('../features/identity/AdminView.vue'), meta: { title: 'Správa', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/settings/admin/launch', name: 'launch-admin', component: () => import('../features/launch/LaunchManagementView.vue'), meta: { title: 'Večer a pozvánky', private: true, requiresAccount: true, administrator: true, staff: true } },
+    { path: '/settings/admin/characters', name: 'character-admin', component: () => import('../features/customer/CharacterAdminView.vue'), meta: { title: 'Postavy a portréty', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/admin/customer-sessions', name: 'customer-admin', component: () => import('../features/customer/CustomerAdminView.vue'), meta: { title: 'Zákaznické relace', private: true, requiresAccount: true, staff: true, operation: true } },
     { path: '/app/:pathMatch(.*)*', redirect: '/suitcase' },
     { path: '/companion/:pathMatch(.*)*', redirect: '/suitcase' },
@@ -96,4 +101,5 @@ router.afterEach(to => {
 
 watch(customerCopy.language, () => updateDocumentTitle(), { flush: 'sync' });
 
+installInformationNavigation(router);
 installAccessGuard(router);

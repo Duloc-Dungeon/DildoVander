@@ -219,12 +219,15 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
             request.httpMethod = method
             request.setValue(origin.absoluteString, forHTTPHeaderField: "Origin")
-            let permitted = ["accept", "content-type", "x-dv-csrf", "x-dv-confirm", "x-dv-device-id", "idempotency-key", "session-id", "boot-id", "media-epoch", "input-epoch", "input-sequence", "x-dv10-consent", "traceparent"]
+            let permitted = ["accept", "content-type", "x-dv-csrf", "x-dv-confirm", "x-dv-device-id", "idempotency-key", "session-id", "boot-id", "media-epoch", "input-epoch", "input-sequence", "x-dv10-consent", "traceparent", "x-wand-question-id", "x-wand-question-revision"]
             for (name, value) in call.getObject("headers") ?? [:] {
                 guard permitted.contains(name.lowercased()), let text = value as? String, text.count <= 1024,
                       !text.contains("\r"), !text.contains("\n"),
                       AccountTransportPolicy.accountHeaderAllowed(path: path, method: method, name: name, value: text) else { throw AccountError.invalidPath }
                 if name.lowercased() != "x-dv-csrf" { request.setValue(text, forHTTPHeaderField: name) }
+            }
+            guard AccountTransportPolicy.accountHeadersAllowed(path: path, method: method, headers: call.getObject("headers") ?? [:]) else {
+                throw AccountError.invalidPath
             }
             if let encoded = call.getString("bodyBase64") {
                 let bodyLimit = AccountTransportPolicy.accountRequestBodyLimit(
@@ -262,6 +265,8 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
             }
             guard let http = result.1 as? HTTPURLResponse,
                   AccountTransportPolicy.accountResponseAllowed(path: path, method: method, size: result.0.count),
+                  AccountTransportPolicy.accountResponseContentTypeAllowed(path: path, method: method,
+                    contentType: http.value(forHTTPHeaderField: "Content-Type"), status: http.statusCode),
                   AccountTransportPolicy.accountDataDownloadLengthAllowed(path: path, method: method,
                     contentLength: http.value(forHTTPHeaderField: "Content-Length"), size: result.0.count),
                   http.url?.host == origin.host, http.url?.scheme == origin.scheme, http.url?.port == origin.port else { throw AccountError.invalidResponse }
@@ -676,10 +681,10 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                 case "signin": optionsPath = "/app/v1/passkeys/request-options"; completionPath = "/app/v1/passkeys/sign-in"
                 case "customer-enroll":
                     optionsPath = "/app/v1/customer/enrollment/options"; completionPath = "/app/v1/customer/enrollment/complete"
-                    body = try encode(["displayName": call.getString("displayName") ?? ""])
+                    body = try encode(["displayName": call.getString("displayName") ?? "", "openAiConsent": call.getBool("openAiConsent") ?? false])
                 case "enroll":
                     optionsPath = "/app/v1/enrollment/options"; completionPath = "/app/v1/enrollment/complete"
-                    body = try encode(["token": call.getString("token") ?? "", "displayName": call.getString("displayName") ?? ""])
+                    body = try encode(["token": call.getString("token") ?? "", "displayName": call.getString("displayName") ?? "", "openAiConsent": call.getBool("openAiConsent") ?? false])
                 case "add": optionsPath = "/app/v1/passkeys/options"; completionPath = "/app/v1/passkeys/complete"
                 default: throw AccountError.invalidPath
                 }

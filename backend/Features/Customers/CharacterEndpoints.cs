@@ -21,6 +21,7 @@ internal static class CharacterEndpoints
         services.TryAddSingleton<ICharacterEnrichmentProvider, OpenAiCharacterEnrichmentProvider>();
         services.AddHostedService<CharacterEnrichmentWorker>();
         services.TryAddSingleton<ICharacterPortraitProvider, OpenAiCharacterPortraitProvider>();
+        services.TryAddSingleton<ICharacterPortraitFallbackProvider, WikimediaCharacterPortraitFallbackProvider>();
         services.AddHostedService<CharacterPortraitWorker>();
         return services;
     }
@@ -29,6 +30,7 @@ internal static class CharacterEndpoints
     {
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) { return; }
         app.MapPrelaunchCharacters();
+        app.MapAdminCharacters();
         var group = app.MapGroup("/app/v1/customer/character").RequireAuthorization().RequireRateLimiting("account");
         group.AddEndpointFilter(async (invocation, next) =>
         {
@@ -64,6 +66,12 @@ internal static class CharacterEndpoints
                         return ApiProblem.Create(http, 409, "invitation_universe_required");
                     }
                 }
+                if (http.Request.Method is "PUT" or "POST"
+                    && !invocation.Arguments.OfType<CharacterLabelWriteRequest>().Any())
+                {
+                    var consentError = await AccountAiConsent.RequireAsync(http);
+                    if (consentError is not null) { return consentError; }
+                }
                 return await next(invocation);
             }
             catch (CharacterException error) { return ApiProblem.Create(http, error.Status, error.Code); }
@@ -73,20 +81,25 @@ internal static class CharacterEndpoints
         {
             var owner = AccountId(http);
             var profile = await store.ReadAsync(owner, http.RequestAborted);
-            var wand = profile is null ? null : http.RequestServices.GetService<Kufr.Backend.Features.Wands.WandGenerationStore>()
-                ?.LatestBonded(owner, profile.ProfileId, profile.Revision);
+            var wand = profile is not null && http.RequestServices.GetService<Kufr.Backend.Features.Wands.WandGenerationStore>() is { } wandStore
+                    ? Kufr.Backend.Features.Wands.MobileWandSessions.Current(wandStore, owner, profile.ProfileId, profile.Revision) : null;
             var artwork = wand is null ? null : http.RequestServices.GetService<KeepsakeStore>()
                 ?.FindOwnedWandArtwork(owner, wand.WandId);
             return Results.Ok(new { profile, generatedWand = wand?.ToPublic(), artwork });
         });
         group.MapPut("", async (CharacterWriteRequest request, HttpContext http, CharacterProfileStore store) =>
-            Results.Ok(new { profile = await store.SaveAsync(AccountId(http), request, http.RequestAborted) }));
+            Results.Ok(new { profile = await store.SaveAsync(AccountId(http), request with { OpenAiConsent = true, PortraitConsent = true }, http.RequestAborted, canEditExisting: AccountRoles.IsAdmin(http.User)) }));
+        group.MapPut("/label", async (CharacterLabelWriteRequest request, HttpContext http, CharacterProfileStore store) =>
+            Results.Ok(new { profile = await store.WriteLabelAsync(AccountId(http), request, http.RequestAborted) }));
         group.MapPost("/correction", async (CharacterCorrectionRequest request, HttpContext http, CharacterProfileStore store) =>
-            Results.Ok(new { profile = await store.CorrectAsync(AccountId(http), request, http.RequestAborted) }));
+            AccountRoles.IsAdmin(http.User)
+                ? Results.Ok(new { profile = await store.CorrectAsync(AccountId(http), request with { OpenAiConsent = true }, http.RequestAborted) })
+                : ApiProblem.Create(http, 403, "account_admin_required"));
         group.MapDelete("", async (long expectedRevision, string expectedProfileId, HttpContext http, CharacterProfileStore store) =>
         {
             await store.DeleteAsync(AccountId(http), expectedRevision, expectedProfileId, http.RequestAborted);
-            await ReconcileDeletionsAsync(http.RequestServices, store, http.RequestAborted);
+            // The endpoint filter still holds identity admission here. The durable
+            // reconciler performs cross-store cleanup only after that reservation is released.
             return Results.NoContent();
         });
     }
@@ -96,17 +109,22 @@ internal static class CharacterEndpoints
     internal static Task ReconcileDeletionsAsync(IServiceProvider services, CharacterProfileStore store, CancellationToken token)
     {
         var journal = services.GetService<OperationJournal>();
-        if (journal is null) { return Task.CompletedTask; }
-        var conversations = services.GetRequiredService<ConversationStore>();
+        var conversations = journal is null ? null : services.GetService<ConversationStore>();
         return store.ReplayDeletionsAsync((accountId, profileId) =>
         {
+            // Case cleanup is mandatory and independent of the optional operation journal.
+            // ReplayDeletionsAsync marks the tombstone complete only after this callback returns.
+            Kufr.Backend.Features.SealedCase.SealedCaseErasure.EraseAccount(services, accountId);
             var wands = services.GetService<Kufr.Backend.Features.Wands.WandGenerationStore>();
             if (profileId is null) { wands?.DeleteAccount(accountId); }
             else { wands?.DeleteProfile(accountId, profileId); }
-            journal.RevokeCustomerProfile(accountId, profileId);
-            foreach (var session in journal.CustomerSessions(accountId).Where(session =>
-                (profileId is null || session.ProfileId == profileId) && session.ConversationId is not null))
-            { conversations.InvalidateMemoryContext(session.DeviceId, session.ConversationId); }
+            if (journal is not null)
+            {
+                journal.RevokeCustomerProfile(accountId, profileId);
+                foreach (var session in journal.CustomerSessions(accountId).Where(session =>
+                    (profileId is null || session.ProfileId == profileId) && session.ConversationId is not null))
+                { conversations!.InvalidateMemoryContext(session.DeviceId, session.ConversationId); }
+            }
             return Task.CompletedTask;
         }, token);
     }

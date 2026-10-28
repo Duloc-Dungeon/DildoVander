@@ -62,7 +62,7 @@ try {
     readiness: { state: 'pending', reason: 'awaiting_result', canRetry: false, shouldPoll: true, hasStory: false, hasArtwork: false },
     accessKind: null, canReadPrivate: false, canManage: false, canUnlink: false,
   };
-  const ownerAccount = { id: 'browser-owner', displayName: 'Testovací vlastník', roles: ['Owner'] };
+  const ownerAccount = { id: 'browser-owner', displayName: 'Testovací vlastník', roles: ['Owner'], openAiConsent: true };
   const homeHeading = () => sessionAccount ? sessionAccount.displayName : 'Tvoje dobrodružství začíná tady.';
   await context.route('**/*', async route => {
     const request = route.request(); const url = new URL(request.url());
@@ -76,11 +76,22 @@ try {
     if (sessionAccount && url.pathname === '/app/v1/customer/character') {
       if (request.method() === 'PUT') {
         const body = request.postDataJSON();
+        assert.equal(body.openAiConsent, true, 'character work uses recorded account consent');
+        assert.equal(body.portraitConsent, true, 'first creation and administrator edits request a matching portrait');
+        assert.equal(body.newCharacter, undefined, 'the application never replaces a character identity');
+        assert.equal(body.expectedProfileId, customerProfile?.profileId ?? null);
+        assert.equal(body.expectedRevision, customerProfile?.revision ?? 0);
+        assert(!customerProfile || sessionAccount.roles.some(role => ['Owner', 'Administrator'].includes(role)), 'only an administrator may edit an existing character');
         characterWrites.push(body);
-        customerProfile = { profileId: body.newCharacter ? 'browser-new-profile' : customerProfile.profileId, revision: body.newCharacter ? 1 : customerProfile.revision + 1, userInput: body.userInput, status: body.openAiConsent ? 'queued' : 'saved' };
+        customerProfile = { profileId: customerProfile?.profileId ?? 'browser-first-profile', revision: (customerProfile?.revision ?? 0) + 1, userInput: body.userInput, status: 'queued' };
       }
       return json({ profile: customerProfile });
     }
+    if (sessionAccount && url.pathname === '/app/v1/prelaunch/character' && request.method() === 'GET') return json({
+      character: customerProfile ? { profileId: customerProfile.profileId, revision: customerProfile.revision,
+        name: customerProfile.userInput.name, universe: customerProfile.userInput.world, status: customerProfile.status } : null,
+      artwork: null,
+    });
     if (sessionAccount && url.pathname === '/app/v1/customer/conversation-preferences') {
       if (request.method() === 'PUT') {
         const body = request.postDataJSON();
@@ -146,7 +157,7 @@ try {
   // The public walkthrough is synthetic even for authenticated customer/staff
   // visitors. App-wide session refresh may read identity; demo actions may not
   // read private content or issue any request/command.
-  for (const identity of [null, { id: 'demo-customer', displayName: 'Ukázkový host', roles: ['Customer'] }, ownerAccount]) {
+  for (const identity of [null, { id: 'demo-customer', displayName: 'Ukázkový host', roles: ['Customer'], openAiConsent: true }, ownerAccount]) {
     sessionAccount = identity;
     const beforeDemo = requests.length;
     await page.goto(origin + '/demo');
@@ -260,119 +271,120 @@ try {
   assert.equal(await page.locator('.lost-access-help').count(), 0, 'enrollment keeps its own recovery guidance');
   assert(await page.getByLabel('Jak vám máme říkat?').isVisible());
   assert.equal(await page.locator('#account-invite').count(), 0, 'customer registration does not ask for an invite');
+  const registrationConsent = page.locator('.consent-fieldset input[type="checkbox"]');
+  assert.equal(await registrationConsent.isChecked(), false, 'registration consent is explicit and initially unchecked');
+  assert.equal(await registrationConsent.getAttribute('required'), '');
+  assert(await page.locator('form button[type="submit"]').isDisabled(), 'registration is blocked until consent is granted');
+
   // Customer pages use isolated API fixtures. The end request below changes only
   // synthetic session state; browser mode never requests BLE or a start ticket.
-  sessionAccount = { id: 'browser-customer', displayName: 'Testovací host', roles: ['Customer'] };
+  sessionAccount = { id: 'browser-customer', displayName: 'Testovací host', roles: ['Customer'], openAiConsent: true };
   for (const entry of ['/me', '/me/']) {
     await page.goto(origin + entry);
     await page.waitForURL(url => url.pathname === '/me/character');
     await hasHeading('Moje postava');
   }
   await page.goto(origin + '/me/character'); await hasHeading('Moje postava');
-  const customerNavigation = page.getByRole('navigation', { name: 'Sekce aplikace' });
+  const customerNavigation = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
   assert.equal(await customerNavigation.getByRole('link').count(), 4);
   assert.equal(await customerNavigation.getByRole('link', { name: /Večer/ }).getAttribute('href'), '/play');
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
   await page.getByRole('heading', { name: 'Luna', exact: true }).waitFor();
-  assert.equal(await page.getByText('A prepared character summary.', { exact: true }).isVisible(), false, 'preparation detail starts collapsed');
-  await page.getByText('Upravit nebo upřesnit postavu', { exact: true }).click();
-  assert.equal(await page.locator('#character-name').inputValue(), 'Luna');
-  assert.equal(await page.locator('#character-openai-consent').isChecked(), false, 'character enrichment requires an unchecked OpenAI opt-in');
-  await page.getByRole('button', { name: '+ Skryté tajemství', exact: true }).click();
-  assert.match(await page.locator('#character-description').inputValue(), /skrývá tajemství/);
-  assert.equal(await page.locator('#character-openai-consent').isChecked(), false, 'brief ideas never grant AI consent');
-  assert.equal(characterWrites.length, 0, 'brief ideas stay local until explicit save');
-  assert(await page.getByText(/společnosti OpenAI/).first().isVisible());
-  assert.equal(await page.getByText('Public character guide').count(), 1);
-  await page.getByText('Upravit nebo upřesnit postavu', { exact: true }).click();
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
-    await fits();
-    await page.screenshot({ path: path.join(screenshots, `customer-character-${width}.png`), fullPage: true });
-  }
-  await page.getByText('Upravit nebo upřesnit postavu', { exact: true }).click();
-  await page.locator('#character-name').fill('Neuložená oprava Luny');
-  await page.locator('#character-openai-consent').check();
-  await page.getByRole('button', { name: 'Nová postava', exact: true }).click();
-  const newCharacterDialog = page.getByRole('dialog', { name: 'Vytvořit novou postavu', exact: true });
-  await newCharacterDialog.waitFor();
-  assert.equal(await page.locator('#new-character-name').inputValue(), '');
-  assert.equal(await page.locator('#new-character-openai-consent').isChecked(), false, 'new identity never inherits existing AI consent');
-  await page.locator('#new-character-name').fill('Zrušený koncept');
-  await page.keyboard.press('Escape');
-  await newCharacterDialog.waitFor({ state: 'hidden' });
-  assert.equal(await page.locator('#character-name').inputValue(), 'Neuložená oprava Luny');
-  assert.equal(characterWrites.length, 0, 'canceling a new identity never saves');
-  assert.equal(await page.getByRole('button', { name: 'Nová postava', exact: true }).evaluate(button => button === document.activeElement), true, 'dialog restores focus to its opener');
-  await page.getByRole('button', { name: 'Nová postava', exact: true }).click();
+  const assertCustomerReadOnly = async (target = page) => {
+    assert.equal(await target.locator('#character-name').count(), 0, 'an existing customer character has no editor');
+    assert.equal(await target.getByText('Upravit nebo upřesnit postavu', { exact: true }).count(), 0, 'refinement belongs to administrators');
+    assert.equal(await target.getByRole('button', { name: 'Nová postava', exact: true }).count(), 0, 'an account cannot add another character');
+    assert.equal(await target.locator('#new-character-name').count(), 0, 'no hidden replacement form exists');
+    assert.equal(await target.locator('#character-openai-consent').count(), 0, 'recorded consent is not requested again');
+    assert(!/OpenAI/.test(await target.locator('main').innerText()), 'the post-registration character view does not repeat the provider name');
+  };
+  await assertCustomerReadOnly();
+  assert.equal(await page.getByText('A prepared character summary.', { exact: true }).count(), 0, 'internal preparation details are absent from the customer view');
+  assert.equal(characterWrites.length, 0, 'viewing a saved character cannot mutate it');
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
-    await fits();
-    await page.keyboard.press('Tab');
-    assert(await newCharacterDialog.evaluate(dialog => dialog.contains(document.activeElement)), 'keyboard focus stays in the new-identity dialog');
-    await page.screenshot({ path: path.join(screenshots, `customer-new-character-${width}.png`), fullPage: true });
+    await fits(); await assertCustomerReadOnly();
+    await page.screenshot({ path: path.join(screenshots, `customer-character-${width}.png`), fullPage: true });
   }
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
-  const confirmNewCharacter = newCharacterDialog.getByRole('button', { name: 'Vytvořit novou postavu', exact: true });
-  await confirmNewCharacter.scrollIntoViewIfNeeded();
-  await fits();
-  assert(await confirmNewCharacter.isVisible(), 'new identity confirmation remains reachable with enlarged text');
-  assert(await newCharacterDialog.getByRole('button', { name: 'Zrušit', exact: true }).isVisible());
-  await page.screenshot({ path: path.join(screenshots, 'customer-new-character-320-text-200.png'), fullPage: true });
+  await fits(); await assertCustomerReadOnly();
+  await page.screenshot({ path: path.join(screenshots, 'customer-character-320-text-200.png'), fullPage: true });
   await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
-  await page.locator('#new-character-name').fill('Mira');
-  await page.locator('#new-character-world').fill('Star Book');
-  await newCharacterDialog.getByRole('button', { name: 'Vytvořit novou postavu', exact: true }).click();
-  await newCharacterDialog.waitFor({ state: 'hidden' });
-  await page.getByRole('heading', { name: 'Mira', exact: true }).waitFor();
-  assert.equal(characterWrites.length, 1);
-  assert.equal(characterWrites[0].newCharacter, true);
-  assert.equal(characterWrites[0].expectedProfileId, 'browser-profile');
-  assert.equal(characterWrites[0].expectedRevision, 2);
-  assert.equal(characterWrites[0].openAiConsent, false);
-  assert(await page.getByText('Postava je uložená bez AI přípravy. Můžeš pokračovat do hry.', { exact: true }).isVisible());
-  await page.goto(origin);
-  await page.locator('.customer-journey-card a[href="/play"]').waitFor();
-  assert(await page.getByRole('navigation', { name: 'Sekce aplikace' }).getByRole('link', { name: /Památky/ }).isVisible());
-  // Exercise the capability fallback used by supported pre-15.4 iOS browsers.
-  // This is a desktop regression fixture, not an actual iPhone acceptance gate.
+
+  // Administrative edits retain the existing profile identity. Local brief ideas
+  // remain drafts until one explicit save, using the consent recorded on the account.
+  const originalCustomerProfile = customerProfile;
+  const customerAccount = sessionAccount;
+  sessionAccount = { id: 'browser-admin', displayName: 'Syntetický administrátor', roles: ['Administrator'], openAiConsent: true };
+  await page.goto(origin + '/me/character'); await hasHeading('Moje postava');
+  await page.getByText('Upravit nebo upřesnit postavu', { exact: true }).click();
+  assert.equal(await page.locator('#character-name').inputValue(), 'Luna');
+  assert.equal(await page.locator('#character-openai-consent').count(), 0);
+  await page.getByRole('button', { name: '+ Skryté tajemství', exact: true }).click();
+  assert.match(await page.locator('#character-description').inputValue(), /skrývá tajemství/);
+  assert.equal(characterWrites.length, 0, 'brief ideas stay local until explicit save');
+  await page.getByText('Podrobnosti přípravy a zdroje', { exact: true }).click();
+  assert.equal(await page.getByText('Public character guide').count(), 1);
+  await page.locator('#character-name').fill('Luna upřesněná');
+  await page.getByRole('button', { name: 'Uložit změny', exact: true }).click();
+  await page.getByRole('heading', { name: 'Luna upřesněná', exact: true }).waitFor();
+  assert.equal(characterWrites.length, 1, 'one administrative save issues one mutation');
+  assert.equal(characterWrites[0].expectedProfileId, originalCustomerProfile.profileId);
+  assert.equal(customerProfile.profileId, originalCustomerProfile.profileId, 'administrator editing preserves the account character identity');
+  assert.equal(customerProfile.revision, originalCustomerProfile.revision + 1);
+  assert.equal(await page.getByRole('button', { name: 'Nová postava', exact: true }).count(), 0, 'administrators edit rather than replace the identity');
+
+  // First creation also works when native dialog APIs are absent. Once saved,
+  // a second page and reload both expose only that same character.
+  sessionAccount = { id: 'browser-first-customer', displayName: 'První host', roles: ['Customer'], openAiConsent: true };
+  customerProfile = null;
   const fallbackPage = await context.newPage();
   fallbackPage.on('pageerror', error => errors.push(error.message));
   await fallbackPage.addInitScript(() => {
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: undefined });
     Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: undefined });
   });
-  await fallbackPage.setViewportSize({ width: 390, height: 844 });
   await fallbackPage.goto(origin + '/me/character');
-  await fallbackPage.waitForURL(url => url.pathname === '/me/character');
   await fallbackPage.getByRole('heading', { name: 'Moje postava', exact: true }).waitFor();
-  const fallbackOpener = fallbackPage.getByRole('button', { name: 'Nová postava', exact: true });
-  await fallbackOpener.click();
-  const inlineCharacter = fallbackPage.getByRole('region', { name: 'Vytvořit novou postavu', exact: true });
-  await inlineCharacter.waitFor();
-  assert.equal(await fallbackPage.locator('dialog').count(), 0);
-  assert.equal(await fallbackPage.locator('#new-character-name').evaluate(input => input === document.activeElement), true);
-  await inlineCharacter.getByRole('button', { name: 'Zrušit', exact: true }).click();
-  await inlineCharacter.waitFor({ state: 'hidden' });
-  assert.equal(await fallbackOpener.evaluate(button => button === document.activeElement), true);
-  await fallbackOpener.click();
-  await fallbackPage.locator('#new-character-name').fill('Sora');
-  await fallbackPage.locator('#new-character-world').fill('Sky Book');
-  await fallbackPage.screenshot({ path: path.join(screenshots, 'customer-inline-character-390.png'), fullPage: true });
-  await inlineCharacter.getByRole('button', { name: 'Vytvořit novou postavu', exact: true }).click();
-  await inlineCharacter.waitFor({ state: 'hidden' });
-  await fallbackPage.getByRole('heading', { name: 'Sora', exact: true }).waitFor();
+  await fallbackPage.locator('#character-name').fill('Mira');
+  await fallbackPage.locator('#character-world').fill('Star Book');
+  for (const width of [1440, 390, 320]) {
+    await fallbackPage.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
+    assert(await fallbackPage.getByRole('button', { name: 'Vytvořit postavu', exact: true }).isVisible());
+    assert(await fallbackPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await fallbackPage.screenshot({ path: path.join(screenshots, `customer-first-character-${width}.png`), fullPage: true });
+  }
+  await fallbackPage.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+  await fallbackPage.getByRole('button', { name: 'Vytvořit postavu', exact: true }).scrollIntoViewIfNeeded();
+  assert(await fallbackPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  await fallbackPage.screenshot({ path: path.join(screenshots, 'customer-first-character-320-text-200.png'), fullPage: true });
+  await fallbackPage.evaluate(() => { document.documentElement.style.fontSize = ''; });
+  await fallbackPage.getByRole('button', { name: 'Vytvořit postavu', exact: true }).click();
+  await fallbackPage.getByRole('heading', { name: 'Mira', exact: true }).waitFor();
   assert.equal(characterWrites.length, 2);
-  assert.equal(characterWrites[1].newCharacter, true);
-  assert.equal(characterWrites[1].openAiConsent, false);
+  assert.equal(characterWrites[1].expectedProfileId, null);
+  assert.equal(characterWrites[1].expectedRevision, 0);
+  assert.equal(customerProfile.revision, 1);
+  const createdProfileId = customerProfile.profileId;
+  await assertCustomerReadOnly(fallbackPage);
+  await fallbackPage.reload();
+  await fallbackPage.getByRole('heading', { name: 'Mira', exact: true }).waitFor();
+  await assertCustomerReadOnly(fallbackPage);
+  assert.equal(characterWrites.length, 2, 'reload cannot create a second character');
+  assert.equal(customerProfile.profileId, createdProfileId);
   await fallbackPage.close();
-  const customerNav = page.getByRole('navigation', { name: 'Sekce aplikace' });
+  sessionAccount = customerAccount;
+  customerProfile = originalCustomerProfile;
+  await page.goto(origin);
+  await page.locator('.customer-journey-card a[href="/play"]').waitFor();
+  assert(await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: /Památky/ }).isVisible());
+  const customerNav = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
   assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/play', '/me/character', '/me/keepsakes', '/me/account']);
   for (const removedEntry of ['Rozhovor', 'Kufr', 'Dílna', 'Připojení', 'Zařízení']) {
     assert.equal(await customerNav.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not part of customer navigation`);
   }
   await page.goto(origin + '/me/conversation'); await hasHeading('Rozhovor s kufrem');
-  assert.equal(await page.locator('#conversation-openai-consent').isChecked(), false, 'voice consent is separate and unchecked');
+  assert.equal(await page.locator('#conversation-openai-consent').count(), 0, 'the conversation uses account consent without repeating registration');
   assert(await page.getByRole('button', { name: 'Promluvit s kufrem', exact: true }).isDisabled());
   assert(await page.getByText(/Bluetooth připojení je dostupné v instalované aplikaci/).isVisible());
   assert.equal(requests.filter(request => request.path.includes('customerBle') || request.path.includes('start-tickets')).length, 0);
@@ -634,7 +646,7 @@ try {
   // Synthetic owner UI evidence only. This does not authenticate against a
   // backend, create a passkey or permit any management mutation.
   const ownerRequests = [];
-  const owner = { id: 'synthetic-owner', displayName: 'SYNTETICKÝ VLASTNÍK · UI FIXTURE', roles: ['Owner'] };
+  const owner = { id: 'synthetic-owner', displayName: 'SYNTETICKÝ VLASTNÍK · UI FIXTURE', roles: ['Owner'], openAiConsent: true };
   let ownerSessionActive = true;
   await context.route('**/app/v1/**', async route => {
     const request = route.request();

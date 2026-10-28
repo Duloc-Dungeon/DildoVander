@@ -56,6 +56,7 @@ internal static class AccountMigrationTests
                 Check(await db.Users.CountAsync() == 2 && await db.UserPasskeys.CountAsync() == 2, "upgrade retains real users and passkeys");
                 Check(await db.Sessions.CountAsync() >= 2 && await db.ResourceGrants.CountAsync() == 2, "upgrade retains sessions and grants");
                 Check(!await db.Users.AnyAsync(x => x.CreatedAt != 0), "legacy account creation time stays unknown");
+                Check(!await db.Users.AnyAsync(x => x.OpenAiConsentAt != null || x.OpenAiConsentVersion != 0), "legacy accounts are never silently opted into AI processing");
                 await db.Database.ExecuteSqlRawAsync("INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES ('99999999999999_UnknownFuture', '10.0.12')");
             }
             var rejected = false;

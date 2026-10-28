@@ -26,7 +26,7 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const image = await readFile(new URL('./fixtures/characters/matylda.webp', import.meta.url));
-let account = { id: 'launch-guest', displayName: 'Host', roles: ['Customer'] };
+let account = { id: 'launch-guest', displayName: 'Host', roles: ['Customer'], openAiConsent: true };
 let character = null;
 let artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
 let config = {
@@ -66,11 +66,19 @@ try {
       artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
       return json({ character, artwork });
     }
+    if (url.pathname === '/app/v1/customer/character/label' && request.method() === 'PUT') {
+      const body = request.postDataJSON();
+      assert.equal(body.profileId, character.profileId);
+      assert.equal(body.expectedLabel, character.label ?? null);
+      assert(!('name' in body) && !('userInput' in body));
+      character = { ...character, label: body.label.trim() || null };
+      return json({ profile: { label: character.label } });
+    }
     if (url.pathname === '/app/v1/prelaunch/character/portrait') {
       if (!account || url.searchParams.get('profileId') !== character?.profileId || Number(url.searchParams.get('revision')) !== character?.revision) return json({}, 404);
       return route.fulfill({ status: 200, contentType: 'image/webp', body: image });
     }
-    if (url.pathname === '/app/v1/prelaunch/character/retry' && request.method() === 'POST') { artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null }; return json({ character, artwork }); }
+    if (url.pathname === '/app/v1/prelaunch/character/retry' && request.method() === 'POST') { writes.push(request.postDataJSON()); artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null }; return json({ character, artwork }); }
     if (url.pathname === '/app/v1/admin/users') return json({ users: [], grants: [] });
     if (url.pathname === '/app/v1/admin/operations/status') return json({ modes: null, readiness: { accounts: true, keepsakes: false, keepsakeGeneration: false, passkeyRelyingParty: 'localhost', nativeAssociationConfigured: false }, archive: [] });
     if (url.pathname === '/app/v1/admin/operations/logs') return json({ storeId: 'fixture', nextCursor: 0, hasMore: false, truncated: false, droppedWrites: 0, entries: [] });
@@ -126,14 +134,10 @@ try {
   await page.getByRole('heading', { name: /Vstup na vlastní pověst/ }).waitFor();
   await page.getByLabel('Jméno postavy').fill('Matylda');
   await page.getByLabel('Univerzum').fill('Město za zrcadlem');
-  assert.doesNotMatch(await page.locator('.launch-consent').innerText(), /OpenAI/i);
-  await page.locator('.launch-data-details summary').click();
-  await page.getByText(/fiktivní jméno a svět s OpenAI/).waitFor();
-  assert.equal(await page.getByRole('checkbox').isChecked(), false, 'reading privacy must not opt in');
-  assert.equal(await page.getByLabel('Jméno postavy').inputValue(), 'Matylda', 'privacy keeps the unsaved draft');
-  await page.locator('.launch-data-details summary').click();
+  assert.equal(await page.getByRole('checkbox').count(), 0, 'registration consent is already recorded');
+  assert.doesNotMatch(await page.locator('body').innerText(), /OpenAI/i);
+  assert.equal(await page.getByLabel('Jméno postavy').inputValue(), 'Matylda');
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-entry.png'), fullPage: true });
-  await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Připravit překvapení' }).click();
   await page.getByRole('heading', { name: /Matylda/ }).waitFor();
   assert.match(await page.locator('.launch-status').innerText(), /Chvíli strpení|Postava je uložená/);
@@ -143,6 +147,11 @@ try {
   assert.doesNotMatch(await page.locator('.launch-copy').innerText(), /Poznáváme postavu|Mícháme barvy|portrét|rešerš|malujeme/i);
   assert.deepEqual(Object.keys(writes.at(-1)).sort(), ['expectedRevision', 'name', 'openAiConsent', 'universe']);
   assert.equal(writes.at(-1).openAiConsent, true);
+  await page.getByLabel('Rozlišovací označení (nepovinné)').fill('U okna');
+  await page.getByRole('button', { name: 'Uložit označení', exact: true }).click();
+  await page.getByRole('heading', { name: 'Matylda · U okna', exact: true }).waitFor();
+  assert.equal(character.name, 'Matylda');
+  assert.equal(writes.length, 1, 'display labels never repeat AI creation');
   assert.equal(await page.getByText(/Summary|Appearance|Facts/).count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-countdown.png'), fullPage: true });
   for (const [label, viewport] of [['tablet', { width: 820, height: 1180 }], ['desktop', { width: 1440, height: 1000 }]]) {
@@ -189,8 +198,8 @@ try {
   character = { profileId: 'legacy-profile', revision: 8, name: 'Eliška', universe: 'Starý svět', status: 'ready' };
   artwork = null;
   await page.reload({ waitUntil: 'networkidle' });
-  await page.getByText(/Pro přípravu osobního překvapení/).waitFor();
-  await page.getByRole('checkbox').check();
+  await page.getByText('Postava je uložená. Ještě jí připravíme portrét.').waitFor();
+  assert.equal(await page.getByRole('checkbox').count(), 0);
   await page.getByRole('button', { name: 'Připravit překvapení' }).click();
   assert(writes.some(write => write.expectedProfileId === 'legacy-profile' && write.expectedRevision === 8));
 
@@ -203,7 +212,7 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-invitation.png'), fullPage: true });
 
   assert.equal(loadedScripts.some(script => /(?:LaunchManagement(?:View|Panel)?|CustomerAdminView|PersonaLabView|TestingSessionsView|DirectorPanel)-/.test(script)), false, 'prelaunch guest must not load privileged view chunks');
-  account = { id: 'launch-admin', displayName: 'Admin', roles: ['Owner'] };
+  account = { id: 'launch-admin', displayName: 'Admin', roles: ['Owner'], openAiConsent: true };
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();

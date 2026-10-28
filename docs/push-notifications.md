@@ -30,6 +30,24 @@ Funkce používá existující přihlašování `ApplicationIdentity`. Ve výcho
 
 Každá platforma se nabídne jen při vyplněné vlastní konfiguraci. Přítomnost hodnot neprokazuje platnost klíčů ani oprávnění poskytovatele. VAPID klíče vytvářej pomocí standardního VAPID generátoru, například `VapidHelper.GenerateVapidKeys()` z použité knihovny WebPush. Zachovej jejich pár mezi restarty; rotace vyžaduje nové přihlášení webového prohlížeče k oznámením.
 
+### Kde získat údaje
+
+**Web:** VAPID pár si vytvoříš lokálně; není potřeba Firebase ani účet Apple Developer. Jednorázový příkaz z oficiálního [web-push CLI](https://github.com/web-push-libs/web-push):
+
+```sh
+npx --yes --package=web-push web-push generate-vapid-keys --json
+```
+
+Výstup `publicKey` patří do `Push:Web:PublicKey`, `privateKey` do `Push:Web:PrivateKey`. `Push:Web:Subject` je kontaktní adresa, například `mailto:support@dildovander.de`. Soukromý klíč patří pouze serveru.
+
+**Android:** Ve [Firebase Console](https://console.firebase.google.com/) vyber nebo vytvoř projekt a přidej Android aplikaci pro `de.dildovander.companion`. Její `google-services.json` je klientská konfigurace pro sestavení APK. Projektové ID najdeš v **Project settings → General**. Pro server povol **Firebase Cloud Messaging API (V1)** a v **Project settings → Service accounts** vygeneruj JSON klíč služby. Serverový service account musí mít oprávnění `cloudmessaging.messages.create`; vhodné omezené oprávnění lze nastavit přes IAM. Tento soubor ulož soukromě na server a odkaž na něj přes `Push:Android:ServiceAccountPath`.
+
+Klientský `google-services.json` a serverový service-account JSON jsou dva různé soubory. Do `ANDROID_GOOGLE_SERVICES_JSON_BASE64` patří base64 celého klientského souboru. Secret se nastavuje v aplikačním GitHub repozitáři přes **Settings → Secrets and variables → Actions**. Serverový soukromý JSON nikdy nebal do aplikace. Viz [Firebase Android setup](https://firebase.google.com/docs/android/setup) a [FCM HTTP v1 authorization](https://firebase.google.com/docs/cloud-messaging/send/v1-api).
+
+**iOS:** V [Apple Developer](https://developer.apple.com/account/) najdeš Team ID v **Membership details**. V **Certificates, Identifiers & Profiles → Keys** vytvoř klíč s oprávněním **Apple Push Notification service**, poznamenej Key ID a stáhni `.p8` (soukromý klíč lze stáhnout jen jednou). `.p8` patří soukromě na server; `Push:Ios:PrivateKeyPath` je jeho serverová cesta. U App ID `app.turquoise6409.green2444` zapni **Push Notifications** a vytvoř odpovídající provisioning profil. `Push:Ios:Topic` musí přesně odpovídat bundle ID. Podrobnosti: [vytvoření APNs klíče](https://developer.apple.com/help/account/keys/create-a-private-key/), [povolení capability](https://developer.apple.com/help/account/identifiers/enable-app-capabilities), [APNs prostředí](https://developer.apple.com/documentation/bundleresources/entitlements/aps-environment).
+
+Po vložení údajů do soukromé runtime konfigurace nastav `Push__Enabled=true` a načti konfiguraci standardním provozním postupem. GitHub build secret sám o sobě server nenakonfiguruje. První kontrolu proveď přes **Poslat zkušební oznámení** po povolení oznámení v aplikaci; potom ověř příchozí herní výzvu i změnu večera.
+
 Přihlášení, poslední pozorovaný stav a fronta jsou v `push.sqlite` pod `ApplicationIdentity:DataRoot`. Doručovací údaje i obsah zpráv chrání existující ASP.NET Data Protection. Zálohuj společně databázi a klíče z `ApplicationIdentity:DataProtectionRoot`. Není potřeba migrace databáze Identity. Odstranění účtu maže jeho push registrace i frontu; export účtu explicitně vylučuje doručovací přístupové údaje a interní frontu.
 
 Fronta přežije restart. Pro jeden datový adresář provozuj jednu instanci backendu s push workerem; fronta nepoužívá distribuované pronájmy pro více odesílatelů. Neodeslané zprávy expirují za deset minut; dočasné chyby mají omezené opakování. Neplatné tokeny se odstraňují. Před odesláním se znovu ověřuje aktuální vlastník registrace, relace, stav účtu, přístup a aktuálnost události. Odhlášenému, zablokovanému nebo odebranému účtu se další zprávy neodesílají. Zprávu již přijatou poskytovatelem nelze odvolat a při pádu mezi odesláním a potvrzením může vzniknout duplicita. Zprávy obsahují stručný text a povolenou interní cestu, bez postav a rozhovorů.
@@ -37,6 +55,8 @@ Fronta přežije restart. Pro jeden datový adresář provozuj jednu instanci ba
 ## Web
 
 Web Push vyžaduje HTTPS (při vývoji funguje loopback), podporu Push API a oprávnění uživatele. Manifest umožňuje instalaci webu. Na iOS/iPadOS je webové oznámení dostupné pro web přidaný na plochu. Worker `/push-sw.js` musí být dostupný jako JavaScript pod stejným originem; nemá fetch handler ani offline cache soukromých stránek. Manifest `/manifest.webmanifest` a ikona `/push-icon.png` jsou součástí Vite výstupu. CSP povoluje vlastní manifest a worker.
+
+Webový profil v `web/deploy/site-locations.conf` má pro tyto tři soubory přesné veřejné GET/HEAD cesty s vlastními MIME typy a revalidací cache. Při aktivaci musí odpovídající profil používat i nasazený web; samotné vložení klíčů neodblokuje chybějící statickou cestu. Soukromá nasazovací autorita udržuje své kopie samostatně, proto jejich případnou aktualizaci proveď samostatně revidovaným provozním postupem.
 
 Webové endpointy jsou omezené na podporované služby Chrome/FCM, Firefox, Apple a Windows. Odchozí transport odmítá neveřejné adresy a přesměrování. Přidání jiné push služby vyžaduje vědomé rozšíření validace a testů.
 

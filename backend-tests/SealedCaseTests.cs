@@ -202,7 +202,9 @@ internal static class SealedCaseTests
         var world = new SealedWorldLog();
         world.Append(new("event", 2, "A", "B", "STUN", "SUCCESS", new Dictionary<string,string>(), "secret"));
         SealedExperience[] experiences = [new("experience", "A", "event", "Vidíš záblesk.", "OBSERVED"), new("unrelated", "A", "another-event", "Jiná scéna.", "OBSERVED"), new("other-viewer", "B", "event", "Cizí prožitek.", "OBSERVED")];
-        var own = SealedProjection.ForPlayer("A", world, experiences, [], [new("action", "A", "STUN", "B", true, ["event"])], false);
+        // Causal knowledge is explicitly granted by the trusted observer/action
+        // writer; sharing an internal source event alone is not authorization.
+        var own = SealedProjection.ForPlayer("A", world, experiences, [], [new("action", "A", "STUN", "B", true, ["event"]) { AuthorizedResultRefs = ["experience", "other-viewer"] }], false);
         Equal("experience", own.CovertActions.Single().PerceivedResultRefs.Single());
     }
 

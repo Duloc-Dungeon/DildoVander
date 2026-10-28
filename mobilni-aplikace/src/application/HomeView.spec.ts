@@ -246,7 +246,7 @@ describe('Home customer journey', () => {
     accountReads.get('customer-2')!.profile.resolve({ profile: { status: 'needs_clarification' } });
     accountReads.get('customer-2')!.sessions.resolve({ items: [] });
     await flushPromises();
-    expect(wrapper.get('a[href="/me/character"]').text()).toBe('Upřesnit postavu');
+    expect(wrapper.get('a[href="/me/character"]').text()).toBe('Zkontrolovat postavu');
 
     accountReads.get('customer-1')!.profile.resolve({ profile: { status: 'ready' } });
     accountReads.get('customer-1')!.sessions.resolve({ items: [] });

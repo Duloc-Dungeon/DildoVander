@@ -6,12 +6,15 @@ import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from '../identity/AccountDeletion.vue';
+import CharacterLabelEditor from '../customer/CharacterLabelEditor.vue';
+import { characterDisplayName } from '../customer/characterLabel';
 import { account, accountDeletionRequested, accountRequest } from '../identity/session';
 import { clearInvitationRegistration, getInvitationRegistration, invitationRegistration, reconcileInvitationCharacter, saveInvitationCharacter, setInvitationDraft } from '../identity/invitationRegistration';
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
 import { launchCopy as copy } from './launchCopy';
 import PortraitCurtain from './PortraitCurtain.vue';
+import CharacterEntrance from './CharacterEntrance.vue';
 import SceneShell from '../../components/scene/SceneShell.vue';
 import PaperSurface from '../../components/scene/PaperSurface.vue';
 import CharacterCountdown from '../../components/scene/CharacterCountdown.vue';
@@ -30,7 +33,7 @@ const state = ref<PrelaunchState | null>(null);
 const characterVerified = ref(false);
 const name = ref('');
 const universe = ref('');
-const consent = ref(false);
+const consent = computed(() => account.value?.openAiConsent === true);
 const betaEnrollmentAvailable = ref<boolean | null>(null);
 const membershipRequestMessage = ref('');
 const draftProvided = ref(false);
@@ -39,6 +42,7 @@ const error = ref('');
 const remaining = ref(0);
 const revealed = ref(false);
 const groupOpening = ref(false);
+const groupPresenting = ref(false);
 const groupBusy = ref(false);
 const formFocused = ref(false);
 let characterRead = 0;
@@ -65,7 +69,7 @@ const portrait = usePrivateCharacterPortrait(() => {
     ? { accountId: account.value.id, profileId: character.profileId, revision: character.revision } : null;
 });
 const phase = computed(() => {
-  if (portrait.failed.value || state.value?.artwork?.status === 'failed' || state.value?.character?.status === 'failed') return 'failed';
+  if (portrait.failed.value || state.value?.artwork?.status === 'failed') return 'failed';
   if (hasPortrait.value) return 'ready';
   return state.value?.character ? 'preparing' : 'entry';
 });
@@ -82,6 +86,21 @@ const statusMessage = computed(() => {
   return copy.value.saved;
 });
 const finalMessage = computed(() => state.value?.artwork?.finalMessage || copy.value.finalFallback);
+const portraitSource = computed(() => {
+  const source = state.value?.artwork?.source;
+  if (!source) return null;
+  try {
+    const url = new URL(source.url);
+    const licenseUrl = new URL(source.licenseUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'commons.wikimedia.org' || url.port || url.username || url.password || !url.pathname.startsWith('/wiki/File:')
+      || licenseUrl.protocol !== 'https:' || licenseUrl.port || licenseUrl.username || licenseUrl.password
+      || !(licenseUrl.hostname === 'commons.wikimedia.org' && licenseUrl.pathname.startsWith('/wiki/File:')
+        || licenseUrl.hostname === 'creativecommons.org' && licenseUrl.pathname.startsWith('/licenses/'))) return null;
+    return source;
+  } catch {
+    return null;
+  }
+});
 const timeParts = computed(() => {
   const total = Math.max(0, Math.floor(remaining.value / 1000));
   return [Math.floor(total / 86400), Math.floor(total / 3600) % 24, Math.floor(total / 60) % 60, total % 60];
@@ -89,11 +108,12 @@ const timeParts = computed(() => {
 watch(() => account.value?.id, id => {
   accountEpoch++;
   groupOpening.value = false;
+  groupPresenting.value = false;
+  groupBusy.value = false;
   characterRead++;
   portrait.clear();
   state.value = null;
   characterVerified.value = false;
-  consent.value = false;
   busy.value = false;
   error.value = '';
   revealed.value = false;
@@ -116,7 +136,7 @@ watch(() => registration.value?.status, status => {
   if (status === 'confirmed' && controller) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
 });
 watch(hasPortrait, ready => { if (ready) finishInvitationPresentation(); });
-watch(() => state.value?.character?.profileId, () => { consent.value = false; revealed.value = false; }, { flush: 'sync' });
+watch(() => state.value?.character?.profileId, () => { revealed.value = false; }, { flush: 'sync' });
 function rememberDraft(): void {
   if (account.value && !state.value?.character && !writing.value && !uncertain.value) setInvitationDraft(account.value.id, name.value, universe.value);
 }
@@ -142,6 +162,7 @@ async function refreshPolicy(): Promise<void> {
   if (!value.allowed) {
     const wasOpening = groupOpening.value;
     groupOpening.value = false;
+    groupPresenting.value = false;
     // A pause may arrive before the opening scene ever fetched a character.
     // Reconcile the waiting scene with reads, never a second enrollment/save.
     if (wasOpening && account.value && customerMembershipState.value === 'active') {
@@ -165,17 +186,36 @@ async function refreshPolicy(): Promise<void> {
     else groupOpening.value = true;
   }
 }
-async function enterGroup(): Promise<void> {
+async function enterGroup(continueToApp = false): Promise<void> {
   const owner = account.value;
   if (!owner || groupBusy.value || !policy.value?.allowed || (isCustomerAccount(owner) && customerMembershipState.value !== 'active')) return;
+  const epoch = accountEpoch;
   groupBusy.value = true;
   error.value = '';
-  try { await refreshPolicy(); }
-  catch { error.value = copy.value.readFailed; groupBusy.value = false; return; }
-  if (!policy.value?.allowed || account.value?.id !== owner.id) { groupBusy.value = false; return; }
-  try { sessionStorage.setItem(`wand.group-opening-seen.v1.${owner.id}`, 'seen'); } catch { /* The server still checks access at the destination. */ }
-  try { await router.replace(defaultSignedInDestination(owner)); }
-  finally { groupBusy.value = false; }
+  try {
+    await refreshPolicy();
+    if (epoch !== accountEpoch || !policy.value?.allowed || account.value?.id !== owner.id || customerMembershipState.value !== 'active') return;
+    if (!continueToApp) {
+      groupPresenting.value = true;
+      void refreshCharacter(controller?.signal)
+        .catch(() => { if (epoch === accountEpoch) error.value = copy.value.readFailed; })
+        .then(() => { if (epoch === accountEpoch) beginPolling(); });
+      return;
+    }
+    const failure = await router.replace(defaultSignedInDestination(owner));
+    if (epoch !== accountEpoch) return;
+    if (failure) { error.value = copy.value.readFailed; return; }
+    if (account.value?.id === owner.id) {
+      try { sessionStorage.setItem(`wand.group-opening-seen.v1.${owner.id}`, 'seen'); } catch { /* Restricted storage can safely replay the introduction. */ }
+    }
+  }
+  catch { if (epoch === accountEpoch) error.value = copy.value.readFailed; }
+  finally { if (epoch === accountEpoch) groupBusy.value = false; }
+}
+async function retryEntrance(): Promise<void> {
+  const epoch = accountEpoch;
+  await retryRead();
+  if (epoch === accountEpoch && state.value?.artwork?.status === 'ready' && portrait.failed.value) await portrait.retry();
 }
 async function refreshBetaEnrollment(): Promise<void> {
   try {
@@ -195,7 +235,7 @@ async function refreshCharacter(signal?: AbortSignal): Promise<void> {
   if (!value.character) {
     if (previous || registration.value?.status === 'confirmed') {
       clearInvitationRegistration(owner);
-      name.value = ''; universe.value = ''; consent.value = false; draftProvided.value = false;
+      name.value = ''; universe.value = ''; draftProvided.value = false;
       portrait.clear(); selectInvitationPresentation();
     }
     return;
@@ -231,7 +271,7 @@ async function prepareExistingPortrait(): Promise<void> {
   const epoch = accountEpoch;
   busy.value = true; error.value = '';
   try {
-    await accountRequest('/app/v1/prelaunch/character', 'PUT', { expectedRevision: existing.revision, expectedProfileId: existing.profileId, name: existing.name, universe: existing.universe, openAiConsent: true });
+    await accountRequest('/app/v1/prelaunch/character/retry', 'POST', { expectedRevision: existing.revision, expectedProfileId: existing.profileId });
     if (epoch !== accountEpoch) return;
     await refreshCharacter(controller?.signal); beginPolling();
   } catch {
@@ -246,7 +286,9 @@ async function retryPortrait(): Promise<void> {
   busy.value = true; error.value = '';
   try {
     if (state.value?.artwork?.status === 'ready') { await portrait.retry(); return; }
-    await accountRequest('/app/v1/prelaunch/character/retry', 'POST', {});
+    await accountRequest('/app/v1/prelaunch/character/retry', 'POST', {
+      expectedProfileId: state.value?.character?.profileId, expectedRevision: state.value?.character?.revision,
+    });
     if (epoch === accountEpoch) { await refreshCharacter(controller?.signal); beginPolling(); }
   } catch { if (epoch === accountEpoch) error.value = copy.value.failed; }
   finally { if (epoch === accountEpoch) busy.value = false; }
@@ -301,7 +343,8 @@ async function requestBetaAdmission(): Promise<void> {
 }
 function beginPolling(): void {
   if (!account.value || !presentationForeground.value || navigator.onLine === false || pollTimer || controller?.signal.aborted) return;
-  if (!actualPreparation.value && !uncertain.value) return;
+  const entranceWaiting = groupPresenting.value && !hasPortrait.value && !portrait.failed.value && state.value?.artwork?.status !== 'failed';
+  if (!actualPreparation.value && !uncertain.value && !entranceWaiting) return;
   pollTimer = setTimeout(async () => {
     pollTimer = undefined;
     try { await refreshCharacter(controller?.signal); }
@@ -373,14 +416,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SceneShell v-if="groupOpening" class="launch-page group-opening" labelled-by="group-opening-title" :active="presentationForeground">
-    <div class="group-opening-art" data-scene-enter aria-hidden="true"><span>W</span></div>
-      <section class="group-opening-copy" aria-live="polite">
+  <SceneShell v-if="groupOpening" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
+    <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!error" :active="presentationForeground" :busy="groupBusy" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
+      <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
+      <p v-if="portraitSource && hasPortrait" class="launch-attribution">Obrázek z internetu: <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> · {{ portraitSource.author }} · <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
+    </CharacterEntrance>
+    <template v-else>
+      <div class="group-opening-art" data-scene-enter aria-hidden="true"><span>W</span></div>
+      <section class="group-opening-copy">
       <h1 id="group-opening-title">{{ language === 'en' ? 'The evening begins.' : 'Večer začíná.' }}</h1>
-      <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup">{{ copy.retry }}</button></AwNotice>
-      <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup">{{ language === 'en' ? 'Enter' : 'Vstoupit' }}</AwButton>
-      <button class="launch-skip" :disabled="groupBusy" @click="enterGroup">{{ language === 'en' ? 'Skip animation' : 'Přeskočit animaci' }}</button>
+      <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup(false)">{{ copy.retry }}</button></AwNotice>
+      <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup(false)">Vstoupit</AwButton>
     </section>
+    </template>
     <footer class="launch-footer"><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
   <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" labelled-by="launch-title">
@@ -412,17 +460,14 @@ onBeforeUnmount(() => {
             <div v-if="customerFixedUniverse" class="fixed-universe"><span>{{ copy.universe }}</span><strong>{{ customerFixedUniverse }}</strong><p>{{ language === 'en' ? 'Set by your invitation group.' : 'Určeno skupinou, která tě pozvala.' }}</p></div>
             <AwField v-else id="character-universe" :label="copy.universe" :hint="copy.universeHint"><input id="character-universe" aria-describedby="character-universe-hint" v-model="universe" class="aw-input" maxlength="160" autocomplete="off" required @input="rememberDraft" /></AwField>
           </template>
-          <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
-          <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></details>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
         <form v-else-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait" @focusin="formFocused = true" @focusout="formFocusOut">
           <p>{{ copy.missingPortrait }}</p>
-          <label class="launch-consent"><input v-model="consent" type="checkbox" /><span>{{ copy.consent }}</span></label>
-          <details class="launch-data-details"><summary>{{ copy.privacyDetailsTitle }}</summary><p>{{ copy.privacyDetails }}</p><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink></details>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
-        <CharacterCountdown v-if="state?.character" class="countdown" heading-id="launch-title" :name="state.character.name" :universe="state.character.universe" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
+        <CharacterCountdown v-if="state?.character" class="countdown" heading-id="launch-title" :name="characterDisplayName(state.character.name, state.character.label)" :universe="state.character.universe" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
+        <CharacterLabelEditor v-if="state?.character" :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" />
       </PaperSurface>
       <PortraitCurtain class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" @revealed="revealed = $event" @failed="portrait.fail()" />
       <div class="launch-text">
@@ -430,6 +475,7 @@ onBeforeUnmount(() => {
         <div v-if="revealed && hasPortrait" class="launch-final">
           <template v-if="state?.artwork?.welcome"><p class="launch-joke">{{ state.artwork.welcome.joke }}</p><p v-if="state.artwork.welcome.identity" class="launch-identity">{{ state.artwork.welcome.identity }}</p><p v-if="state.artwork.welcome.teaser" class="launch-teaser">{{ state.artwork.welcome.teaser }}</p></template>
           <p v-else class="launch-joke">{{ finalMessage }}</p>
+          <p v-if="portraitSource" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
         </div>
         <p v-else class="launch-generic">{{ copy.loading }}</p>
       </div>
@@ -458,6 +504,8 @@ onBeforeUnmount(() => {
 .launch-joke { font-family: var(--aw-font-display); font-size: clamp(1.6rem, 6.5vw, 2rem); line-height: 1.3; font-weight: 500; }
 .launch-identity { font-family: var(--aw-font-display); font-size: 1.2rem; line-height: 1.6; }
 .launch-teaser { color: var(--aw-muted); font-size: .875rem; line-height: 1.6; }
+.launch-attribution { margin-top: 1.25rem; color: var(--wns-muted, #b2b9b6); font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
+.launch-attribution a { min-height: 44px; display: inline-flex; align-items: center; color: inherit; text-decoration: underline; text-underline-offset: .15em; }
 .launch-form { display: grid; gap: 1rem; margin-block: 1rem 1.5rem; }
 .launch-form p { margin: 0; }
 .launch-form .aw-input { min-height: 48px; font-size: 1rem; }
@@ -510,7 +558,7 @@ onBeforeUnmount(() => {
 .launch-copy :deep(h1) { color: var(--wns-text, #f5f5f0); font: 800 clamp(2.25rem, 8vw, 3.5rem)/1 var(--wns-display); letter-spacing: -.065em; }
 .launch-status, .launch-text .launch-status { color: var(--wns-muted, #b2b9b6); }
 .launch-final { text-align: left; }
-.launch-joke { color: var(--wns-text, #f5f5f0); font: 700 clamp(1.5rem, 6vw, 2.5rem)/1.2 var(--wns-display); letter-spacing: -.035em; }
+.launch-joke { color: var(--wns-text, #f5f5f0); font: 700 clamp(1.5rem, 6vw, 2.5rem)/1.35 var(--wns-display); letter-spacing: -.035em; }
 .launch-identity { color: var(--wns-muted, #b2b9b6); font: 500 1rem/1.55 var(--wns-display); }
 .launch-teaser, .launch-generic { color: var(--wns-muted, #b2b9b6); }
 .launch-art { overflow: visible; border-radius: 30px; background: var(--wns-violet, #c8b9fc); }
@@ -527,5 +575,5 @@ onBeforeUnmount(() => {
 .group-opening-copy h1 { color: var(--wns-text, #f5f5f0); text-shadow: none; font-family: var(--wns-display); font-weight: 800; letter-spacing: -.06em; }
 .launch-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
 @media (min-width: 760px) { .launch-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, .85fr); align-items: center; gap: 2rem; } .launch-copy { order: 1; } .launch-art { order: 2; } .launch-text { grid-column: 1 / -1; } }
-@media (max-width: 759px) { .launch-copy { border-radius: 24px; } .launch-art { max-height: 56vh; } }
+@media (max-width: 759px) { .launch-copy { border-radius: 24px; } .launch-art { max-width: min(100%, 44.8vh); margin-inline: auto; } }
 </style>

@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Identity;
 
-internal sealed record EnrollmentRequest(string Token, string DisplayName);
+internal sealed record EnrollmentRequest(string Token, string DisplayName, bool OpenAiConsent = false);
 internal sealed record PasskeyResponse(JsonElement Credential);
 internal sealed record InvitationRequest(string Role, string? RecoveryUserId, string? LaunchGroupId = null);
 internal sealed record UserChange(string Role, bool Disabled);
@@ -80,6 +80,7 @@ internal static partial class AccountEndpoints
         group.MapDelete("/passkeys/{credentialId}", DeletePasskeyAsync).RequireAuthorization();
         group.MapPut("/passkeys/{credentialId}", RenamePasskeyAsync).RequireAuthorization();
         group.MapGet("/account", AccountDetailsAsync).RequireAuthorization();
+        group.MapPost("/account/ai-consent", AccountAiConsent.AcceptAsync).RequireAuthorization();
         group.MapDelete("/account", DeleteAccountAsync).RequireAuthorization();
         group.MapGet("/account/deletion", AccountDeletionStatusAsync);
         group.MapGet("/workshop/{id}/engines", async (string id, HttpContext context, IConfiguration configuration) =>
@@ -136,7 +137,7 @@ internal static partial class AccountEndpoints
         {
             enabled = true,
             origin = config.AllowedOrigins[0],
-            account = user is null ? null : new { user.Id, user.DisplayName, roles },
+            account = user is null ? null : new { user.Id, user.DisplayName, roles, openAiConsent = AccountAiConsent.HasConsent(user) },
             expiresAt,
             csrfToken = csrf.GetAndStoreTokens(context).RequestToken
         });
@@ -195,6 +196,8 @@ internal static partial class AccountEndpoints
         {
             return Error(context, "invitation_expired_or_used");
         }
+        if (invitation.UserId is null && !request.OpenAiConsent)
+        { return ApiProblem.Create(context, 409, "ai_consent_required"); }
         var id = invitation.UserId ?? Guid.NewGuid().ToString("N");
         var recoveryUser = invitation.UserId is null ? null : await db.Users.SingleOrDefaultAsync(x => x.Id == id && !x.Disabled);
         if (invitation.UserId is not null && recoveryUser is null)
@@ -209,7 +212,7 @@ internal static partial class AccountEndpoints
             where membership.UserId == id select role.Name!).ToArrayAsync();
         var label = PasskeyLabels.Account(name, roles);
         var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = id, Name = label, DisplayName = label });
-        await SaveCeremonyAsync(context, db, "enroll", id, name, hash);
+        await SaveCeremonyAsync(context, db, "enroll", id, name, hash, openAiConsent: request.OpenAiConsent);
         return Results.Content(options, "application/json");
     }
 
@@ -272,6 +275,10 @@ internal static partial class AccountEndpoints
         if (user is null || user.Disabled) { return Error(context, "recovery_unavailable"); }
         if (invitation.UserId is null)
         {
+            if (!AccountAiConsent.HasConsent(ceremony))
+            { return ApiProblem.Create(context, 409, "ai_consent_required"); }
+            user.OpenAiConsentAt = ceremony.OpenAiConsentAt;
+            user.OpenAiConsentVersion = ceremony.OpenAiConsentVersion;
             if (!(await users.CreateAsync(user)).Succeeded)
             {
                 return Error(context, "account_not_created");
@@ -470,7 +477,7 @@ internal static partial class AccountEndpoints
     }
 
     private static async Task SaveCeremonyAsync(HttpContext context, AccountDatabase db, string kind, string userId,
-        string name, string? invitationHash, string? enrollmentGroupId = null, long? enrollmentRevision = null)
+        string name, string? invitationHash, string? enrollmentGroupId = null, long? enrollmentRevision = null, bool openAiConsent = false)
     {
         await db.Ceremonies.Where(x => x.ExpiresAt <= Now() || x.Consumed).ExecuteDeleteAsync();
         // A browser has at most one active ceremony. Replacing it invalidates its prior challenge.
@@ -482,7 +489,9 @@ internal static partial class AccountEndpoints
         {
             Id = Secret(), Kind = kind, UserId = userId, DisplayName = name,
             InvitationHash = invitationHash, EnrollmentGroupId = enrollmentGroupId,
-            EnrollmentRevision = enrollmentRevision, ExpiresAt = Now() + 300
+            EnrollmentRevision = enrollmentRevision, ExpiresAt = Now() + 300,
+            OpenAiConsentAt = openAiConsent ? Now() : null,
+            OpenAiConsentVersion = openAiConsent ? AccountAiConsent.CurrentVersion : 0
         };
         db.Ceremonies.Add(ceremony);
         await db.SaveChangesAsync();

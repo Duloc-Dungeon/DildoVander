@@ -7,7 +7,7 @@ import { customerCopy } from '../../application/customerCopy';
 import { beginRequestDiagnostic, clearRequestDiagnostics, diagnosticRequestId } from '../../application/requestDiagnostics';
 import { correlationHeaders } from '../../application/requestCorrelation.mjs';
 
-export interface Account { id: string; displayName: string; roles: string[] }
+export interface Account { id: string; displayName: string; roles: string[]; openAiConsent?: boolean }
 export interface ResourceGrant { id: string; userId: string; resourceType: string; resourceId: string; permission: string }
 export interface AccountSession { id: string; expiresAt: number; installationName: string; trusted: boolean; current: boolean }
 export interface AccountDeviceAssociation { id: string; deviceId: string; alias: string; installationId: string; createdAt: number }
@@ -15,7 +15,7 @@ export interface AccountDetails { devices?: {deviceId: string; canOperate: boole
 export interface NativeAccountFileContext { signal?: AbortSignal; check?: () => void }
 interface IdentityBridge {
   request(options: { requestId: string; path: string; method: string; body?: string; confirmed?: boolean }): Promise<{ status: number; body: string }>;
-  passkey(options: { mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth'; token?: string; displayName?: string }): Promise<void>;
+  passkey(options: { mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth'; token?: string; displayName?: string; openAiConsent?: boolean }): Promise<void>;
   accountTransport(options: { requestId: string; path: string; method: string; headers: Record<string, string>; bodyBase64?: string }): Promise<{ status: number; headers: Record<string, string>; bodyBase64: string }>;
   shareAccountDataFile(options: { requestId: string; filename: string; mediaType: 'application/json'; bodyBase64: string }): Promise<{ completed: boolean }>;
   cancelAccountRequest(options: { requestId: string }): Promise<{ cancelled: boolean }>;
@@ -29,7 +29,13 @@ const testingAsset = new RegExp(`^/app/v1/testing-sessions/[0-9a-f]{32}/keepsake
 const portraitProfile = '(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})';
 const portraitRevision = '[1-9][0-9]{0,18}';
 const prelaunchPortrait = new RegExp(`^/app/v1/prelaunch/character/portrait\\?(?:profileId=${portraitProfile}&revision=${portraitRevision}|revision=${portraitRevision}&profileId=${portraitProfile})$`);
+const adminCharacterProfile = new RegExp(`^/app/v1/admin/characters/${portraitProfile}$`);
+const adminCharacterList = /^\/app\/v1\/admin\/characters(?:\?after=[0-9a-f]{32})?$/;
+const adminCharacterPortrait = new RegExp(`^/app/v1/admin/characters/${portraitProfile}/portrait\\?expectedRevision=${portraitRevision}$`);
+const adminCharacterPortraitRead = new RegExp(`^/app/v1/admin/characters/${portraitProfile}/portrait\\?revision=${portraitRevision}$`);
 const customerMemoryPath = /^\/app\/v1\/customer\/memory$/;
+const workshopTranscription = /^\/app\/v1\/customer\/wand\/workshop\/sessions\/[a-f0-9]{32}\/transcribe$/;
+const workshopAudio = /^\/app\/v1\/customer\/wand\/workshop\/sessions\/[a-f0-9]{32}\/audio$/;
 const customerExportDownloadPath = /^\/app\/v1\/customer\/data\/exports\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\/download$/;
 
 function matchesExactTransportPath(pattern: RegExp, path: string): boolean {
@@ -38,14 +44,25 @@ function matchesExactTransportPath(pattern: RegExp, path: string): boolean {
 }
 
 export function accountTransportBodyLimit(path: string, method: string, contentType: string | null): number {
-  if (!matchesExactTransportPath(ownedPortraitUpload, path) || method !== 'POST') return 262144;
   const mediaType = contentType?.split(';', 1)[0].trim().toLowerCase();
+  if (method === 'PUT' && matchesExactTransportPath(adminCharacterProfile, path)) return 262144;
+  if (method === 'PUT' && matchesExactTransportPath(adminCharacterPortrait, path)) {
+    return ['image/jpeg', 'image/png', 'image/webp'].includes(mediaType ?? '') ? 8 * 1024 * 1024 : 262144;
+  }
+  if (method === 'POST' && matchesExactTransportPath(workshopTranscription, path)
+    && ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/mpeg'].includes(mediaType ?? '')) return 8 * 1024 * 1024;
+  if (!matchesExactTransportPath(ownedPortraitUpload, path) || method !== 'POST') return 262144;
   return ['image/jpeg', 'image/png', 'image/webp'].includes(mediaType ?? '') ? 8 * 1024 * 1024 : 262144;
 }
 
 export function accountTransportResponseLimit(path: string, method: string): number {
+  if ((method === 'GET' && (matchesExactTransportPath(adminCharacterList, path) || matchesExactTransportPath(adminCharacterProfile, path)))
+    || (method === 'PUT' && matchesExactTransportPath(adminCharacterProfile, path))
+    || (method === 'PUT' && matchesExactTransportPath(adminCharacterPortrait, path))) return 262144;
+  if (method === 'GET' && matchesExactTransportPath(adminCharacterPortraitRead, path)) return 8 * 1024 * 1024;
+  if (method === 'POST' && matchesExactTransportPath(workshopAudio, path)) return 8 * 1024 * 1024;
   if (method !== 'GET') return 1024 * 1024;
-  if (matchesExactTransportPath(prelaunchPortrait, path)) return 8 * 1024 * 1024;
+  if (matchesExactTransportPath(prelaunchPortrait, path) || /^\/app\/v1\/sealed-cases\/sc_[a-f0-9]{32}\/portraits\/[A-Za-z0-9_-]{1,128}$/.test(path)) return 8 * 1024 * 1024;
   return matchesExactTransportPath(archiveAsset, path)
     || matchesExactTransportPath(testingAsset, path)
     || matchesExactTransportPath(customerMemoryPath, path)
@@ -299,10 +316,13 @@ export async function accountRequest<T>(path: string, method = 'GET', body?: unk
     diagnostic.fail(cause);
     throw cause;
   }
+  // HTTP authentication rejection must invalidate even an HTML gateway response.
+  const rejectedGeneration = status === 401 && generation === authGeneration ? advanceAuthentication(true) : undefined;
   let value: unknown;
-  try { value = text ? JSON.parse(text) : undefined; } catch { throw new Error('Server nevrátil odpověď účtu.'); }
+  try { value = text ? JSON.parse(text) : undefined; } catch {
+    if (status >= 200 && status < 300) throw new Error('Server nevrátil odpověď účtu.');
+  }
   if (status < 200 || status >= 300) {
-    const rejectedGeneration = status === 401 && generation === authGeneration ? advanceAuthentication(true) : undefined;
     const code = (value as { code?: string } | undefined)?.code;
     if (code === 'customer_access_revoked' && typeof window !== 'undefined') {
       window.dispatchEvent(new Event('customer-access-revoked'));
@@ -392,7 +412,7 @@ export function refreshIdentity(): Promise<void> {
     if (generation !== authGeneration) return;
     const offline = native && session.offline === true;
     const expiry = Number(session.expiresAt) * 1000;
-    if (offline && (!session.account || !Number.isFinite(expiry) || expiry <= Date.now())) throw new Error('Offline přihlášení vypršelo. Připojte se a ověřte účet.');
+    if (offline && (!session.account || !Number.isFinite(expiry) || expiry <= Date.now())) throw new IdentityRequestError('Offline přihlášení vypršelo. Připojte se a ověřte účet.', 401);
     clearTimeout(offlineExpiryTimer); offlineExpiryTimer = undefined;
     offlineSession.value = offline;
     offlineSessionExpiresAt.value = offline ? expiry : 0;
@@ -410,9 +430,14 @@ export function refreshIdentity(): Promise<void> {
     // JavaScript. Its cancelled scope does not establish loss of authentication.
     if (error instanceof AccountContextChangedError && authenticationPending) return;
     if (generation !== authGeneration && !(error instanceof IdentityRequestError && error.rejectedGeneration === authGeneration)) return;
-    clearTimeout(offlineExpiryTimer); offlineExpiryTimer = undefined;
-    offlineSession.value = false; offlineSessionExpiresAt.value = 0;
-    account.value = null; csrfToken = ''; initialized.value = false; accountsEnabled.value = false;
+    // A failed connection is not proof that the server session ended. Retain
+    // the established context and its expiry; callers must still handle failure.
+    if (error instanceof AccountContextChangedError
+      || error instanceof IdentityRequestError && [401, 403].includes(error.status)) {
+      clearTimeout(offlineExpiryTimer); offlineExpiryTimer = undefined;
+      offlineSession.value = false; offlineSessionExpiresAt.value = 0;
+      account.value = null; csrfToken = ''; initialized.value = false; accountsEnabled.value = false;
+    }
     throw error;
   }).finally(() => { if (refreshPending === pending) { loading.value = false; refreshPending = null; } });
   refreshPending = pending;
@@ -468,14 +493,14 @@ function credentialJson(credential: PublicKeyCredential): object {
     signature: encode(assertion.signature), userHandle: assertion.userHandle ? encode(assertion.userHandle) : null } };
 }
 
-export function authenticatePasskey(mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth', token = '', displayName = ''): Promise<void> {
+export function authenticatePasskey(mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth', token = '', displayName = '', openAiConsent = false): Promise<void> {
   if (authenticationPending) return Promise.reject(new Error('Ověření přístupovým klíčem už probíhá.'));
   const operation = (async () => {
     // Epochs protect Vue state; waiting also protects browser/native cookie ordering.
     if (logoutPending) await logoutPending.catch(() => {});
     const diagnostic = beginRequestDiagnostic('/app/v1/passkeys/' + (mode === 'signin' ? 'sign-in' : mode === 'reauth' ? 'reauthenticate' : 'complete'), 'POST');
     try {
-      await performPasskeyAuthentication(mode, token, displayName);
+      await performPasskeyAuthentication(mode, token, displayName, openAiConsent);
       diagnostic.complete(200);
     } catch (cause) {
       diagnostic.fail(cause);
@@ -487,10 +512,10 @@ export function authenticatePasskey(mode: 'signin' | 'enroll' | 'customer-enroll
   return pending;
 }
 
-async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth', token: string, displayName: string): Promise<void> {
+async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth', token: string, displayName: string, openAiConsent: boolean): Promise<void> {
   const generation = advanceAuthentication();
   if (native) {
-    await nativeIdentity.passkey({ mode, token, displayName });
+    await nativeIdentity.passkey({ mode, token, displayName, openAiConsent });
     requireCurrentAuthentication(generation);
     advanceAuthentication();
     try { await refreshIdentity(); }
@@ -504,7 +529,7 @@ async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'custome
   await refreshIdentity();
   requireCurrentAuthentication(generation);
   const optionsPath = mode === 'reauth' ? '/passkeys/reauthentication-options' : mode === 'signin' ? '/passkeys/request-options' : mode === 'add' ? '/passkeys/options' : mode === 'customer-enroll' ? '/customer/enrollment/options' : '/enrollment/options';
-  const raw = await accountRequest<Record<string, unknown>>('/app/v1' + optionsPath, 'POST', mode === 'enroll' ? { token, displayName } : mode === 'customer-enroll' ? { displayName } : undefined);
+  const raw = await accountRequest<Record<string, unknown>>('/app/v1' + optionsPath, 'POST', mode === 'enroll' ? { token, displayName, openAiConsent } : mode === 'customer-enroll' ? { displayName, openAiConsent } : undefined);
   requireCurrentAuthentication(generation);
   const options = { ...raw, challenge: decode(raw.challenge as string) };
   let credential: PublicKeyCredential | null;

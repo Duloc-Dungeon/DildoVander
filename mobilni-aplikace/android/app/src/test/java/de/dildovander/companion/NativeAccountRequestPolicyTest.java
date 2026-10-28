@@ -6,6 +6,7 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Collections;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -24,6 +25,144 @@ public final class NativeAccountRequestPolicyTest {
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/push/other", "DELETE"));
     }
 
+    @Test public void adminCharacterRoutesAndTransportLimitsAreExact() {
+        String id = "12345678123442348234123456789abc";
+        String profile = "/app/v1/admin/characters/" + id;
+        String upload = profile + "/portrait?expectedRevision=12";
+        String read = profile + "/portrait?revision=12";
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/characters", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/characters?after=" + id, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/characters?after=" + id, "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows(profile, "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(profile, "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows(upload, "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows(read, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(read, "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows(upload, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/characters", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(profile, "DELETE"));
+        for (String invalid : Arrays.asList(
+            profile + "/portrait?revision=0", profile + "/portrait?expectedRevision=0",
+            profile + "/portrait?expectedRevision=01", profile + "/portrait?expectedRevision=12&extra=1",
+            profile + "/portrait?expectedRevision=12&expectedRevision=13",
+            profile + "/portrait?expectedRevision=%31", profile + "/portrait?expectedRevision=12 ",
+            "/app/v1/admin/characters?after=ABCDEF0123456789ABCDEF0123456789",
+            "/app/v1/admin/characters?after=not-a-cursor",
+            "/app/v1/admin/characters?after=" + id + "&extra=1",
+            "/app/v1/admin/characters?after=" + id + "&after=" + id,
+            "/app/v1/admin/characters?",
+            "/app/v1/admin/characters/not-a-profile", "/app/v1/admin/characters/" + id + "/portrait/../other")) {
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "GET"));
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "PUT"));
+        }
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.requestBodyLimit(profile, "PUT", "application/json"));
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.requestBodyLimit(upload, "PUT", "image/webp"));
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.requestBodyLimit(upload, "PUT", "image/svg+xml"));
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(read, "GET"));
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.responseBodyLimit(upload, "PUT"));
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.responseBodyLimit(profile, "GET"));
+        assertEquals(256 * 1024, NativeAccountRequestPolicy.responseBodyLimit("/app/v1/admin/characters?after=" + id, "GET"));
+    }
+
+    @Test public void sealedCaseRoutesAreMethodAndScopeBound() {
+        String root = "/app/v1/sealed-cases";
+        String id = root + "/sc_" + String.join("", Collections.nCopies(32, "a"));
+        assertTrue(NativeAccountRequestPolicy.allows(root, "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(root + "/current", "GET"));
+        for (String read : Arrays.asList("play", "context", "moderator", "portraits/player_1")) {
+            assertTrue(NativeAccountRequestPolicy.allows(id + "/" + read, "GET"));
+            assertFalse(NativeAccountRequestPolicy.allows(id + "/" + read, "POST"));
+        }
+        for (String write : Arrays.asList("lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent", "ai-players")) {
+            assertTrue(NativeAccountRequestPolicy.allows(id + "/" + write, "POST"));
+            assertFalse(NativeAccountRequestPolicy.allows(id + "/" + write, "GET"));
+        }
+        for (String invalid : Arrays.asList(id + "/world", id + "/play?viewer=other", id + "/portraits/../other", root + "/sc_bad/play", id + "/play/", id + "/%70lay")) {
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "GET"));
+        }
+    }
+
+    @Test public void consentAndWandWorkshopRoutesAreMethodBound() {
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/account/ai-consent", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/wand", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/wand/sessions", "POST"));
+        String path = "/app/v1/customer/wand/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/ticket";
+        assertTrue(NativeAccountRequestPolicy.allows(path, "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(path, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(path + "?extra=1", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(path + "/extra", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(path.replace("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bad"), "POST"));
+    }
+
+    @Test public void mobileTrunkWorkshopRoutesAndAudioLimitsAreExplicit() {
+        String root = "/app/v1/customer/wand/workshop";
+        String session = root + "/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        assertTrue(NativeAccountRequestPolicy.allows(root, "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(root + "?upgrade=1", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(root + "?upgrade=0", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(root + "/sessions", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(root + "/sessions/current", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(root + "/sessions/current?upgrade=1", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(session, "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/answers", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/skip", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/audio", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/transcribe", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/artwork/retry", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/messages", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/finish", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/ticket", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/artwork/repair", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/messages/live-call_7", "PUT"));
+        assertTrue(NativeAccountRequestPolicy.allows(session + "/answers/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/answers", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/skip", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/audio/extra", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/messages/live-call_7", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/messages/has.dot", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/messages/" + "a".repeat(161), "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/messages/live-call_7?x=1", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/artwork/repair", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/answers/invalid", "PUT"));
+        assertFalse(NativeAccountRequestPolicy.allows(session + "/transcribe?retry=1", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows(root + "?upgrade=1&upgrade=0", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(root + "?upgrade=true", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(root + "/sessions/current?extra=1", "GET"));
+
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.requestBodyLimit(session + "/transcribe", "POST", "audio/webm; codecs=opus"));
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.requestBodyLimit(session + "/transcribe", "POST", "audio/mp4"));
+        assertEquals(16 * 1024, NativeAccountRequestPolicy.requestBodyLimit(session + "/transcribe", "POST", "application/json"));
+        assertEquals(16 * 1024, NativeAccountRequestPolicy.requestBodyLimit(session + "/audio", "POST", "application/json"));
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(session + "/audio", "POST"));
+        assertEquals(32 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(session + "/transcribe", "POST"));
+    }
+
+    @Test public void transcriptionQuestionHeadersArePathAndValueBound() {
+        String session = "/app/v1/customer/wand/workshop/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        String path = session + "/transcribe";
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-Wand-Question-Id", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        headers.put("X-Wand-Question-Revision", "3");
+        assertTrue(NativeAccountRequestPolicy.apply(new Request.Builder(), "https://dildovander.de", null,
+            "csrf", "POST", false, headers, path) != null);
+        assertThrows(IllegalArgumentException.class, () -> NativeAccountRequestPolicy.apply(new Request.Builder(),
+            "https://dildovander.de", null, "csrf", "POST", false, Collections.emptyMap(), path));
+        assertThrows(IllegalArgumentException.class, () -> NativeAccountRequestPolicy.apply(new Request.Builder(),
+            "https://dildovander.de", null, "csrf", "POST", false,
+            Collections.singletonMap("X-Wand-Question-Id", "b".repeat(32)), path));
+
+        Map<String, String> invalidId = new HashMap<>(headers);
+        invalidId.put("X-Wand-Question-Id", "B".repeat(32));
+        assertThrows(IllegalArgumentException.class, () -> NativeAccountRequestPolicy.apply(new Request.Builder(),
+            "https://dildovander.de", null, "csrf", "POST", false, invalidId, path));
+        Map<String, String> invalidRevision = new HashMap<>(headers);
+        invalidRevision.put("X-Wand-Question-Revision", "0");
+        assertThrows(IllegalArgumentException.class, () -> NativeAccountRequestPolicy.apply(new Request.Builder(),
+            "https://dildovander.de", null, "csrf", "POST", false, invalidRevision, path));
+        assertThrows(IllegalArgumentException.class, () -> NativeAccountRequestPolicy.apply(new Request.Builder(),
+            "https://dildovander.de", null, "csrf", "POST", false, headers, session + "/answers"));
+    }
     @Test public void mobileGameRoutesAreExplicitAndMethodBound() {
         String match = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game", "GET"));

@@ -4,6 +4,7 @@ using Kufr.Backend.Features.CustomerData;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.Observability;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Customers;
@@ -11,6 +12,7 @@ namespace Kufr.Backend.Features.Customers;
 internal sealed record PrelaunchCharacterWrite(long ExpectedRevision, string Name, string Universe,
     string? ExpectedProfileId = null, bool OpenAiConsent = false);
 internal sealed record LoadingPreviewRequest(string Name, string Universe, string Prompt);
+internal sealed record PortraitRetryRequest(string? ExpectedProfileId, long? ExpectedRevision);
 
 internal static class PrelaunchCharacterEndpoints
 {
@@ -22,7 +24,7 @@ internal static class PrelaunchCharacterEndpoints
             Results.Ok(await ViewAsync(http, store)));
         group.MapPut("", async (PrelaunchCharacterWrite request, HttpContext http, CharacterProfileStore store) =>
         {
-            if (!request.OpenAiConsent) { return ApiProblem.Create(http, 409, "openai_consent_required"); }
+            if (await AccountAiConsent.RequireAsync(http) is { } consent) { return consent; }
             if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Universe)
                 || request.Name.Any(char.IsControl) || request.Universe.Any(char.IsControl))
             {
@@ -37,7 +39,7 @@ internal static class PrelaunchCharacterEndpoints
             }
             await store.SaveAsync(Owner(http), new(request.ExpectedRevision,
                 input, request.ExpectedProfileId,
-                OpenAiConsent: true, PortraitConsent: true), http.RequestAborted);
+                OpenAiConsent: true, PortraitConsent: true), http.RequestAborted, canEditExisting: AccountRoles.IsAdmin(http.User));
             return Results.Ok(await ViewAsync(http, store));
         });
         group.MapGet("/portrait", (string profileId, long revision, HttpContext http, CharacterProfileStore store) =>
@@ -48,7 +50,11 @@ internal static class PrelaunchCharacterEndpoints
         });
         group.MapPost("/retry", async (HttpContext http, CharacterProfileStore store) =>
         {
-            await RetryAsync(Owner(http), store, http.RequestAborted);
+            if (await AccountAiConsent.RequireAsync(http) is { } consent) { return consent; }
+            var expected = http.Features.Get<IHttpRequestBodyDetectionFeature>()?.CanHaveBody == true
+                ? await http.Request.ReadFromJsonAsync<PortraitRetryRequest>(http.RequestAborted) : null;
+            if (expected is { ExpectedProfileId: null, ExpectedRevision: null }) { expected = null; }
+            await RetryAsync(Owner(http), store, http.RequestAborted, expected);
             return Results.Ok(await ViewAsync(http, store));
         });
 
@@ -67,10 +73,17 @@ internal static class PrelaunchCharacterEndpoints
             return await next(invocation);
         });
         admin.MapGet("/artwork", (CharacterProfileStore store) => Results.Ok(new { jobs = store.PortraitJobSummaries() }));
-        admin.MapPost("/artwork/{profileId}/retry", async (string profileId, HttpContext http, CharacterProfileStore store) =>
+        admin.MapPost("/artwork/{profileId}/retry", async (string profileId, HttpContext http, CharacterProfileStore store,
+            AccountDatabase accounts) =>
         {
             var owner = store.PortraitOwner(profileId);
             if (owner is null) { return ApiProblem.Create(http, 404, "portrait_unavailable"); }
+            var user = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(user => user.Id == owner && !user.Disabled,
+                http.RequestAborted);
+            if (user is null || !AccountAiConsent.HasConsent(user))
+            {
+                return ApiProblem.Create(http, 409, "ai_consent_required");
+            }
             await RetryAsync(owner, store, http.RequestAborted);
             return Results.Ok(new { jobs = store.PortraitJobSummaries() });
         });
@@ -140,39 +153,60 @@ internal static class PrelaunchCharacterEndpoints
         var owner = Owner(http);
         var profile = await store.ReadAsync(owner, http.RequestAborted);
         var portrait = profile is null ? null : store.ReadPortrait(owner, profile.ProfileId, profile.Revision);
-        // Deliberate minimal projection: never return research, sources, generated wands or provider payloads.
+        // Return only reveal content and image attribution, never research or provider payloads.
         return new
         {
             character = profile is null ? null : new { profile.ProfileId, profile.Revision,
-                name = profile.UserInput.Name, universe = profile.UserInput.World, profile.Status },
+                name = profile.UserInput.Name, universe = profile.UserInput.World, profile.Status, profile.Label },
             artwork = portrait is null ? null : new { portrait.Status,
                 loadingMessage = PortraitContentPolicy.ValidLoadingMessage(portrait.LoadingMessage) ? portrait.LoadingMessage : null,
                 portrait.ErrorCode,
-                finalMessage = portrait.Status == "ready"
-                    ? portrait.FinalMessage ?? CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback) : null,
-                welcome = portrait.Status == "ready" && portrait.Welcome is { } welcome
+                finalMessage = portrait.FinalMessage ?? (portrait.Status == "ready"
+                    ? CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback) : null),
+                welcome = portrait.Welcome is { } welcome
                     ? new { joke = welcome.Joke, identity = welcome.Identity, teaser = welcome.Teaser }
                     : null,
+                source = portrait.Status == "ready" ? portrait.Source : null,
                 url = portrait.Status == "ready"
                     ? $"/app/v1/prelaunch/character/portrait?profileId={Uri.EscapeDataString(profile!.ProfileId)}&revision={profile.Revision}" : null }
         };
     }
 
-    private static async Task RetryAsync(string owner, CharacterProfileStore store, CancellationToken token)
+    private static async Task RetryAsync(string owner, CharacterProfileStore store, CancellationToken token,
+        PortraitRetryRequest? expected = null)
     {
         var profile = await store.ReadAsync(owner, token) ?? throw new CharacterException("character_not_found", 404);
-        if (profile.Status == "failed")
+        if (expected is not null && (expected.ExpectedProfileId != profile.ProfileId || expected.ExpectedRevision != profile.Revision))
         {
-            await store.CorrectAsync(owner, new(profile.Revision, profile.ProfileId, OpenAiConsent: true), token);
+            throw new CharacterException("character_revision_conflict", 409);
         }
-        else if (!store.RetryPortrait(owner)) { throw new CharacterException("portrait_retry_unavailable", 409); }
+        if (profile.Status == "saved")
+        {
+            if (!await store.RequestEnrichmentAsync(owner, token, profile.ProfileId, profile.Revision))
+            {
+                throw new CharacterException("portrait_retry_unavailable", 409);
+            }
+        }
+        var portrait = store.ReadPortrait(owner, profile.ProfileId, profile.Revision);
+        if (portrait is null)
+        {
+            if (!store.RequestPortrait(owner, profile.ProfileId, profile.Revision))
+            {
+                throw new CharacterException("portrait_retry_unavailable", 409);
+            }
+        }
+        else if (portrait.Status == "failed" && !store.RetryPortrait(owner, profile.ProfileId, profile.Revision))
+        {
+            throw new CharacterException("portrait_retry_unavailable", 409);
+        }
     }
 
     private static string Owner(HttpContext http) => http.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 }
 
 internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, CharacterProfileStore store,
-    ICharacterPortraitProvider provider, ILogger<CharacterPortraitWorker> logger) : BackgroundService
+    ICharacterPortraitProvider provider, ICharacterPortraitFallbackProvider fallback,
+    ILogger<CharacterPortraitWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -193,7 +227,7 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
         }
     }
 
-    private async Task ProcessAsync(CharacterPortraitJob job, CancellationToken stoppingToken)
+    internal async Task ProcessAsync(CharacterPortraitJob job, CancellationToken stoppingToken)
     {
         using var activity = BackendTelemetry.StartOperation("character.portrait.process");
         activity?.SetTag("app.operation_id", job.ProfileId);
@@ -224,9 +258,11 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
         catch (CustomerDataAccessException) { return; }
         using var activeWork = work;
         var config = scope.ServiceProvider.GetService<LaunchPolicyStore>()?.Read() ?? LaunchConfiguration.Default;
-        var finalMessage = CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback);
-        var welcome = CharacterWelcomePolicy.Fallback;
-        if (await IsCurrentAsync())
+        var previous = store.ReadPortrait(job.AccountId, job.ProfileId, job.Revision);
+        var welcome = CharacterWelcomePolicy.Valid(previous?.Welcome, job) ? previous!.Welcome! : null;
+        var finalMessage = welcome is null ? CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback)
+            : CharacterWelcomePolicy.LegacyText(welcome);
+        if (welcome is null && await IsCurrentAsync())
         {
             using var experienceDeadline = CancellationTokenSource.CreateLinkedTokenSource(activeWork.Token);
             experienceDeadline.CancelAfter(TimeSpan.FromSeconds(20));
@@ -246,28 +282,68 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
             }
         }
         if (!await IsCurrentAsync()) { return; }
+        welcome ??= CharacterWelcomePolicy.Fallback;
+        if (!store.SetPortraitExperience(job, finalMessage, welcome)) { return; }
         using var imageDeadline = CancellationTokenSource.CreateLinkedTokenSource(activeWork.Token);
         imageDeadline.CancelAfter(TimeSpan.FromSeconds(180));
+        byte[]? image = null;
+        CharacterPortraitSource? source = null;
+        Exception? generationFailure = null;
         try
         {
-            var image = await provider.GeneratePortraitAsync(job, imageDeadline.Token);
-            if (!await IsCurrentAsync())
+            image = await provider.GeneratePortraitAsync(job, imageDeadline.Token);
+            if (image is not { Length: > 0 and <= 8 * 1024 * 1024 })
+            {
+                throw new InvalidDataException("Portrait size invalid.");
+            }
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            image = null;
+            generationFailure = error;
+            var reason = CharacterProviderFailure.Code(error);
+            if (activeWork.Token.IsCancellationRequested || stoppingToken.IsCancellationRequested || !await IsCurrentAsync())
             {
                 activity?.SetTag("app.outcome", "discarded");
                 return;
             }
-            using var completionAdmission = authority.AcquireAccount(job.AccountId, stoppingToken);
-            var completed = store.CompletePortrait(job, image, null, finalMessage, welcome);
-            activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
-            logger.LogInformation("Character portrait {Outcome} {ProfileId} {Revision} {Attempt}",
-                completed ? "completed" : "discarded", job.ProfileId, job.Revision, job.Attempt);
+            logger.LogWarning("Character portrait generation failed; searching for a source image ({Reason}).", reason);
+            try
+            {
+                // Claim leases last 240s; text, image and fallback budgets total at
+                // most 220s, leaving room for admission and the fenced write.
+                using var fallbackDeadline = CancellationTokenSource.CreateLinkedTokenSource(activeWork.Token);
+                fallbackDeadline.CancelAfter(TimeSpan.FromSeconds(20));
+                var found = await fallback.FindAsync(job, fallbackDeadline.Token);
+                if (found is not null)
+                {
+                    image = found.Image;
+                    source = found.Source;
+                }
+            }
+            catch (Exception fallbackError) when (fallbackError is not OutOfMemoryException)
+            {
+                logger.LogWarning("Character portrait internet fallback unavailable ({Reason}).", CharacterProviderFailure.Code(fallbackError));
+            }
         }
-        catch (Exception error) when (error is not OutOfMemoryException)
+        if (activeWork.Token.IsCancellationRequested || stoppingToken.IsCancellationRequested || !await IsCurrentAsync())
         {
-            var reason = CharacterProviderFailure.Code(error);
-            BackendTelemetry.Failed(activity, error, stoppingToken);
-            store.CompletePortrait(job, null, reason);
-            logger.LogWarning("Character portrait failed {ProfileId} {Revision} {Reason}", job.ProfileId, job.Revision, reason);
+            activity?.SetTag("app.outcome", "discarded");
+            return;
         }
+        using var completionAdmission = authority.AcquireAccount(job.AccountId, stoppingToken);
+        if (image is not null)
+        {
+            var completed = store.CompletePortrait(job, image, null, finalMessage, welcome, source);
+            activity?.SetTag("app.outcome", completed ? "completed" : "discarded");
+            logger.LogInformation("Character portrait {Outcome} {ProfileId} {Revision} {Attempt}; internet fallback {InternetFallback}",
+                completed ? "completed" : "discarded", job.ProfileId, job.Revision, job.Attempt, source is not null);
+            return;
+        }
+        var failure = generationFailure ?? new InvalidDataException("Portrait missing.");
+        var failureCode = CharacterProviderFailure.Code(failure);
+        BackendTelemetry.Failed(activity, failure, stoppingToken);
+        store.CompletePortrait(job, null, failureCode);
+        logger.LogWarning("Character portrait failed {ProfileId} {Revision} {Reason}", job.ProfileId, job.Revision, failureCode);
     }
 }

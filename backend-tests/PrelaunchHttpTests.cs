@@ -9,8 +9,50 @@ using Microsoft.Extensions.DependencyInjection;
 
 internal static partial class AccountIdentityTests
 {
+    // Give the consent regression its own IP-rate-limit window; the multi-account
+    // launch scenario already exercises almost the full real request allowance.
+    private static async Task RunLegacyConsentBeforeLaunchAsync()
+    {
+        await using var fixture = await Fixture.StartAsync(customerFeatures: true, betaRecruitmentOpen: false);
+        using var owner = fixture.Client();
+        using var customer = fixture.Client();
+        using var ownerKey = new VirtualPasskey();
+        using var customerKey = new VirtualPasskey();
+        await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Consent owner");
+        await CsrfAsync(owner);
+        var future = DateTimeOffset.UtcNow.AddDays(2).ToUnixTimeMilliseconds();
+        var update = new LaunchConfigurationUpdate(0, true, future, false, true, future, false,
+            "Europe/Prague", "Hvězdy drží tajemství.", "Někdo právě leští souhvězdí.", false, "Krátká věta.");
+        Check((await owner.PutAsJsonAsync("/app/v1/admin/launch", update)).IsSuccessStatusCode,
+            "consent fixture has a real pending launch policy");
+        var invitation = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Customer" })))
+            .GetProperty("token").GetString()!;
+        await EnrollAsync(customer, customerKey, invitation, "Legacy consent guest");
+        await CsrfAsync(customer);
+        var access = await JsonAsync(await customer.GetAsync("/app/v1/launch"));
+        Check(!access.GetProperty("allowed").GetBoolean(), "legacy consent is tested before launch");
+        var legacySession = await JsonAsync(await customer.GetAsync("/app/v1/session"));
+        var legacyOwner = legacySession.GetProperty("account").GetProperty("id").GetString()!;
+        using (var consentScope = fixture.App.Services.CreateScope())
+        {
+            var consentDb = consentScope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var user = await consentDb.Users.SingleAsync(user => user.Id == legacyOwner);
+            user.OpenAiConsentAt = null;
+            user.OpenAiConsentVersion = 0;
+            await consentDb.SaveChangesAsync();
+        }
+        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = false })).StatusCode == HttpStatusCode.Conflict,
+            "legacy account must affirm processing consent even while launch is pending");
+        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true })).StatusCode == HttpStatusCode.NoContent,
+            "legacy account can record explicit processing consent before launch");
+        var consentedSession = await JsonAsync(await customer.GetAsync("/app/v1/session"));
+        Check(consentedSession.GetProperty("account").GetProperty("openAiConsent").GetBoolean(),
+            "before-launch consent is persisted on the account, not inferred by the interface");
+    }
+
     internal static async Task RunPrelaunchHttpAsync()
     {
+        await RunLegacyConsentBeforeLaunchAsync();
         await using var fixture = await Fixture.StartAsync(customerFeatures: true, betaRecruitmentOpen: false,
             configureServices: services => services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider()));
         using var owner = fixture.Client();
@@ -257,12 +299,27 @@ internal static partial class AccountIdentityTests
             && saved.GetProperty("artwork").GetProperty("welcome").GetProperty("identity").GetString() == "",
             "failed welcome text uses stable fallback, omits unverified identity and preserves the portrait");
         Check(!text.Contains("enrichment", StringComparison.OrdinalIgnoreCase) && !text.Contains("conversation", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains("generatedWand", StringComparison.OrdinalIgnoreCase) && !text.Contains("source", StringComparison.OrdinalIgnoreCase)
+            && !text.Contains("generatedWand", StringComparison.OrdinalIgnoreCase) && !text.Contains("sources", StringComparison.OrdinalIgnoreCase)
             && !text.Contains("usedFactIds", StringComparison.Ordinal) && !text.Contains("teaserId", StringComparison.Ordinal),
             "minimal user API contains no enrichment or protected product data");
+        Check(saved.GetProperty("artwork").GetProperty("source").ValueKind == JsonValueKind.Null,
+            "generated portrait has no internet attribution");
         var image = await customer.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}");
         Check(image.IsSuccessStatusCode && image.Content.Headers.ContentType?.MediaType == "image/webp", "owner gets private artwork");
         Check(image.Headers.CacheControl?.NoStore == true, "private artwork cannot be reused from shared cache");
+        Check((await customer.PostAsJsonAsync("/app/v1/prelaunch/character/retry",
+            new { expectedProfileId = profileId, expectedRevision = revision + 1 })).StatusCode == HttpStatusCode.Conflict,
+            "stale portrait retry cannot target a different character revision");
+        var readyRetry = await JsonAsync(await customer.PostAsJsonAsync("/app/v1/prelaunch/character/retry",
+            new { expectedProfileId = profileId, expectedRevision = revision }));
+        Check(readyRetry.GetProperty("character").GetProperty("revision").GetInt64() == revision
+            && readyRetry.GetProperty("artwork").GetProperty("status").GetString() == "ready",
+            "retrying an already ready portrait is idempotent and never rewrites the character");
+        Check((await customer.PostAsJsonAsync("/app/v1/prelaunch/character/retry", new { })).IsSuccessStatusCode,
+            "legacy empty-object retry remains compatible");
+        Check((await customer.PostAsJsonAsync("/app/v1/prelaunch/character/retry",
+            new { expectedProfileId = profileId })).StatusCode == HttpStatusCode.Conflict,
+            "partially supplied revision precondition is rejected");
         Check((await customer.GetAsync($"/app/v1/prelaunch/character/portrait?profileId=stale-profile&revision={revision}")).StatusCode == HttpStatusCode.NotFound,
             "matching revision cannot serve artwork from a different profile identity");
         Check(!(await stranger.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}")).IsSuccessStatusCode,

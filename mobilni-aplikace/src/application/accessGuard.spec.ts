@@ -14,6 +14,8 @@ vi.mock('../features/identity/session', async () => {
   };
 });
 import { installAccessGuard } from './accessGuard';
+import { account, refreshIdentity } from '../features/identity/session';
+import { notifications } from './notifications';
 
 function createGuardedRouter() {
   const router = createRouter({
@@ -34,9 +36,32 @@ function createGuardedRouter() {
   return router;
 }
 
-beforeEach(() => { state.account = null; state.launchAllowed = false; state.membership = 'active'; });
+beforeEach(() => { vi.clearAllMocks(); state.account = null; account.value = null; state.launchAllowed = false; state.membership = 'active'; });
 
 describe('launch access navigation', () => {
+  it('cancels a transition on a connection failure and permits a verified retry without signing out', async () => {
+    state.account = { id: 'guest', displayName: 'Guest', roles: ['Customer'] };
+    state.launchAllowed = true;
+    const router = createGuardedRouter();
+    await router.push('/me');
+    vi.mocked(refreshIdentity).mockRejectedValueOnce(new TypeError('Network unavailable'));
+    await router.push('/');
+    expect(router.currentRoute.value.path).toBe('/me');
+    expect(account.value?.id).toBe('guest');
+    expect(notifications.value.at(-1)?.message).toContain('Zkontrolujte připojení');
+    await router.push('/');
+    expect(router.currentRoute.value.path).toBe('/');
+  });
+
+  it('requires sign-in when session verification explicitly removes the account', async () => {
+    state.account = { id: 'guest', displayName: 'Guest', roles: ['Customer'] };
+    state.launchAllowed = true;
+    const router = createGuardedRouter();
+    await router.push('/me');
+    state.account = null;
+    await router.push('/me?retry=1');
+    expect(router.currentRoute.value.path).toBe('/signin');
+  });
   it('sends signed-out visitors away from feature routes to invitation authentication', async () => {
     const router = createGuardedRouter();
     await router.push('/');

@@ -14,7 +14,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-internal static class CustomerAdmissionTests
+internal static partial class CustomerAdmissionTests
 {
     internal static async Task RunAsync()
     {
@@ -23,6 +23,7 @@ internal static class CustomerAdmissionTests
         await DelegatedAuthorityAsync(fixture);
         await MembershipAuthorityAsync(fixture);
         await DevicePolicyAsync(fixture);
+        await TransientSqliteReservationsAsync(fixture);
         await SerializationAndUnwindAsync(fixture);
         await CommitExpiryAsync(fixture);
         await AccountIdentityTests.RunCustomerAdmissionHttpsAsync();

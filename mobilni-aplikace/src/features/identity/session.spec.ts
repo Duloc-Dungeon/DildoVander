@@ -8,6 +8,45 @@ let request: ReturnType<typeof vi.fn>;
 beforeEach(() => { vi.resetModules(); bridge.native = false; bridge.request.mockReset(); bridge.passkey.mockReset(); bridge.accountTransport.mockReset(); bridge.shareAccountDataFile.mockReset(); bridge.cancelAccountRequest.mockReset().mockResolvedValue({cancelled: true}); request = vi.fn(); vi.stubGlobal('fetch', request); });
 afterEach(() => { interfaceLanguagePreference.setScope(null); interfaceLanguagePreference.setLanguage('cs'); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+describe.each([false, true])('session verification recovery (native=%s)', native => {
+  function response(status: number, body: string) {
+    if (native) bridge.request.mockResolvedValueOnce({ status, body });
+    else request.mockResolvedValueOnce(new Response(body, { status }));
+  }
+
+  it.each(['network', 'json-503', 'html-503', 'malformed-success'])('retains established identity on %s and verifies a retry', async failure => {
+    bridge.native = native;
+    const identity = await import('./session');
+    response(200, JSON.stringify(user('current')));
+    await identity.refreshIdentity();
+    if (failure === 'network') (native ? bridge.request : request).mockRejectedValueOnce(new TypeError('Network unavailable'));
+    else response(failure === 'malformed-success' ? 200 : 503, failure === 'json-503' ? '{}' : '<html>Unavailable</html>');
+    await expect(identity.refreshIdentity()).rejects.toBeDefined();
+    expect(identity.account.value?.id).toBe('current');
+    expect(identity.initialized.value).toBe(true);
+    expect(identity.accountsEnabled.value).toBe(true);
+    expect(identity.loading.value).toBe(false);
+    response(200, JSON.stringify(user('current', 'renewed')));
+    await identity.refreshIdentity();
+    expect(identity.account.value?.id).toBe('current');
+  });
+
+  it.each(['anonymous', 'html-401', 'json-403'])('clears established identity after %s', async rejection => {
+    bridge.native = native;
+    const identity = await import('./session');
+    response(200, JSON.stringify(user('current')));
+    await identity.refreshIdentity();
+    if (rejection === 'anonymous') {
+      response(200, JSON.stringify(user(null)));
+      await identity.refreshIdentity();
+    } else {
+      response(rejection === 'html-401' ? 401 : 403, rejection === 'html-401' ? '<html>Unauthorized</html>' : '{}');
+      await expect(identity.refreshIdentity()).rejects.toBeDefined();
+    }
+    expect(identity.account.value).toBeNull();
+  });
+});
+
 describe.each([false, true])('request diagnostic wiring (native=%s)', native => {
   it('sends a fresh bounded traceparent through account transport without replacing request diagnostics', async () => {
     bridge.native = native;
@@ -66,6 +105,17 @@ describe.each([false, true])('invitation error detail (native=%s)', native => {
 });
 
 describe('native account archive transport limits', () => {
+  it('bounds workshop recordings and approved speech to exact authenticated routes', async () => {
+    const identity = await import('./session');
+    const root = `/app/v1/customer/wand/workshop/sessions/${'a'.repeat(32)}`;
+    expect(identity.accountTransportBodyLimit(`${root}/transcribe`, 'POST', 'audio/webm;codecs=opus')).toBe(8 * 1024 * 1024);
+    expect(identity.accountTransportResponseLimit(`${root}/audio`, 'POST')).toBe(8 * 1024 * 1024);
+    for (const suffix of ['\n', '?other=1', '/', '/extra']) {
+      expect(identity.accountTransportBodyLimit(`${root}/transcribe${suffix}`, 'POST', 'audio/webm')).toBe(262144);
+      expect(identity.accountTransportResponseLimit(`${root}/audio${suffix}`, 'POST')).toBe(1024 * 1024);
+    }
+    expect(identity.accountTransportBodyLimit(`${root}/transcribe`, 'POST', 'application/json')).toBe(262144);
+  });
   const archiveId = '123e4567-e89b-42d3-a456-426614174000';
   const uploadPath = `/app/v1/archive/owned/${archiveId}/portrait-uploads`;
   const uploadResponse = {status: 201, headers: {'content-type': 'application/json'}, bodyBase64: btoa('{}')};
@@ -152,6 +202,46 @@ describe('native account archive transport limits', () => {
     expect(identity.accountTransportResponseLimit(path + '&profileId=12345678123442348234123456789abc', 'GET')).toBe(1024 * 1024);
   });
 
+});
+
+describe('native admin character transport limits', () => {
+  it('bounds JSON management and raw portrait uploads and downloads to exact routes', async () => {
+    const identity = await import('./session');
+    const id = '12345678123442348234123456789abc';
+    const profile = `/app/v1/admin/characters/${id}`;
+    const portraitUpload = `${profile}/portrait?expectedRevision=12`;
+    const portraitRead = `${profile}/portrait?revision=12`;
+
+    for (const path of ['/app/v1/admin/characters', profile]) {
+      expect(identity.accountTransportResponseLimit(path, 'GET')).toBe(262144);
+    }
+    expect(identity.accountTransportResponseLimit(`/app/v1/admin/characters?after=${id}`, 'GET')).toBe(262144);
+    expect(identity.accountTransportBodyLimit(profile, 'PUT', 'application/json')).toBe(262144);
+    expect(identity.accountTransportResponseLimit(profile, 'PUT')).toBe(262144);
+    expect(identity.accountTransportBodyLimit(portraitUpload, 'PUT', 'image/png')).toBe(8 * 1024 * 1024);
+    expect(identity.accountTransportBodyLimit(portraitUpload, 'PUT', 'image/webp; charset=binary')).toBe(8 * 1024 * 1024);
+    expect(identity.accountTransportBodyLimit(portraitUpload, 'PUT', 'image/svg+xml')).toBe(262144);
+    expect(identity.accountTransportResponseLimit(portraitUpload, 'PUT')).toBe(262144);
+    expect(identity.accountTransportResponseLimit(portraitRead, 'GET')).toBe(8 * 1024 * 1024);
+    expect(identity.accountTransportResponseAllowed(portraitRead, 'GET', 8 * 1024 * 1024)).toBe(true);
+    expect(identity.accountTransportResponseAllowed(portraitRead, 'GET', 8 * 1024 * 1024 + 1)).toBe(false);
+
+    for (const path of [
+      '/app/v1/admin/characters?after=ABCDEF0123456789ABCDEF0123456789',
+      '/app/v1/admin/characters?after=not-a-cursor',
+      `/app/v1/admin/characters?after=${id}&extra=1`,
+      `/app/v1/admin/characters?after=${id}&after=${id}`,
+      '/app/v1/admin/characters?',
+      `${profile}?revision=12`, `${profile}/portrait?revision=12&extra=1`,
+      `${profile}/portrait?revision=0`, `${profile}/portrait?revision=01`,
+      `${profile}/portrait?expectedRevision=12&expectedRevision=13`,
+      `/app/v1/admin/characters/not-a-profile`, `/app/v1/admin/characters/${id}/portrait/../x`,
+      `/app/v1/admin/characters/${id}/portrait?revision=12 `,
+    ]) {
+      expect(identity.accountTransportResponseLimit(path, 'GET')).toBe(1024 * 1024);
+      expect(identity.accountTransportBodyLimit(path, 'PUT', 'image/png')).toBe(262144);
+    }
+  });
 });
 
 describe('native account data export', () => {
@@ -504,8 +594,8 @@ describe('customer passkey enrollment', () => {
     bridge.passkey.mockResolvedValue(undefined);
     bridge.request.mockResolvedValue({ status: 200, body: JSON.stringify(user('new-customer')) });
     const identity = await import('./session');
-    await identity.authenticatePasskey('customer-enroll', '', 'Guest');
-    expect(bridge.passkey).toHaveBeenCalledExactlyOnceWith({ mode: 'customer-enroll', token: '', displayName: 'Guest' });
+    await identity.authenticatePasskey('customer-enroll', '', 'Guest', true);
+    expect(bridge.passkey).toHaveBeenCalledExactlyOnceWith({ mode: 'customer-enroll', token: '', displayName: 'Guest', openAiConsent: true });
     expect(identity.account.value?.id).toBe('new-customer');
   });
 });
@@ -780,7 +870,7 @@ describe('authentication generation fences', () => {
   });
 });
 
-  it('admits a bounded native offline snapshot and expires it without a network request', async () => {
+  it('preserves the native offline expiry through a failed refresh and expires without another network request', async () => {
     vi.useFakeTimers();
     try {
       bridge.native = true;
@@ -790,10 +880,13 @@ describe('authentication generation fences', () => {
       await identity.refreshIdentity();
       expect(identity.offlineSession.value).toBe(true);
       expect(identity.account.value?.id).toBe('native-owner');
+      bridge.request.mockRejectedValueOnce(new Error('Network unavailable'));
+      await expect(identity.refreshIdentity()).rejects.toThrow('Network unavailable');
+      expect(identity.account.value?.id).toBe('native-owner');
       vi.advanceTimersByTime(5001);
       expect(identity.account.value).toBeNull();
       expect(identity.offlineSession.value).toBe(false);
-      expect(bridge.request).toHaveBeenCalledTimes(1);
+      expect(bridge.request).toHaveBeenCalledTimes(2);
     } finally { vi.useRealTimers(); }
   });
 

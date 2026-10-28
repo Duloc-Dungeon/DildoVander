@@ -1,10 +1,11 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace Kufr.Backend.Features.Keepsakes;
 
 internal sealed partial class KeepsakeStore
 {
-    internal const string WandArtworkPromptVersion = "personal-wand-art-v1";
+    internal const string WandArtworkPromptVersion = "personal-wand-art-v2-transparent";
 
     // One-time deterministic adoption during startup, never during GET. Preserve
     // the currently published illustration; retain contradictory older artwork
@@ -66,12 +67,32 @@ internal sealed partial class KeepsakeStore
         string id, Document document)
     {
         if (document.Snapshot.GeneratedWand is null) return null;
-        if (CanonicalGeneratedArtworkId(document) is { } assetId) return new(id, assetId,
-            Synthetic: document.Artwork?.Synthetic ?? document.Editions.FirstOrDefault(edition => edition.ArtworkAssetId == assetId)?.Synthetic ?? false);
+        if (CanonicalGeneratedArtworkId(document) is { } assetId)
+        {
+            var asset = document.Assets.SingleOrDefault(item => item.Id == assetId);
+            var artwork = document.Artwork;
+            var repairJob = document.CurrentArtworkJob is { } currentJob ? ReadJob(connection, transaction, currentJob) : null;
+            var repairing = artwork is not null && repairJob is { State: "queued" or "leased" or "dispatched" or "awaiting_reconciliation" }
+                && IsRepairJob(connection, transaction, repairJob.Id);
+            var repairFailed = artwork is not null && repairJob is { State: "failed" }
+                && IsRepairJob(connection, transaction, repairJob.Id);
+            return new(id, assetId, Status: repairing ? "repairing" : repairFailed ? "repair_failed" : "ready", Synthetic: artwork?.Synthetic
+                    ?? document.Editions.FirstOrDefault(edition => edition.ArtworkAssetId == assetId)?.Synthetic ?? false,
+                Version: artwork?.Version ?? 1, Sha256: asset?.Sha256,
+                CanRepair: asset is not null && artwork is not null && !repairing && IsRealWandArtworkConfigured(),
+                SourceAssetId: artwork?.SourceAssetId, SourceSha256: artwork?.SourceSha256);
+        }
         if (document.CurrentArtworkJob is not { } jobId) return new(id, null, "missing", MayDispatch("wand_artwork"));
         var job = ReadJob(connection, transaction, jobId);
         var status = job.State switch { "queued" => "queued", "leased" or "dispatched" => "running", _ => "failed" };
         return new(id, null, status, status == "failed" && MayDispatch("wand_artwork"), job.ErrorCode);
+    }
+
+    private static bool IsRepairJob(SqliteConnection connection, SqliteTransaction? transaction, string jobId)
+    {
+        using var command = Command(connection, transaction,
+            "SELECT json_extract(request_json,'$.artworkSourceVersion') FROM dv10_jobs WHERE id=$id", ("$id", jobId));
+        return command.ExecuteScalar() is not null and not DBNull;
     }
 
     internal KeepsakeJob RetryWandArtwork(string id, KeepsakeActor actor, string key)
@@ -114,21 +135,123 @@ internal sealed partial class KeepsakeStore
         }
     }
 
-    private bool CompleteWandArtwork(SqliteConnection connection, SqliteTransaction transaction, LeasedJob job,
-        Document document, KeepsakeProviderOutput output, bool publish)
+    internal KeepsakeJob RepairWandArtwork(string id, KeepsakeActor actor, string wandId,
+        int expectedVersion, string sourceAssetId, string sourceSha256, string key)
     {
-        if (!publish || CanonicalGeneratedArtworkId(document) is not null) return false;
+        if (!Guid.TryParseExact(wandId, "N", out _) || !Guid.TryParseExact(sourceAssetId, "D", out _)
+            || expectedVersion < 1 || sourceSha256.Length != 64
+            || sourceSha256.Any(character => !Uri.IsHexDigit(character)))
+        {
+            throw new KeepsakeException("invalid_wand_artwork_repair", 400);
+        }
+        lock (gate)
+        {
+            using var connection = Open();
+            using var transaction = connection.BeginTransaction();
+            RequireAccess(connection, transaction, id, actor, KeepsakeScope.Write);
+            var document = Load(connection, transaction, id);
+            sourceSha256 = sourceSha256.ToUpperInvariant();
+            var body = JsonSerializer.Serialize(new
+            {
+                wandId,
+                expectedVersion,
+                sourceAssetId,
+                sourceSha256 = sourceSha256.ToUpperInvariant()
+            }, Json);
+            var scope = "repair-wand-artwork:" + id;
+            if (Replay(connection, transaction, scope, key, body) is { } replay)
+            {
+                return ReadJob(connection, transaction, replay);
+            }
+
+            RequireFeature("GenerationEnabled");
+            if (!IsRealWandArtworkConfigured())
+            {
+                throw new KeepsakeException("wand_artwork_provider_unavailable", 503);
+            }
+
+            var wand = document.Snapshot.GeneratedWand;
+            var artwork = document.Artwork;
+            var source = document.Assets.SingleOrDefault(asset => asset.Id == sourceAssetId);
+            if (wand?.WandId != wandId || artwork is null || artwork.Version != expectedVersion
+                || artwork.AssetId != sourceAssetId || source is null || source.Sha256 != sourceSha256
+                || source.Kind != "base_image" || source.MediaType != "image/png")
+            {
+                throw new KeepsakeException("wand_artwork_source_changed", 409);
+            }
+
+            if (document.CurrentArtworkJob is { } pendingId)
+            {
+                var pending = ReadJob(connection, transaction, pendingId);
+                if (pending.State is "queued" or "leased" or "dispatched" or "awaiting_reconciliation")
+                {
+                    throw new KeepsakeException("wand_artwork_repair_in_progress", 409);
+                }
+            }
+
+            CheckAdmissionCapacity();
+            if (!HasQueueCapacity(connection, transaction))
+            {
+                throw new KeepsakeException("generation_backpressure", 429);
+            }
+
+            var request = new JobRequest(new(), ArtworkWandId: wandId,
+                ArtworkSourceVersion: expectedVersion, ArtworkSourceAssetId: sourceAssetId,
+                ArtworkSourceSha256: sourceSha256.ToUpperInvariant());
+            var job = EnqueueInternal(connection, transaction, id, "wand_artwork", request);
+            document.CurrentArtworkJob = job.Id;
+            document.Revision++;
+            Save(connection, transaction, id, document);
+            Remember(connection, transaction, scope, key, body, job.Id);
+            RecordCompletionUpdates(connection, transaction, id);
+            transaction.Commit();
+            return job;
+        }
+    }
+
+    private bool IsRealWandArtworkConfigured() => MayDispatch("wand_artwork")
+        && configuration.GetValue<string>("Keepsake:ProviderMode") == "openai"
+        && !string.IsNullOrWhiteSpace(configuration["OPENAI_API_KEY"])
+        && OpenAiKeepsakeProvider.SupportsTransparentWandArtwork(configuration["Keepsake:ImageModel"]);
+
+    private bool CompleteWandArtwork(SqliteConnection connection, SqliteTransaction transaction, LeasedJob job,
+        Document document, JobRequest request, KeepsakeProviderOutput output, bool publish)
+    {
+        if (!publish) return false;
         var wand = document.Snapshot.GeneratedWand ?? throw new KeepsakeException("personal_wand_unavailable", 409);
+        var isRepair = request.ArtworkSourceVersion is not null;
+        if (isRepair)
+        {
+            var current = document.Artwork;
+            var source = document.Assets.SingleOrDefault(asset => asset.Id == request.ArtworkSourceAssetId);
+            if (request.ArtworkWandId != wand.WandId || current is null
+                || current.Version != request.ArtworkSourceVersion || current.AssetId != request.ArtworkSourceAssetId
+                || source?.Sha256 != request.ArtworkSourceSha256)
+            {
+                Execute(connection, transaction, "UPDATE dv10_jobs SET state='archived_private' WHERE id=$id AND fence=$f",
+                    ("$id", job.Id), ("$f", job.Fence));
+                RecordCompletionUpdates(connection, transaction, job.KeepsakeId);
+                transaction.Commit();
+                return true;
+            }
+        }
+        else if (CanonicalGeneratedArtworkId(document) is not null || document.Artwork is not null)
+        {
+            return false;
+        }
+
         var asset = StoreAsset(job.KeepsakeId, document, "base_image", output.MediaType, output.ImageBytes);
         StoreAsset(job.KeepsakeId, document, "provider_response", "application/json",
             System.Text.Encoding.UTF8.GetBytes(output.ContentResponse));
         StoreAsset(job.KeepsakeId, document, "prompt", "text/plain; charset=utf-8", System.Text.Encoding.UTF8.GetBytes(output.Prompt));
-        document.Artwork = new(wand.WandId, asset.Id, 1, output.Synthetic, output.Provider, output.Model, WandArtworkPromptVersion, Now);
+        document.Artwork = new(wand.WandId, asset.Id, isRepair ? document.Artwork!.Version + 1 : 1,
+            output.Synthetic, output.Provider, output.Model, WandArtworkPromptVersion, Now,
+            request.ArtworkSourceAssetId, request.ArtworkSourceSha256, output.GenerationParameters);
         document.Revision++;
         Save(connection, transaction, job.KeepsakeId, document);
         Execute(connection, transaction, "UPDATE dv10_jobs SET state='completed' WHERE id=$id AND fence=$f", ("$id", job.Id), ("$f", job.Fence));
         Execute(connection, transaction, "UPDATE dv10_jobs SET state='queued' WHERE keepsake_id=$id AND kind='base' AND state='awaiting_artwork'", ("$id", job.KeepsakeId));
-        TryAdmitAutomaticBase(connection, transaction, job.KeepsakeId, document);
+        if (!isRepair) TryAdmitAutomaticBase(connection, transaction, job.KeepsakeId, document);
         RecordCompletionUpdates(connection, transaction, job.KeepsakeId);
         transaction.Commit();
         return true;

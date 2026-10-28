@@ -92,7 +92,9 @@ internal static partial class CustomerSessionEndpoints
                 || request.ProfileRevision < 1 || !Opaque(request.DeviceId, 1, 128)
                 || !Opaque(request.Challenge, 16, 128))
             { throw new CustomerSessionException(400, "invalid_start_request"); }
-            if (!request.OpenAiConsent) { throw new CustomerSessionException(409, "openai_consent_required"); }
+            if (!await AccountAiConsent.HasConsentAsync(http))
+            { throw new CustomerSessionException(409, "ai_consent_required"); }
+            request = request with { OpenAiConsent = true };
             if (http.Request.Headers.ContainsKey("Authorization"))
             { throw new CustomerSessionException(401, "account_required"); }
             authority.ValidateDatabasePaths(journal.CustomerDataDatabasePath, evenings.CustomerMemoryDatabasePath);
@@ -127,13 +129,17 @@ internal static partial class CustomerSessionEndpoints
             return Results.Ok(new { protocolVersion = 1, ticket = protector.Unprotect(result.ProtectedToken),
                 operationId = request.OperationId, expiresAt = result.ExpiresAt, sessionId = result.SessionId });
         });
-        accounts.MapGet("/sessions", (HttpContext http, OperationJournal journal) =>
-            Results.Ok(new { items = journal.CustomerSessions(Owner(http)).Select(Project),
-                expiredOperations = journal.ExpiredCustomerOperations(Owner(http)) }));
-        accounts.MapGet("/sessions/{id:guid}", (string id, HttpContext http, OperationJournal journal) =>
+        accounts.MapGet("/sessions", async (HttpContext http, OperationJournal journal, CharacterProfileStore profiles) =>
+        {
+            var profile = await profiles.ReadAsync(Owner(http), http.RequestAborted);
+            return Results.Ok(new { items = journal.CustomerSessions(Owner(http)).Select(session => Project(session, profile)),
+                expiredOperations = journal.ExpiredCustomerOperations(Owner(http)) });
+        });
+        accounts.MapGet("/sessions/{id:guid}", async (string id, HttpContext http, OperationJournal journal, CharacterProfileStore profiles) =>
         {
             var session = journal.CustomerSession(id, Owner(http));
-            return session is null ? ApiProblem.Create(http, 404, "customer_session_unavailable") : Results.Ok(Project(session));
+            var profile = await profiles.ReadAsync(Owner(http), http.RequestAborted);
+            return session is null ? ApiProblem.Create(http, 404, "customer_session_unavailable") : Results.Ok(Project(session, profile));
         });
         accounts.MapPost("/sessions/{id:guid}/end", (string id, HttpContext http, OperationJournal journal) =>
             journal.RequestCustomerEnd(id, Owner(http)) ? Results.Accepted(value: new { state = "ending" })
@@ -152,13 +158,13 @@ internal static partial class CustomerSessionEndpoints
             journal.SetCustomerMode(id, request.Enabled);
             return Results.Ok(new { deviceId = id, enabled = request.Enabled, protocolVersion = 1 });
         });
-        accounts.MapGet("/admin/sessions", async (HttpContext http, OperationJournal journal) =>
+        accounts.MapGet("/admin/sessions", async (HttpContext http, OperationJournal journal, CharacterProfileStore profiles) =>
         {
             var items = new List<object>();
             foreach (var session in journal.CustomerSessions().Where(row => row.State is not ("completed" or "failed")))
             {
                 if (await AccountResourceAuthorization.HasPermissionAsync(http, "device", session.DeviceId, "operate"))
-                { items.Add(Project(session)); }
+                { items.Add(Project(session, await profiles.ReadAsync(session.OwnerId, http.RequestAborted))); }
             }
             if (!AccountRoles.IsStaff(http.User)) { return ApiProblem.Create(http, 403, "staff_required"); }
             return Results.Ok(new { items });
@@ -293,9 +299,11 @@ internal static partial class CustomerSessionEndpoints
         }
     }
 
-    private static object Project(CustomerSessionRecord session) => new { session.Id, session.OperationId,
+    private static object Project(CustomerSessionRecord session, CharacterProfile? current) => new { session.Id, session.OperationId,
         session.DeviceId, session.ProfileId, session.ProfileRevision, session.State, session.EndRequested, session.CreatedAt,
-        characterName = CharacterName(session) };
+        characterName = current?.ProfileId == session.ProfileId
+            ? CharacterLabel.DisplayName(CharacterName(session) ?? current.UserInput.Name, current.Label)
+            : CharacterName(session) };
     private static string? CharacterName(CustomerSessionRecord session)
     {
         if (session.Snapshot.Length == 0) { return null; }

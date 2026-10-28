@@ -1,4 +1,117 @@
+---
+name: "Wand Night Stand — design v2"
+description: "Tmavé společné jeviště, výrazná postava a čitelná hlavní akce."
+colors:
+  mint: "#b8f3d4"
+  on-mint: "#102419"
+  amber: "#ffc662"
+  on-amber: "#211607"
+  violet: "#c8b9fc"
+  on-violet: "#241a37"
+  peach: "#f8b5a5"
+  on-peach: "#301814"
+  blue: "#b6ddf5"
+  bg: "#080909"
+  surface: "#191b1b"
+  surface-raised: "#222626"
+  line: "#343939"
+  text: "#f5f5f0"
+  muted: "#b2b9b6"
+  input-bg: "#202523"
+  input-border: "#38403b"
+  placeholder: "#9ba69e"
+  navigation-bg: "#111413"
+  navigation-muted: "#9ca7a0"
+typography:
+  headline:
+    fontFamily: "'Manrope Variable', sans-serif"
+    fontSize: "clamp(1.9rem, 8.5vw, 2.5rem)"
+    fontWeight: 760
+    lineHeight: 1.12
+    letterSpacing: "-0.045em"
+  title:
+    fontFamily: "'Manrope Variable', sans-serif"
+    fontSize: "1.35rem"
+    fontWeight: 760
+    lineHeight: 1.18
+    letterSpacing: "-0.025em"
+  body:
+    fontFamily: "'Manrope Variable', sans-serif"
+    fontSize: "15px"
+    fontWeight: 400
+    lineHeight: 1.65
+  label:
+    fontFamily: "'Manrope Variable', sans-serif"
+    fontSize: "1rem"
+    fontWeight: 800
+    lineHeight: 1.45
+    letterSpacing: "-0.01em"
+rounded:
+  field: "14px"
+  button: "16px"
+  card: "22px"
+  sheet: "24px"
+  hero: "28px"
+spacing:
+  "8": "8px"
+  "12": "12px"
+  "14": "14px"
+  "16": "16px"
+  "20": "20px"
+  "24": "24px"
+  "32": "32px"
+components:
+  button-primary:
+    backgroundColor: "{colors.mint}"
+    textColor: "{colors.on-mint}"
+    typography: "{typography.label}"
+    rounded: "{rounded.button}"
+    padding: "8px 14px"
+  button-secondary:
+    backgroundColor: "{colors.surface-raised}"
+    textColor: "{colors.text}"
+    typography: "{typography.label}"
+    rounded: "{rounded.button}"
+    padding: "8px 14px"
+  button-danger:
+    backgroundColor: "{colors.peach}"
+    textColor: "{colors.on-peach}"
+    typography: "{typography.label}"
+    rounded: "{rounded.button}"
+    padding: "8px 14px"
+  input-text:
+    backgroundColor: "{colors.input-bg}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.field}"
+    padding: "8px 12px"
+  card:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.card}"
+    padding: "20px"
+  navigation:
+    backgroundColor: "{colors.navigation-bg}"
+    textColor: "{colors.navigation-muted}"
+    padding: "10px 12px"
+---
+
 # Wand Night Stand — schválený design v2
+
+## Overview
+
+**Creative North Star: "Wand Night Stand — design v2"**
+
+Téměř černé pozadí, místní Manrope s českou diakritikou, velké samostatné
+objekty a ploché jantarové, mintové a fialové karty. Jedna dominantní scéna,
+čitelná hlavní akce; žádný trvalý ambient ani povinné dekorativní částice.
+Toto je záznam schváleného systému a současné implementace, nikoli nový návrh.
+
+**Key Characteristics:**
+
+- Jedna výrazná postava nebo objekt místo dekorativní výplně.
+- Plošné barevné plochy a tonální oddělení na tmavém podkladu.
+- Stejná rodina písma pro nadpisy, text a ovládání.
+- Výrazná hlavní akce, klidné vedlejší ovládání a viditelný fokus.
 
 Zdroj návrhu: `WNS-kompletni-balik-v2.zip`, edice 2.0, 26. 10. 2026.
 SHA-256 archivu: `cc4a584aead44719589b54740670b3745095c15d99132b0aead9fd047abc5672`.
@@ -6,11 +119,6 @@ Inventura návrhu vychází z `8c202e50ab4a86bf702203a49b79d4943c0e3fc1`.
 Implementace začala na `c5a7ffb54121f3aa974cf0fa5b1e18addc37b19f` větve cleanup;
 její odstraněné podklady se neobnovují hromadně.
 
-## Vizuální směr
-
-Téměř černé pozadí `#080909`, místní Manrope s českou diakritikou, velké
-samostatné objekty a ploché jantarové, mintové a fialové karty. Jedna dominantní
-scéna, čitelná hlavní akce; žádný trvalý ambient ani povinné dekorativní částice.
 Manrope OFL a Phosphor MIT se distribuují s výsledným webovým balíkem.
 
 - Převzaté tokeny: `mobilni-aplikace/src/assets/wns-v2/design/tokens.json` a CSS.
@@ -22,6 +130,150 @@ Manrope OFL a Phosphor MIT se distribuují s výsledným webovým balíkem.
 - Existující `--aw-*` názvy zůstávají kompatibilní. Obnovené runtime soubory
   `design-system/` a pět JS modulů `mechanika/final/` jsou stále importované
   aplikací/offline viewerem; nejsou obnovením vývoje fyzického kufru.
+
+## Colors
+
+Světlé pastelové akcenty nesou akci nebo konkrétní objekt; tmavé neutrály drží
+čitelné společné pozadí. Normativní hodnoty jsou v záhlaví, původ v `tokens.css`.
+
+### Primary
+
+- **Mint** (`mint`, `on-mint`): hlavní tlačítko, odkazy, aktivní zákaznická
+  záložka a fokus. Text na mintové ploše používá odpovídající tmavou barvu.
+
+### Secondary
+
+- **Jantar** (`amber`, `on-amber`): velký scénický objekt, zvýrazněná zpráva
+  nebo karta; není náhradní barvou všech běžných tlačítek.
+
+### Tertiary
+
+- **Fialová** (`violet`, `on-violet`): alternativní scénická plocha, například
+  opona. **Broskvová** (`peach`, `on-peach`) se používá také pro nebezpečnou
+  akci a náhradní podobu portrétu. **Modrá** (`blue`) zůstává informačním akcentem.
+
+### Neutral
+
+- `bg`: pozadí aplikace; `surface` a `surface-raised`: dvě úrovně ploch.
+- `text` a `muted`: hlavní a podpůrný text. `line`: nenápadné ohraničení.
+- `input-bg`, `input-border`, `placeholder`: formulářová pole a jejich nápověda.
+- `navigation-bg`, `navigation-muted`: podklad lišty a neaktivní odkazy.
+
+## Typography
+
+**Display Font / Body Font:** lokální Manrope Variable, záloha `sans-serif`.
+Technické identifikátory mohou používat monospace; není to titulkové písmo.
+Hierarchie v záhlaví zaznamenává sdílený aplikační základ, ne všechny lokální
+nadpisy. Vzorkování vykresleného webu na 390 a 1280 px potvrdilo Manrope.
+
+- **Headline:** výrazný proměnlivý nadpis hlavního obsahu podle záhlaví.
+- **Title:** nadpis sekce nebo karty, stále ve stejné rodině písma.
+- **Body:** základ obsahu; odstavce hlavního obsahu používají řádkování 1,65.
+  Kořenový text a některé herní popisky dědí 1,55. Token původní předlohy
+  pro 14px tělo proto nepopisuje každé aktuálně vykreslené místo.
+- **Label:** tučné ovládání; navigační popisek je samostatná menší role 0,7 rem.
+
+Stránka postavy má vlastní větší nadpis a herní obrazovka kompaktnější nadpis.
+Při rozšiřování vycházej z konkrétního okolního rozhraní; neroztahuj jednu
+naměřenou velikost na všechny obrazovky.
+
+## Layout
+
+Zákaznický obsah má jednu hlavní oblast. Spodní lišta má čtyři stejně široké
+destinace na mobilu i široké obrazovce. Obsah rezervuje její skutečně změřenou
+výšku včetně bezpečných okrajů, nikoli pevnou výšku podle obrázku.
+
+Základní mobilní okraj adaptéru je 24 px, do šířky 360 px klesá na 16 px.
+Existující shell používá hranice 720 a 1100 px; stránka představení přechází
+na dvě oblasti od 760 px. Konkrétní stránka může mít vlastní kontejner:
+například postava nejvýše 62 rem, představení 70 rem. Nejde o nový společný limit.
+Rozestupy v záhlaví jsou používaná část škály tokenů, nikoli inventář všech hodnot.
+
+Při 200% textu se popisky zalamují. Pole, tlačítka a položky navigace mají
+nejméně 44px dotykový cíl. Pořadí a fokus ovládání zůstávají použitelné klávesnicí.
+
+## Elevation & Depth
+
+Základ je plochý: karty, hlavní tlačítka a dialogy v adaptéru v2 mají vypnuté
+stíny. Hloubku vyjadřuje rozdíl ploch, jemná linka, obraz a opona. Starší zlaté
+gradienty a stíny z kompatibilní vrstvy nejsou novou společnou normou.
+
+## Shapes
+
+Záhlaví zachycuje opakované poloměry polí, tlačítek, karet, panelů a velkých
+scénických ploch. Hrany a obrysy jsou klidné; fotka si zachovává proporce
+a ořez určuje konkrétní portrétní komponenta.
+
+Lokální výjimky jsou skutečné, nikoli nové globální tokeny: zákaznická stránka
+používá 24px karty a pilulkové hlavní tlačítko, slavnostní představení oblouk.
+Základní sdílené tlačítko zůstává zaobleným obdélníkem podle záhlaví.
+
+## Components
+
+### Buttons
+
+`AwButton` má hlavní, vedlejší a nebezpečnou variantu. Aplikační základ v2
+používá nejméně 56px výšku; kompaktní varianty jednotlivých obrazovek nejsou
+přepsáním této dokumentované výchozí podoby. Vnitřní odsazení může dědit
+kompatibilní tématickou vrstvu; záhlaví zachycuje aktuální základní vzorek.
+
+Hover mírně zesvětlí plochu. Disabled sníží opacity na 0,48 a zruší hover efekt.
+Busy nastaví `aria-busy`, zablokuje tlačítko a podle motion režimu může ukázat
+indikátor. Klávesnicový fokus je mintový obrys s odsazením; běžný shell má
+3px obrys, zákaznická stránka místní 2px variantu.
+
+### Cards / Containers
+
+Sdílená karta používá `surface`, tenkou `line`, základní poloměr `card`
+a odsazení z tématu. V základním vzorku je to 20 px; některé zachované varianty
+používají 24 px. Karta není důvod obalit každou větu do dalšího kontejneru.
+
+### Inputs / Fields
+
+Textové pole má nejméně 54px výšku, tmavou výplň, 1px rámeček a roli `field`.
+Písmo má alespoň 1 rem; současný kořen má 16px rem. Nápověda má vlastní barvu.
+Fokus mění obrys a okraj. Disabled a `aria-invalid` přebírají sdílený stav.
+`AwField` propojí popisek, nápovědu a chybu identifikátory; chyba má `role="alert"`.
+
+### Navigation
+
+Čtyři položky **Večer / Postava / Památky / Já** mají skutečné ikony Phosphor,
+viditelný text a označení aktivní stránky. Lišta je přes celou šířku u spodního
+okraje, s horní linkou, bez plovoucího zaobleného obalu. Odkazy mají nejméně
+58px výšku; ikony 23 px. Aktivní text je mintový, neaktivní tlumený, ikony
+zůstávají světlé s rozlišením opacity. Odsazení roste o bezpečné okraje telefonu.
+Samostatné herní scény mohou lištu záměrně skrýt.
+
+### Představení postavy
+
+Dvoukřídlá opona a dekódovaný soukromý portrét tvoří jeden slavnostní moment.
+Chybějící obrázek má náhradní podobu a pravdivý stav. Nevyvolávej novou
+generaci kvůli přehrání efektu. Pravidlo deseti sekund v popředí před zobrazením
+„Pokračovat“ je výslovná místní výjimka vlastníka v `PRODUCT.md`, ne obecný
+časovač pro všechna tlačítka. Omezený pohyb zachovává obsah bez přesunů a škálování.
+
+### Kaskáda a rozsah
+
+`src/main.ts` načítá aplikační základ, starší `consumer-brand.css` a nakonec
+`wns-v2.css`. Adaptér v2 mapuje `--wns-*` do sdílených `--aw-*` proměnných.
+Pořadí platí při stejné specificitě; silnější selektory a lokální Vue styly
+mohou výsledek upravit. Samotná existence tokenu nedokládá jeho použití.
+
+## Do's and Don'ts
+
+### Do:
+
+- **Do** používej existující tokeny, místní Manrope a sdílené Vue komponenty.
+- **Do** zachovej jednu dominantní scénu a jasně pojmenovanou hlavní akci.
+- **Do** ověř lokální styly, bezpečné okraje, klávesnici, 200% text a omezený pohyb.
+- **Do** používej skutečné autorizované údaje a správnou revizi soukromého portrétu.
+
+### Don't:
+
+- **Don't** zaměňuj ukázkový portrét, zvuk nebo stav za produkční výsledek.
+- **Don't** zaváděj trvalý ambient, povinné částice nebo nový font místo Manrope.
+- **Don't** nech herní výsledek nebo oprávnění záviset na doběhu animace.
+- **Don't** přenášej lokální oblouk, pilulku nebo časovou výjimku na celý systém.
 
 ## Závazné hranice
 
@@ -46,3 +298,6 @@ výsledek zůstává neznámý. FEIGN_SLEEP zachovává bdělou obranu; REST sku
 
 Viz `docs/wns-v2-implementation.md`. Úspěšný build ani syntetický browser server
 neprokazují živou AI, skutečný multiplayer, nativní export nebo bezpečnost hardwaru.
+
+Samostatná scéna magického kufru, její přirozený GPT Live rozhovor a původ použitých
+ilustrací jsou popsané v `docs/magicky-kufr-workshop.md`.

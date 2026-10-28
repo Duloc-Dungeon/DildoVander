@@ -6,6 +6,7 @@ import AwNotice from '../../components/AwNotice.vue';
 import SpellGlyph from '../archive/SpellGlyph.vue';
 import { duelSpell, duelStates, type Duel, type DuelAction, type DuelSide } from '../archive/showContracts';
 import type { TestCharacter, TestSession } from './contracts';
+import { characterDisplayName } from './characterDisplayName';
 import type { TestingSessionsClient } from './client';
 const props = defineProps<{ sessionId: string; sessions: TestSession[]; characters: TestCharacter[]; history?: Duel[]; client: TestingSessionsClient; enabled: boolean }>();
 const current = shallowRef<Duel | null>(null); const partner = ref(''); const mode = ref('interactive');
@@ -14,7 +15,17 @@ let reading = false; let generation = 0; let operationId: string | null = null;
 const partners = computed(() => props.sessions.filter(item => item.id !== props.sessionId && item.characterId));
 const deadline = computed(() => current.value?.deadline ? Math.max(0, Math.ceil((Date.parse(current.value.deadline) - now.value) / 1000)) : null);
 const actions: DuelAction[] = ['strike', 'trick', 'shield']; const sides: DuelSide[] = ['left', 'right'];
-function name(session: TestSession): string { return props.characters.find(item => item.id === session.characterId)?.profile.userInput.name ?? session.id; }
+function name(session: TestSession): string {
+  const character = props.characters.find(item => item.id === session.characterId);
+  return character ? characterDisplayName(character) : session.id;
+}
+function participantName(side: DuelSide): string {
+  const participant = current.value?.[side];
+  if (!participant) return '';
+  const session = props.sessions.find(item => item.id === participant.identityId);
+  const character = props.characters.find(item => item.id === session?.characterId);
+  return character?.label ? `${participant.displayName} · ${character.label}` : participant.displayName;
+}
 function accept(value: Duel): void { if (!current.value || current.value.id !== value.id || value.revision >= current.value.revision) current.value = value; }
 async function run(action: (operation: string) => Promise<Duel>): Promise<void> {
   if (busy.value || !props.enabled) return;
@@ -59,7 +70,7 @@ void refresh(); const timer = setInterval(() => { now.value = Date.now(); }, 100
     <template v-if="current">
       <p role="status">{{ duelStates[current.state] ?? current.state }}<template v-if="deadline != null"> · {{ deadline }} s do uzavření tahu</template></p>
       <div class="testing-duel-participants"><section v-for="side in sides" :key="side">
-        <h3>{{ current[side].displayName }}</h3><p>{{ current[side].wandName ?? current[side].wandId }}</p>
+        <h3>{{ participantName(side) }}</h3><p>{{ current[side].wandName ?? current[side].wandId }}</p>
         <p v-if="current.state === 'Running' && current.mode === 'interactive'">{{ (side === 'left' ? current.leftChoiceLocked : current.rightChoiceLocked) ? 'Tah přijat backendem.' : 'Vyberte kouzlo pro toto kolo.' }}</p>
         <div v-if="current.state === 'Running' && current.mode === 'interactive'" class="testing-duel-spells">
           <AwButton v-for="action in actions" :key="action" :disabled="busy || !enabled || (side === 'left' ? current.leftChoiceLocked : current.rightChoiceLocked)" @click="move(side, action)"><SpellGlyph :action="action" />{{ duelSpell(current[side], action) }}</AwButton>

@@ -36,7 +36,17 @@ try {
     await page.getByLabel('Jméno postavy', { exact: true }).fill(name);
     await page.getByLabel('Univerzum', { exact: true }).fill('Izolovaný testovací svět');
     assert.equal(new URL(page.url()).hash, '', 'enrollment fragment removed before application requests');
-    await page.getByRole('button', { name: 'Přijmout pozvánku', exact: true }).click();
+    const accept = page.getByRole('button', { name: 'Přijmout pozvánku', exact: true });
+    assert(await accept.isDisabled(), 'registration waits for an explicit processing choice');
+    const anonymousSession = await (await page.request.get(origin.origin + '/app/v1/session')).json();
+    const denied = await page.request.post(origin.origin + '/app/v1/enrollment/options', {
+      headers: { Origin: origin.origin, 'X-DV-CSRF': anonymousSession.csrfToken },
+      data: { token: new URL(link).hash.slice('#invite='.length), displayName: name },
+    });
+    assert.equal(denied.status(), 409, 'the real server also denies registration without processing consent');
+    assert.equal((await denied.json()).code, 'ai_consent_required');
+    await page.getByRole('checkbox', { name: /Souhlasím.*OpenAI/ }).check();
+    await accept.click();
     await page.waitForURL(url => url.pathname === '/settings');
     await page.getByRole('heading', { name, exact: true }).waitFor();
   }
@@ -136,6 +146,7 @@ try {
   await replay.page.goto(invitation);
   await replay.page.getByLabel('Jméno postavy', { exact: true }).fill('Nepovolené opakování');
   await replay.page.getByLabel('Univerzum', { exact: true }).fill('Izolovaný testovací svět');
+  await replay.page.getByRole('checkbox', { name: /Souhlasím.*OpenAI/ }).check();
   await replay.page.getByRole('button', { name: 'Přijmout pozvánku', exact: true }).click();
   await replay.page.getByRole('alert').filter({ hasText: /Pozvánka už není platná/ }).waitFor();
   assert.equal((await (await replay.context.request.get(origin.origin + '/app/v1/session')).json()).account, null);

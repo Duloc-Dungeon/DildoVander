@@ -44,7 +44,7 @@ export const duelStates: Record<string, string> = {
   Running: 'Souboj právě probíhá.', Completed: 'Souboj dokončen.', Cancelled: 'Souboj zrušen. Vítěz nebyl vyhlášen.', Interrupted: 'Souboj přerušen. Vítěz nebyl vyhlášen.',
 };
 export const duelActions: Record<DuelAction, string> = { strike: 'Úder', trick: 'Lest', shield: 'Štít' };
-export interface DuelIdentity { displayName: string; wandId: string; strength: number; cunning: number; defense: number; wandName?: string; spells?: WandSpell[]; physicalSlot?: number; combatArchetype?: CombatArchetype; combatRulesVersion?: string; temperament?: string; affinity?: string; weakness?: string; artworkUrl?: string; artworkSynthetic?: boolean }
+export interface DuelIdentity { identityId?: string; displayName: string; wandId: string; strength: number; cunning: number; defense: number; wandName?: string; spells?: WandSpell[]; physicalSlot?: number; combatArchetype?: CombatArchetype; combatRulesVersion?: string; temperament?: string; affinity?: string; weakness?: string; artworkUrl?: string; artworkSynthetic?: boolean }
 export interface DuelRound { number: number; leftAction: string; rightAction: string; leftScore: number; rightScore: number; leftAutomatic: boolean; rightAutomatic: boolean; quip: string; mishap: string }
 export interface DuelPartyTask { id: string; title: string; text: string; alternative: string; alternativeRoast: string; involvesWinner: boolean }
 export interface Duel {
@@ -73,6 +73,7 @@ export function projectDuel(raw: unknown, id: string): Duel {
     const item = object(raw); const spells = projectSpells(item.spells);
     const publicArt = new RegExp('^/guest/v1/evenings/[0-9a-f-]{36}/keepsakes/[0-9a-f-]{36}/editions/[0-9a-f-]{36}/assets/[0-9a-f-]{36}$', 'i');
     return { displayName: text(item.displayName, 240), wandId: text(item.wandId, 240),
+      ...(text(item.identityId, 80) ? { identityId: text(item.identityId, 80) } : {}),
       strength: number(item.strength), cunning: number(item.cunning), defense: number(item.defense),
       ...(publicArt.test(text(item.artworkUrl, 512)) ? { artworkUrl: text(item.artworkUrl, 512), artworkSynthetic: item.artworkSynthetic === true } : {}),
       ...(combatArchetypes.includes(item.combatArchetype as CombatArchetype) ? { combatArchetype: item.combatArchetype as CombatArchetype } : {}),

@@ -1839,9 +1839,7 @@
                 "type": "string",
                 "enum": [
                   "done",
-                  "swap",
-                  "skip",
-                  "revoke"
+                  "skip"
                 ]
               },
               {

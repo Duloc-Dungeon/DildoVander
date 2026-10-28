@@ -7,6 +7,8 @@ namespace Kufr.Backend.Features.Identity;
 internal sealed class AccountUser : IdentityUser
 {
     public string DisplayName { get; set; } = "";
+    public long? OpenAiConsentAt { get; set; }
+    public int OpenAiConsentVersion { get; set; }
     public string? LaunchGroupId { get; set; }
     public long? LaunchGroupJoinedAt { get; set; }
     public long LaunchGroupAccessRevision { get; set; }
@@ -44,6 +46,8 @@ internal sealed class AccountCeremony
     public string Kind { get; set; } = "";
     public string UserId { get; set; } = "";
     public string DisplayName { get; set; } = "";
+    public long? OpenAiConsentAt { get; set; }
+    public int OpenAiConsentVersion { get; set; }
     public string? InvitationHash { get; set; }
     public string? EnrollmentGroupId { get; set; }
     public long? EnrollmentRevision { get; set; }

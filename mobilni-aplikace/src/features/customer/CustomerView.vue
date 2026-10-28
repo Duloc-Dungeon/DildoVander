@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import GeneratedWand from '../archive/GeneratedWand.vue';
+import WandWorkshop from '../game/WandWorkshop.vue';
 import { AccountArchiveClient } from '../archive/accountArchive';
 import { projectWandArtwork, useWandArtworkRetry, type WandArtwork } from '../archive/wandArtwork';
 import { useArchiveMedia } from '../archive/useArchiveMedia';
@@ -14,8 +15,9 @@ import { secureUuid } from '../../application/identifiers.mjs';
 import { account, accountRequest } from '../identity/session';
 import AccountArchiveList from '../identity/AccountArchiveList.vue';
 import SettingsView from '../identity/SettingsView.vue';
-import NewCharacterDialog, { type NewCharacterDraft } from './NewCharacterDialog.vue';
 import CharacterBriefAssistant from './CharacterBriefAssistant.vue';
+import CharacterLabelEditor from './CharacterLabelEditor.vue';
+import { characterDisplayName } from './characterLabel';
 import CustomerSessionResultCard from './CustomerSessionResultCard.vue';
 import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
 import CustomerWaiting from './CustomerWaiting.vue';
@@ -29,7 +31,7 @@ import { projectCustomerSessionError, type CustomerSessionFeedback } from './cus
 import { SessionRecoveryController, type SessionRecoveryState } from './sessionRecovery';
 
 interface CharacterProfile {
-  profileId: string; revision: number;
+  profileId: string; revision: number; label?: string | null;
   userInput: { name: string; world: string; version?: string; description?: string; language?: string };
   status: string; enrichment?: unknown; errorCode?: string; updatedAt?: string;
 }
@@ -48,6 +50,10 @@ watch(() => account.value?.id, id => interfaceLanguagePreference.setScope(id), {
 const pane = computed(() => route.path.split('/').at(-1) ?? 'character');
 const profile = ref<CharacterProfile | null>(null);
 const selectedWand = ref<GeneratedWandSnapshot | null>(null);
+const crafting = ref(false);
+watch(() => profile.value ? `${profile.value.profileId}:${profile.value.revision}` : '', () => {
+  crafting.value = false;
+}, { flush: 'sync' });
 const profileArtworkClient = new AccountArchiveClient(() => account.value?.id ?? '');
 const profileArtwork = useArchiveMedia(profileArtworkClient);
 const artworkState = ref<WandArtwork | null>(null);
@@ -83,10 +89,8 @@ const devices = ref<CustomerBleDevice[]>([]);
 const connected = ref<CustomerBleStatus | null>(null);
 const selectedDevice = ref('');
 const personalMemoryConsent = ref(false);
-const enrichmentOpenAiConsent = ref(false);
-const newCharacterOpen = ref(false);
-const newCharacterError = ref<CustomerSessionFeedback | null>(null);
-const conversationOpenAiConsent = ref(false);
+const canEditCharacter = computed(() => account.value?.roles.some(role => role === 'Owner' || role === 'Administrator') === true);
+const hasAiConsent = computed(() => account.value?.openAiConsent === true);
 const form = ref({ name: '', world: '', version: '', description: '', language: '' });
 let generation = 0;
 let accountWorkController = new AbortController();
@@ -166,18 +170,18 @@ function resetPrivateState(): void {
   sessionRecovery.invalidate();
   if (enrichmentTimer) clearTimeout(enrichmentTimer); enrichmentTimer = undefined;
   profile.value = null; selectedWand.value = null; sessions.value = []; devices.value = []; connected.value = null; profileLoading.value = Boolean(account.value);
-  busy.value = false;
-  newCharacterOpen.value = false; newCharacterError.value = null;
+  busy.value = false; crafting.value = false;
   resultSessionId.value = null;
   waitingClaim.value = undefined;
   selectedDevice.value = ''; pendingOperationId.value = undefined; pendingTicketRequest.value = undefined; bleStartAttempted = false; requestedEndSessions.clear(); errorFeedback.value = null; noticeCopyKey.value = null;
-  form.value = { name: '', world: '', version: '', description: '', language: '' }; personalMemoryConsent.value = false; enrichmentOpenAiConsent.value = false; conversationOpenAiConsent.value = false;
+  form.value = { name: '', world: '', version: '', description: '', language: '' }; personalMemoryConsent.value = false;
   void Promise.resolve(customerBle.disconnect()).catch(() => {});
 }
 
 async function loadProfile(epoch = generation): Promise<void> {
   if (!account.value) return;
-  profileLoading.value = true;
+  // Refreshing an existing profile must not dispose its active voice workshop.
+  profileLoading.value = !profile.value;
   try {
     const result = await accountRequest<{ profile: CharacterProfile | null; generatedWand?: unknown; artwork?: unknown }>('/app/v1/customer/character', 'GET', undefined, accountWorkController.signal);
     if (epoch !== generation) return;
@@ -227,61 +231,35 @@ async function refreshSessionSnapshot(signal: AbortSignal): Promise<SessionSnaps
   return result;
 }
 
-async function saveCharacter(newCharacter = false, draft?: NewCharacterDraft): Promise<void> {
-  if (busy.value) return;
+async function saveCharacter(): Promise<void> {
+  if (busy.value || !hasAiConsent.value || (profile.value && !canEditCharacter.value)) return;
   errorFeedback.value = null; noticeCopyKey.value = null; busy.value = true; const epoch = generation;
-  newCharacterError.value = null;
   try {
-    const input = draft ?? form.value;
-    const expectedRevision = profile.value?.revision ?? 0;
+    const input = form.value;
     const result = await accountRequest<{ profile: CharacterProfile }>('/app/v1/customer/character', 'PUT', {
-      expectedRevision, expectedProfileId: profile.value?.profileId ?? null, openAiConsent: draft?.openAiConsent ?? enrichmentOpenAiConsent.value,
+      expectedRevision: profile.value?.revision ?? 0, expectedProfileId: profile.value?.profileId ?? null,
+      openAiConsent: hasAiConsent.value, portraitConsent: hasAiConsent.value,
       userInput: { name: input.name.trim(), world: input.world.trim(), version: input.version.trim() || undefined,
         description: input.description.trim() || undefined, language: input.language.trim() || undefined },
-      ...(newCharacter && profile.value ? { newCharacter: true } : {}),
     }, accountWorkController.signal);
     if (epoch !== generation) return;
     profile.value = result.profile;
     selectedWand.value = null;
     clearProfileArtwork();
-    if (newCharacter) {
-      form.value = {
-        name: result.profile.userInput.name, world: result.profile.userInput.world,
-        version: result.profile.userInput.version ?? '', description: result.profile.userInput.description ?? '',
-        language: result.profile.userInput.language ?? '',
-      };
-      newCharacterOpen.value = false;
-    }
-    enrichmentOpenAiConsent.value = false;
     scheduleEnrichmentRefresh(epoch);
-    noticeCopyKey.value = newCharacter ? 'customer.saved-new-character' : 'customer.profile-saved';
-  } catch (cause) {
-    if (epoch === generation) {
-      if (newCharacter) newCharacterError.value = projectCustomerSessionError(cause);
-      else showProjectedError(cause);
-    }
-  }
+    noticeCopyKey.value = 'customer.profile-saved';
+  } catch (cause) { if (epoch === generation) showProjectedError(cause); }
   finally { if (epoch === generation) busy.value = false; }
 }
 
-function beginNewCharacter(): void {
-  if (busy.value) return;
-  newCharacterError.value = null;
-  newCharacterOpen.value = true;
-}
-function cancelNewCharacter(): void {
-  // A dispatched profile write cannot be undone by closing its dialog.
-  if (!busy.value) newCharacterOpen.value = false;
-}
-
 async function requestCorrection(): Promise<void> {
-  if (!profile.value || !enrichmentOpenAiConsent.value) return;
+  if (!profile.value || !canEditCharacter.value || !hasAiConsent.value) return;
   errorFeedback.value = null; busy.value = true; const epoch = generation;
   try {
     await accountRequest('/app/v1/customer/character/correction', 'POST', {
       expectedRevision: profile.value.revision, expectedProfileId: profile.value.profileId, openAiConsent: true,
     }, accountWorkController.signal);
-    if (epoch === generation) { enrichmentOpenAiConsent.value = false; noticeCopyKey.value = 'customer.not-my-profile'; await refreshEnrichment(epoch); }
+    if (epoch === generation) { noticeCopyKey.value = 'customer.not-my-profile'; await refreshEnrichment(epoch); }
   } catch (cause) { if (epoch === generation) showProjectedError(cause); }
   finally { if (epoch === generation) busy.value = false; }
 }
@@ -315,7 +293,7 @@ async function connect(): Promise<void> {
 
 async function startConversation(): Promise<void> {
   if (!profile.value || !connected.value || !connected.value.capabilities.customerStart
-    || (!conversationOpenAiConsent.value && !pendingTicketRequest.value)) return;
+    || (!hasAiConsent.value && !pendingTicketRequest.value)) return;
   errorFeedback.value = null; noticeCopyKey.value = null; busy.value = true; const epoch = generation;
   // A retried operation keeps its ID; a rejected or unknown outcome is reconciled first.
   const hadPendingOperation = Boolean(pendingOperationId.value);
@@ -352,7 +330,7 @@ async function startConversation(): Promise<void> {
       if (epoch !== generation || !connected.value || !profile.value) return;
       // Consent can be withdrawn while session/BLE reconciliation is awaiting a reply.
       // Once issuance is attempted, retries keep the original immutable consent-bearing body.
-      if (!conversationOpenAiConsent.value) {
+      if (!hasAiConsent.value) {
         pendingOperationId.value = undefined; bleStartAttempted = false;
         noticeCopyKey.value = 'customer.consent-revoked';
         return;
@@ -519,6 +497,7 @@ onBeforeUnmount(() => {
     <p v-if="pane === 'character' && profileLoading" role="status">{{ customerCopy.text('customer.profile-loading') }}</p>
     <section v-if="pane === 'character' && !profileLoading" class="page-stack">
       <PrivateCharacterAvatar v-if="profile" :profile-id="profile.profileId" :revision="profile.revision" :name="profile.userInput.name" />
+      <WandWorkshop v-if="profile && (!selectedWand || crafting)" :key="`${profile.profileId}:${profile.revision}`" @active-change="crafting = $event" @created="loadProfile()" />
       <GeneratedWand v-if="profile && selectedWand" :wand="selectedWand" show-name
         :image-url="profileArtwork.artworkUrl.value"
         :image-pending="!!profileArtworkPath && !profileArtwork.artworkUrl.value && !profileArtwork.artworkError.value"
@@ -527,26 +506,24 @@ onBeforeUnmount(() => {
         :keepsake-to="artworkState ? `/keepsake/?account=1&k=${artworkState.locator}` : undefined" history-to="/me/keepsakes" />
       <p v-if="artworkRetry.failed.value" role="alert">{{ customerCopy.language.value === 'en' ? 'The retry could not be confirmed. Refresh the state before trying again.' : 'Opakování se nepodařilo potvrdit. Před dalším pokusem obnov stav.' }}</p>
       <section v-if="profile" class="aw-card page-stack" aria-labelledby="character-confirmation-title">
-        <h2 id="character-confirmation-title">{{ profile.userInput.name }}</h2>
+        <h2 id="character-confirmation-title">{{ characterDisplayName(profile.userInput.name, profile.label) }}</h2>
+        <CharacterLabelEditor :profile-id="profile.profileId" :label="profile.label" @saved="profile.label = $event" />
         <p>{{ profile.userInput.world }}<span v-if="profile.userInput.version"> · {{ profile.userInput.version }}</span></p>
         <p role="status">{{ customerCopy.text(profileStatusKeys[profile.status] ?? 'customer.status-unknown') }} · {{ customerCopy.text('customer.revision', { revision: profile.revision }) }}</p>
         <p v-if="profile.status === 'saved'">{{ customerCopy.text('customer.saved-guidance') }}</p>
         <AwNotice v-if="clarificationText" tone="info">{{ customerCopy.text('customer.clarification', { text: clarificationText }) }}</AwNotice>
         <RouterLink v-if="['saved', 'ready'].includes(profile.status) || startInProgress" class="aw-button aw-button--primary" :to="startInProgress ? '/me/conversation' : '/play'">{{ startInProgress ? customerCopy.text('customer.return-conversation') : 'Pokračovat do hry' }}</RouterLink>
-        <p class="aw-muted">{{ customerCopy.text('customer.correction-guidance') }}</p>
-        <AwButton type="button" variant="secondary" :disabled="busy" @click="beginNewCharacter">{{ customerCopy.text('customer.new-character') }}</AwButton>
+        <p v-if="!canEditCharacter" class="aw-muted">Na účtu máš jednu postavu. Její úpravy řeší administrátor.</p>
       </section>
-      <details :open="!profile || profile.status === 'needs_clarification'" class="aw-card">
+      <details v-if="!profile || canEditCharacter" :open="!profile || profile.status === 'needs_clarification'" class="aw-card">
         <summary>{{ customerCopy.text(profile ? 'customer.edit-character' : 'customer.create-first') }}</summary>
-    <form class="customer-form" @submit.prevent="saveCharacter(false)">
+    <form class="customer-form" @submit.prevent="saveCharacter">
       <AwField id="character-name" :label="customerCopy.text('profile.name')"><input id="character-name" v-model="form.name" class="aw-input" maxlength="120" required /></AwField>
       <AwField id="character-world" :label="customerCopy.text('profile.world')"><input id="character-world" v-model="form.world" class="aw-input" maxlength="160" required /></AwField>
       <AwField id="character-version" :label="customerCopy.text('profile.version')"><input id="character-version" v-model="form.version" class="aw-input" maxlength="120" /></AwField>
       <AwField id="character-description" :label="customerCopy.text('profile.description')"><textarea id="character-description" v-model="form.description" class="aw-input" maxlength="1200" rows="4" /></AwField>
       <CharacterBriefAssistant v-model="form.description" :disabled="busy" />
       <AwField id="character-language" :label="customerCopy.text('new-character.language')"><input id="character-language" v-model="form.language" class="aw-input" maxlength="35" /></AwField>
-      <AwField id="character-openai-consent" :label="customerCopy.text('profile.optional-ai-title')"><label><input id="character-openai-consent" v-model="enrichmentOpenAiConsent" type="checkbox" /> {{ customerCopy.text('customer.enrichment-consent') }}</label></AwField>
-      <p class="aw-muted">{{ customerCopy.text('customer.no-ai-save') }}</p>
       <p v-if="profile" class="aw-muted">{{ customerCopy.text('customer.preparation-status') }}: {{ customerCopy.text(profileStatusKeys[profile.status] ?? 'customer.status-unknown') }}</p>
       <AwNotice v-if="profile && clarificationText" tone="info">{{ customerCopy.text('customer.clarification', { text: clarificationText }) }}</AwNotice>
       <details v-if="enrichmentText || evidenceSections.length">
@@ -554,26 +531,23 @@ onBeforeUnmount(() => {
         <p v-if="enrichmentText" class="character-enrichment">{{ enrichmentText }}</p>
         <section v-for="section in evidenceSections" :key="section.title" class="aw-card"><h2>{{ section.title }}</h2><ul><li v-for="line in section.lines" :key="line">{{ line }}</li></ul></section>
       </details>
-      <div class="customer-actions"><AwButton type="submit" variant="primary" :busy="busy">{{ customerCopy.text(profile ? 'customer.save-changes' : 'customer.create-character') }}</AwButton><AwButton v-if="profile" type="button" :disabled="busy || !enrichmentOpenAiConsent" @click="requestCorrection">{{ customerCopy.text('customer.not-my-character') }}</AwButton><AwButton v-if="profile" type="button" variant="danger" :disabled="busy" @click="deleteCharacter">{{ customerCopy.text('customer.delete-profile') }}</AwButton></div>
+      <div class="customer-actions"><AwButton type="submit" variant="primary" :busy="busy" :disabled="!hasAiConsent">{{ customerCopy.text(profile ? 'customer.save-changes' : 'customer.create-character') }}</AwButton><AwButton v-if="profile" type="button" :disabled="busy || !hasAiConsent" @click="requestCorrection">{{ customerCopy.text('customer.not-my-character') }}</AwButton><AwButton v-if="profile" type="button" variant="danger" :disabled="busy" @click="deleteCharacter">{{ customerCopy.text('customer.delete-profile') }}</AwButton></div>
       <p v-if="profile" class="aw-muted">{{ customerCopy.text('customer.revision', { revision: profile.revision }) }}</p>
     </form>
       </details>
       <RouterLink to="/me/account">{{ customerCopy.text('customer.account-help') }}</RouterLink>
-      <NewCharacterDialog :open="newCharacterOpen" :busy="busy" :error="newCharacterError ? (newCharacterError.copyKey ? customerCopy.text(newCharacterError.copyKey) : newCharacterError.message) : ''" :current-character-name="profile?.userInput.name" :active-session="startInProgress" @cancel="cancelNewCharacter" @confirm="draft => saveCharacter(true, draft)" />
     </section>
 
     <section v-else-if="pane === 'conversation'" class="page-stack">
       <CustomerWaiting :device-id="connected?.deviceId ?? null" :profile-id="profile?.profileId ?? null" :proximity="connected ? { bootId: connected.bootId, challenge: connected.challenge } : null" @claim="acceptWaitingClaim" />
       <AwNotice v-if="!customerBle.supported()" tone="info">{{ customerCopy.text('customer.bluetooth-unsupported') }}<br><a href="/ios/">{{ customerCopy.text('customer.install-app') }}</a></AwNotice>
-      <div class="aw-card"><h2>{{ customerCopy.text('profile.title') }}</h2><p v-if="profile">{{ profile.userInput.name }} · {{ profile.userInput.world }} ({{ customerCopy.text('customer.revision', { revision: profile.revision }) }})</p><p v-else>{{ customerCopy.text('customer.first-create') }}</p><RouterLink to="/me/character">{{ customerCopy.text('customer.edit-profile') }}</RouterLink></div>
+      <div class="aw-card"><h2>{{ customerCopy.text('profile.title') }}</h2><p v-if="profile">{{ characterDisplayName(profile.userInput.name, profile.label) }} · {{ profile.userInput.world }} ({{ customerCopy.text('customer.revision', { revision: profile.revision }) }})</p><p v-else>{{ customerCopy.text('customer.first-create') }}</p><RouterLink to="/me/character">{{ profile && !canEditCharacter ? 'Zobrazit postavu' : customerCopy.text('customer.edit-profile') }}</RouterLink></div>
       <div class="aw-card customer-form"><h2>{{ customerCopy.text('customer.connection') }}</h2><p>{{ customerCopy.text('customer.bluetooth-manual') }}</p>
         <AwButton variant="primary" :disabled="busy || !profile || !customerBle.supported()" @click="discover">{{ customerCopy.text('customer.find-suitcase') }}</AwButton>
         <div v-if="devices.length" class="customer-actions"><label for="customer-device">{{ customerCopy.text('customer.suitcase') }}</label><select id="customer-device" v-model="selectedDevice" class="aw-input"><option value="">{{ customerCopy.text('customer.choose-suitcase') }}</option><option v-for="device in devices" :key="device.id" :value="device.id">{{ device.name }}</option></select><AwButton :disabled="busy || !selectedDevice" @click="connect">{{ customerCopy.text('customer.connect') }}</AwButton></div>
         <p v-if="connected" role="status">{{ connected.state === 'running' ? customerCopy.text('customer.live-running') : connected.state === 'starting' ? customerCopy.text('customer.live-starting') : connected.state === 'idle' ? customerCopy.text('customer.live-idle') : customerCopy.text('customer.live-restored') }}</p>
-        <AwField id="conversation-openai-consent" :label="customerCopy.text('customer.consent-label')"><label><input id="conversation-openai-consent" v-model="conversationOpenAiConsent" type="checkbox" /> {{ customerCopy.text('customer.consent-copy') }}</label></AwField>
-        <p class="aw-muted">{{ customerCopy.text('customer.consent-required') }}</p>
         <AwField id="personal-memory-consent" :label="customerCopy.text('customer.memory-label')"><label><input id="personal-memory-consent" v-model="personalMemoryConsent" type="checkbox" /> {{ customerCopy.text('customer.memory-consent') }}</label></AwField>
-        <AwButton variant="primary" :busy="busy" :disabled="busy || !profile || !connected?.capabilities.customerStart || startInProgress || (!conversationOpenAiConsent && !pendingOperationId)" @click="startConversation">{{ customerCopy.text('customer.start-conversation') }}</AwButton>
+        <AwButton variant="primary" :busy="busy" :disabled="busy || !profile || !connected?.capabilities.customerStart || startInProgress || (!hasAiConsent && !pendingOperationId)" @click="startConversation">{{ customerCopy.text('customer.start-conversation') }}</AwButton>
         <p v-if="pendingOperationId" role="status">{{ customerCopy.text('customer.pending-start') }}</p>
       </div>
       <div class="aw-card session-recovery" aria-live="polite">

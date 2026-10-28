@@ -395,8 +395,6 @@ public final class KufrIdentityPlugin extends Plugin {
             body = jsonBody ? (textBody == null ? new byte[0] : textBody.getBytes(StandardCharsets.UTF_8))
                 : (encodedBody == null ? new byte[0] : android.util.Base64.decode(encodedBody, android.util.Base64.DEFAULT));
         } catch (IllegalArgumentException exception) { releaseOperation(requestId, operation); call.reject("Invalid request body.", "invalid_request"); return; }
-        if (body.length > MAX_BODY) { releaseOperation(requestId, operation); call.reject("Request is too large.", "invalid_request"); return; }
-
         String base = origin();
         String cookie = CookieManager.getInstance().getCookie(base);
         Request.Builder builder = new Request.Builder().url(base + path).method(method, requestBody(method, body, call));
@@ -410,6 +408,16 @@ public final class KufrIdentityPlugin extends Plugin {
                 if (!(raw instanceof String)) { releaseOperation(requestId, operation); call.reject("Invalid request headers.", "invalid_request"); return; }
                 requestHeaders.put(name, (String) raw);
             }
+        }
+        String contentType = requestHeaders.entrySet().stream()
+            .filter(entry -> "content-type".equalsIgnoreCase(entry.getKey()))
+            .map(Map.Entry::getValue).findFirst().orElse(null);
+        int requestLimit = account
+            ? NativeAccountRequestPolicy.requestBodyLimit(path, method, contentType)
+            : MAX_BODY;
+        if (body.length > requestLimit) {
+            releaseOperation(requestId, operation);
+            call.reject("Request is too large.", "invalid_request"); return;
         }
         if (account) {
             try {
@@ -456,8 +464,11 @@ public final class KufrIdentityPlugin extends Plugin {
                     CookieManager cookies = CookieManager.getInstance();
                     for (String setCookie : response.headers("Set-Cookie")) cookies.setCookie(base, setCookie);
                     cookies.flush();
-                    byte[] bytes = response.body() == null ? new byte[0] : readLimited(response.body(), MAX_BODY);
-                    if (bytes.length > MAX_BODY) { call.reject("Server response is too large.", "response_too_large"); return; }
+                    int responseLimit = account
+                        ? NativeAccountRequestPolicy.responseBodyLimit(path, method)
+                        : MAX_BODY;
+                    byte[] bytes = response.body() == null ? new byte[0] : readLimited(response.body(), responseLimit);
+                    if (bytes.length > responseLimit) { call.reject("Server response is too large.", "response_too_large"); return; }
                     if (networkCall.isCanceled()) { call.reject("Request was cancelled.", "cancelled"); return; }
                     JSObject result = new JSObject();
                     result.put("status", response.code());
@@ -494,9 +505,9 @@ public final class KufrIdentityPlugin extends Plugin {
                 case "reauth": optionsPath = "/app/v1/passkeys/reauthentication-options"; completionPath = "/app/v1/passkeys/reauthenticate"; break;
                 case "add": optionsPath = "/app/v1/passkeys/options"; completionPath = "/app/v1/passkeys/complete"; break;
                 case "customer-enroll": optionsPath = "/app/v1/customer/enrollment/options"; completionPath = "/app/v1/customer/enrollment/complete";
-                    body.put("displayName", call.getString("displayName", "")); break;
+                    body.put("displayName", call.getString("displayName", "")); body.put("openAiConsent", call.getBoolean("openAiConsent", false)); break;
                 case "enroll": optionsPath = "/app/v1/enrollment/options"; completionPath = "/app/v1/enrollment/complete";
-                    body.put("token", call.getString("token", "")); body.put("displayName", call.getString("displayName", "")); break;
+                    body.put("token", call.getString("token", "")); body.put("displayName", call.getString("displayName", "")); body.put("openAiConsent", call.getBoolean("openAiConsent", false)); break;
                 default: throw new IOException("Unsupported credential flow");
             }
             String csrf = fetchCsrf();

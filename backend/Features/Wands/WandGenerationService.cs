@@ -10,7 +10,9 @@ internal sealed class WandGenerationService(WandGenerationStore store, IWandGene
         using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("wand.generate");
         activity?.SetTag("app.operation_id", operationId);
         token.ThrowIfCancellationRequested();
-        if (evidence?.Count > 32 || evidence?.Any(text => !WandGenerationValidation.Text(text, 1000)) == true)
+        // Mobile workshop evidence is a serialized question/answer envelope and
+        // may carry the full accepted 2,000-character response without truncation.
+        if (evidence?.Count > 32 || evidence?.Any(text => !WandGenerationValidation.Text(text, 16_384)) == true)
             throw new WandGenerationException("invalid_wand_evidence", 400);
         var job = store.Claim(accountId, operationId, retry);
         if (job is null) return store.Read(accountId, operationId)

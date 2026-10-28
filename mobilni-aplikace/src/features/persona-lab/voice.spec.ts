@@ -31,6 +31,7 @@ describe('bounded audio playback', () => {
   let observer: VoiceObserver;
   let context: { currentTime: number; state: string; onstatechange: (() => void) | null };
   let message: (data: unknown) => void;
+  let remoteClose: () => void;
   let capture: (samples: Float32Array) => void;
   let send: ReturnType<typeof vi.fn>;
   let socketClose: ReturnType<typeof vi.fn>;
@@ -89,9 +90,9 @@ describe('bounded audio playback', () => {
     }
     class FakeSocket {
       static OPEN = 1; readyState = 1; binaryType = ''; bufferedAmount = 0;
-      onmessage: ((event: { data: unknown }) => void) | null = null; onclose = null; onerror = null;
+      onmessage: ((event: { data: unknown }) => void) | null = null; onclose: ((event: {code: number}) => void) | null = null; onerror = null;
       send = vi.fn(); close = vi.fn();
-      constructor(address: string) { connectedAddress = address; send = this.send; socketClose = this.close; message = data => this.onmessage?.({ data }); }
+      constructor(address: string) { connectedAddress = address; send = this.send; socketClose = this.close; message = data => this.onmessage?.({ data }); remoteClose = () => this.onclose?.({code:1000}); }
     }
     vi.stubGlobal('AudioContext', FakeContext); vi.stubGlobal('WebSocket', FakeSocket);
     vi.stubGlobal('AudioWorkletNode', class {
@@ -105,6 +106,64 @@ describe('bounded audio playback', () => {
   });
   afterEach(() => { voice.dispose(); meta.remove(); vi.unstubAllGlobals(); vi.useRealTimers(); });
   const ready = (playbackMode = 'acknowledged') => event({ type: 'ready', playbackMode });
+  it('allows bounded candidate preparation without claiming the microphone is listening', async () => {
+    await voice.connect(async () => ({url:'wss://lab.example/app/v1/customer/wand/sessions/test/live?ticket=one',path:'',expiresAt:''}), 'test', 'https://lab.example', {purpose:'wand'});
+    observer.error = vi.fn(); observer.phase = vi.fn();
+    event({type:'preparing'}); vi.advanceTimersByTime(20000);
+    expect(observer.error).not.toHaveBeenCalled(); expect(observer.phase).not.toHaveBeenCalled();
+    event({type:'connecting'}); vi.advanceTimersByTime(14999);
+    expect(observer.error).not.toHaveBeenCalled(); ready('stream');
+    expect(observer.phase).toHaveBeenLastCalledWith('listening');
+  });
+  it('checks prepared workshop admission before acquiring the microphone', async () => {
+    const microphone = vi.fn(); Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: microphone } });
+    await voice.connect(async () => { throw new Error('wand_character_preparing'); }, 'test', 'https://lab.example', { purpose: 'workshop' });
+    expect(microphone).not.toHaveBeenCalled(); expect(observer.error).toHaveBeenCalled();
+  });
+  it('routes workshop audio to its exact customer socket and emits backend state independently', async () => {
+    observer.workshopSession = vi.fn();
+    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '' }), 'test', 'https://lab.example', { purpose: 'workshop' });
+    ready('stream'); event({ type: 'state', session: { id: 'test', status: 'generating' } });
+    expect(connectedAddress).toContain('/customer/wand/workshop/sessions/test/live');
+    expect(observer.workshopSession).toHaveBeenCalledWith({ id: 'test', status: 'generating' });
+    message(new Int16Array(4800).fill(100).buffer); event({ type: 'audio_pause' }); advance(.2);
+    expect(observer.phase).toHaveBeenLastCalledWith('listening');
+  });
+  it('keeps full-duplex workshop audio through loud capture until the provider cancels playback', async () => {
+    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '' }), 'test', 'https://lab.example', { purpose: 'workshop' });
+    ready('stream');
+    message(new Int16Array(4800).fill(100).buffer);
+    const playing = sources.at(-1)!;
+    for (let index = 0; index < 20; index++) capture(new Float32Array(480).fill(.2));
+    expect(controls('cancel')).toEqual([]);
+    expect(playing.stop).not.toHaveBeenCalled();
+    expect(send.mock.calls.filter(call => call[0] instanceof ArrayBuffer).length).toBeGreaterThanOrEqual(19);
+    event({ type: 'audio_cancelled' });
+    expect(playing.stop).toHaveBeenCalledOnce();
+    expect(observer.phase).toHaveBeenLastCalledWith('listening');
+    // A later reply still plays; cancellation does not disconnect capture.
+    message(new Int16Array(4800).fill(200).buffer);
+    expect(sources.at(-1)).not.toBe(playing);
+    expect(observer.error).not.toHaveBeenCalled();
+    voice.interrupt();
+    expect(controls('cancel')).toHaveLength(1);
+  });
+  it('drains a confirmed wand finale after server closure before releasing audio', async () => {
+    await voice.connect(async () => ({url:'wss://lab.example/app/v1/customer/wand/sessions/test/live?ticket=one',path:'',expiresAt:''}), 'test', 'https://lab.example', {purpose:'wand'});
+    stopTrack.mockClear(); observer.closed = vi.fn();
+    ready('stream'); message(new Int16Array(4800).fill(100).buffer);
+    event({type:'ended'}); remoteClose();
+    expect(observer.closed).not.toHaveBeenCalled(); expect(stopTrack).not.toHaveBeenCalled();
+    advance(.2);
+    expect(observer.closed).toHaveBeenCalledOnce(); expect(observer.phase).toHaveBeenLastCalledWith('ended');
+    expect(stopTrack).toHaveBeenCalledOnce();
+  });
+  it('shows listening after a real wand audio pause once queued speech drains', async () => {
+    await voice.connect(async () => ({url:'wss://lab.example/app/v1/customer/wand/sessions/test/live?ticket=one',path:'',expiresAt:''}), 'test', 'https://lab.example', {purpose:'wand'});
+    ready('stream'); message(new Int16Array(4800).buffer); event({type:'audio_pause'});
+    expect(observer.phase).toHaveBeenLastCalledWith('speaking'); advance(.2);
+    expect(observer.phase).toHaveBeenLastCalledWith('listening');
+  });
   it('waits for actual typed PCM drain after text_ready before returning to listening',()=>{
     event({type:'ready',playbackMode:'stream',inputMode:'text'});
     expect(voice.sendText('Psaná zpráva')).toBe(true);expect(observer.phase).toHaveBeenLastCalledWith('waiting');
@@ -350,7 +409,7 @@ describe('voice lifecycle', () => {
     }
     class FakeSocket {
       static OPEN = 1; readyState = 1; binaryType = ''; bufferedAmount = 0;
-      onmessage: ((event: { data: unknown }) => void) | null = null; onclose = null; onerror = null;
+      onmessage: ((event: { data: unknown }) => void) | null = null; onclose: ((event: {code: number}) => void) | null = null; onerror = null;
       send = vi.fn(); close = vi.fn(); constructor() { socket = this; }
     }
     vi.stubGlobal('AudioContext', FakeContext); vi.stubGlobal('WebSocket', FakeSocket);

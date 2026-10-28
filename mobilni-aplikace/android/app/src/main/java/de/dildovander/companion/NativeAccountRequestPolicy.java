@@ -13,7 +13,8 @@ import okhttp3.Request;
 final class NativeAccountRequestPolicy {
     private static final Set<String> HEADERS = new HashSet<>(Arrays.asList(
         "accept", "content-type", "x-dv-csrf", "x-dv-confirm", "x-dv-device-id", "idempotency-key",
-        "session-id", "boot-id", "media-epoch", "input-epoch", "input-sequence", "x-dv10-consent", "traceparent"));
+        "session-id", "boot-id", "media-epoch", "input-epoch", "input-sequence", "x-dv10-consent", "traceparent",
+        "x-wand-question-id", "x-wand-question-revision"));
 
     private NativeAccountRequestPolicy() { }
 
@@ -98,7 +99,53 @@ final class NativeAccountRequestPolicy {
         return true;
     }
 
+    private static boolean allowsSealedCasePath(String path, String method) {
+        if ("/app/v1/sealed-cases".equals(path)) return "POST".equals(method);
+        if ("/app/v1/sealed-cases/current".equals(path)) return "GET".equals(method);
+        if (path.matches("^/app/v1/sealed-cases/sc_[a-f0-9]{32}/portraits/[A-Za-z0-9_-]{1,128}$")) return "GET".equals(method);
+        if (!path.matches("^/app/v1/sealed-cases/sc_[a-f0-9]{32}(/[a-z-]+)?$")) return false;
+        String[] parts = path.split("/");
+        if (parts.length == 5) return "GET".equals(method);
+        return "GET".equals(method) ? Arrays.asList("play", "context", "moderator").contains(parts[5])
+            : "POST".equals(method) && Arrays.asList("lobby", "start", "actions", "pause", "resume", "statements", "ballots", "oversight", "disconnect", "scenario-consent", "ai-players").contains(parts[5]);
+    }
+
+    static int requestBodyLimit(String path, String method, String contentType) {
+        if (adminCharacterProfilePath(path) && "PUT".equals(method)) return 256 * 1024;
+        if (adminCharacterPortraitPath(path, method, true)) {
+            return Arrays.asList("image/jpeg", "image/png", "image/webp").contains(mediaType(contentType))
+                ? 8 * 1024 * 1024 : 256 * 1024;
+        }
+        if (path.matches("^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/transcribe$")
+            && "POST".equals(method) && Arrays.asList("audio/webm", "audio/mp4", "audio/ogg", "audio/wav").contains(mediaType(contentType))) {
+            return 8 * 1024 * 1024;
+        }
+        if (path.matches("^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$") && "POST".equals(method)) {
+            return 16 * 1024;
+        }
+        if (path.startsWith("/app/v1/customer/wand/workshop/")) return 16 * 1024;
+        return 32 * 1024 * 1024;
+    }
+
+    static int responseBodyLimit(String path, String method) {
+        if (("GET".equals(method) && (adminCharacterListPath(path) || adminCharacterProfilePath(path))) ||
+            ("PUT".equals(method) && (adminCharacterProfilePath(path) || adminCharacterPortraitPath(path, method, true)))) {
+            return 256 * 1024;
+        }
+        if (adminCharacterPortraitPath(path, method, false)) return 8 * 1024 * 1024;
+        if (path.matches("^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$") && "POST".equals(method)) {
+            return 8 * 1024 * 1024;
+        }
+        return 32 * 1024 * 1024;
+    }
+
+    private static String mediaType(String contentType) {
+        return contentType == null ? "" : contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+    }
+
     private static boolean allowsAppPath(String path, String method, String query) {
+        if (allowsWandWorkshopPath(path, method, query)) return true;
+        if (query == null && allowsSealedCasePath(path, method)) return true;
         if (query == null && "/app/v1/game".equals(path)) return "GET".equals(method);
         if (query == null && "/app/v1/game/matches".equals(path)) return "POST".equals(method);
         if (query == null && "/app/v1/game/progress".equals(path)) return "GET".equals(method);
@@ -114,6 +161,9 @@ final class NativeAccountRequestPolicy {
         if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}$")) return "GET".equals(method);
         if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}/(accept|decline|cancel|choose|loadout|task|retry)$")) return "POST".equals(method);
         if (query != null && !query.isEmpty()) {
+            if ("/app/v1/admin/characters".equals(path) && "GET".equals(method) && query.matches("^after=[0-9a-f]{32}$")) return true;
+            if (path.matches("^/app/v1/admin/characters/[0-9a-fA-F-]{32,36}/portrait$") &&
+                ("GET".equals(method) || "PUT".equals(method))) return validAdminCharacterPortraitQuery(query, "GET".equals(method));
             if ("/app/v1/admin/launch/waiting-room".equals(path) && "GET".equals(method)) return query.matches("^after=[0-9a-f]{32}$");
             if ("/app/v1/admin/operations/logs".equals(path) && "GET".equals(method)) return validOptionalQuery(query, "after", "level");
             if ("/app/v1/customer/completion-updates".equals(path) && "GET".equals(method)) return validOptionalQuery(query, "cursor", "limit");
@@ -148,6 +198,10 @@ final class NativeAccountRequestPolicy {
         if ("/app/v1/session".equals(path)) return "GET".equals(method) || "DELETE".equals(method);
         if ("/app/v1/account".equals(path)) return "GET".equals(method) || "DELETE".equals(method);
         if ("/app/v1/account/deletion".equals(path)) return "GET".equals(method);
+        if ("/app/v1/account/ai-consent".equals(path)) return "POST".equals(method);
+        if ("/app/v1/customer/wand".equals(path)) return "GET".equals(method);
+        if ("/app/v1/customer/wand/sessions".equals(path)) return "POST".equals(method);
+        if (path.matches("^/app/v1/customer/wand/sessions/[0-9a-f]{32}/ticket$")) return "POST".equals(method);
         if ("/app/v1/passkeys/request-options".equals(path) || "/app/v1/passkeys/sign-in".equals(path) ||
             "/app/v1/passkeys/reauthentication-options".equals(path) || "/app/v1/passkeys/reauthenticate".equals(path) ||
             "/app/v1/passkeys/options".equals(path) || "/app/v1/passkeys/complete".equals(path) ||
@@ -159,6 +213,8 @@ final class NativeAccountRequestPolicy {
         if ("/app/v1/customer/character/correction".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/sessions".equals(path) || "/app/v1/customer/duels".equals(path) ||
             "/app/v1/customer/admin/sessions".equals(path) || "/app/v1/customer/admin/characters".equals(path)) return "GET".equals(method);
+        if (query == null && "/app/v1/admin/characters".equals(path)) return "GET".equals(method);
+        if (adminCharacterProfilePath(path)) return "GET".equals(method) || "PUT".equals(method);
         if ("/app/v1/customer/start-tickets".equals(path)) return "POST".equals(method);
         if ("/app/v1/customer/completion-updates".equals(path)) return "GET".equals(method);
         if ("/app/v1/archive/collection".equals(path)) return "GET".equals(method);
@@ -198,6 +254,23 @@ final class NativeAccountRequestPolicy {
         if (parts.length == 8 && "app".equals(parts[1]) && "v1".equals(parts[2]) && "admin".equals(parts[3]) && "operations".equals(parts[4]) && "keepsakes".equals(parts[5]) && isUuid(parts[6])) return "POST".equals(method) && "revoke-shares".equals(parts[7]);
         if (parts.length == 10 && "app".equals(parts[1]) && "v1".equals(parts[2]) && "admin".equals(parts[3]) && "operations".equals(parts[4]) && "keepsakes".equals(parts[5]) && isUuid(parts[6])) return "POST".equals(method) && "jobs".equals(parts[7]) && isUuid(parts[8]) && "cancel".equals(parts[9]);
         return false;
+    }
+
+    private static boolean allowsWandWorkshopPath(String path, String method, String query) {
+        if ("/app/v1/customer/wand/workshop".equals(path)) return "GET".equals(method) && validWorkshopUpgradeQuery(query);
+        if ("/app/v1/customer/wand/workshop/sessions".equals(path)) return "POST".equals(method);
+        if ("/app/v1/customer/wand/workshop/sessions/current".equals(path)) return "GET".equals(method) && validWorkshopUpgradeQuery(query);
+        if (query != null) return false;
+        String session = "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}";
+        if (path.matches(session)) return "GET".equals(method);
+        if (path.matches(session + "/messages/[A-Za-z0-9_-]{1,160}")) return "PUT".equals(method);
+        if (path.matches(session + "/(messages|finish|ticket|artwork/repair)")) return "POST".equals(method);
+        if (path.matches(session + "/(answers|skip|audio|transcribe|artwork/retry)")) return "POST".equals(method);
+        return path.matches(session + "/answers/[0-9a-f]{32}") && "PUT".equals(method);
+    }
+
+    private static boolean validWorkshopUpgradeQuery(String query) {
+        return query == null || "upgrade=0".equals(query) || "upgrade=1".equals(query);
     }
 
     private static boolean allowsArchivePath(String[] p, String method) {
@@ -382,6 +455,31 @@ final class NativeAccountRequestPolicy {
         return validId(profile) && revision != null && revision.matches("^[1-9][0-9]{0,18}$");
     }
 
+    private static boolean adminCharacterProfilePath(String path) {
+        return path != null && path.matches("^/app/v1/admin/characters/[0-9a-fA-F]{32}$|^/app/v1/admin/characters/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+    }
+
+    private static boolean adminCharacterListPath(String path) {
+        return "/app/v1/admin/characters".equals(path) ||
+            (path != null && path.matches("^/app/v1/admin/characters\\?after=[0-9a-f]{32}$"));
+    }
+
+    private static boolean adminCharacterPortraitPath(String path, String method, boolean upload) {
+        if (!"GET".equals(method) && !"PUT".equals(method)) return false;
+        String expectedMethod = upload ? "PUT" : "GET";
+        if (!expectedMethod.equals(method) || path == null) return false;
+        String marker = "/portrait?";
+        int index = path.indexOf(marker);
+        return index > 0 && adminCharacterProfilePath(path.substring(0, index)) &&
+            validAdminCharacterPortraitQuery(path.substring(index + marker.length()), !upload);
+    }
+
+    private static boolean validAdminCharacterPortraitQuery(String raw, boolean read) {
+        if (raw == null) return false;
+        String key = read ? "revision" : "expectedRevision";
+        return raw.matches("^" + key + "=[1-9][0-9]{0,18}$");
+    }
+
     private static boolean validCharacterDeleteQuery(String raw) {
         String[] pairs = raw.split("&", -1);
         if (pairs.length != 2) return false;
@@ -410,6 +508,7 @@ final class NativeAccountRequestPolicy {
             builder.header("X-DV-CSRF", csrf);
         }
         if (confirmed) builder.header("X-DV-Confirm", "yes");
+        validateWandTranscriptionHeaders(path, method, headers);
         if (headers != null) {
             for (Map.Entry<String, String> entry : headers.entrySet()) {
                 String name = entry.getKey().toLowerCase(Locale.ROOT);
@@ -423,10 +522,38 @@ final class NativeAccountRequestPolicy {
                 if ("x-dv10-consent".equals(name) && (!"POST".equals(method) || !path.matches("^/app/v1/archive/owned/[0-9a-fA-F-]{36}/portrait-uploads$") || !value.matches("^[1-9][0-9]{0,9}$"))) {
                     throw new IllegalArgumentException("invalid_account_header");
                 }
+                if (name.startsWith("x-wand-question-") && !isWandTranscriptionPath(path, method)) {
+                    throw new IllegalArgumentException("invalid_account_header");
+                }
                 if (!"x-dv-csrf".equals(name)) builder.header(entry.getKey(), value);
             }
         }
         return builder;
+    }
+
+    private static void validateWandTranscriptionHeaders(String path, String method, Map<String, String> headers) {
+        int idCount = 0, revisionCount = 0;
+        String id = null, revision = null;
+        if (headers != null) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                String name = entry.getKey().toLowerCase(Locale.ROOT);
+                if ("x-wand-question-id".equals(name)) { idCount++; id = entry.getValue(); }
+                if ("x-wand-question-revision".equals(name)) { revisionCount++; revision = entry.getValue(); }
+            }
+        }
+        if (!isWandTranscriptionPath(path, method)) {
+            if (idCount > 0 || revisionCount > 0) throw new IllegalArgumentException("invalid_account_header");
+            return;
+        }
+        if (idCount != 1 || revisionCount != 1 || id == null || !id.matches("^[0-9a-f]{32}$")
+            || revision == null || !revision.matches("^[1-9][0-9]{0,18}$")) {
+            throw new IllegalArgumentException("invalid_account_header");
+        }
+    }
+
+    private static boolean isWandTranscriptionPath(String path, String method) {
+        return "POST".equals(method)
+            && path.matches("^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/transcribe$");
     }
 
     private static boolean validOrigin(String origin) {

@@ -7,6 +7,7 @@ using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 
 internal static partial class AccountIdentityTests
 {
@@ -21,6 +22,18 @@ internal static partial class AccountIdentityTests
         await CsrfAsync(owner);
         var firstProfile = await CustomerAsync(first, firstKey);
         var secondProfile = await CustomerAsync(second, secondKey);
+        const string labelRoute = "/app/v1/customer/character/label";
+        var labeled = await JsonAsync(await first.PutAsJsonAsync(labelRoute,
+            new CharacterLabelWriteRequest(firstProfile.GetProperty("profileId").GetString()!, "Petr")));
+        Check(labeled.GetProperty("profile").GetProperty("label").GetString() == "Petr"
+            && labeled.GetProperty("profile").GetProperty("userInput").GetProperty("name").GetString() == "Harry Potter",
+            "customer can label their character while its AI name stays original");
+        Check((await second.PutAsJsonAsync(labelRoute,
+            new CharacterLabelWriteRequest(firstProfile.GetProperty("profileId").GetString()!, "Stolen"))).StatusCode
+            == HttpStatusCode.Conflict, "label writes cannot select another owner's profile");
+        Check((await first.PutAsJsonAsync(labelRoute,
+            new CharacterLabelWriteRequest(firstProfile.GetProperty("profileId").GetString()!, null, "Petr"))).IsSuccessStatusCode,
+            "customer can clear their label without a new AI profile write");
         const string preferencesRoute = "/app/v1/customer/conversation-preferences";
         await SavePreferencesAsync(first, firstProfile, 0, "en-US", "cheeky");
         Check((await first.PutAsJsonAsync("/app/v1/customer/admin/devices/granted-device", new { enabled = true })).StatusCode
@@ -52,15 +65,21 @@ internal static partial class AccountIdentityTests
             "current nonready runtime never projects a free slot");
         var firstOp = Guid.NewGuid().ToString("D");
         var secondOp = Guid.NewGuid().ToString("D");
+        var firstAccountId = (await CsrfAsync(first)).GetProperty("account").GetProperty("id").GetString()!;
+        await SeedAsync(fixture.App, db => db.Users.Where(user => user.Id == firstAccountId)
+            .ExecuteUpdateAsync(update => update.SetProperty(user => user.OpenAiConsentAt, (long?)null)
+                .SetProperty(user => user.OpenAiConsentVersion, 0)));
         var denied = await first.PostAsJsonAsync("/app/v1/customer/start-tickets", new
         {
             protocolVersion = 1, operationId = firstOp, deviceId = "granted-device", bootId = boot,
             challenge = challenge.Challenge, profileId = firstProfile.GetProperty("profileId").GetString(),
-            profileRevision = firstProfile.GetProperty("revision").GetInt64()
+            profileRevision = firstProfile.GetProperty("revision").GetInt64(), openAiConsent = true
         });
         Check(denied.StatusCode == HttpStatusCode.Conflict
-            && (await denied.Content.ReadAsStringAsync()).Contains("openai_consent_required"),
-            "real HTTPS customer start rejects omitted OpenAI consent before issuing a ticket");
+            && (await denied.Content.ReadAsStringAsync()).Contains("ai_consent_required"),
+            "client boolean cannot bypass missing persisted registration consent");
+        Check((await first.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true })).StatusCode
+            == HttpStatusCode.NoContent, "legacy account explicitly confirms processing consent before issuing a ticket");
         var issuedFirst = await TicketAsync(first, firstProfile, firstOp);
         await SavePreferencesAsync(first, firstProfile, 1, "cs-CZ", "gentle");
         var issuedSecond = await TicketAsync(second, secondProfile, secondOp);
@@ -166,7 +185,7 @@ internal static partial class AccountIdentityTests
     private static async Task<JsonElement> CustomerAsync(HttpClient client, VirtualPasskey key)
     {
         await CsrfAsync(client);
-        var options = await JsonAsync(await client.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Same character" }));
+        var options = await JsonAsync(await client.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Same character", openAiConsent = true }));
         var credential = key.Create(options);
         Check((await client.PostAsJsonAsync("/app/v1/customer/enrollment/complete", new { credential })).IsSuccessStatusCode, "customer enrolls");
         await CsrfAsync(client);

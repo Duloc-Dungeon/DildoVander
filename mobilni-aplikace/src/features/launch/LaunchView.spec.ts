@@ -13,7 +13,7 @@ vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', pr
 vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
-  const account = ref({ id: 'guest', displayName: 'Guest', roles: ['Customer'] });
+  const account = ref({ id: 'guest', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
   api.setAccount.mockImplementation(value => { account.value = value; });
   return { account, accountDeletionRequested: ref(false), accountRequest: api.request, accountTransport: vi.fn() };
 });
@@ -23,6 +23,7 @@ let persisted = false;
 let allowed = false;
 let revokedAudience = false;
 let artworkStatus = 'queued';
+let artworkSource: { url: string; title: string; author: string; license: string; licenseUrl: string } | null = null;
 let memberState: 'active' | 'unassigned' | 'revoked' = 'active';
 let memberUniverse: string | null = null;
 const character = { profileId: 'profile', revision: 1, name: 'Raven', universe: 'Fiction', status: 'queued' };
@@ -35,10 +36,11 @@ function savedCreation(status: 'saving' | 'uncertain' | 'confirmed' = 'confirmed
 beforeEach(() => {
   vi.useFakeTimers(); localStorage.clear(); sessionStorage.clear(); invitationRegistration.value = null;
   selectInvitationPresentation(); presentationForeground.value = true;
-  api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'] });
+  api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
   image = ref(''); failed = ref(false);
   api.portrait.mockReturnValue({ url: image, failed, pending: ref(false), clear: vi.fn(() => { image.value = ''; }), retry: vi.fn(), fail: vi.fn() });
-  persisted = false; allowed = false; revokedAudience = false; artworkStatus = 'queued';
+  persisted = false; allowed = false; revokedAudience = false; artworkStatus = 'queued'; artworkSource = null;
+  character.status = 'queued';
   memberState = 'active'; memberUniverse = null; customerMembershipState.value = null; customerFixedUniverse.value = null;
   api.request.mockImplementation(async (path: string, method?: string) => {
     if (path === '/app/v1/launch') return { allowed, audience: revokedAudience ? 'revoked' : 'beta', launchAt: Date.now() + 86400000, serverNow: Date.now() };
@@ -46,8 +48,27 @@ beforeEach(() => {
     if (path === '/app/v1/enrollment/default') return { available: true };
     if (path === '/app/v1/enrollment/default/admit' && method === 'POST') { memberState = 'active'; memberUniverse = 'Astronomy'; return {}; }
     if (method === 'PUT') { persisted = true; throw new Error('Response lost'); }
-    return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL' } : null };
+    return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL', ...(artworkSource ? { source: artworkSource } : {}) } : null };
   });
+});
+it('shows safe source attribution for a fallback portrait and omits it for generated artwork', async () => {
+  persisted = true; artworkStatus = 'ready'; artworkSource = {
+    url: 'https://commons.wikimedia.org/wiki/File:Portrait.jpg', title: '<em>Portrét</em>', author: 'Autor', license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/'
+  };
+  const view = entry();
+  try {
+    await flushPromises();
+    image.value = 'blob:authorised-decoded';
+    await flushPromises();
+    view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true);
+    await flushPromises();
+    expect(view.text()).toContain('Obrázek z internetu');
+    expect(view.text()).toContain('<em>Portrét</em>');
+    expect(view.find('.launch-attribution a').attributes('href')).toBe(artworkSource.url);
+    expect(view.find('.launch-attribution a').attributes('rel')).toBe('noopener noreferrer');
+    expect(view.find('.launch-attribution').html()).not.toContain('<em>Portrét</em>');
+  } finally { view.unmount(); }
 });
 afterEach(() => { selectInvitationPresentation(); vi.useRealTimers(); });
 it('reconciles a lost save response without a second registration or PUT', async () => {
@@ -55,10 +76,22 @@ it('reconciles a lost save response without a second registration or PUT', async
   try {
     await flushPromises();
     await view.get('#character-name').setValue('Raven'); await view.get('#character-universe').setValue('Fiction');
-    await view.get('input[type="checkbox"]').setValue(true); await view.get('form').trigger('submit'); await flushPromises();
+    await view.get('form').trigger('submit'); await flushPromises();
     expect(view.text()).toContain('Raven'); expect(view.text()).toContain('Do otevření');
-    expect(view.text()).not.toContain('Response lost'); expect(view.find('form').exists()).toBe(false);
+    expect(view.text()).not.toContain('Response lost'); expect(view.find('#character-name').exists()).toBe(false);
     expect(api.request.mock.calls.filter(([, method]) => method === 'PUT')).toHaveLength(1);
+  } finally { view.unmount(); }
+});
+it('does not mark an independently queued portrait as failed when research failed', async () => {
+  persisted = true; character.status = 'failed'; artworkStatus = 'queued';
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    image.value = 'blob:prepared-without-research';
+    await flushPromises();
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    expect(view.findComponent({ name: 'PortraitCurtain' }).props('image')).toBe('blob:prepared-without-research');
   } finally { view.unmount(); }
 });
 it('A: starts the reveal at decoded image time 4s, cancelling the remaining introduction', async () => {
@@ -98,9 +131,9 @@ it('E: pauses at 3 seconds and restores only five seconds on remount', async () 
   try { await flushPromises(); await vi.advanceTimersByTimeAsync(4900); expect(view.get('.launch-status').text()).toBe('Chvíli strpení…'); await vi.advanceTimersByTimeAsync(200); expect(view.text()).toContain('Postava je uložená.'); }
   finally { view.unmount(); }
 });
-it('J: an account draft is not a character and never writes before explicit consent', async () => {
+it('J: an account draft waits for explicit creation and does not ask for registration consent again', async () => {
   setInvitationDraft('guest', 'Raven', 'Fiction'); const view = entry();
-  try { await flushPromises(); expect(view.text()).toContain('Přístup je připravený.'); expect(view.find('#character-name').exists()).toBe(false); expect(view.get<HTMLInputElement>('input[type="checkbox"]').element.checked).toBe(false); expect(api.request.mock.calls.some(([, method]) => method === 'PUT')).toBe(false); expect(getInvitationRegistration('guest')?.status).toBe('draft'); }
+  try { await flushPromises(); expect(view.text()).toContain('Přístup je připravený.'); expect(view.find('#character-name').exists()).toBe(false); expect(view.find('input[type="checkbox"]').exists()).toBe(false); expect(api.request.mock.calls.some(([, method]) => method === 'PUT')).toBe(false); expect(getInvitationRegistration('guest')?.status).toBe('draft'); }
   finally { view.unmount(); }
 });
 it('K: an already seen server-authorized opening sends returning guests straight to their destination', async () => {
@@ -168,7 +201,7 @@ it('preserves an unfinished same-account draft and clears it from another accoun
   try {
     await flushPromises(); await view.get('#character-name').setValue('Noční archivář'); await view.get('#character-universe').setValue('Město');
     expect(getInvitationRegistration('guest')?.name).toBe('Noční archivář');
-    api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'] }); await flushPromises();
+    api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'], openAiConsent: true }); await flushPromises();
     expect(view.get<HTMLInputElement>('#character-name').element.value).toBe(''); expect(view.text()).not.toContain('Noční archivář');
   } finally { view.unmount(); }
 });
@@ -189,7 +222,7 @@ it('announces offline immediately during the presentation and reconnects with re
   } finally { view.unmount(); }
 });
 
-it('K: a server grant opens the static group scene with immediate authorized entry', async () => {
+it('K: entering starts the character presentation and only continuing completes entry', async () => {
   const deadline=Date.now()+4000;
   persisted=true; savedCreation();
   const original=api.request.getMockImplementation()!;
@@ -202,9 +235,48 @@ it('K: a server grant opens the static group scene with immediate authorized ent
     expect(api.replace).not.toHaveBeenCalled();
     expect(view.text()).toContain('Večer začíná.');
     await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
+    expect(view.find('[data-entrance]').exists()).toBe(true);
+    expect(api.replace).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBeNull();
+    expect(view.text()).not.toContain('Přeskočit animaci');
+    expect(view.find('.entrance-continue').exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(10000); await flushPromises();
+    await view.get('.entrance-continue').trigger('click'); await flushPromises();
     expect(api.replace).toHaveBeenCalledWith('/me/character');
     expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBe('seen');
   } finally {view.unmount();}
+});
+it('polls for a not-yet-available character during the entrance without generating anything again', async () => {
+  allowed = true;
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
+    expect(view.text()).toContain('Slavná osoba se ještě hledá');
+    persisted = true;
+    await vi.advanceTimersByTimeAsync(5000); await flushPromises();
+    expect(view.findComponent({ name: 'CharacterEntrance' }).props('character')?.name).toBe('Raven');
+    expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/prelaunch/character').length).toBeGreaterThanOrEqual(2);
+    expect(api.request.mock.calls.some(([, method]) => method && method !== 'GET')).toBe(false);
+    await vi.advanceTimersByTimeAsync(5000); await flushPromises();
+    await view.get('.entrance-continue').trigger('click'); await flushPromises();
+    expect(api.replace).toHaveBeenCalledWith('/me/character');
+  } finally { view.unmount(); }
+});
+it('does not mark a cancelled entry as seen and removes the presentation immediately on account change', async () => {
+  allowed = true; persisted = true;
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
+    api.replace.mockResolvedValueOnce({ type: 4 });
+    await vi.advanceTimersByTimeAsync(10000); await flushPromises();
+    await view.get('.entrance-continue').trigger('click'); await flushPromises();
+    expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBeNull();
+    api.setAccount(null); await flushPromises();
+    expect(view.find('[data-entrance]').exists()).toBe(false);
+    expect(view.text()).not.toContain('Raven');
+  } finally { view.unmount(); }
 });
 it('rechecks server authorization when entering and closes the scene if access was revoked', async () => {
   allowed = true;

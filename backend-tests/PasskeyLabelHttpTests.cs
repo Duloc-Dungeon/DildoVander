@@ -12,7 +12,7 @@ internal static partial class AccountIdentityTests
         using var ownerKey = new VirtualPasskey();
         await CsrfAsync(owner);
         var options = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/enrollment/options",
-            new { token = Fixture.Bootstrap, displayName = "Vojta" }));
+            new { token = Fixture.Bootstrap, displayName = "Vojta", openAiConsent = true }));
         Check(options.GetProperty("user").GetProperty("name").GetString() == "Wand Night Stand Owner · Vojta",
             "web and native registration receive a readable account and role instead of a UUID");
         Check(options.GetProperty("user").GetProperty("displayName").GetString() == "Wand Night Stand Owner · Vojta", "both provider labels identify the account");
@@ -43,14 +43,14 @@ internal static partial class AccountIdentityTests
         var recovery = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Viewer", recoveryUserId = session.GetProperty("account").GetProperty("id").GetString() }));
         using var recoveryClient = fixture.Client();
         await CsrfAsync(recoveryClient);
-        var recoveryOptions = await JsonAsync(await recoveryClient.PostAsJsonAsync("/app/v1/enrollment/options", new { token = recovery.GetProperty("token").GetString(), displayName = "Ignored replacement" }));
+        var recoveryOptions = await JsonAsync(await recoveryClient.PostAsJsonAsync("/app/v1/enrollment/options", new { token = recovery.GetProperty("token").GetString(), displayName = "Ignored replacement", openAiConsent = true }));
         Check(recoveryOptions.GetProperty("user").GetProperty("name").GetString() == "Wand Night Stand Owner · Vojta"
             && recoveryOptions.GetProperty("user").GetProperty("id").GetString() == handle, "recovery label uses actual existing identity and role, not invitation role or supplied name");
 
         using var customer = fixture.Client();
         using var customerKey = new VirtualPasskey();
         await CsrfAsync(customer);
-        var customerOptions = await JsonAsync(await customer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Alena" }));
+        var customerOptions = await JsonAsync(await customer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Alena", openAiConsent = true }));
         Check(customerOptions.GetProperty("user").GetProperty("name").GetString() == "Wand Night Stand Customer · Alena", "public customer signup also has recognizable provider labels");
         Check((await customer.PostAsJsonAsync("/app/v1/customer/enrollment/complete", new { credential = customerKey.Create(customerOptions) })).IsSuccessStatusCode, "customer label preserves normal signup");
         Console.WriteLine("PASS readable passkey provider/app labels, stable handles, real attestation/add/sign-in, custom names, and recovery role binding");

@@ -12,12 +12,18 @@ internal static class CharacterPortraitTests
         var root = Path.Combine(Path.GetTempPath(), "dv-portrait-tests-" + Guid.NewGuid().ToString("N"));
         try
         {
+            await CharacterPortraitFallbackTests.RunAsync();
+            await AccountIdentityTests.RunPortraitFallbackAsync();
+            await AttributionMigrationAsync(Path.Combine(root, "attribution"));
             await ExperienceWireContractAsync();
             WelcomeContract();
             await ConsentAndDurabilityAsync(Path.Combine(root, "durable"));
             await ProfileIdentityFenceAsync(Path.Combine(root, "identity"));
             await RevisionAndDeletionAsync(Path.Combine(root, "fences"));
             await InterruptedAndRetriesAsync(Path.Combine(root, "retry"));
+            await IndependentWelcomeAsync(Path.Combine(root, "welcome"));
+            await MissingPortraitAsync(Path.Combine(root, "missing"));
+            await FailedResearchAsync(Path.Combine(root, "research"));
             await ConcurrentCreationAsync(Path.Combine(root, "concurrency"));
             Check(PortraitContentPolicy.ValidMessage("Hvězdy si pro vás právě zkoušejí slavnostní klobouky."), "Czech Unicode message accepted");
             Check(PortraitContentPolicy.ValidLoadingMessage("Raven ví, že kouzla se raději objeví včas. Olivander má kocovinu."),
@@ -77,7 +83,8 @@ internal static class CharacterPortraitTests
             "Keep the surprise secret.", true, CancellationToken.None);
         Check(handler.Calls == 1 && result.LoadingMessage == PortraitExperienceHandler.Loading
             && result.Welcome?.Joke == PortraitExperienceHandler.Joke
-            && result.FinalMessage == PortraitExperienceHandler.Joke,
+            && result.Welcome?.Identity == PortraitExperienceHandler.Identity
+            && result.FinalMessage == PortraitExperienceHandler.Joke + " " + PortraitExperienceHandler.Identity,
             "one Responses call parses structured welcome and retains the legacy finalMessage projection");
     }
 
@@ -103,6 +110,10 @@ internal static class CharacterPortraitTests
             var invalidTeaserId = item.Item3 == "rivalry" ? "contrary_will" : "rivalry";
             Check(!CharacterWelcomePolicy.Valid(welcome with { TeaserId = invalidTeaserId }, job),
                 item.Item1 + " cannot change the application-approved teaser category");
+            Check(CharacterWelcomePolicy.Valid(welcome with { Teaser = "", TeaserId = null }, job),
+                item.Item1 + " may omit an otherwise permitted teaser");
+            Check(!CharacterWelcomePolicy.Valid(welcome with { Teaser = "" }, job),
+                "an omitted teaser cannot claim an unused theme");
         }
 
         var other = WelcomeJob("Sam Elánius", "Zeměplocha", "other-profile", 1);
@@ -127,6 +138,21 @@ internal static class CharacterPortraitTests
         Check(CharacterWelcomePolicy.Valid(new("Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.", "",
             "Některé věci tu mají vlastní vůli.", [], WelcomeWriterInput.AllowedTeaserId(generic.Input, noEvidence)), generic),
             "a generic approved teaser requires no invented factual evidence");
+        var inputOnly = new CharacterWelcome("Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.",
+            WelcomeWriterInput.InputIdentity(generic.Input), "", [], null);
+        Check(CharacterWelcomePolicy.Valid(inputOnly, generic),
+            "without verified facts identity may state only the chosen name and world");
+        Check(!CharacterWelcomePolicy.Valid(inputOnly with { Identity = "Slavný potomek dávných králů." }, generic),
+            "unverified biography is still rejected");
+        Check(WelcomeWriterInput.InputIdentity(new(new string('x', 100), new string('y', 200))) == "",
+            "oversized input-only identity is omitted instead of inventing a shorter identity");
+        foreach (var world in new[] { "Original_fiction", "Original\nfiction", "Original\tfiction", "<Fiction>", "Kufr" })
+        {
+            var unsafeInput = generic with { Input = new("Raven", world) };
+            Check(WelcomeWriterInput.InputIdentity(unsafeInput.Input) == ""
+                && CharacterWelcomePolicy.Valid(inputOnly with { Identity = "" }, unsafeInput),
+                "input incompatible with display policy omits identity without losing a safe joke");
+        }
         var reordered = original with { Enrichment = original.Enrichment with { Facts = original.Enrichment.Facts.Reverse().ToArray() } };
         var originalIds = WelcomeWriterInput.Facts(original.Input, original.Enrichment, original.ProfileId, original.Revision)
             .ToDictionary(fact => fact.Text, fact => fact.Id, StringComparer.Ordinal);
@@ -181,7 +207,8 @@ internal static class CharacterPortraitTests
     private sealed class PortraitExperienceHandler : HttpMessageHandler
     {
         internal const string Loading = "Raven zaslechl za zavřenými dveřmi své jméno. Olivander si vyžádal vývar.";
-        internal const string Joke = "Tvá pověst dorazila před tebou. Už jsme se jí omluvili.";
+        internal const string Joke = "Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.";
+        internal const string Identity = "Vystupuješ jako Raven ze světa Original fiction.";
         internal int Calls { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -191,11 +218,19 @@ internal static class CharacterPortraitTests
                 "experience uses one Responses request through the injected offline transport");
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
             var payload = body.RootElement;
+            var instructions = payload.GetProperty("instructions").GetString()!;
+            Check(instructions.Contains("Piš původní české věty, ne překlad anglického vtipu.", StringComparison.Ordinal)
+                && instructions.Contains("Na závěr použij nejvýše jeden nepřímý náznak z allowedTeaser.", StringComparison.Ordinal)
+                && instructions.Contains("Nepotvrzuj personální změnu za Olivandera.", StringComparison.Ordinal),
+                "actual Responses request carries the supplied Czech welcome authoring instructions");
             Check(payload.GetProperty("store").GetBoolean() == false
                 && payload.GetProperty("text").GetProperty("format").GetProperty("type").GetString() == "json_object"
                 && payload.GetProperty("input").GetString()!.Contains("json", StringComparison.OrdinalIgnoreCase),
                 "JSON-mode instruction must occur inside input, not only the separate instructions field");
-            var text = JsonSerializer.Serialize(new { loadingMessage = Loading, joke = Joke, identity = "", teaser = "", usedFactIds = Array.Empty<string>(), teaserId = (string?)null });
+            using var writerInput = JsonDocument.Parse(payload.GetProperty("input").GetString()!.Split('\n', 2)[1]);
+            Check(writerInput.RootElement.GetProperty("welcome").GetProperty("character").GetProperty("inputIdentity").GetString() == Identity,
+                "unverified identity is grounded in the exact supplied character name and world");
+            var text = JsonSerializer.Serialize(new { loadingMessage = Loading, joke = Joke, identity = Identity, teaser = "", usedFactIds = Array.Empty<string>(), teaserId = (string?)null });
             var response = JsonSerializer.Serialize(new
             {
                 status = "completed",
@@ -290,9 +325,9 @@ internal static class CharacterPortraitTests
         var portrait = store.ClaimPortrait()!;
         Check(store.CompletePortrait(portrait, [9, 8, 7], null, "První vzkaz."), "first profile artwork completes");
         var second = await store.SaveAsync("alice", new(first.Revision, new("Second", "Fiction"), first.ProfileId,
-            NewCharacter: true, OpenAiConsent: true, PortraitConsent: true));
-        Check(second.ProfileId != first.ProfileId && second.Revision == first.Revision,
-            "replacement character can reuse numeric revision with a new identity");
+            OpenAiConsent: true, PortraitConsent: true));
+        Check(second.ProfileId == first.ProfileId && second.Revision == first.Revision + 1,
+            "administrator edits keep one character identity with a new revision");
         Check(store.ReadPortraitImage("alice", first.ProfileId, first.Revision) is null
             && store.ReadPortrait("alice", second.ProfileId, second.Revision)?.Status == "queued",
             "profile ID prevents old artwork from matching replacement at same revision");
@@ -310,6 +345,8 @@ internal static class CharacterPortraitTests
         var profile = await store.ReadAsync("alice", CancellationToken.None);
         Check(store.ReadPortrait("alice", profile!.ProfileId, profile.Revision) is { Status: "failed", ErrorCode: "portrait_interrupted" }, "interrupted job is recoverable and visible");
         Check(!store.CompletePortrait(portrait, [1], null), "expired lease result cannot publish");
+        Check(!store.RetryPortrait("alice", profile.ProfileId, profile.Revision + 1),
+            "stale retry cannot queue a newer portrait after a concurrent edit");
         Check(store.RetryPortrait("alice"), "explicit retry recovers uncertain request");
         for (var attempt = 2; attempt <= 3; attempt++)
         {
@@ -338,6 +375,98 @@ internal static class CharacterPortraitTests
         var result = await Task.WhenAll(CreateAsync(first), CreateAsync(second));
         Check(result.Count(value => value) == 1 && first.PortraitJobSummaries().Length == 1,
             "concurrent clients create exactly one owned character and portrait request");
+    }
+
+    private static async Task IndependentWelcomeAsync(string root)
+    {
+        var store = new CharacterProfileStore(root);
+        var profile = await store.SaveAsync("alice", new(0, new("Raven", "Fiction"), OpenAiConsent: true, PortraitConsent: true));
+        var enrichment = (await store.ClaimAsync())!;
+        await store.CompleteAsync(enrichment, Result(enrichment), null);
+        var portrait = store.ClaimPortrait()!;
+        var welcome = new CharacterWelcome("Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.", "",
+            "Některé věci tu mají vlastní vůli.", [], WelcomeWriterInput.AllowedTeaserId(portrait.Input, portrait.Enrichment));
+        var final = CharacterWelcomePolicy.LegacyText(welcome);
+        Check(store.SetPortraitExperience(portrait, final, welcome), "successful welcome persists before the image request");
+        Check(store.ReadPortrait("alice", profile.ProfileId, profile.Revision) is { Status: "running", Welcome: not null },
+            "welcome is readable while image generation runs");
+        Check(store.CompletePortrait(portrait, null, "openai_http_503"), "image failure completes independently");
+        var failed = new CharacterProfileStore(root).ReadPortrait("alice", profile.ProfileId, profile.Revision)!;
+        Check(failed is { Status: "failed" } && failed.Welcome?.Joke == welcome.Joke && failed.FinalMessage == final,
+            "image failure and restart preserve the generated welcome");
+        Check(store.RetryPortrait("alice"), "failed image can be retried explicitly");
+        var retry = store.ClaimPortrait()!;
+        Check(store.ReadPortrait("alice", profile.ProfileId, profile.Revision)?.Welcome?.Joke == welcome.Joke,
+            "image retry reuses the same successful joke");
+        await store.DeleteAsync("alice", profile.Revision, profile.ProfileId);
+        Check(!store.SetPortraitExperience(retry, final, welcome), "deleted character cannot regain its welcome from a late response");
+    }
+
+    private static async Task MissingPortraitAsync(string root)
+    {
+        var store = new CharacterProfileStore(root);
+        var profile = await store.SaveAsync("alice", new(0, new("Raven", "Fiction"), OpenAiConsent: true));
+        var enrichment = (await store.ClaimAsync())!;
+        await store.CompleteAsync(enrichment, Result(enrichment), null);
+        Check(store.ReadPortrait("alice", profile.ProfileId, profile.Revision) is null, "legacy character has no portrait request");
+        Check(!store.RequestPortrait("other-account", profile.ProfileId, profile.Revision)
+            && !store.RequestPortrait("alice", profile.ProfileId, profile.Revision + 1),
+            "portrait request is fenced by owner and current revision");
+        Check(store.RequestPortrait("alice", profile.ProfileId, profile.Revision)
+            && !store.RequestPortrait("alice", profile.ProfileId, profile.Revision),
+            "missing portrait is queued idempotently without rewriting the character");
+        var job = store.ClaimPortrait()!;
+        Check(job.ProfileId == profile.ProfileId && job.Revision == profile.Revision,
+            "queued portrait retains the saved character identity");
+        await store.FenceAccountDeletionAsync("alice");
+        Check(!store.RequestPortrait("alice", profile.ProfileId, profile.Revision), "deletion fence denies new portrait requests");
+    }
+
+    private static async Task FailedResearchAsync(string root)
+    {
+        var store = new CharacterProfileStore(root);
+        var profile = await store.SaveAsync("alice", new(0, new("Raven", "Fiction"), OpenAiConsent: true, PortraitConsent: true));
+        var enrichment = (await store.ClaimAsync())!;
+        await store.CompleteAsync(enrichment, null, "character_provider_invalid_response");
+        Check(store.ReadPortrait("alice", profile.ProfileId, profile.Revision)?.Status == "queued",
+            "research failure does not misreport a queued image as failed");
+        var portrait = store.ClaimPortrait();
+        Check(portrait is not null && portrait.Input.Name == profile.UserInput.Name
+            && portrait.Enrichment is { NeedsClarification: true, Summary.Length: 0, Facts.Length: 0 },
+            "image can use the exact saved input without invented research facts");
+        Check(!WelcomeWriterInput.IdentityReliable(portrait!.Input, portrait.Enrichment),
+            "failed research permits no verified identity in the generated welcome");
+        Check(store.CompletePortrait(portrait, [1, 2, 3], null), "image result remains publishable after research failure");
+        Check((await store.ReadAsync("alice"))?.Status == "failed"
+            && store.ReadPortrait("alice", profile.ProfileId, profile.Revision)?.Status == "ready",
+            "research and portrait retain their independent truthful statuses");
+    }
+
+    private static async Task AttributionMigrationAsync(string root)
+    {
+        var store = new CharacterProfileStore(root);
+        var profile = await store.SaveAsync("owner", new(0, new("Raven", "Fiction"),
+            OpenAiConsent: true, PortraitConsent: true));
+        var enrichment = (await store.ClaimAsync())!;
+        await store.CompleteAsync(enrichment, Result(enrichment), null);
+        var job = store.ClaimPortrait()!;
+        var source = new CharacterPortraitSource("https://commons.wikimedia.org/wiki/File:Raven.jpg", "Raven portrait",
+            "Artist", "CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/");
+        Check(store.CompletePortrait(job, [1, 2, 3], null, null, null, source), "attribution is committed with image");
+        var restarted = new CharacterProfileStore(root);
+        Check(restarted.ReadPortrait("owner", profile.ProfileId, profile.Revision)?.Source == source,
+            "image attribution survives store restart");
+        using (var connection = new SqliteConnection("Data Source=" + Path.Combine(root, "customer-characters.sqlite")))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "ALTER TABLE character_portraits DROP COLUMN source_json";
+            command.ExecuteNonQuery();
+        }
+        var upgraded = new CharacterProfileStore(root);
+        Check(upgraded.ReadPortrait("owner", profile.ProfileId, profile.Revision) is { Status: "ready", Source: null }
+            && upgraded.ReadPortraitImage("owner", profile.ProfileId, profile.Revision)!.SequenceEqual(new byte[] { 1, 2, 3 }),
+            "legacy portrait schema gains nullable attribution without changing existing images");
     }
 
     private static CharacterEnrichment Result(CharacterJob job) => new(job.UserInput.Name, job.UserInput.World,

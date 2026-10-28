@@ -113,9 +113,31 @@ internal static class WandGenerationTests
         var unavailable = await new WandGenerationService(store, new Fake((_, _) => throw new HttpRequestException("synthetic")))
             .GenerateAsync("alice", "outage", Allowed);
         Check(unavailable.Status == "unavailable" && unavailable.Candidates.Length == 0, "provider outage is explicit without legacy fallback");
+        Check(store.CanRetryGeneration("alice", "outage"), "known pre-dispatch failure can be explicitly retried");
         var restored = await new WandGenerationService(store, new Fake((job, _) => Task.FromResult(Candidates(job.Request.ReadyMask))))
             .GenerateAsync("alice", "outage", Allowed, retry: true);
         Check(restored.Status == "ready", "explicit retry recovers failed generation");
+        var fullAnswer = new string('ž', 1998) + "\n\n";
+        Check(WorkshopAnswerValidation.IsValid(fullAnswer) && !WorkshopAnswerValidation.IsValid("bad\0answer"),
+            "workshop accepts ordinary multiline Czech answers and rejects unsupported controls");
+        var acceptedWorkshopEvidence = MobileWandWorkshopWorker.StepEvidence(new MobileWandWorkshopStep(
+            "question-id", 1, 1, "Když se plán pokazí, co uděláš?", [], "answer-id", 1, fullAnswer, false, "text"));
+        Check(acceptedWorkshopEvidence.Length > 4096 && acceptedWorkshopEvidence.Length < 16_384,
+            "Czech-heavy 2,000-character answer is fully JSON escaped within its explicit evidence bound");
+        store.Begin("alice", "long-workshop-answer", profile, 1, true);
+        var longEvidenceResult = await new WandGenerationService(store, new Fake((job, _) =>
+        {
+            Check(job.Request.Evidence.Single() == acceptedWorkshopEvidence,
+                "full accepted 2,000-character workshop answer reaches the generator without truncation");
+            return Task.FromResult(Candidates(1));
+        })).GenerateAsync("alice", "long-workshop-answer", Allowed, evidence: [acceptedWorkshopEvidence]);
+        Check(longEvidenceResult.Status == "ready", "bounded full answer envelope completes generation");
+        store.Begin("alice", "uncertain-dispatch", profile, 1, true);
+        var uncertainJob = store.Claim("alice", "uncertain-dispatch", false)!;
+        store.RecordUsage(uncertainJob, "fake-model", "test", 0, 0, usageReported: false);
+        store.Fail(uncertainJob, "generation_timeout");
+        Check(!store.CanRetryGeneration("alice", "uncertain-dispatch"),
+            "uncertain provider dispatch cannot be repeated automatically after timeout");
         store.Begin("alice", "restart", profile, 1, true);
         var abandoned = store.Claim("alice", "restart", false)!;
         store.RecordUsage(abandoned, "fake-model", "fake-prompt-v1", 0, 0, usageReported: false);
@@ -170,7 +192,13 @@ internal static class WandGenerationTests
 
     private static void SchemaAndValidation(CharacterConversationSnapshot profile)
     {
-        var request = new WandGenerationRequest("private-account", "private-operation", profile, 1, true, []);
+        var laterFact = "Later documented fact from the complete profile";
+        var completeProfile = profile with { Enrichment = new CharacterEnrichment("Raven", "Original", "summary",
+            Enumerable.Range(1, 9).Select(i => new CharacterFact(i == 9 ? laterFact : $"Doložený fakt {i}", ["https://example.test/source"])).ToArray(),
+            ["idea"], ["uncertain canon"], true, [new CharacterSource("source", "https://example.test/source")],
+            "test-model", "test-prompt", 1, profile.Revision, "synthetic") };
+        var request = new WandGenerationRequest("private-account", "private-operation", completeProfile, 1, true,
+            ["Answer 1: leaves quietly", "Answer 2: asks for a map", "Answer 3: wand sneezes at lies"]);
         var body = OpenAiWandGenerationProvider.BuildRequest(request, "fake-model");
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
@@ -178,6 +206,40 @@ internal static class WandGenerationTests
             "strict structured outputs and store=false");
         Check(!body.Contains("private-account") && !body.Contains("private-operation") && !body.Contains(profile.ProfileId),
             "provider receives fictional context without authorization or ownership ids");
+        Check(body.Contains(laterFact) && body.Contains("leaves quietly") && body.Contains("asks for a map")
+            && body.Contains("sneezes at lies") && body.Contains("uncertain canon"),
+            "wand generation includes late enrichment facts, uncertainty and every workshop answer");
+        var englishProfile = completeProfile with { UserInput = completeProfile.UserInput with { Language = "en" } };
+        var mobileBody = OpenAiWandGenerationProvider.BuildRequest(request with
+        { Profile = englishProfile, OutputLanguage = "cs" }, "fake-model");
+        Check(mobileBody.Contains("requires Czech") && mobileBody.Contains("regardless of the profile language"),
+            "mobile output stays Czech even when the character profile is tagged English");
+        var messages = new[]
+        {
+            new MobileWandWorkshopMessage("message-1", 1, "user", "I ask the stars for directions.", "text", 1),
+            new MobileWandWorkshopMessage("message-2", 1, "assistant", "You keep the map beside the gears.", "voice", 2),
+            new MobileWandWorkshopMessage("message-3", 2, "user", "The brass compass points toward the bridge.", "voice", 3)
+        };
+        var dialogueRequest = OpenAiMobileWandQuestionProvider.BuildReplyRequest(completeProfile with { Enrichment = completeProfile.Enrichment! with { NeedsClarification = false } }, messages, "fake-model");
+        Check(dialogueRequest.Contains(laterFact) && dialogueRequest.Contains("I ask the stars")
+            && dialogueRequest.Contains("brass compass") && dialogueRequest.Contains("uncertain canon")
+            && dialogueRequest.Contains("readyToFinish")
+            && !dialogueRequest.Contains("exactly three", StringComparison.OrdinalIgnoreCase),
+            "dialogue model receives the complete prepared profile and the full corrected transcript without a question-count rule");
+        using var continueReply = JsonDocument.Parse(ResponseText(JsonSerializer.Serialize(
+            new MobileWandDialogueDraft("To je užitečné; ten kompas míří někam konkrétně.", false),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))));
+        var continueDraft = OpenAiMobileWandQuestionProvider.ParseReply(continueReply.RootElement);
+        Check(!continueDraft.ReadyToFinish && continueDraft.Reply.Contains("kompas", StringComparison.Ordinal),
+            "a live text turn can continue the conversation naturally");
+        using var finishReply = JsonDocument.Parse(ResponseText(JsonSerializer.Serialize(
+            new MobileWandDialogueDraft("Dobrá. Hůlka může převzít orientaci, kterou kompas tolik nezvládá.", true),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))));
+        Check(OpenAiMobileWandQuestionProvider.ParseReply(finishReply.RootElement).ReadyToFinish,
+            "the dialogue may propose an explicit finish independently of exchange count");
+        using var incompleteReply = JsonDocument.Parse("{\"status\":\"incomplete\",\"output\":[]}");
+        try { OpenAiMobileWandQuestionProvider.ParseReply(incompleteReply.RootElement); throw new Exception("Incomplete dialogue accepted"); }
+        catch (MobileWandQuestionAuthoringException error) when (!error.SafeFallback) { }
         var valid = Candidates(1);
         WandGenerationValidation.Validate(valid, 1);
         Invalid(() => WandGenerationValidation.Validate([valid[0] with { CombatArchetype = "omnipotent" }], 1));
