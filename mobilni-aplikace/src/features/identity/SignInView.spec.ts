@@ -365,18 +365,18 @@ describe('sign-in destinations', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('Přihlášení nebo změnu účtu se nepodařilo dokončit.');
     expect(wrapper.text()).not.toContain('private-server-detail-token');
-    expect(wrapper.get('details summary').text()).toBe('Ztratili jste přístup?');
+    expect(wrapper.get('details summary').text()).toBe('Nemůžeš se přihlásit?');
     wrapper.unmount();
   });
 
   it('shows expandable lost-access guidance only on unauthenticated sign-in without making requests', async () => {
     const { router, wrapper } = await mountSignIn();
     const disclosure = wrapper.get('details');
-    expect(disclosure.get('summary').text()).toBe('Ztratili jste přístup?');
+    expect(disclosure.get('summary').text()).toBe('Nemůžeš se přihlásit?');
     expect(disclosure.attributes('open')).toBeUndefined();
     await disclosure.get('summary').trigger('click');
     expect(disclosure.attributes('open')).toBeDefined();
-    expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktujte podporu');
+    expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktuj podporu');
     expect(api.authenticate).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain('Zobrazované jméno ani odkaz na památku vlastnictví účtu neprokazují.');
     expect(router.currentRoute.value.path).toBe('/signin');
