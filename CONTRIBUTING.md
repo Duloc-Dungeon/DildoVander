@@ -11,7 +11,7 @@ uveď původní licenci a zachovej jejich oznámení.
 
 1. U běžné chyby otevři issue s komponentou, verzí a reprodukcí na syntetických
    datech. Zranitelnosti hlásí [SECURITY.md](SECURITY.md).
-2. Zkontroluj privátní úkoly/claims a souběžná veřejná PR. Pracuj ve vlastní větvi nad aktuálním `main`; jeden úkol předávej jedním implementačním PR. Privátní odkazy a detaily zapisuj pouze do privátního úkolu.
+2. Zkontroluj privátní úkoly/claims a souběžná veřejná PR. Pracuj ve vlastní větvi nad aktuálním `development`; jeden úkol předávej jedním implementačním PR do `development`. Privátní odkazy a detaily zapisuj pouze do privátního úkolu.
    Nezahrnuj nesouvisející úpravy ani generované lokální výstupy.
 3. Používej existující kontrakty a strukturu funkcí. Změnu kontraktu či
    architektury popiš s dopadem; neobnovuj Arduino profil pro kufr.
@@ -41,3 +41,10 @@ Dependabot otevírá týdenní skupinové PR pro Actions, npm a NuGet. Aktualiza
 SDK, Xcode a PlatformIO se kontrolují ručně společně s jejich lock/pin soubory.
 CODEOWNERS určuje vlastníka review. Vynucení ochrany větve závisí na dostupnosti
 GitHub rulesets; skutečná omezení přístupu a tarifu jsou popsaná v CI/CD návodu.
+
+Běžný tok je `pracovní větev → development → main`. PR do `development`
+se slučují přes squash po rychlých kontrolách. Vydání je samostatný PR
+`development → main`, který spouští všechny běžné buildy a slučuje se přes
+merge commit. Podrobnosti, ochrany větví a první aktivaci popisuje
+[Git workflow](docs/git-workflow.md). Povýšení do `main` vyžaduje zadání vydání;
+běžný vývojový úkol končí předáním do `development`.
