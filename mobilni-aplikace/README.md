@@ -804,3 +804,35 @@ zatím vidí „Brzy“. Teprve samostatné potvrzení spustí celou délku odpo
 S Force se při nule otevře večer. Bez Force zůstane „Brzy“, dokud po skončení
 odpočtu nepotvrdíte zahájení večera. Force neotevírá večer okamžitě a nenahrazuje
 potvrzení začátku odpočtu. Ostatní skupiny se řídí svými vlastními potvrzeními.
+
+## Kontrola verze a povinná aktualizace
+
+Nativní iOS a Android ověřují `GET /app/v1/application-version` přes existující
+přenos účtu ještě před zobrazením obsahu. Kontrola se opakuje při návratu do
+aplikace, obnovení připojení a každých pět minut v popředí. Webový klient se
+podle nativního sestavení neblokuje.
+
+Server vrací samostatnou politiku `ios` a `android`: `minimumBuild`, `latestBuild`
+(řetězce) a `updateUrl` (HTTPS). iOS porovnává číselné složky `CFBundleVersion`,
+například `10.9.1 < 10.10.1`; Android porovnává celočíselný `versionCode`.
+Pod minimem se místo obsahu zobrazí povinná aktualizace bez možnosti přeskočení.
+Pod posledním dostupným sestavením, ale alespoň na minimu, se zobrazí doporučení.
+Odkaz otevře instalační stránku; samotnou instalaci potvrzuje operační systém.
+Probíhající ovládání má i při blokaci dostupné tlačítko Stop.
+
+Poslední platná politika se ukládá lokálně. Výpadek nebo neplatná odpověď nesmaže
+známé minimum ani při restartu. Při první kontrole bez dostupného serveru se
+aplikace po nejvýše osmi sekundách otevře, pokud zjistila vlastní platné sestavení
+a nezná povinnou aktualizaci. Nezjištěná verze zůstane blokovaná s možností opakování.
+
+Konfigurace `ApplicationUpdates` je popsána v [backend README](../backend/README.md).
+Výchozí minimum i poslední sestavení jsou `"0"`: správce musí nejprve zveřejnit
+a ověřit podepsaný instalační balíček a potom určit minimum a poslední sestavení.
+Změna této konfigurace se projeví po restartu backendu.
+Android potřebuje výslovnou instalační HTTPS adresu; cesta `/android/` se nepředpokládá.
+Staré instalace, které ještě tuto kontrolu neobsahují, nelze zpětně zablokovat
+pouhou změnou politiky. Po změnách nativních závislostí spusťte `npm run build`
+a `npx cap update ios`; soubor `CapApp-SPM/Package.swift` generuje Capacitor CLI.
+
+Ověření: `npm run test:updates:browser` testuje produkční bundle s izolovaným
+nativním bridge na rozměrech 390×844 a 1280×800. Neprokazuje instalaci na telefonu.
