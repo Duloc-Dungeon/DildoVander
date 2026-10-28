@@ -2,7 +2,7 @@
 
 :root { color: var(--aw-ivory); background: var(--aw-void); font-family: var(--aw-font-ui); line-height: 1.55; font-synthesis: none; }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
+body { margin: 0; }
 button, input, select, textarea { font: inherit; }
 a { color: var(--aw-link); text-underline-offset: .2em; }
 p { overflow-wrap: anywhere; }
