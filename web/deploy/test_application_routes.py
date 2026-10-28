@@ -8,7 +8,7 @@ import keepsake_proxy as proxy
 class ApplicationRoutingTests(unittest.TestCase):
     def test_mobile_game_paths_are_private_and_bounded(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
-        for route in ('/play', '/play/challenge', '/play/practice', '/play/chronicle', '/play/boss', '/play/keeper', '/play/ranking', '/play/messages', '/play/teams', '/play/pod-peceti'):
+        for route in ('/play', '/play/wand', '/play/challenge', '/play/practice', '/play/chronicle', '/play/boss', '/play/keeper', '/play/ranking', '/play/messages', '/play/teams', '/play/pod-peceti'):
             block = config.split('location = ' + route + ' {', 1)[1].split('\n}', 1)[0]
             for directive in ('GET|HEAD', 'no-store', 'no-referrer', 'noindex, nofollow', 'access_log off;'):
                 self.assertIn(directive, block)
