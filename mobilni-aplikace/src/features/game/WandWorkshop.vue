@@ -11,7 +11,8 @@ import { LabVoice, type VoicePhase } from '../persona-lab/voice';
 import { WorkshopVoice, type WorkshopVoicePhase } from './workshopVoice';
 import { loadWorkshop, loadWorkshopSession, workshopSessionRequest, workshopBase, workshopSessionPath, workshopArtwork, workshopAudio, normalizeSession, type WorkshopEntry, type WorkshopSession, type WorkshopMessage } from './wandWorkshop';
 
-const props = defineProps<{ upgrade?: boolean }>();
+const props = defineProps<{ upgrade?: boolean; prelaunch?: boolean }>();
+const emit = defineEmits<{ saved: []; exit: [] }>();
 const entry = ref<WorkshopEntry>(); const session = ref<WorkshopSession | null>(null);
 const loading = ref(true); const busy = ref(false); const error = ref(''); const draft = ref('');
 const syncError = ref('');
@@ -40,6 +41,9 @@ const live = new LabVoice({
   closed() { void refresh(); },
 });
 const wand = computed(() => projectMobileGeneratedWand(session.value?.wand));
+watch(() => session.value?.status === 'complete' ? wand.value?.wandId : undefined, id => {
+  if (id) emit('saved');
+});
 const messages = computed(() => session.value?.messages ?? []);
 const active = computed(() => ['connecting', 'listening', 'waiting', 'speaking'].includes(livePhase.value));
 const speaking = computed(() => livePhase.value === 'speaking' || narrationPhase.value === 'speaking');
@@ -61,11 +65,17 @@ const status = computed(() => {
   if (active.value) return muted.value ? 'Mikrofon je ztlumený. Spojení zůstává aktivní.' : 'Mikrofon je zapnutý. Mluv přirozeně, kufra můžeš přerušit.';
   if (session.value?.status === 'generating') return 'Rozhovor je uložený. Kufr vyrábí tvoji hůlku.';
   if (session.value?.status === 'paused') return 'Rozhovor je pozastavený do osvobození dílny.';
-  if (wand.value) return 'Hůlka je uložená a připravená ke hře.';
+  if (wand.value) return props.prelaunch ? 'Hůlka je uložená. Čekáme na začátek večera.' : 'Hůlka je uložená a připravená ke hře.';
   return busy.value ? 'Kufr zpracovává tvoje sdělení…' : 'Mikrofon je vypnutý.';
 });
 const stage = computed(() => wand.value ? 'revealed' : unavailable.value ? 'unavailable' : session.value?.status === 'generating' ? 'forging' : speaking.value ? 'speaking' : livePhase.value === 'connecting' ? 'connecting' : active.value ? 'listening' : session.value ? 'waiting' : 'ready');
 const artworkState = computed(() => artworkError.value ? 'failed' : session.value?.artwork?.status === 'ready' ? 'ready' : session.value?.artwork?.status === 'running' ? 'running' : session.value?.artwork?.status === 'failed' ? 'failed' : 'queued');
+const artworkMessage = computed(() => {
+  if (session.value?.artwork?.status === 'failed') {
+    return props.prelaunch ? 'Ilustrace se nezdařila. Hůlka zůstává uložená.' : 'Ilustrace se nezdařila. Hůlka je stále připravená ke hře.';
+  }
+  return props.prelaunch ? 'Ilustrace ještě vzniká. Hůlka už je uložená.' : 'Ilustrace ještě vzniká. Můžeš pokračovat do hry.';
+});
 function stopNarration() { mediaController.abort(); mediaController = new AbortController(); narrationPending.value = false; narration.stop(); }
 function stopSpeech() { if (active.value) live.interrupt(); stopNarration(); outputLevel.value = 0; }
 function stopMedia() { live.end(); live.dispose(); stopNarration(); muted.value = false; outputLevel.value = 0; }
@@ -75,7 +85,7 @@ async function updateArtwork(value: WorkshopSession) {
   if (!art?.assetId || !art.locator || art.status !== 'ready') return;
   const key = `${value.id}/${art.assetId}/${art.version}`; if (key === artworkKey) return; artworkKey = key;
   try {
-    const blob = await workshopArtwork(`/app/v1/archive/owned/${art.locator}/assets/${art.assetId}`, scope.signal);
+    const blob = await workshopArtwork(`${workshopSessionPath(value.id)}/artwork/assets/${art.assetId}`, scope.signal);
     if (scope !== controller || scope.signal.aborted || artworkKey !== key) return;
     if (artworkUrl.value) URL.revokeObjectURL(artworkUrl.value);
     artworkUrl.value = URL.createObjectURL(blob); artworkError.value = '';
@@ -243,25 +253,26 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 
 <template>
   <section class="trunk-workshop" aria-labelledby="workshop-title">
-    <header class="trunk-workshop__header"><RouterLink to="/play" @click="stopMedia">← Zpět do hry</RouterLink><span>Wand Night Stand</span></header>
-    <div class="trunk-workshop__identity"><p class="trunk-workshop__eyebrow">{{ upgrade ? 'Nová kapitola tvé hůlky' : 'Tvoje první hůlka' }}</p><h1 id="workshop-title">Kufrova dílna</h1><p v-if="entry?.profile"><strong>{{ entry.profile.name }}</strong> · {{ entry.profile.universe }}</p></div>
+    <header class="trunk-workshop__header"><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton><RouterLink v-else to="/play" @click="stopMedia">← Zpět do hry</RouterLink><span>Ollivander Industries™</span></header>
+    <div class="trunk-workshop__identity"><p class="trunk-workshop__eyebrow">{{ upgrade ? 'Nová kapitola tvé hůlky' : 'Tvoje první hůlka' }}</p><h1 id="workshop-title" :tabindex="prelaunch ? -1 : undefined">Kufrova dílna</h1><p v-if="entry?.profile"><strong>{{ entry.profile.name }}</strong> · {{ entry.profile.universe }}</p></div>
     <div class="trunk-workshop__scene">
       <TrunkStage :stage="stage" :assistant-output-level="outputLevel" :wand-artwork-url="artworkUrl" :wand-name="wand?.name" :artwork-status="artworkState" />
       <section class="trunk-workshop__conversation" aria-label="Rozhovor s magickým kufrem">
         <p v-if="loading" role="status">Ověřujeme tvoji postavu a dílnu…</p>
-        <template v-else-if="unavailable"><p role="status">{{ unavailable }}</p><RouterLink to="/me/character">Upravit nebo dokončit přípravu postavy</RouterLink><RouterLink v-if="entry?.reason?.includes('boss')" to="/play">Pomoci osvobodit dílnu</RouterLink></template>
+        <template v-else-if="unavailable"><p role="status">{{ unavailable }}</p><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k postavě</AwButton><RouterLink v-else to="/me/character">Upravit nebo dokončit přípravu postavy</RouterLink><RouterLink v-if="!prelaunch && entry?.reason?.includes('boss')" to="/play">Pomoci osvobodit dílnu</RouterLink></template>
         <template v-else-if="wand">
           <p class="trunk-workshop__eyebrow">Hůlka je uložená</p><p>{{ wand.material }} · {{ wand.core }}</p><p v-if="session?.verdict" class="trunk-workshop__verdict">{{ session.verdict }}</p>
-          <RouterLink class="aw-button aw-button--primary" to="/play" @click="stopMedia">Pokračovat s hůlkou</RouterLink>
+          <AwButton v-if="prelaunch" variant="primary" @click="stopMedia(); emit('exit')">Počkat na začátek večera</AwButton>
+          <RouterLink v-else class="aw-button aw-button--primary" to="/play" @click="stopMedia">Pokračovat s hůlkou</RouterLink>
           <AwButton v-if="!speaking" :disabled="narrationPending" @click="speak">Přehrát verdikt kufru</AwButton>
-          <p v-if="session?.artwork?.status !== 'ready'" role="status">{{ session?.artwork?.status === 'failed' ? 'Ilustrace se nezdařila. Hůlka je stále připravená ke hře.' : 'Ilustrace ještě vzniká. Můžeš pokračovat do hry.' }}</p>
+          <p v-if="session?.artwork?.status !== 'ready'" role="status">{{ artworkMessage }}</p>
           <AwButton v-if="session?.artwork?.canRetry || artworkError" :disabled="busy" @click="artworkAction()">Zkusit ilustraci znovu</AwButton>
           <AwButton v-if="session?.artwork?.canRepair" :disabled="busy" @click="artworkAction(true)">Opravit ilustraci na průhledném pozadí</AwButton>
           <details class="trunk-workshop__properties"><summary>Vlastnosti a kouzla hůlky</summary><GeneratedWand :wand="session?.wand" mobile :show-artwork="false" /></details>
         </template>
         <template v-else-if="session?.status === 'generating'"><h2>Hůlka dostává tvar</h2><p>Výroba poběží i po odchodu z obrazovky. Rozhovor už je uložený.</p></template>
         <template v-else>
-          <p v-if="!session">Kufr zná připravenou postavu. Promluv si s ním o hůlce, která k ní patří.</p>
+          <p v-if="!session">Hůlka si vybírá kouzelníka. Kufr zná tvoji postavu, ale rád si vyslechne i tvoji obhajobu.</p>
           <h2 v-if="subtitle" class="trunk-workshop__question" aria-live="polite">{{ subtitle }}</h2>
           <template v-if="mode === 'voice'"><AwButton v-if="!active && canStart" variant="primary" :disabled="busy" @click="startVoice">{{ session ? 'Pokračovat hlasem' : 'Promluvit s kufrem' }}</AwButton><AwButton v-if="active" @click="muted = !muted; live.setMuted(muted)">{{ muted ? 'Zapnout mikrofon' : 'Ztlumit mikrofon' }}</AwButton></template>
           <template v-else-if="session?.status === 'asking'"><form @submit.prevent="submit"><label for="trunk-answer">Tvoje sdělení kufru</label><textarea id="trunk-answer" ref="answerField" v-model="draft" maxlength="2000" rows="3" :disabled="busy" /><AwButton type="submit" variant="primary" :disabled="!draft.trim() || busy">Odeslat</AwButton></form><AwButton :disabled="!canStart || busy" @click="startVoice">Pokračovat hlasem</AwButton></template>
@@ -274,7 +285,8 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
         <p class="trunk-workshop__status" role="status">{{ status }}</p><p v-if="error" role="alert">{{ error }}</p><p v-if="syncError" role="status">{{ syncError }}</p><p v-if="artworkError" role="status">{{ artworkError }}</p>
         <AwButton v-if="error || syncError || session?.status === 'paused' || session?.status === 'failed'" :disabled="busy" @click="refresh">Obnovit stav</AwButton>
         <details v-if="messages.length" class="trunk-workshop__transcript"><summary>Přepis rozhovoru</summary><ol><li v-for="message in messages" :key="message.messageId"><strong>{{ message.role === 'user' ? 'Ty' : 'Kufr' }}</strong><p>{{ message.text }}</p><button v-if="mode === 'text' && canAnswer && message.role === 'user'" type="button" @click="correction = message; correctionText = message.text">Opravit sdělení</button></li></ol><form v-if="correction" @submit.prevent="saveCorrection"><label for="trunk-correction">Oprava sdělení</label><textarea id="trunk-correction" v-model="correctionText" maxlength="2000" /><AwButton type="submit" :disabled="busy || !correctionText.trim()">Uložit opravu</AwButton></form></details>
-        <RouterLink v-if="session && !wand" class="trunk-workshop__leave" to="/play" @click="stopMedia">Odejít a později pokračovat</RouterLink>
+        <AwButton v-if="prelaunch && session && !wand" @click="stopMedia(); emit('exit')">Odejít a později pokračovat</AwButton>
+        <RouterLink v-else-if="session && !wand" class="trunk-workshop__leave" to="/play" @click="stopMedia">Odejít a později pokračovat</RouterLink>
       </section>
     </div>
   </section>

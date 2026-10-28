@@ -2,13 +2,13 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Game;
 using Kufr.Backend.Features.Keepsakes;
 using Kufr.Backend.Features.Identity;
-using Kufr.Backend.Features.Launch;
 
 namespace Kufr.Backend.Features.Wands;
 
@@ -36,7 +36,7 @@ internal static partial class MobileWandWorkshopEndpoints
             var workshopTier = upgrade == 1 ? 2 : 1;
             var operation = wands.FindWorkshop(owner, profile.ProfileId, profile.Revision, workshopTier);
             var session = operation is null ? null : State(http, wands, operation, owner);
-            var unavailable = await UnavailableReasonAsync(http, games, owner, isUpgrade: upgrade == 1);
+            var unavailable = await UnavailableReasonAsync(http, games, owner, isUpgrade: upgrade == 1, operationId: operation);
             if (operation is not null && !await MatchesCurrentLaunchAsync(http, wands, owner, operation))
             {
                 session = null;
@@ -69,7 +69,7 @@ internal static partial class MobileWandWorkshopEndpoints
             var tier = upgrade == 1 ? 2 : 1;
             var operation = wands.FindWorkshop(owner, profile.ProfileId, profile.Revision, tier);
             if (operation is null) return Results.Ok(new { session = (MobileWandWorkshopState?)null });
-            await RequireAvailableAsync(http, games, owner, isUpgrade: tier == 2);
+            await RequireAvailableAsync(http, games, owner, isUpgrade: tier == 2, operationId: operation);
             await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, operation);
             var state = State(http, wands, operation, owner);
             await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
@@ -90,14 +90,14 @@ internal static partial class MobileWandWorkshopEndpoints
             var current = MobileWandSessions.Current(wands, owner, profile.ProfileId, profile.Revision);
             var tier = request.Upgrade ? 2 : 1;
             var existing = wands.FindWorkshop(owner, profile.ProfileId, profile.Revision, tier);
-            await RequireAvailableAsync(http, games, owner, request.Upgrade);
+            await RequireAvailableAsync(http, games, owner, request.Upgrade, operationId: existing);
             if (existing is not null) await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, existing);
             var operationId = request.OperationId;
             if (existing is null)
             {
                 if (request.Upgrade)
                 {
-                    var groupId = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false);
+                    var groupId = await MobileWandWorkshopAccess.ParticipantGroupAsync(http, tier);
                     if (current is null || games.Stats(groupId, owner, "").Xp < 30)
                         throw new WandGenerationException("wand_upgrade_locked", 409);
                     if (wands.MobileTier(owner, profile.ProfileId, profile.Revision) >= 2)
@@ -114,7 +114,7 @@ internal static partial class MobileWandWorkshopEndpoints
                     else
                         wands.RetireMobileOperation(owner, priorMobile); // Legacy pre-generated candidates never enter this flow.
                 }
-                var launchGroup = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false, allowOwnerPreparation: !request.Upgrade);
+                var launchGroup = await MobileWandWorkshopAccess.ParticipantGroupAsync(http, tier);
                 var membership = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(user => user.Id == owner
                     && user.LaunchGroupId == launchGroup && user.LaunchGroupRevokedAt == null
                     && !user.Disabled && !accounts.DeletionRequests.Any(deletion => deletion.UserId == owner),
@@ -135,7 +135,7 @@ internal static partial class MobileWandWorkshopEndpoints
             CharacterProfileStore profiles, WandGenerationStore wands, GameStore games) =>
         {
             var state = State(http, wands, id, Owner(http));
-            await RequireAvailableAsync(http, games, Owner(http), state.Tier == 2, allowCompleted: state.Status == "complete");
+            await RequireAvailableAsync(http, games, Owner(http), state.Tier == 2, allowCompleted: state.Status == "complete", operationId: id);
             await RequireProfileRevisionAsync(profiles, Owner(http), state, http.RequestAborted);
             await RequireWorkshopLaunchSnapshotAsync(http, wands, Owner(http), id);
             return Results.Ok(new { session = state });
@@ -146,7 +146,7 @@ internal static partial class MobileWandWorkshopEndpoints
         {
             var owner = Owner(http);
             var state = State(http, wands, id, owner);
-            await RequireAvailableAsync(http, games, owner, state.Tier == 2);
+            await RequireAvailableAsync(http, games, owner, state.Tier == 2, operationId: id);
             await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
             await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, id);
             if (state.Status != "failed" || !state.CanRetry)
@@ -161,12 +161,13 @@ internal static partial class MobileWandWorkshopEndpoints
         });
 
         group.MapPost("/workshop/sessions/{id}/artwork/retry", async (string id, HttpContext http,
-            WandGenerationStore wands, GameStore games) =>
+            WandGenerationStore wands, GameStore games, CharacterProfileStore profiles) =>
         {
             var owner = Owner(http);
             var state = State(http, wands, id, owner);
             await RequireAvailableAsync(http, games, owner, state.Tier == 2,
-                allowCompleted: state.Status == "complete");
+                allowCompleted: state.Status == "complete", operationId: id);
+            await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
             await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, id);
             var selected = wands.Read(owner, id)?.SelectedWand
                 ?? throw new WandGenerationException("wand_result_unavailable");
@@ -198,14 +199,31 @@ internal static partial class MobileWandWorkshopEndpoints
             return Results.Ok(new { session = State(http, wands, id, owner) });
         });
 
+        group.MapGet("/workshop/sessions/{id}/artwork/assets/{assetId:guid}", async (string id,
+            string assetId, HttpContext http, WandGenerationStore wands, CharacterProfileStore profiles,
+            GameStore games, [FromServices] KeepsakeStore keepsakes) =>
+        {
+            var owner = Owner(http);
+            var state = State(http, wands, id, owner);
+            await RequireConversationAsync(http, state, profiles, wands, games, allowFinished: true);
+            if (state.Status != "complete" || state.KeepsakeId is null || state.Artwork?.AssetId != assetId)
+            {
+                throw new WandGenerationException("wand_artwork_unavailable", 404);
+            }
+            var content = keepsakes.ReadAsset(state.KeepsakeId, AccountOwnedArchives.Actor(http), assetId);
+            http.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            return Results.File(content.Bytes, content.Asset.MediaType, enableRangeProcessing: false);
+        });
+
         group.MapPost("/workshop/sessions/{id}/audio", async (string id, WorkshopAudioRequest request, HttpContext http,
             WandGenerationStore wands, GameStore games, CharacterProfileStore profiles,
             Kufr.Backend.Features.Show.ShowSpeechProvider speech) =>
         {
             var owner = Owner(http);
             var state = State(http, wands, id, owner);
-            await RequireAvailableAsync(http, games, owner, state.Tier == 2);
+            await RequireAvailableAsync(http, games, owner, state.Tier == 2, operationId: id);
             await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
+            await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, id);
             if (state.Status != "complete" || request.WandId != state.Wand?.WandId)
                 throw new WandGenerationException("wand_audio_revision_conflict", 409);
             var text = state.VerdictText();
@@ -216,7 +234,7 @@ internal static partial class MobileWandWorkshopEndpoints
             var current = State(http, wands, id, owner);
             if (!await MatchesCurrentLaunchAsync(http, wands, owner, id) || current.Wand?.WandId != request.WandId)
                 throw new WandGenerationException("wand_audio_revision_conflict", 409);
-            await RequireAvailableAsync(http, games, owner, state.Tier == 2);
+            await RequireAvailableAsync(http, games, owner, state.Tier == 2, operationId: id);
             return Results.File(wav, "audio/wav");
         });
 
@@ -239,31 +257,29 @@ internal static partial class MobileWandWorkshopEndpoints
     private static async Task<bool> MatchesCurrentLaunchAsync(HttpContext http,
         WandGenerationStore wands, string owner, string operationId)
     {
-        string groupId;
-        var ownerPreparation = http.User.IsInRole(AccountRoles.Owner)
-            && wands.MobileOperationTier(owner, operationId) == 1;
-        try { groupId = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false, allowOwnerPreparation: ownerPreparation); }
-        catch (GameFault) { return false; }
         var accounts = http.RequestServices.GetRequiredService<AccountDatabase>();
-        var user = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == owner
-            && (ownerPreparation || item.LaunchGroupId == groupId && item.LaunchGroupRevokedAt == null) && !item.Disabled
-            && !accounts.DeletionRequests.Any(deletion => deletion.UserId == owner), http.RequestAborted);
-        if (user is null) return false;
-        var roles = await http.RequestServices.GetRequiredService<UserManager<AccountUser>>().GetRolesAsync(user);
-        if (!roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)
-            && !roles.Contains(AccountRoles.Owner, StringComparer.Ordinal)) return false;
-        if (!(await http.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(http.User)).Allowed)
-            return false;
-        // Owners retain preparation access to every group when changing their active play context.
-        return ownerPreparation || wands.WorkshopMatchesLaunchSnapshot(owner, operationId, groupId, user.LaunchGroupAccessRevision);
+        var user = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == owner,
+            http.RequestAborted);
+        return user is not null && await MobileWandWorkshopAccess.IsAllowedForWorkshopAsync(user, operationId,
+            wands, http.RequestServices, http.RequestAborted);
     }
 
     private static async Task<string?> UnavailableReasonAsync(HttpContext http, GameStore games,
-        string owner, bool isUpgrade)
+        string owner, bool isUpgrade, string? operationId = null)
     {
         try
         {
-            var group = await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false, allowOwnerPreparation: !isUpgrade);
+            var group = await MobileWandWorkshopAccess.ParticipantGroupAsync(http, isUpgrade ? 2 : 1);
+            if (operationId is not null)
+            {
+                var wands = http.RequestServices.GetRequiredService<WandGenerationStore>();
+                var snapshot = wands.ReadWorkshopLaunchSnapshot(owner, operationId);
+                if (snapshot is null || !await MatchesCurrentLaunchAsync(http, wands, owner, operationId))
+                {
+                    return "wand_session_unavailable";
+                }
+                group = snapshot.Value.GroupId;
+            }
             var boss = games.ReadBoss(group, owner);
             if (boss.Revealed && !boss.Rescued) return "wand_workshop_boss_captured";
             if (isUpgrade && games.Stats(group, owner, "").Xp < 30) return "wand_upgrade_locked";
@@ -273,11 +289,11 @@ internal static partial class MobileWandWorkshopEndpoints
     }
 
     private static async Task RequireAvailableAsync(HttpContext http, GameStore games, string owner,
-        bool isUpgrade, bool allowCompleted = false)
+        bool isUpgrade, bool allowCompleted = false, string? operationId = null)
     {
         if (allowCompleted) return;
-        var reason = await UnavailableReasonAsync(http, games, owner, isUpgrade);
-        if (reason is not null) throw new WandGenerationException(reason, 409);
+        var reason = await UnavailableReasonAsync(http, games, owner, isUpgrade, operationId);
+        if (reason is not null) throw new WandGenerationException(reason, reason == "wand_session_unavailable" ? 404 : 409);
     }
 
     private static MobileWandWorkshopState State(HttpContext http, WandGenerationStore wands,

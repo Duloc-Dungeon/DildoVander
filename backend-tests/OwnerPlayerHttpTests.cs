@@ -9,6 +9,7 @@ internal static partial class MobileGameTests
         await using var fixture = await HttpFixture.StartAsync();
         await fixture.MakeOwnerAsync(fixture.ForeignId);
         await fixture.MarkForeignCharacterPreparedAsync();
+        await fixture.MarkCharacterPreparedAsync(fixture.PausedId);
         await fixture.LabelCharacterAsync(fixture.ForeignId);
         using var owner = fixture.Client();
         using var customer = fixture.Client();
@@ -56,20 +57,58 @@ internal static partial class MobileGameTests
         Check((await eligibility.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("eligible").GetBoolean(),
             "owner prepared character is eligible for the initial wand before launch");
         using var ordinaryEligibility = await paused.GetAsync("/app/v1/customer/wand/workshop");
-        Check(!(await ordinaryEligibility.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("eligible").GetBoolean(),
-            "ordinary player retains the closed-group preparation restriction");
+        Check((await ordinaryEligibility.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("eligible").GetBoolean(),
+            "prepared ordinary player retains upstream first-wand access before group launch");
         var operation = Guid.NewGuid().ToString("N");
         Check((await owner.PostAsJsonAsync(workshop, new { operationId = operation })).StatusCode == HttpStatusCode.OK,
             "owner starts initial wand workshop before group launch");
         Check((await owner.PostAsJsonAsync(workshop,
             new { operationId = Guid.NewGuid().ToString("N"), upgrade = true })).StatusCode == HttpStatusCode.Conflict,
             "owner prelaunch exception does not grant a tier-two upgrade");
+        fixture.SetBossCaptured(fixture.ActiveGroupId, captured: true);
+        await SelectOwnerGroupAsync(fixture.ActiveGroupId);
+        using var unrelatedBossResponse = await owner.GetAsync("/app/v1/customer/wand/workshop");
+        var unrelatedBoss = await unrelatedBossResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Check(unrelatedBoss.GetProperty("eligible").GetBoolean()
+            && unrelatedBoss.GetProperty("session").GetProperty("status").GetString() == "asking"
+            && (await owner.GetAsync(workshop + "/current")).StatusCode == HttpStatusCode.OK
+            && (await owner.GetAsync(workshop + "/" + operation)).StatusCode == HttpStatusCode.OK,
+            "boss capture in the selected group does not pause or hide an existing workshop saved in another group");
+
+        fixture.SetBossCaptured(fixture.ActiveGroupId, captured: false);
+        fixture.SetBossCaptured(fixture.PausedGroupId, captured: true);
+        using var savedBossResponse = await owner.GetAsync("/app/v1/customer/wand/workshop");
+        var savedBoss = await savedBossResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Check(!savedBoss.GetProperty("eligible").GetBoolean()
+            && savedBoss.GetProperty("reason").GetString() == "wand_workshop_boss_captured"
+            && savedBoss.GetProperty("session").GetProperty("status").GetString() == "paused"
+            && (await owner.GetAsync(workshop + "/current")).StatusCode == HttpStatusCode.Conflict
+            && (await owner.GetAsync(workshop + "/" + operation)).StatusCode == HttpStatusCode.Conflict,
+            "boss capture in the saved workshop group pauses the operation even when selected-group boss is rescued");
+        using var capturedMessage = await owner.PostAsJsonAsync(workshop + "/" + operation + "/messages",
+            new { messageId = Guid.NewGuid().ToString("N"), text = "Tento tah nemá projít." });
+        Check(capturedMessage.StatusCode == HttpStatusCode.Conflict,
+            "existing workshop conversation applies boss captivity from its saved group");
+        fixture.SetBossCaptured(fixture.PausedGroupId, captured: false);
+        using var rescuedResponse = await owner.GetAsync("/app/v1/customer/wand/workshop");
+        var rescued = await rescuedResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Check(rescued.GetProperty("eligible").GetBoolean()
+            && rescued.GetProperty("session").GetProperty("status").GetString() == "asking",
+            "rescue in the saved group resumes the same workshop while owner keeps another group selected");
+        await SelectOwnerGroupAsync(fixture.PausedGroupId);
+        using var afterBossGroupsResponse = await owner.GetAsync("/app/v1/customer/groups");
+        revision = (await afterBossGroupsResponse.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("accessRevision").GetInt64();
         for (var turn = 0; turn < 4; turn++)
         {
             Check((await owner.PostAsJsonAsync(workshop + "/" + operation + "/messages",
                 new { messageId = Guid.NewGuid().ToString("N"), text = $"Ověřím mapu, sdělení {turn}." })).StatusCode == HttpStatusCode.OK,
                 "owner can complete a normal workshop dialogue before launch");
         }
+        using var liveTicketResponse = await owner.PostAsJsonAsync(workshop + "/" + operation + "/ticket",
+            new { socketOrigin = "https://localhost" });
+        Check(liveTicketResponse.StatusCode == HttpStatusCode.OK, "owner obtains protected workshop Live admission before launch");
+        var liveTicket = await liveTicketResponse.Content.ReadFromJsonAsync<JsonElement>();
         Check((await owner.PostAsJsonAsync(workshop + "/" + operation + "/finish", new { })).StatusCode == HttpStatusCode.OK,
             "owner explicitly finishes the initial prelaunch workshop");
 
@@ -80,6 +119,7 @@ internal static partial class MobileGameTests
             && switches.Count(response => response.StatusCode == HttpStatusCode.Conflict) == 1,
             "concurrent owner selections accept exactly one expected revision");
         foreach (var response in switches) { response.Dispose(); }
+        await fixture.RequireWorkshopLiveAuthorityAsync(liveTicket.GetProperty("url").GetString()!, operation);
         await fixture.RunWorkshopWorkerAsync(fixture.ForeignId, operation);
         Check((await owner.GetAsync(workshop + "/" + operation)).StatusCode == HttpStatusCode.OK,
             "owner generation and result survive a selected-group switch");

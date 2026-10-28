@@ -1280,6 +1280,27 @@ internal static partial class MobileGameTests
             keepsakes.Issue(MobileWandWorkshopWorker.ArtworkSnapshot(wand), new(id, session.Id));
         }
 
+        internal async Task RequireWorkshopLiveAuthorityAsync(string ticketUrl, string operationId)
+        {
+            var token = new Uri(ticketUrl).Query["?ticket=".Length..];
+            var admission = app.Services.GetRequiredService<MobileWandRuntime>()
+                .Take(token, operationId, "https://localhost");
+            await LiveRuntime.RequireAuthorityAsync(admission, CancellationToken.None);
+        }
+
+        internal void SetBossCaptured(string groupId, bool captured)
+        {
+            app.Services.GetRequiredService<GameStore>().ReadBoss(groupId, ForeignId);
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Path.Combine(app.Services.GetRequiredService<AccountConfiguration>().DataRoot, "mobile-game.sqlite") }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO game_boss_groups(group_id,reference_xp,rescued,revision) VALUES($group,10,$rescued,1) ON CONFLICT(group_id) DO UPDATE SET rescued=$rescued,revision=revision+1";
+            command.Parameters.AddWithValue("$group", groupId);
+            command.Parameters.AddWithValue("$rescued", captured ? 0 : 1);
+            command.ExecuteNonQuery();
+        }
+
         internal async Task<GameYoloProfile> ReadYoloProfileAsync(string id)
         {
             await using var scope = app.Services.CreateAsyncScope();

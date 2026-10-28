@@ -170,6 +170,14 @@ internal sealed partial class WandGenerationStore
         return command.ExecuteScalar() as string;
     }
 
+    internal (string GroupId, long AccessRevision)? ReadWorkshopLaunchSnapshot(string accountId, string operationId)
+    {
+        using var connection = Open();
+        EnsureWorkshop(connection);
+        var row = ReadWorkshop(connection, null, accountId, operationId);
+        return row is null ? null : (row.LaunchGroupId, row.LaunchAccessRevision);
+    }
+
     internal bool WorkshopMatchesLaunchSnapshot(string accountId, string operationId,
         string groupId, long accessRevision)
     {

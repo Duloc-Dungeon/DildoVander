@@ -1,11 +1,7 @@
-using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Game;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Keepsakes;
-using Kufr.Backend.Features.Launch;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Wands;
@@ -41,24 +37,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             && !accounts.DeletionRequests.Any(deletion => deletion.UserId == accountId), token);
         if (user is null || !AccountAiConsent.HasConsent(user)
             || !await HasActiveSessionAsync(accounts, accountId, token)) return false;
-        var userManager = services.GetRequiredService<UserManager<AccountUser>>();
-        var roles = await userManager.GetRolesAsync(user);
-        var isOwner = roles.Contains(AccountRoles.Owner, StringComparer.Ordinal);
-        if (!roles.Contains(AccountRoles.Customer, StringComparer.Ordinal) && !isOwner) return false;
-        var ownerPreparation = isOwner && tier == 1;
-        if (!ownerPreparation && (user.LaunchGroupRevokedAt is not null || user.LaunchGroupId != groupId
-            || user.LaunchGroupAccessRevision != accessRevision)) return false;
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, accountId), new(AccountIdentity.SessionClaim, "workshop-worker")
-        };
-        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "workshop"));
-        var access = await services.GetRequiredService<LaunchAccessService>().EvaluateAsync(principal);
-        var group = services.GetRequiredService<LaunchPolicyStore>().ReadGroup(groupId);
-        if (!access.Allowed || group is null || group.OpenedAt is null && !ownerPreparation)
-            return false;
-        return true;
+        return await MobileWandWorkshopAccess.IsAllowedAsync(user, tier, services, token, groupId, accessRevision);
     }
 
     private async Task ProcessAsync(MobileWandWorkshopJob job, CancellationToken token)
@@ -90,7 +69,8 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             return;
         }
 
-        if (user.LaunchGroupId is null)
+        if (!await MobileWandWorkshopAccess.IsAllowedAsync(user, job.Tier, services, token,
+            job.LaunchGroupId, job.LaunchAccessRevision))
         {
             store.FailWorkshop(job.AccountId, job.OperationId, "game_group_inactive");
             return;

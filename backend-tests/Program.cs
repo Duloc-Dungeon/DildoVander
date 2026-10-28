@@ -57,6 +57,8 @@ if (args is ["--dv01-consolidation"]) { GptLiveVoiceTests.Run(); await Autonomou
 if (args is ["--character-portraits"]) { await CharacterPortraitTests.RunAsync(); return; }
 if (args is ["--character-administration"]) { await CharacterAdministrationTests.RunAsync(); return; }
 if (args is ["--prelaunch-http"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(); return; }
+if (args is ["--prelaunch-http-slow-artwork"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(delayArtwork: true); return; }
+if (args is ["--prelaunch-workshop-http"]) { await AccountIdentityTests.RunPrelaunchWorkshopHttpAsync(); return; }
 if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await AiObservabilityTests.RunAsync(); await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--observability-logs"]) { await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--ai-observability"]) { await AiObservabilityTests.RunAsync(); return; }

@@ -219,7 +219,7 @@ async function submit(): Promise<void> {
     <div v-if="arrival && !account" class="arrival-content">
       <div class="arrival-art" aria-hidden="true"><img :src="amberWand" alt="" width="1254" height="1254" fetchpriority="high" /></div>
       <h1 id="sign-in-title">{{ language === 'en' ? 'Enter on your own reputation.' : 'Vstup na vlastní pověst.' }}</h1>
-      <p>{{ language === 'en' ? 'Your reputation arrived before you. We have already discussed it.' : 'Tvá pověst dorazila před tebou. Už jsme se o ní omluvili.' }}</p>
+      <p>Ollivander Industries™ tě vítá v mobilní pobočce. Fronty jsme zrušili. Posuzování zákazníků zůstává.</p>
       <AwButton variant="primary" @click="beginFromArrival">{{ language === 'en' ? 'Begin' : 'Začít' }}</AwButton>
       <AwButton @click="showPasskeySignIn">{{ language === 'en' ? 'I already have access' : 'Už mám přístup' }}</AwButton>
       <nav class="signin-help" aria-label="Nápověda"><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></nav>
