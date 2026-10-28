@@ -14,17 +14,305 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
+using System.Net.WebSockets;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-internal static class MobileGameTests
+internal static partial class MobileGameTests
 {
+    internal static async Task RunWorkshopLiveHttpAsync()
+    {
+        await using var fixture = await HttpFixture.StartAsync(withLiveTransport: true);
+        using var client = fixture.Client();
+        await fixture.LoginAsync(client, fixture.ForeignId);
+        client.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(client));
+        await fixture.MarkForeignCharacterPreparedAsync();
+
+        const string path = "/app/v1/customer/wand/workshop/sessions";
+        var operation = Guid.NewGuid().ToString("N");
+        using var created = await client.PostAsJsonAsync(path, new { operationId = operation });
+        Check(created.StatusCode == HttpStatusCode.OK, "live fixture opens a prepared customer workshop");
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var socket = await ConnectWorkshopSocketAsync(client, fixture, path, operation, timeout.Token);
+
+        var ready = await ReceiveSocketJsonAsync(socket, timeout.Token);
+        Check(ready.GetProperty("type").GetString() == "ready", "customer Live bridge reaches ready through the actual workshop route");
+        var liveSpeech = ReceiveLiveSpeechAsync(socket, timeout.Token);
+
+        await SendFragmentedAsync(socket, WebSocketMessageType.Binary, [1, 2, 3, 4], timeout.Token);
+        await SendFragmentedAsync(socket, WebSocketMessageType.Text, Encoding.UTF8.GetBytes("{\"type\":\"played\"}"), timeout.Token);
+
+        // Eligibility polling shares a host IP with the socket, but uses the
+        // dedicated read allowance while authenticated commands retain theirs.
+        for (var poll = 0; poll < 16; poll++)
+        {
+            using var status = await client.GetAsync("/app/v1/customer/wand/workshop");
+            Check(status.StatusCode == HttpStatusCode.OK, $"workshop status poll {poll + 1} remains available during Live");
+        }
+
+        try
+        {
+            await WaitUntilAsync(() => fixture.TextDialogueCalls >= 2, timeout.Token);
+        }
+        catch (OperationCanceledException error)
+        {
+            throw new InvalidOperationException("Live bridge did not delegate the two scripted exchanges. "
+                + fixture.LiveSocketFactory?.Diagnostics, error);
+        }
+        var speech = await liveSpeech;
+        Check(speech.AssistantTranscripts >= 2 && speech.AudioMessages >= 3,
+            "fragmented provider replies are forwarded as assistant transcript and actual PCM output");
+
+        await SendFragmentedAsync(socket, WebSocketMessageType.Text, Encoding.UTF8.GetBytes("{\"type\":\"end\"}"), timeout.Token);
+        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "test complete", timeout.Token);
+        await WaitUntilAsync(() => !fixture.LiveRuntime.IsActive(fixture.ForeignId, operation), timeout.Token);
+        var state = fixture.Wands.ReadWorkshopState(fixture.ForeignId, operation)
+            ?? throw new InvalidOperationException("The customer workshop state disappeared.");
+        var messages = state.Messages ?? [];
+        var userEvidence = string.Join(" ", messages.Where(message => message.Role == "user").Select(message => message.Text));
+        var assistantEvidence = string.Join(" ", messages.Where(message => message.Role == "assistant").Select(message => message.Text));
+        Check(state.Status == "asking" && fixture.TextDialogueCalls == 2
+            && userEvidence.Contains("Nejprve zkontroluji most.", StringComparison.Ordinal)
+            && userEvidence.Contains("Pokud selže, opravím cestu.", StringComparison.Ordinal),
+            $"both delegated inputs remain in one durable operation (status={state.Status}, calls={fixture.TextDialogueCalls}, messages={string.Join("|", messages.Select(message => message.Role + ":" + message.Text))})");
+        Check(assistantEvidence.Contains("Odpověď kufru 1.", StringComparison.Ordinal)
+            && assistantEvidence.Contains("Odpověď kufru 2.", StringComparison.Ordinal),
+            "both distinct provider assistant transcripts persist after the final flush");
+        Check(fixture.Wands.PendingWorkshops().All(job => job.OperationId != operation),
+            "a natural multi-turn conversation stays open without premature generation");
+        Check(userEvidence.Contains("Nejprve zkontroluji most.", StringComparison.Ordinal),
+            "disconnect preserves the customer transcript before a reconnect");
+
+        using var reconnected = await ConnectWorkshopSocketAsync(client, fixture, path, operation, timeout.Token);
+        var resumed = await ReceiveSocketJsonAsync(reconnected, timeout.Token);
+        Check(resumed.GetProperty("type").GetString() == "ready"
+            && string.Join(" ", fixture.Wands.ReadWorkshopMessages(fixture.ForeignId, operation)
+                .Where(message => message.Role == "user").Select(message => message.Text))
+                .Contains("Pokud selže, opravím cestu.", StringComparison.Ordinal),
+            "a one-use ticket reconnect resumes the same operation and saved dialogue");
+        await fixture.RevokeAsync(fixture.ForeignId);
+        await WaitUntilAsync(() => fixture.LiveFailureCodes.Contains("account_session_revoked"), timeout.Token);
+        var revoked = await ReceiveUntilCloseAsync(reconnected, timeout.Token);
+        Check(revoked.Closed && fixture.LiveFailureCodes.Contains("account_session_revoked"),
+            $"the authority guard closes Live for the exact group revocation denial (code={revoked.ErrorCode ?? "logged"})");
+        await WaitUntilAsync(() => !fixture.LiveRuntime.IsActive(fixture.ForeignId, operation), timeout.Token);
+
+        var commandRateLimited = false;
+        for (var request = 0; request < 12; request++)
+        {
+            using var command = await client.PostAsJsonAsync(path, new { operationId = operation });
+            commandRateLimited |= command.StatusCode == HttpStatusCode.TooManyRequests;
+        }
+        Check(commandRateLimited, "the read polling allowance does not widen authenticated command limits");
+        await RunWorkshopStaleReadyRaceHttpAsync();
+        Console.WriteLine("Mobile workshop customer Live bridge checks passed.");
+    }
+
+    private static async Task RunWorkshopStaleReadyRaceHttpAsync()
+    {
+        await using var fixture = await HttpFixture.StartAsync(withLiveTransport: true,
+            workshopProvider: new TextWorkshopProvider(delayFirstReply: true, delaySecondReply: true,
+                firstReplyReady: true, secondReplyReady: true), includeSecondTurnAutomatically: false);
+        using var client = fixture.Client();
+        await fixture.LoginAsync(client, fixture.ForeignId);
+        client.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(client));
+        await fixture.MarkForeignCharacterPreparedAsync();
+
+        const string path = "/app/v1/customer/wand/workshop/sessions";
+        var operation = Guid.NewGuid().ToString("N");
+        using var created = await client.PostAsJsonAsync(path, new { operationId = operation });
+        Check(created.StatusCode == HttpStatusCode.OK, "stale-ready fixture opens a prepared workshop");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var socket = await ConnectWorkshopSocketAsync(client, fixture, path, operation, timeout.Token);
+        Check((await ReceiveSocketJsonAsync(socket, timeout.Token)).GetProperty("type").GetString() == "ready",
+            "stale-ready customer Live socket reaches ready");
+
+        await fixture.TextWorkshopProvider.WaitForReplyAsync(1, timeout.Token);
+        fixture.LiveSocketFactory!.QueueExchange(2);
+        await WaitUntilAsync(() => fixture.Wands.ReadWorkshopMessages(fixture.ForeignId, operation)
+            .Any(message => message.Role == "user" && message.Text.Contains("Pokud selže, opravím cestu.", StringComparison.Ordinal)), timeout.Token);
+        fixture.TextWorkshopProvider.ReleaseReply(1);
+        await fixture.TextWorkshopProvider.WaitForReplyAsync(2, timeout.Token);
+
+        Check(fixture.LiveRuntime.IsActive(fixture.ForeignId, operation)
+            && fixture.Wands.ReadWorkshopState(fixture.ForeignId, operation)?.Status == "asking"
+            && fixture.Wands.PendingWorkshops().All(job => job.OperationId != operation),
+            "a stale ready decision neither manufactures nor disconnects while a newer turn is pending");
+
+        fixture.TextWorkshopProvider.ReleaseReply(2);
+        await WaitUntilAsync(() => fixture.Wands.ReadWorkshopState(fixture.ForeignId, operation)?.Status == "generating",
+            timeout.Token);
+        Check(fixture.Wands.PendingWorkshops().Count(job => job.OperationId == operation) == 1,
+            "the next current delegation can finish exactly one manufacture");
+
+        await SendFragmentedAsync(socket, WebSocketMessageType.Text, Encoding.UTF8.GetBytes("{\"type\":\"end\"}"), timeout.Token);
+        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "test complete", timeout.Token);
+        await WaitUntilAsync(() => !fixture.LiveRuntime.IsActive(fixture.ForeignId, operation), timeout.Token);
+    }
+
+    private static async Task<ClientWebSocket> ConnectWorkshopSocketAsync(HttpClient client, HttpFixture fixture,
+        string path, string operation, CancellationToken token)
+    {
+        using var ticketResponse = await client.PostAsJsonAsync($"{path}/{operation}/ticket",
+            new { socketOrigin = "https://localhost" }, token);
+        Check(ticketResponse.StatusCode == HttpStatusCode.OK, "live fixture issues an owner-scoped one-use socket ticket");
+        var ticket = await ticketResponse.Content.ReadFromJsonAsync<JsonElement>(token);
+        var socketPath = ticket.GetProperty("path").GetString()!;
+        var issuedUrl = new Uri(ticket.GetProperty("url").GetString()!);
+        var socketUrl = new UriBuilder(new Uri(fixture.BaseAddress))
+        { Scheme = "wss", Path = socketPath, Query = issuedUrl.Query.TrimStart('?') }.Uri;
+        var socket = new ClientWebSocket();
+        socket.Options.Cookies = fixture.CookiesFor(client);
+        socket.Options.SetRequestHeader("Origin", "https://localhost");
+        socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        try
+        {
+            await socket.ConnectAsync(socketUrl, token);
+            return socket;
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
+
+    private static async Task<(int AssistantTranscripts, int AudioMessages)> ReceiveLiveSpeechAsync(
+        ClientWebSocket socket, CancellationToken token)
+    {
+        var assistantTranscripts = 0;
+        var audioMessages = 0;
+        var buffer = new byte[16 * 1024];
+        using var message = new MemoryStream();
+        while (assistantTranscripts < 2 || audioMessages < 3)
+        {
+            var result = await socket.ReceiveAsync(buffer.AsMemory(), token);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                throw new WebSocketException("The customer Live socket closed before both replies played.");
+            }
+            if (result.MessageType == WebSocketMessageType.Binary)
+            {
+                audioMessages++;
+                continue;
+            }
+            message.Write(buffer, 0, result.Count);
+            if (!result.EndOfMessage)
+            {
+                continue;
+            }
+            using var json = JsonDocument.Parse(message.ToArray());
+            if (json.RootElement.TryGetProperty("type", out var type)
+                && type.GetString() == "transcript"
+                && json.RootElement.TryGetProperty("role", out var role)
+                && role.GetString() == "assistant")
+            {
+                assistantTranscripts++;
+            }
+            message.SetLength(0);
+        }
+        return (assistantTranscripts, audioMessages);
+    }
+
+    private static async Task<(string? ErrorCode, int AudioAfterError, bool Closed)> ReceiveUntilCloseAsync(
+        ClientWebSocket socket, CancellationToken token)
+    {
+        string? errorCode = null;
+        var audioAfterError = 0;
+        var buffer = new byte[16 * 1024];
+        using var message = new MemoryStream();
+        try
+        {
+            while (true)
+            {
+                var result = await socket.ReceiveAsync(buffer.AsMemory(), token);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    return (errorCode, audioAfterError, true);
+                }
+                if (result.MessageType == WebSocketMessageType.Binary)
+                {
+                    if (errorCode is not null)
+                    {
+                        audioAfterError++;
+                    }
+                    continue;
+                }
+                message.Write(buffer, 0, result.Count);
+                if (!result.EndOfMessage)
+                {
+                    continue;
+                }
+                using var json = JsonDocument.Parse(message.ToArray());
+                if (json.RootElement.TryGetProperty("type", out var type) && type.GetString() == "error"
+                    && json.RootElement.TryGetProperty("code", out var code))
+                {
+                    errorCode = code.GetString();
+                }
+                message.SetLength(0);
+            }
+        }
+        catch (WebSocketException)
+        {
+            return (errorCode, audioAfterError, true);
+        }
+    }
+
+    private static async Task SendFragmentedAsync(ClientWebSocket socket, WebSocketMessageType type, byte[] payload,
+        CancellationToken token)
+    {
+        var split = Math.Max(1, payload.Length / 2);
+        await socket.SendAsync(new ArraySegment<byte>(payload, 0, split), type, endOfMessage: false, token);
+        await socket.SendAsync(new ArraySegment<byte>(payload, split, payload.Length - split), type, endOfMessage: true, token);
+    }
+
+    private static async Task<JsonElement> ReceiveSocketJsonAsync(ClientWebSocket socket, CancellationToken token)
+    {
+        var buffer = new byte[16 * 1024];
+        using var message = new MemoryStream();
+        while (true)
+        {
+            var result = await socket.ReceiveAsync(buffer.AsMemory(), token);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                throw new WebSocketException("The customer Live socket closed before ready.");
+            }
+            if (result.MessageType != WebSocketMessageType.Text)
+            {
+                continue;
+            }
+
+            message.Write(buffer, 0, result.Count);
+            if (!result.EndOfMessage)
+            {
+                continue;
+            }
+
+            using var json = JsonDocument.Parse(message.ToArray());
+            if (json.RootElement.GetProperty("type").GetString() == "ready")
+            {
+                return json.RootElement.Clone();
+            }
+            message.SetLength(0);
+        }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken token)
+    {
+        while (!condition())
+        {
+            await Task.Delay(25, token);
+        }
+    }
+
     internal static void Run()
     {
         VerifyYoloResponseValidation();
@@ -724,9 +1012,16 @@ internal static class MobileGameTests
         private readonly string origin;
         private readonly string baseAddress;
         private readonly TextWorkshopProvider textWorkshopProvider;
+        private readonly SafeWorkshopLogProvider liveLog;
+        private readonly Dictionary<HttpClient, CookieContainer> clientCookies = new();
+        internal string BaseAddress => baseAddress;
+        internal ScriptedLiveSocketFactory? LiveSocketFactory { get; private set; }
         internal WandGenerationStore Wands => app.Services.GetRequiredService<WandGenerationStore>();
+        internal MobileWorkshopLiveRuntime LiveRuntime => app.Services.GetRequiredService<MobileWorkshopLiveRuntime>();
         internal CharacterProfileStore Profiles => app.Services.GetRequiredService<CharacterProfileStore>();
         internal int TextDialogueCalls => textWorkshopProvider.ReplyCount;
+        internal TextWorkshopProvider TextWorkshopProvider => textWorkshopProvider;
+        internal string[] LiveFailureCodes => liveLog.FailureCodes;
         internal string AliceId { get; } = Guid.NewGuid().ToString("N");
         internal string BobId { get; } = Guid.NewGuid().ToString("N");
         internal string ForeignId { get; } = Guid.NewGuid().ToString("N");
@@ -734,16 +1029,18 @@ internal static class MobileGameTests
         internal string ActiveGroupId { get; private set; } = "";
 
         private HttpFixture(WebApplication app, string root, X509Certificate2 certificate,
-            TextWorkshopProvider textWorkshopProvider)
+            TextWorkshopProvider textWorkshopProvider, SafeWorkshopLogProvider liveLog)
         {
             this.app = app; this.root = root; this.certificate = certificate;
             this.textWorkshopProvider = textWorkshopProvider;
+            this.liveLog = liveLog;
             origin = "https://localhost";
             baseAddress = app.Urls.Single().Replace("127.0.0.1", "localhost");
             app.Services.GetRequiredService<AccountConfiguration>().AllowedOrigins[0] = origin;
         }
 
-        internal static async Task<HttpFixture> StartAsync()
+        internal static async Task<HttpFixture> StartAsync(bool withLiveTransport = false, GptLiveClient? liveClient = null,
+            TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true)
         {
             var root = Path.Combine(Path.GetTempPath(), "mobile-game-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
             using var rsa = RSA.Create(2048);
@@ -753,6 +1050,8 @@ internal static class MobileGameTests
             var certificate = X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pfx), null, X509KeyStorageFlags.UserKeySet);
             var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
             builder.Logging.ClearProviders();
+            var liveLog = new SafeWorkshopLogProvider();
+            builder.Logging.AddProvider(liveLog);
             builder.Configuration.Sources.Clear();
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -762,10 +1061,14 @@ internal static class MobileGameTests
                 ["ApplicationIdentity:RelyingPartyId"] = "localhost",
                 ["ApplicationIdentity:AllowedOrigins:0"] = "https://localhost",
                 ["ApplicationIdentity:Bootstrap:TokenSha256"] = AccountEndpoints.Hash(Bootstrap),
-                ["ApplicationIdentity:RequestsPerMinute"] = "120",
-                ["Backend:DatabasePath"] = Path.Combine(root, "journal.sqlite")
+                ["ApplicationIdentity:RequestsPerMinute"] = withLiveTransport ? "10" : "120",
+                ["Backend:DatabasePath"] = Path.Combine(root, "journal.sqlite"),
+                ["OPENAI_API_KEY"] = withLiveTransport && liveClient is null ? "synthetic-fixture-key" : null
             });
-            var textWorkshopProvider = new TextWorkshopProvider();
+            var textWorkshopProvider = workshopProvider ?? new TextWorkshopProvider();
+            var liveSocketFactory = withLiveTransport && liveClient is null
+                ? new ScriptedLiveSocketFactory(includeSecondTurnAutomatically)
+                : null;
             builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
             builder.Services.AddAccountIdentity(builder.Configuration);
             builder.Services.AddLaunchManagement(builder.Configuration);
@@ -775,7 +1078,9 @@ internal static class MobileGameTests
             builder.Services.AddSingleton<Kufr.Backend.Features.Show.ShowSpeechProvider>();
             builder.Services.AddSingleton<IWandGenerationProvider>(new MobileWandTests.Provider());
             builder.Services.AddSingleton<WandGenerationService>();
-            builder.Services.AddSingleton<GptLiveClient>();
+            if (liveClient is not null) builder.Services.AddSingleton(liveClient);
+            else if (liveSocketFactory is null) builder.Services.AddSingleton<GptLiveClient>();
+            else builder.Services.AddSingleton(new GptLiveClient(builder.Configuration, liveSocketFactory.ConnectAsync));
             builder.Services.AddSingleton<WandDecisionService>();
             builder.Services.AddSingleton(new GptLiveOptions());
             builder.Services.AddSingleton<MobileWandRuntime>();
@@ -784,7 +1089,7 @@ internal static class MobileGameTests
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
-            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands();
+            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
             app.MapGet("/test/csrf", (HttpContext context, IAntiforgery antiforgery) => Results.Json(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
             app.MapPost("/test/login/{id}", async (string id, HttpContext context, AccountDatabase db, SignInManager<AccountUser> signIn) =>
@@ -796,7 +1101,8 @@ internal static class MobileGameTests
                 return Results.NoContent();
             });
             await app.StartAsync();
-            var fixture = new HttpFixture(app, root, certificate, textWorkshopProvider);
+            var fixture = new HttpFixture(app, root, certificate, textWorkshopProvider, liveLog);
+            fixture.LiveSocketFactory = liveSocketFactory;
             await fixture.SeedAsync();
             return fixture;
         }
@@ -835,9 +1141,14 @@ internal static class MobileGameTests
 
         internal HttpClient Client()
         {
-            var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true, UseProxy = false, ServerCertificateCustomValidationCallback = (_, _, _, _) => true };
-            return new HttpClient(handler) { BaseAddress = new Uri(baseAddress) };
+            var cookies = new CookieContainer();
+            var handler = new HttpClientHandler { CookieContainer = cookies, UseCookies = true, UseProxy = false, ServerCertificateCustomValidationCallback = (_, _, _, _) => true };
+            var client = new HttpClient(handler) { BaseAddress = new Uri(baseAddress) };
+            clientCookies.Add(client, cookies);
+            return client;
         }
+
+        internal CookieContainer CookiesFor(HttpClient client) => clientCookies[client];
 
         internal async Task LoginAsync(HttpClient client, string id)
         {
@@ -921,17 +1232,189 @@ internal static class MobileGameTests
         }
     }
 
-    private sealed class TextWorkshopProvider : IMobileWandQuestionProvider
+    private sealed class ScriptedLiveSocketFactory
     {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> events = new();
+        private readonly bool includeSecondTurnAutomatically;
+        private ScriptedLiveSocket? current;
+        internal string Diagnostics => string.Join(",", events);
+
+        internal ScriptedLiveSocketFactory(bool includeSecondTurnAutomatically = true)
+        {
+            this.includeSecondTurnAutomatically = includeSecondTurnAutomatically;
+        }
+
+        internal Task<WebSocket> ConnectAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            current = new ScriptedLiveSocket(events, includeSecondTurnAutomatically);
+            return Task.FromResult<WebSocket>(current);
+        }
+
+        internal void QueueExchange(int turn) => (current ?? throw new InvalidOperationException("The scripted Live socket is not connected.")).QueueExchange(turn);
+    }
+
+    private sealed class ScriptedLiveSocket(System.Collections.Concurrent.ConcurrentQueue<string> events,
+        bool includeSecondTurnAutomatically) : WebSocket
+    {
+        private readonly System.Threading.Channels.Channel<ProviderFrame> input =
+            System.Threading.Channels.Channel.CreateUnbounded<ProviderFrame>();
+        private int delegationCount;
+        private ProviderFrame? current;
+        private int currentOffset;
+        private WebSocketState state = WebSocketState.Open;
+
+        public override WebSocketCloseStatus? CloseStatus => null;
+        public override string? CloseStatusDescription => null;
+        public override WebSocketState State => state;
+        public override string? SubProtocol => null;
+        public override void Abort() => state = WebSocketState.Aborted;
+        public override void Dispose() => state = WebSocketState.Closed;
+        public override Task CloseAsync(WebSocketCloseStatus status, string? description, CancellationToken token)
+        { state = WebSocketState.Closed; return Task.CompletedTask; }
+        public override Task CloseOutputAsync(WebSocketCloseStatus status, string? description, CancellationToken token)
+        { state = WebSocketState.CloseSent; return Task.CompletedTask; }
+        public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType type, bool endOfMessage, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            if (type != WebSocketMessageType.Text || !endOfMessage) throw new InvalidDataException("Unexpected provider command frame.");
+            using var json = JsonDocument.Parse(buffer.AsMemory());
+            var root = json.RootElement;
+            var eventType = root.GetProperty("type").GetString();
+            events.Enqueue("sent:" + eventType);
+            if (eventType == "session.start")
+            {
+                Enqueue(new { type = "session.started", session = new { id = "synthetic-live-session" } });
+            }
+            else if (eventType == "session.commentary.append")
+            {
+                if (!root.TryGetProperty("delegation_id", out var delegationId) || delegationId.ValueKind == JsonValueKind.Null)
+                {
+                    Enqueue(new { type = "session.output_audio.delta", delta = Convert.ToBase64String(new byte[] { 0, 0, 1, 0 }) });
+                    Exchange(1);
+                    if (includeSecondTurnAutomatically) Exchange(2);
+                }
+                else
+                {
+                    var turn = Interlocked.Increment(ref delegationCount);
+                    Enqueue(new { type = "session.output_transcript.delta", event_id = $"assistant-{turn}",
+                        delta = $"Odpověď kufru {turn}.", start_ms = turn * 2000, end_ms = turn * 2000 + 700 });
+                    Enqueue(new { type = "session.output_audio.delta",
+                        delta = Convert.ToBase64String(new byte[] { 2, 0, 3, 0 }) });
+                }
+            }
+            return Task.CompletedTask;
+        }
+
+        public override async Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken token)
+        {
+            current ??= await input.Reader.ReadAsync(token);
+            var count = Math.Min(buffer.Count, current.Bytes.Length - currentOffset);
+            current.Bytes.AsSpan(currentOffset, count).CopyTo(buffer.AsSpan());
+            currentOffset += count;
+            var complete = currentOffset == current.Bytes.Length;
+            var result = new WebSocketReceiveResult(count, WebSocketMessageType.Text, current.EndOfMessage && complete);
+            if (complete)
+            {
+                current = null;
+                currentOffset = 0;
+            }
+            return result;
+        }
+
+        internal void QueueExchange(int turn) => Exchange(turn);
+
+        private void Exchange(int turn)
+        {
+            var text = turn == 1 ? "Nejprve zkontroluji most." : "Pokud selže, opravím cestu.";
+            Enqueue(new { type = "session.input_transcript.delta", event_id = $"user-{turn}", delta = text,
+                start_ms = turn * 1000, end_ms = turn * 1000 + 350 });
+            Enqueue(new { type = "session.delegation.created", delegation = new { target = "client", id = $"delegation-{turn}" } });
+        }
+
+        private void Enqueue(object value)
+        {
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(value);
+            using var json = JsonDocument.Parse(bytes);
+            events.Enqueue("queued:" + json.RootElement.GetProperty("type").GetString());
+            var split = Math.Max(1, bytes.Length / 2);
+            input.Writer.TryWrite(new ProviderFrame(bytes[..split], false));
+            input.Writer.TryWrite(new ProviderFrame(bytes[split..], true));
+        }
+
+        private sealed record ProviderFrame(byte[] Bytes, bool EndOfMessage);
+    }
+
+    internal sealed class TextWorkshopProvider : IMobileWandQuestionProvider
+    {
+        private readonly bool delayFirstReply;
+        private readonly bool delaySecondReply;
+        private readonly bool firstReplyReady;
+        private readonly bool secondReplyReady;
         private int replyCount;
+        private readonly TaskCompletionSource firstReplyStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource secondReplyStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource firstReplyReleased = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource secondReplyReleased = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal int ReplyCount => Volatile.Read(ref replyCount);
 
-        public Task<MobileWandDialogueDraft> ReplyAsync(CharacterConversationSnapshot profile,
+        internal TextWorkshopProvider(bool delayFirstReply = false, bool delaySecondReply = false,
+            bool firstReplyReady = false, bool secondReplyReady = false)
+        {
+            this.delayFirstReply = delayFirstReply;
+            this.delaySecondReply = delaySecondReply;
+            this.firstReplyReady = firstReplyReady;
+            this.secondReplyReady = secondReplyReady;
+        }
+
+        internal Task WaitForReplyAsync(int reply, CancellationToken token) =>
+            (reply == 1 ? firstReplyStarted.Task : secondReplyStarted.Task).WaitAsync(token);
+
+        internal void ReleaseReply(int reply) =>
+            (reply == 1 ? firstReplyReleased : secondReplyReleased).TrySetResult();
+
+        public async Task<MobileWandDialogueDraft> ReplyAsync(CharacterConversationSnapshot profile,
             MobileWandWorkshopMessage[] messages, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            Interlocked.Increment(ref replyCount);
-            return Task.FromResult(new MobileWandDialogueDraft("Zapsal jsem si to. Mapa zatím vede.", false));
+            var reply = Interlocked.Increment(ref replyCount);
+            if (reply == 1)
+            {
+                firstReplyStarted.TrySetResult();
+                if (delayFirstReply) await firstReplyReleased.Task.WaitAsync(token);
+            }
+            else if (reply == 2)
+            {
+                secondReplyStarted.TrySetResult();
+                if (delaySecondReply) await secondReplyReleased.Task.WaitAsync(token);
+            }
+            return new MobileWandDialogueDraft($"Odpověď backendu {reply}.",
+                reply == 1 ? firstReplyReady : reply == 2 && secondReplyReady);
+        }
+    }
+
+    private sealed class SafeWorkshopLogProvider : ILoggerProvider
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> failureCodes = new();
+        internal string[] FailureCodes => failureCodes.ToArray();
+
+        public ILogger CreateLogger(string categoryName) => new SafeWorkshopLogger(failureCodes);
+        public void Dispose() { }
+
+        private sealed class SafeWorkshopLogger(System.Collections.Concurrent.ConcurrentQueue<string> failureCodes) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+                Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                if (state is IEnumerable<KeyValuePair<string, object?>> values
+                    && values.FirstOrDefault(value => value.Key == "FailureCode").Value is string code)
+                {
+                    failureCodes.Enqueue(code);
+                }
+            }
         }
     }
 
