@@ -78,8 +78,10 @@ try {
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
     await page.evaluate(() => window.scrollTo(0, 0));
     const prepareButton = page.getByRole('button', { name: 'Vytvořit hůlku', exact: true });
-    const prepareBox = await prepareButton.boundingBox();
-    assert(prepareBox && prepareBox.y + prepareBox.height <= 844, `${width}: prepare action is in the first viewport`);
+    const portraitBox = await page.locator('.portrait-stage').boundingBox();
+    const handoffBox = await page.locator('.prelaunch-wand').boundingBox();
+    assert(portraitBox && portraitBox.y < 300 && portraitBox.width >= Math.min(width - 32, 300), `${width}: portrait leads the first viewport`);
+    assert(portraitBox && handoffBox && handoffBox.y >= portraitBox.y + portraitBox.height, `${width}: workshop follows the character`);
     assert.equal(await page.locator('.launch-next-step').count(), 0, 'there is one state-aware wand action');
     await page.getByText(/Večer se otevře/).waitFor();
     assert.equal(requests.filter(request => request.method !== 'GET').length, 0, 'reveal and entry only read state');
@@ -113,6 +115,12 @@ try {
         'character recovery does not silently start manufacturing');
     }
     assert.equal(await page.locator('.launch-card').isVisible(), false, 'portrait yields to workshop');
+    const caseBox = await page.locator('.trunk-stage__visual').boundingBox();
+    assert(caseBox && caseBox.width >= Math.min(width - 64, 260), `${width}: case remains the main workshop object`);
+    assert(caseBox && caseBox.y < 300 && caseBox.y + caseBox.height <= 844, `${width}: case is visible without scrolling past duplicate headers`);
+    assert.equal(await page.locator('.launch-masthead').isVisible(), false, 'workshop has one header');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: path.join(output, `case-${width}.png`) }); captures++;
     assert.equal(await page.locator('#workshop-title').evaluate(element => element === document.activeElement), true);
     assert.equal(await page.locator('a[href="/play"]').count(), 0, 'prelaunch workshop stays outside the game');
     await page.getByRole('button', { name: 'Raději psát', exact: true }).click();

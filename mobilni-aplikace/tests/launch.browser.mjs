@@ -259,7 +259,10 @@ try {
   await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByText('Postava je uložená. Ještě jí připravíme portrét.').waitFor();
   assert.equal(await page.getByRole('checkbox').count(), 0);
-  await page.getByRole('button', { name: 'Připravit překvapení' }).click();
+  await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/app/v1/prelaunch/character/retry') && response.request().method() === 'POST'),
+    page.getByRole('button', { name: 'Připravit překvapení' }).click(),
+  ]);
   assert(writes.some(write => write.expectedProfileId === 'legacy-profile' && write.expectedRevision === 8));
 
   await page.goto(`${origin}/signin#invite=fixture-invitation-token-1234567890`, { waitUntil: 'networkidle' });
