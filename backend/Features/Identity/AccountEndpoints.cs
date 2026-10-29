@@ -44,7 +44,7 @@ internal static partial class AccountEndpoints
             try { return await next(invocation); }
             catch (JsonException) { return Error(invocation.HttpContext, "invalid_account_request"); }
         });
-        group.MapGet("/session", SessionAsync);
+        group.MapGet("/session", SessionAsync).RequireRateLimiting(AccountIdentity.SessionRateLimitPolicy);
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled)
         {
             group.Map("/{**path}", (HttpContext context) => ApiProblem.Create(context, 503, "accounts_not_configured"));

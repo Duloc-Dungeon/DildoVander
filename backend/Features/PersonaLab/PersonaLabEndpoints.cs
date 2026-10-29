@@ -140,7 +140,7 @@ internal static class PersonaLabEndpoints
             // A configured allowed origin, rather than Host/forwarded Host, owns the credential destination.
             var url = new UriBuilder(origin) { Scheme = "wss", Path = path.Split('?')[0], Query = "ticket=" + ticket.Token }.Uri.AbsoluteUri;
             return Results.Json(new LabTicket(url, path, ticket.ExpiresAt));
-        });
+        }).WithMetadata(new AccountIdentity.SocketTicketRateLimitMetadata());
         // Cookies are unavailable to the native JS WebSocket. Only a short-lived, one-use
         // account-session ticket authorizes this otherwise anonymous upgrade.
         app.MapGet("/app/v1/persona-lab/sessions/{id}/live", VoiceAsync).AllowAnonymous().RequireRateLimiting("account");

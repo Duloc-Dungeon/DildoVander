@@ -50,7 +50,10 @@ internal sealed record AccountConfiguration(bool Enabled, string DataRoot, strin
 
 internal static class AccountIdentity
 {
+    internal sealed record SocketTicketRateLimitMetadata;
+
     internal const string PollingRateLimitPolicy = "account-poll";
+    internal const string SessionRateLimitPolicy = "account-session";
     internal const string SessionClaim = "dv:account-session";
     internal const string CeremonyCookie = "__Host-dv-ceremony";
     internal static readonly CookieOptions CeremonyCookieOptions = new()
@@ -73,6 +76,8 @@ internal static class AccountIdentity
         });
         services.AddAuthorization();
         var requestsPerMinute = Math.Clamp(configuration.GetValue("ApplicationIdentity:RequestsPerMinute", 40), 10, 120);
+        var readRequestsPerMinute = Math.Clamp(configuration.GetValue("ApplicationIdentity:ReadRequestsPerMinute", 4000), 10, 12000);
+        var socketRequestsPerMinute = Math.Clamp(configuration.GetValue("ApplicationIdentity:WebSocketRequestsPerMinute", 4000), 10, 12000);
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -85,13 +90,14 @@ internal static class AccountIdentity
                     .ExecuteAsync(rejection.HttpContext);
             };
             options.AddPolicy("account", context =>
+                AccountRequestPartition(context, requestsPerMinute, readRequestsPerMinute, socketRequestsPerMinute));
+            // Session verification must remain available even when page polling or
+            // commands have exhausted their own allowances on a shared connection.
+            options.AddPolicy(SessionRateLimitPolicy, context =>
                 RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                    _ => new FixedWindowRateLimiterOptions { PermitLimit = requestsPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
-            // Testing views poll several resources. Keep those reads bounded without
-            // spending the command/sign-in allowance for everyone behind this IP.
+                    _ => new FixedWindowRateLimiterOptions { PermitLimit = readRequestsPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
             options.AddPolicy(PollingRateLimitPolicy, context =>
-                RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                    _ => new FixedWindowRateLimiterOptions { PermitLimit = 240, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+                AccountRequestPartition(context, requestsPerMinute, readRequestsPerMinute, socketRequestsPerMinute));
         });
         // Register schemes even when disabled so existing callers remain anonymous.
         services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
@@ -136,6 +142,26 @@ internal static class AccountIdentity
                 || androidOrigins.Contains(context.Origin, StringComparer.Ordinal));
         });
         return services;
+    }
+
+    private static RateLimitPartition<string> AccountRequestPartition(HttpContext context,
+        int commandsPerMinute, int readsPerMinute, int socketsPerMinute)
+    {
+        // The limiter precedes WebSocket middleware. Recognize HTTP/1 upgrades
+        // and HTTP/2 CONNECT before classifying ordinary reads and commands.
+        var socket = HttpMethods.IsGet(context.Request.Method) && context.Request.Headers.ContainsKey("Upgrade")
+            || HttpMethods.IsConnect(context.Request.Method);
+        var socketTicket = context.GetEndpoint()?.Metadata.GetMetadata<SocketTicketRateLimitMetadata>() is not null;
+        var read = HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method);
+        var budget = socketTicket ? "socket-ticket" : socket ? "socket" : read ? "read" : "command";
+        var permitLimit = socket || socketTicket ? socketsPerMinute : read ? readsPerMinute : commandsPerMinute;
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter($"{ip}:{budget}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimit,
+                Window = TimeSpan.FromMinutes(1), QueueLimit = 0,
+            });
     }
 
     public static async Task InitializeAccountsAsync(this WebApplication app)
