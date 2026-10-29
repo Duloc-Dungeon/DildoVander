@@ -3,15 +3,29 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 const dist = path.resolve(fileURLToPath(new URL('../../dist/', import.meta.url)));
 const id = 'a'.repeat(32);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png', '.ttf': 'font/ttf' };
-export const gameStates = ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'task-without-wand', 'yolo', 'error', 'empty', 'long', 'tactical', 'loadout', 'boss', 'boss-setup', 'captured', 'rescue', 'teams', 'team-choice', 'team-half', 'messages', 'ranking', 'ranking-long', 'ranking-empty', 'ranking-error', 'first-wand', 'upgrade-wand'];
+export const gameStates = ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'task-without-wand', 'yolo', 'error', 'empty', 'long', 'tactical', 'loadout', 'boss', 'boss-setup', 'captured', 'rescue', 'teams', 'team-choice', 'team-half', 'messages', 'ranking', 'ranking-long', 'ranking-empty', 'ranking-error', 'first-wand', 'upgrade-wand', 'wand-moon', 'wand-thorn'];
+const artworkLocator = '11111111-1111-4111-8111-111111111111';
+const artworkAssets = { moon: '22222222-2222-4222-8222-222222222222', thorn: '33333333-3333-4333-8333-333333333333' };
+const artworkHashes = Object.fromEntries(await Promise.all(['moon', 'thorn'].map(async kind => [kind,
+  createHash('sha256').update(await readFile(new URL(`./generated-wands/${kind}.png`, import.meta.url))).digest('hex')])));
+function wandSnapshot(kind) {
+  return { wandId: 'synthetic-saved-wand', physicalSlot: 2, name: kind === 'thorn' ? 'Trnová námitka' : 'Měsíční účetní',
+    material: kind === 'thorn' ? 'Trnka a měď' : 'Stříbrný jasan', core: 'Křemen', temperament: 'Syntetická ukázka',
+    lore: 'Fiktivní hůlka pro lokální náhled.', designDescription: 'Celá svislá hůlka na průhledném pozadí.',
+    affinity: kind === 'thorn' ? 'Žhavé uhlíky' : 'Měsíční světlo', weakness: 'Úřední hodiny',
+    spells: ['strike', 'trick', 'shield'].map(action => ({ action, name: `Ukázkové ${action}`, description: 'Syntetické kouzlo.' })) };
+}
 function match(state) {
   if (state === 'task-without-wand') state = 'adult';
+  const opponentKind = state === 'wand-thorn' ? 'moon' : 'thorn';
   return { id, mode: state === 'yolo' ? 'yolo' : ['tactical','loadout'].includes(state) ? 'tactical' : state === 'boss' ? 'boss' : 'quick', status: ['result', 'early-result', 'adult', 'yolo'].includes(state) ? 'complete' : state === 'incoming' ? 'incoming' : 'active',
     revision: 3, canAccept: state === 'incoming', canCancel: false,
-    opponent: { id: 'two', displayName: state === 'long' ? 'Eliška z NeuvěřitelněDlouhéhoKouzelnickéhoRodu' : 'Eliška', xp: 24, matchesPlayed: 3 },
+    opponent: { id: 'two', displayName: state === 'long' ? 'Eliška z NeuvěřitelněDlouhéhoKouzelnickéhoRodu' : 'Eliška', xp: 24, matchesPlayed: 3,
+      ...(!['boss', 'yolo'].includes(state) ? { wandArtworkUrl: `/app/v1/game/matches/${id}/opponent/wand-artwork?revision=${artworkHashes[opponentKind]}`, wandName: wandSnapshot(opponentKind).name, wandSynthetic: true } : {}) },
     rounds: ['result', 'adult'].includes(state) ? [{ index: 1, playerChoice: 'trick', opponentChoice: 'shield', winner: 'player', playerPoints: 2, opponentPoints: 0 }] : [],
     completedRounds: state === 'early-result' ? 4 : ['result', 'adult'].includes(state) ? 7 : 0, totalRounds: ['tactical','loadout'].includes(state) ? 8 : state === 'boss' ? 12 : 7, block: 1,
     playerScore: state === 'early-result' ? 4 : state === 'adult' ? 3 : state === 'result' ? 5 : 0, opponentScore: state === 'adult' ? 5 : state === 'result' ? 3 : 0,
@@ -33,12 +47,20 @@ function teamMatch(state, halftimeEndsAt) {
 export async function createGameFixtureServer(port = 0) {
   const requests = [];
   const taskOutcomes = new Map();
+  const previewRounds = new Map();
   let halftimeEndsAt;
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     const state = /(?:^|; )game-fixture=([^;]+)/.exec(request.headers.cookie ?? '')?.[1] ?? 'lobby';
     const matchSnapshot = () => {
       const snapshot = match(state);
+      const rounds = previewRounds.get(state);
+      if (rounds) {
+        snapshot.rounds = rounds; snapshot.completedRounds = rounds.length; snapshot.revision = 3 + rounds.length;
+        snapshot.playerScore = rounds.filter(round => round.winner === 'player').length;
+        snapshot.opponentScore = rounds.filter(round => round.winner === 'opponent').length;
+        if (rounds.length >= 7) { snapshot.status = 'complete'; snapshot.result = snapshot.playerScore > snapshot.opponentScore ? 'win' : snapshot.playerScore < snapshot.opponentScore ? 'loss' : 'draw'; }
+      }
       if (snapshot.partyTask && taskOutcomes.has(state)) snapshot.partyTask.status = taskOutcomes.get(state);
       return snapshot;
     };
@@ -46,6 +68,7 @@ export async function createGameFixtureServer(port = 0) {
     if (url.pathname.startsWith('/__game/')) {
       const selected = url.pathname.split('/').at(-1); if (!gameStates.includes(selected)) return json({}, 404);
       taskOutcomes.delete(selected);
+      previewRounds.delete(selected);
       if (selected === 'team-half') halftimeEndsAt = Math.floor(Date.now() / 1000) + 15;
       const destinations = {challenge:'/play/challenge',lobby:'/play',empty:'/play','boss-setup':'/play/boss',boss:`/play/boss/${id}`,captured:'/play/keeper',rescue:'/play/keeper',teams:'/play/teams','team-choice':`/play/team/${id}`,'team-half':`/play/team/${id}`,messages:'/play/messages',ranking:'/play/ranking','first-wand':'/play','upgrade-wand':'/play/keeper'};
       const destination = destinations[selected] ?? `/play/match/${id}`;
@@ -53,6 +76,20 @@ export async function createGameFixtureServer(port = 0) {
     }
     if (url.pathname === '/app/v1/session') return json({ enabled: true, account: { id: 'one', displayName: 'Mira', roles: ['Customer'], openAiConsent: true }, csrfToken: 'synthetic' });
     if (url.pathname === '/app/v1/customer/wand') return json({hasCharacter: true, wand: ['first-wand', 'task-without-wand'].includes(state) ? null : {wandId:'synthetic-saved-wand'}, tier: ['first-wand', 'task-without-wand'].includes(state) ? 0 : state === 'upgrade-wand' ? 1 : 2});
+    const wandKind = state === 'wand-thorn' ? 'thorn' : 'moon';
+    if (url.pathname === '/app/v1/customer/character') return json({ generatedWand: wandSnapshot(wandKind),
+      artwork: { locator: artworkLocator, assetId: artworkAssets[wandKind], status: 'ready', version: 1, synthetic: true } });
+    if (url.pathname.startsWith(`/app/v1/archive/owned/${artworkLocator}/assets/`)) {
+      if (url.pathname !== `/app/v1/archive/owned/${artworkLocator}/assets/${artworkAssets[wandKind]}`) return json({}, 404);
+      response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      response.end(await readFile(new URL(`./generated-wands/${wandKind}.png`, import.meta.url))); return;
+    }
+    if (url.pathname === `/app/v1/game/matches/${id}/opponent/wand-artwork`) {
+      const kind = wandKind === 'moon' ? 'thorn' : 'moon';
+      if (request.method !== 'GET' || url.search !== `?revision=${artworkHashes[kind]}`) return json({}, 404);
+      response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      response.end(await readFile(new URL(`./generated-wands/${kind}.png`, import.meta.url))); return;
+    }
     if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'synthetic', accessRevision: 1 });
     if (url.pathname === '/app/v1/launch') return json({ allowed: true });
     if (url.pathname === '/app/v1/game') return json({ player: { id: 'one', displayName: 'Mira', xp: 40, matchesPlayed: 5, tacticalUnlocked: true, yoloUnlocked: true, hasWand: state !== 'first-wand', wandTier: state === 'upgrade-wand' ? 1 : 2 },
@@ -80,6 +117,15 @@ export async function createGameFixtureServer(port = 0) {
         const chunks = []; for await (const chunk of request) chunks.push(chunk);
         const body = JSON.parse(Buffer.concat(chunks).toString());
         requests.push({ path: url.pathname, body });
+        if (['wand-moon', 'wand-thorn'].includes(state) && url.pathname.endsWith('/choose')) {
+          const rounds = previewRounds.get(state) ?? [];
+          if (!['strike', 'trick', 'shield'].includes(body.choice) || rounds.length >= 7) return json({}, 409);
+          const opponentChoice = ['shield', 'trick', 'strike'][rounds.length % 3];
+          const winner = body.choice === opponentChoice ? 'draw' : { strike: 'trick', trick: 'shield', shield: 'strike' }[body.choice] === opponentChoice ? 'player' : 'opponent';
+          rounds.push({ index: rounds.length + 1, playerChoice: body.choice, opponentChoice, winner, playerPoints: winner === 'player' ? 1 : 0, opponentPoints: winner === 'opponent' ? 1 : 0 });
+          previewRounds.set(state, rounds);
+          return json(matchSnapshot());
+        }
         if (url.pathname.endsWith('/task')) {
           taskOutcomes.set(state, body.taskAction === 'done' ? 'done' : 'skipped');
           return json({ ...matchSnapshot(), revision: 4 });

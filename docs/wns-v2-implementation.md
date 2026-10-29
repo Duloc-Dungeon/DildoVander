@@ -43,6 +43,42 @@
   podpory a památek používají tykání. Ověření a jeho limity se uvádějí v dodání
   této změny; historické výsledky níže nejsou jejím automatickým potvrzením.
 
+## Osobní hůlky v herním souboji — 29. října 2026
+
+- `GameClash.vue` používá celé průhledné PNG 2:3. Hrot určuje z alfa kanálu;
+  zdrojovou kresbu neořezává ani nepřebarvuje. Úder, lest a štít mají odlišnou
+  stopu, krátký světelný náraz a částice. Efekt trvá nejvýše dvě sekundy,
+  neblokuje další tah a neopakuje se při pollingu ani otevření historie.
+  Omezený pohyb, skrytí a opuštění scény animaci vypnou.
+- Vlastní obrázek přichází ze stávajícího autorizovaného odkazu aktuální
+  postavy. Odpověď `GET /app/v1/game/matches/{id}` může nově obsahovat
+  `opponent.wandArtworkUrl`, `wandName` a `wandSynthetic`. Pole jsou volitelná;
+  bez přístupného obrázku klient zobrazí neutrální obrys.
+- Obrazová cesta je `GET /app/v1/game/matches/{id}/opponent/wand-artwork?revision={sha256}`.
+  Ověřuje skupinu a účastníka zápasu, aktuální vybranou hůlku soupeře,
+  platné vlastnictví památky, schválení aktuální publikované edice a přesný
+  kanonický PNG se stejnou revizí. Přijetí souboje nenahrazuje souhlas
+  se zveřejněním. Neplatná nebo odvolaná reference vrací 404.
+  Odpověď používá `no-store` a `nosniff`; identifikátory vlastníkovy památky
+  ani privátní cesty úložiště se soupeři neposílají.
+- Jde o aktuální stav postavy, nikoli obrázek zmrazený při zahájení zápasu.
+  Změna či odvolání zveřejnění se projeví při dalším ověření stavu; obrazový
+  endpoint kontroluje oprávnění znovu při každém čtení. Metadata při pollingu
+  nenačítají celé PNG. Web/iOS/Android povolují jen přesnou obrazovou cestu
+  a stávající limit obrazových přenosů; klient nepřijímá libovolné URL.
+- `tests/fixtures/generated-wands/` obsahuje dvě syntetické PNG vytvořené
+  vestavěným ImageGen podle `KeepsakeProvider.BuildWandImagePrompt`.
+  `generation.json` uchovává prompty, fiktivní návrhy a kontrolní součty.
+  Fixture server je podává odděleně od aplikačního balíku; nejsou produkčním
+  výsledkem hráče. Náhledy: `/__game/wand-moon` a `/__game/wand-thorn`.
+
+Pro lokální ověření slouží `node tests/game-clash.browser.mjs` z mobilní
+aplikace a backendová skupina `--game-wand-artwork`. Prošly také stávající
+herní browserové scénáře v pěti šířkách včetně 200% textu a omezeného pohybu.
+Skupina `--mobile-game-http` ověřuje i schválený PNG přes skutečnou HTTP cestu,
+jeho přesné bajty a hlavičky a zneplatnění původního odkazu po odvolání publikace.
+Tyto kontroly nenahrazují nativní iOS sestavení a přejímku na telefonu.
+
 ## Výchozí stav
 
 - Balíček: edice 2.0, SHA-256 v `../DESIGN.md`; inventura `8c202e5`.

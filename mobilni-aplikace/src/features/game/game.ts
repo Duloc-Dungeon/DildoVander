@@ -10,7 +10,7 @@ export const actions: { id: Choice; name: string; beats: string }[] = [
 ];
 export const actionName = (choice?: string | null) => actions.find(action => action.id === choice)?.name ?? '—';
 export const modeName = (mode: string) => ({ quick: 'Rychlý duel', tactical: 'Taktický duel', yolo: 'YOLO lóže', boss: 'Baron Šarlatán' })[mode] ?? mode;
-export interface Opponent { id: string; displayName: string; xp: number; matchesPlayed: number; hasWand?: boolean; wandTier?: number; tacticalUnlocked?: boolean }
+export interface Opponent { id: string; displayName: string; xp: number; matchesPlayed: number; hasWand?: boolean; wandTier?: number; tacticalUnlocked?: boolean; wandArtworkUrl?: string | null; wandName?: string | null; wandSynthetic?: boolean }
 export interface Inventory { strike: number; trick: number; shield: number }
 export interface Round { index: number; playerChoice: string; opponentChoice: string; winner: string; playerSparkBid?: number; opponentSparkBid?: number; playerPoints?: number; opponentPoints?: number; points?: number; reason?: string }
 export interface PartyTask { title: string; text: string; category: string; status: string; exchangeCount?: number }

@@ -12,6 +12,9 @@ import GameLoadouts from './GameLoadouts.vue';
 import GameRanking from './GameRanking.vue';
 import GameRules from './GameRules.vue';
 import GameSpellToken from './GameSpellToken.vue';
+import GameClash from './GameClash.vue';
+import { useGameWandArtwork } from './useGameWandArtwork';
+import { useOpponentWandArtwork } from './useOpponentWandArtwork';
 import { account, accountRequest } from '../identity/session';
 import { actions, actionName, modeName, gameRequest, gameErrorText, GameError, operation, practiceRound,
   type Choice, type GameMode, type Lobby, type Match, type Round, type BossProfile, type Progress, type Milestone } from './game';
@@ -22,7 +25,10 @@ import { wnsSound } from '../../application/wnsSound';
 const route = useRoute();
 const router = useRouter();
 const lobby = ref<Lobby>();
-const wandStatus = ref<{hasCharacter: boolean; wand: unknown; tier: number}>();
+interface GameWandStatus { hasCharacter: boolean; wand: { wandId?: string } | null; tier: number; characterDisplayName?: string | null }
+const wandStatus = ref<GameWandStatus>();
+const playerWand = useGameWandArtwork();
+const opponentWand = useOpponentWandArtwork();
 const bossProfile = ref<BossProfile>();
 const progress = ref<Progress>();
 const progressError = ref('');
@@ -110,16 +116,19 @@ function updateMatch(value: Match) {
     taskOutcome.value = undefined;
   }
   match.value = value;
+  void opponentWand.refresh(value);
 }
 async function refresh() {
   if (refreshing || busy.value) return;
   refreshing = true;
   const token = generation;
   try {
-    const currentWand = await accountRequest<{hasCharacter: boolean; wand: unknown; tier: number; characterDisplayName?: string | null}>('/app/v1/customer/wand', 'GET', undefined, controller.signal);
+    const currentWand = await accountRequest<GameWandStatus>('/app/v1/customer/wand', 'GET', undefined, controller.signal);
     if (token !== generation) return;
     labeledPlayerName.value = currentWand.characterDisplayName ?? null;
     wandStatus.value = currentWand;
+    if (practice.value || matchId.value) void playerWand.refresh(currentWand.wand?.wandId);
+    else playerWand.clear();
     if ((!currentWand.wand && !bossSetup.value && !bossAttempt.value && !readOnly.value) || practice.value) {
       if (!currentWand.wand && matchId.value) {
         const current = await gameRequest<Match>(`${bossAttempt.value ? '/boss/attempts' : '/matches'}/${encodeURIComponent(matchId.value)}`, undefined, controller.signal);
@@ -160,6 +169,7 @@ async function refresh() {
       error.value = gameErrorText(cause);
       if (cause instanceof GameError && [401, 403, 404].includes(cause.status)) {
         match.value = undefined; lobby.value = undefined; progress.value = undefined; bossProfile.value = undefined;
+        playerWand.clear(); opponentWand.clear();
       }
     }
   } finally {
@@ -247,6 +257,8 @@ function available(choice: Choice) {
 }
 function onVisible() { if (!document.hidden) void refresh(); }
 watch(() => route.fullPath, () => {
+  playerWand.clear();
+  opponentWand.clear();
   generation++; controller.abort(); controller = new AbortController();
   match.value = undefined; taskOutcome.value = undefined; selected.value = undefined;
   error.value = ''; notice.value = ''; progressError.value = ''; bossProfile.value = undefined;
@@ -355,7 +367,7 @@ onBeforeUnmount(() => {
             <p class="game-round-label">{{ completed ? 'Dohráno' : `Výměna ${Math.min((practice ? practiceRounds.length : match!.completedRounds) + 1, practice ? 7 : match!.totalRounds)} ze ${practice ? 7 : match!.totalRounds}` }}<span v-if="match?.mode === 'tactical'"> · blok {{ match.block }}</span></p>
             <div class="game-round-dots" aria-hidden="true"><span v-for="round in roundCount" :key="round" :class="{ done: round <= completedRoundCount, current: !completed && round === completedRoundCount + 1 }" /></div>
             <div class="game-table-stage" :class="{ 'game-table-stage--complete': completed }">
-            <div class="game-clash-stage" :key="`clash-${completedRoundCount}`" :class="{ 'game-clash-stage--revealed': lastRound, 'game-clash-stage--locked': match?.ownChoiceLocked }" aria-hidden="true"><span v-if="match?.ownChoiceLocked">Tah uzamčený<span>Čekáme na soupeře</span></span></div>
+            <GameClash :key="practice ? 'practice' : match?.id" :round="lastRound" :locked="match?.ownChoiceLocked" :wand-url="playerWand.url.value" :wand-name="playerWand.name.value" :synthetic="playerWand.synthetic.value" :opponent-wand-url="opponentWand.url.value" :opponent-wand-name="match?.opponent.wandName ?? undefined" :opponent-synthetic="match?.opponent.wandSynthetic" />
             <PaperSurface v-if="lastRound" class="game-paper game-reveal" :key="completedRoundCount" aria-live="polite" aria-atomic="true">
               <p class="game-eyebrow">{{ lastRound ? 'Poslední odhalení' : 'Tři kouzla. Jedna volba.' }}</p>
               <p v-if="lastRound">{{ roundText(lastRound) }}</p>
