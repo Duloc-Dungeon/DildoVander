@@ -270,8 +270,20 @@ Pauza a selhání mají vlastní stav, nikoli nabídku dalšího rozhovoru běhe
 Kufr i sedm segmentů reagují pouze na skutečně přehrávaný výstup z existujícího
 analyzéru. Mimo stav řeči je úroveň vždy nulová, včetně Stop. Žádný nový přístup
 k mikrofonu, zvuk, poskytovatel nebo placená generace se kvůli efektu nespouští.
-Přechody jsou lokální CSS/Vue; výsledek i ovládání fungují bez čekání na animaci.
-Omezený pohyb vypíná posuny, škálování, přechody a pohyb indikátoru výroby.
+`WandRevealField.vue` po načtení skutečné ilustrace přidává jednorázovou
+sekvenci Motion (`motion-v`, 4,2 s): velkou svislou hůlku uprostřed okna,
+podélné světlo, tři vzestupná vlákna a jemné částice. Potom se ilustrace
+plynule usadí do skutečné karty. Karta výsledku se při příchodu neposouvá.
+Vrstva je přes Teleport přímo pod `body`; samostatné neprůhledné pozadí
+zakrývá okno už před prvním vykreslením Canvas. Celý obal zůstává pevný,
+včetně horní hrany. Dotyk nebo kurzor pouze vychýlí probíhající vlákna;
+návrat ukazatele už odhalení nepřehraje. Pasivní sledování zachovává posun
+stránky; posun nebo změna rozměrů efekt ukončí a ukáže statický výsledek.
+Odhalení portrétu v čekárně i při příchodu postavy používá společnou oponu
+Motion přes celé okno. Její švestkové záhyby mají přesah 2 px a obal se nehýbe.
+Pole se zastaví mimo výřez a při skrytí stránky; při opakovaně pomalém
+vykreslování nebo chybějícím Canvas zůstane statická ilustrace. Omezený pohyb
+vypíná částice, posuny, škálování, přechody a pohyb indikátoru výroby.
 
 Na telefonu má scéna stejný kompaktní rozměr při naslouchání, řeči i psaní;
 neřídí se měnící se výškou okna Safari. Průběžný přepis má vlastní posuvnou
@@ -280,9 +292,19 @@ společnou skupinu se stálým místem pro ovládání. Čtečka oznamuje
 potvrzené textové odpovědi v samostatné živé oblasti, nikoli streamované útržky.
 Plocha ilustrace zachovává rozměry i při načítání nebo chybě; místo obrázku
 ukáže skutečný stav a dostupné opakování. Dokončení přesune fokus bez posunu stránky.
+Hotová hůlka používá větší svislou scénu 2:3 stejně v dílně i v čekárně.
+Hlavní návrat pod ilustrací může na telefonu vyžadovat posun; sekundární návrat
+v záhlaví zůstává nahoře. Dosažitelnost hlavní akce ověřuje i klávesnicový test.
+
+Jedna skutečná placená reference z produkčního obrazového promptu, její přesný
+prompt a doklad generace jsou v
+[`wand-reveal-reference`](../mobilni-aplikace/tests/fixtures/wand-reveal-reference/README.md).
+`npm run preview:wand-reveal` (případně `-- --waiting-room`) servíruje tuto
+uloženou ilustraci v testovací relaci; nespouští placená volání.
 
 Ověření: `npm test`, `npm run build`, `npm run test:wand:browser`,
 `npm run test:wand-upgrade-voice:browser` a `npm run test:living-trunk:browser`
 z `mobilni-aplikace/`. Poslední scénář posílá syntetické PCM do skutečného
-browserového přehrávače, ověřuje měřenou reakci, Stop, omezený pohyb a všechny
+browserového přehrávače, ověřuje měřenou reakci, Stop, konečné odhalení,
+dotyk/kurzor, omezený pohyb a všechny
 fáze na šířkách 390/768/1280 px. Lokální fixture není důkaz živé AI ani telefonu.

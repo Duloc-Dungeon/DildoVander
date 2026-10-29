@@ -403,8 +403,15 @@ nikoli nová globální varianta všech karet.
 Osobní věta vedle portrétu má výraznou sazbu (`clamp(1.4rem, 5vw, 2.1rem)`,
 váha 650, řádkování 1,4) a krátkou čtecí míru (28 ch). Stav přípravy je
 samostatný, aby vtip nezastoupil informaci nebo chybu. `PortraitCurtain`
-ponechává jeden místní pohyb opony (1,1 s), při omezeném pohybu statické
-odhalení. Při chybě zobrazuje ikonu postavy a doslovný náhradní text.
+otevírá jednu oponu přes celý výřez okna (1,1 s); stejný `ViewportCurtain`
+používá příchod postavy (1,2 s). Opona se přes Vue Teleport vykresluje přímo
+pod `body`, takže ji neořízne karta, sloupec ani transformovaný rodič.
+Před otevřením má dva snímky pro ustavení neprůhledného zavřeného stavu.
+Průběh řídí Motion (`motion-v`); pevná vrstva se neposouvá ani neotáčí.
+Tmavé švestkové záhyby nahrazují obrysové dveřní panely a mají přesah 2 px
+za okraje okna, včetně horní hrany při neceločíselném škálování.
+Při omezeném pohybu zůstává statické odhalení bez této vrstvy. Při chybě
+se zobrazuje ikona postavy a doslovný náhradní text.
 Čekárna po dokončení uchovává osobní větu i přístup k uložené hůlce;
 přehrání scény samo nevyrábí nový obsah.
 
@@ -435,17 +442,35 @@ naslouchání neaktivní. Skupina nepřekrývá obsah při posouvání stránky.
 U hotové hůlky není samostatné tlačítko pro přehrání verdiktu.
 Uložený stav a materiál předcházejí
 hlavní akci, verdikt následuje za ní. V ověřeném předstartovním průchodu je
-akce návratu dostupná v první obrazovce také na 320 px při běžné velikosti textu.
+sekundární návrat v záhlaví dostupný v první obrazovce také na 320 px. Hlavní
+pokračovací akce pod větší svislou ilustrací může vyžadovat posun; zůstává
+dosažitelná klávesnicí i dotykem a nikdy nečeká na animaci.
 Při 200% textu zůstává průchod bez vodorovného přetékání, bez slibu všeho nad přehybem.
 
 **Pohyb následuje skutečnost.** Kufr a sedm segmentů reagují jen na měřený
 výstup právě přehrávané řeči, s lineární odezvou (100 ms). Mimo stav řeči je
 vstupní úroveň nulová; scéna nesimuluje hlas náhodou ani nesnímá nový mikrofon.
 Indikátor výroby se pohybuje pouze při potvrzené výrobě, bez odhadu zbývajícího
-času. Předání scény používá příchod (650 ms) a odchod (200 ms); dekódovaná
-ilustrace má vlastní příchod (850 ms). Jde o místní hodnoty `TrunkStage`,
+času. Kufr používá příchod (650 ms) a odchod (200 ms); hotový výsledek má
+jen místní změnu krytí (180 ms), bez posunu nebo ořezu. Dekódovaná ilustrace
+má vlastní jednorázové odhalení (4,2 s). Jde o místní hodnoty `TrunkStage`,
 nikoli novou společnou délku animací. Omezený pohyb zachovává plnohodnotnou
 statickou scénu, obsah i okamžitě dostupné akce.
+
+Hotová ilustrace má větší svislou scénu 2:3, podle produkčního obrazového
+promptu. Po načtení se skutečná autorizovaná ilustrace představí uprostřed
+celého okna: podélné světlo, tři vzestupná vlákna, jemné částice a uložený
+název. Motion vede jednu sekvenci a nakonec hůlku plynule usadí do její
+skutečné karty. Celá sekvence trvá 4,2 s. Žádné kruhové ciferníky ani radiální
+paprsky. Neprůhledné úvodní zakrytí je samostatná DOM plocha, nikoli vymazávaný
+Canvas; pevná vrstva má přesah 2 px a její poloha se neanimuje.
+Dotyk nebo kurzor pouze vychýlí probíhající vlákna; po uklidnění nic nepřehraje.
+Dekorativní vrstva nemění obrazový soubor, nespouští výrobu ani nový zvuk.
+Canvas používá nejvýše 72 částic pod 600 px a 112 na širším okně, hustotu
+vykreslení nejvýše 1,5. Při pomalém vykreslování zůstane statický výsledek.
+Posun nebo změna velikosti okna efekt ukončí, aby se neusazoval do staré pozice.
+Skrytí stránky, odchod scény z výřezu i omezený pohyb ji ihned zastaví;
+chybějící Canvas ponechá úplný statický výsledek. Nevzniká nový zvuk.
 
 Potvrzené textové odpovědi oznamuje samostatná zdvořilá živá oblast;
 streamované útržky se průběžně nepředčítají. Vlastnosti, kouzla a uložený

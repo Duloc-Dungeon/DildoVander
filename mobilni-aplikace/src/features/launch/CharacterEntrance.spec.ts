@@ -1,12 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import CharacterEntrance from './CharacterEntrance.vue';
+vi.mock('motion-v', async () => {
+  const { ref } = await import('vue');
+  return { useAnimate: () => [ref(null), (sequence: any[]) => {
+    let completion: ReturnType<typeof setTimeout> | undefined;
+    return {
+      then: (callback: () => void) => { completion = setTimeout(callback, sequence[0][2].duration * 1000); },
+      stop: () => { if (completion !== undefined) clearTimeout(completion); },
+    };
+  }] };
+});
 
 const character = { profileId: 'synthetic', revision: 1, name: 'Raven', universe: 'Fiction', status: 'ready' };
 const welcome = { joke: 'PERSONAL JOKE', identity: 'CHARACTER IDENTITY', teaser: 'NEXT SCENE' };
 const initial = { character: null, artwork: null, image: '', failed: false, readFailed: false, active: true, busy: false };
-beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+let reduced = false;
+beforeEach(() => {
+  reduced = false;
+  vi.useFakeTimers();
+  vi.stubGlobal('matchMedia', () => ({ matches: reduced, addEventListener() {}, removeEventListener() {} }));
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 16));
+  vi.stubGlobal('cancelAnimationFrame', (handle: number) => clearTimeout(handle));
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('progressive character entrance', () => {
   it('keeps the general introduction when generated text contains a serialized null', async () => {
@@ -54,6 +71,31 @@ describe('progressive character entrance', () => {
       expect(view.get('.entrance-portrait').attributes('aria-hidden')).toBe('false');
       expect(view.text()).toContain(welcome.identity);
       expect(view.find('.entrance-continue').exists()).toBe(true);
+      expect(document.body.querySelector('.viewport-curtain')?.getAttribute('aria-hidden')).toBe('true');
+      await vi.advanceTimersByTimeAsync(1232);
+      expect(document.body.querySelector('.viewport-curtain')).toBeNull();
+    } finally { view.unmount(); }
+  });
+  it('cancels an in-flight viewport curtain when the entrance leaves foreground without replaying it', async () => {
+    const view = mount(CharacterEntrance, { props: { ...initial, character, image: 'blob:decoded' } });
+    try {
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(view.attributes('data-entrance')).toBe('portrait');
+      expect(document.body.querySelector('.viewport-curtain')).not.toBeNull();
+      await view.setProps({ active: false });
+      expect(document.body.querySelector('.viewport-curtain')).toBeNull();
+      await view.setProps({ active: true });
+      expect(view.attributes('data-entrance')).toBe('portrait');
+      expect(document.body.querySelector('.viewport-curtain')).toBeNull();
+    } finally { view.unmount(); }
+  });
+  it('skips the viewport curtain when reduced motion is requested', async () => {
+    reduced = true;
+    const view = mount(CharacterEntrance, { props: { ...initial, character, image: 'blob:decoded' } });
+    try {
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(view.attributes('data-entrance')).toBe('portrait');
+      expect(document.body.querySelector('.viewport-curtain')).toBeNull();
     } finally { view.unmount(); }
   });
   it.each(['failed', 'read-failed', 'not-requested'])('offers one manual retry then continuation without a delay after %s', async cause => {

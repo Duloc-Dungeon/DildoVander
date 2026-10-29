@@ -5,14 +5,15 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { createWorkshopFixtureServer } from './fixtures/wand-workshop.mjs';
+import { installTopPaintProbe, assertCoveredTop, removeTopPaintProbe } from './helpers/reveal-paint.mjs';
 const output = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'wns-living-trunk');
 await mkdir(output, { recursive: true });
-const fixture = await createWorkshopFixtureServer();
+const fixture = await createWorkshopFixtureServer(0, { reference: true });
 const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 const errors = [];
 try {
   for (const width of [390, 768, 1280]) {
-    const context = await browser.newContext({ viewport: { width, height: 900 }, permissions: ['microphone'] });
+    const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: width === 1280 ? 1.25 : 1, hasTouch: width < 850, permissions: ['microphone'] });
     let socket;
     await context.route('**/workshop/sessions/*/ticket', route => {
       const url = new URL(route.request().url()); url.protocol = 'ws:'; url.pathname = url.pathname.replace('/ticket', '/live'); url.searchParams.set('ticket', 'synthetic');
@@ -48,14 +49,65 @@ try {
     await page.screenshot({ path: path.join(output, `forging-${width}.png`), fullPage: true });
     socket.send(JSON.stringify({ type: 'ended' }));
     await page.getByText('Hůlka je uložená a připravená ke hře.', { exact: true }).waitFor();
+    await installTopPaintProbe(page);
     await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.trunk-stage__wand')?.naturalWidth > 0);
-    await page.locator('.trunk-stage__wand').evaluate(async img => Promise.all(img.getAnimations().map(a => a.finished)));
+    const field = page.locator('.wand-reveal-field');
+    await field.waitFor({ state: 'visible' });
+    assert.equal(await field.getAttribute('aria-hidden'), 'true');
+    const bounds = await page.locator('.trunk-stage__artwork').boundingBox();
+    assert(bounds && bounds.height > bounds.width, 'portrait illustration has a tall stage');
+    {
+      const viewportLayer = await field.evaluate(canvas => {
+        const root = canvas.closest('.wand-reveal-viewport');
+        const rect = root.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+          viewportWidth: document.documentElement.clientWidth, viewportHeight: innerHeight, inBody: root.parentElement === document.body,
+          transform: getComputedStyle(root).transform };
+      });
+      assert.equal(viewportLayer.inBody, true, 'cinematic stage escapes all card clipping ancestors');
+      assert(viewportLayer.left <= 0 && viewportLayer.top <= 0
+        && viewportLayer.width + viewportLayer.left >= viewportLayer.viewportWidth
+        && viewportLayer.height + viewportLayer.top >= viewportLayer.viewportHeight, 'stage covers the full window with edge overscan');
+      assert.equal(viewportLayer.transform, 'none', 'the covering shell never moves');
+    }
+    await assertCoveredTop(page, path.join(output, `opaque-opening-${width}.png`));
+    await removeTopPaintProbe(page);
+    if (width < 850) await page.touchscreen.tap(bounds.x + bounds.width * .3, bounds.y + bounds.height * .4);
+    else await page.mouse.move(bounds.x + bounds.width * .3, bounds.y + bounds.height * .4);
+    await page.waitForFunction(() => document.querySelector('.wand-reveal-object')?.getAnimations().some(a => a.currentTime > 1300));
+    assert.equal(await field.getAttribute('data-state'), 'active');
+    await page.screenshot({ path: path.join(output, `reveal-active-${width}.png`) });
+    const landingHandle = await page.waitForFunction(() => {
+      const hero = document.querySelector('.wand-reveal-object');
+      if (!hero?.getAnimations().some(animation => animation.currentTime >= 3950)) return false;
+      const source = document.querySelector('.trunk-stage__wand');
+      const presented = hero.getBoundingClientRect();
+      const original = source.getBoundingClientRect();
+      return { left: presented.left - original.left, top: presented.top - original.top,
+        width: presented.width - original.width, height: presented.height - original.height };
+    });
+    const landing = await landingHandle.jsonValue();
+    assert(Object.values(landing).every(delta => Math.abs(delta) < 4), 'the hero lands on the original artwork without a positional snap');
+    await page.waitForFunction(() => document.querySelector('.wand-reveal-field')?.dataset.state === 'settled');
+    // Returning to the artwork must never restart the completed reveal.
+    await page.mouse.move(0, 0);
+    if (width < 850) await page.touchscreen.tap(bounds.x + bounds.width * .3, bounds.y + bounds.height * .4);
+    else await page.mouse.move(bounds.x + bounds.width * .3, bounds.y + bounds.height * .4);
+    if (width < 850) await page.touchscreen.tap(bounds.x + bounds.width * .3, bounds.y + bounds.height * .4);
+    else await page.mouse.click(bounds.x + bounds.width * .3, bounds.y + bounds.height * .4);
+    assert.equal(await field.getAttribute('data-state'), 'settled');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.waitForFunction(() => document.querySelector('.wand-reveal-field')?.dataset.state === 'disabled');
+    assert.equal(await field.isVisible(), false);
+    assert.equal(await page.locator('.trunk-stage__wand').evaluate(img => getComputedStyle(img).opacity), '1');
+    await page.screenshot({ path: path.join(output, `reveal-reduced-${width}.png`), fullPage: true });
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
     assert.equal(await page.locator('[aria-current="step"]').textContent(), 'Tvoje hůlka');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: path.join(output, `result-${width}.png`), fullPage: true });
     await context.close();
   }
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', widths: [390, 768, 1280], realPlaybackMeter: true, stopAboveNavigation: true, reducedMotion: true, liveProviderCalls: 0, output }));
+  console.log(JSON.stringify({ result: 'passed', widths: [390, 768, 1280], realPlaybackMeter: true, stopAboveNavigation: true, reducedMotion: true, finiteReveal: true, noHoverReplay: true, touchAndPointer: true, savedPaidReference: true, liveProviderCalls: 0, output }));
 } finally { await browser.close(); await new Promise(resolve => fixture.server.close(resolve)); }

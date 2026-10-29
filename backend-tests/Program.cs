@@ -39,6 +39,8 @@ if (args is ["--sealed-case-runtime"])
     await SealedCaseHttpTests.ScenarioVariantsAsync(); return;
 }
 if (args is ["--mobile-wands"]) { await MobileWandTests.RunAsync(); return; }
+if (args is ["--wand-reveal-reference", var referenceOutputDirectory, var referenceImageModel])
+{ await WandArtworkLiveTests.GenerateReferenceAsync(referenceOutputDirectory, referenceImageModel); return; }
 if (args is ["--mobile-workshop-transparent-artwork", var artSource, var artModel]) { await WandArtworkLiveTests.VerifyAsync(artSource, artModel); return; }
 if (args is ["--mobile-workshop-live-playback"]) { await WorkshopLivePlaybackSmoke.RunAsync(); return; }
 if (args is ["--mobile-workshop-live-http"]) { await MobileGameTests.RunWorkshopLiveHttpAsync(); return; }
