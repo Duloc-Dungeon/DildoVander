@@ -13,6 +13,9 @@ const browser = await chromium.launch({ headless: true });
 const errors = [];
 const failedResponses = [];
 let captures = 0;
+const character = { profileId: 'synthetic-profile', revision: 1, name: 'Sever', universe: 'Půlnoční přístav', status: 'ready' };
+const welcome = { joke: 'Tvá pověst dorazila před tebou. Už jsme se jí omluvili.', identity: 'Sever z Půlnočního přístavu.', teaser: 'Večer se připravuje.' };
+const loadingJoke = 'Portrét má zachytit tvoji povahu. Plátno požádalo o příplatek za riziko.';
 try {
   for (const width of [320, 390, 1280]) {
     const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: 'reduce' });
@@ -20,10 +23,31 @@ try {
     page.on('pageerror', error => errors.push(error.message));
     page.on('response', response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); });
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    let portraitStatus = 'running';
+    await page.route('**/app/v1/prelaunch/character', route => route.fulfill({ json: {
+      character, artwork: { status: portraitStatus, loadingMessage: loadingJoke, welcome },
+    } }));
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     await page.goto(`${origin}/__workshop/prelaunch`);
+    await page.getByText(loadingJoke, { exact: true }).waitFor();
+    assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Portrét');
+    assert.equal(await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).count(), 0, 'wait for the portrait before offering the workshop');
+    assert.equal(await overflow(), false, `${width}: preparation fits`);
+    await page.screenshot({ path: path.join(output, `preparing-${width}.png`), fullPage: true }); captures++;
+    portraitStatus = 'failed';
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await page.getByText('Portrét zatím chybí.', { exact: false }).waitFor();
+    await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
+    assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Hůlka');
+    await page.getByText(welcome.joke, { exact: true }).waitFor();
+    assert.equal(await overflow(), false, `${width}: missing portrait fits`);
+    await page.screenshot({ path: path.join(output, `portrait-failed-${width}.png`), fullPage: true }); captures++;
+    portraitStatus = 'ready';
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
     await page.locator('.portrait-stage[data-curtain="open"]').waitFor();
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
+    await page.evaluate(() => window.scrollTo(0, 0));
     const prepareButton = page.getByRole('button', { name: 'Vytvořit hůlku', exact: true });
     const prepareBox = await prepareButton.boundingBox();
     assert(prepareBox && prepareBox.y + prepareBox.height <= 844, `${width}: prepare action is in the first viewport`);
@@ -33,6 +57,14 @@ try {
     assert.equal(await overflow(), false, `${width}: reveal fits`);
     await page.screenshot({ path: path.join(output, `reveal-${width}.png`), fullPage: true }); captures++;
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).focus();
+    const focus = await prepareButton.evaluate(button => ({
+      color: getComputedStyle(button).outlineColor,
+      width: getComputedStyle(button).outlineWidth,
+      panel: getComputedStyle(button.closest('.prelaunch-wand')).backgroundColor,
+    }));
+    assert.equal(focus.color, 'rgb(16, 36, 25)', 'handoff focus uses the dark mint foreground');
+    assert.notEqual(focus.color, focus.panel, 'keyboard focus remains visible on the mint handoff');
+    assert.equal(focus.width, '3px');
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Kufrova dílna', exact: true }).waitFor();
     assert.equal(await page.locator('.launch-card').isVisible(), false, 'portrait yields to workshop');
@@ -73,11 +105,26 @@ try {
     assert.equal(await overflow(), false, `${width}: saved wand fits`);
     await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).click();
     await page.getByText('Hůlka je uložená. Ollivander Industries™ děkuje za důvěru. Považuje ji za odvážnou.', { exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Vítej v čekárně.', exact: true }).waitFor();
+    await page.getByText(welcome.joke, { exact: true }).waitFor();
+    assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Čekárna');
+    await page.locator('.prelaunch-wand-keepsake').getByText('Tichý přístav', { exact: false }).waitFor();
     assert.equal(new URL(page.url()).pathname, '/launch');
     await page.reload();
     await page.getByRole('button', { name: 'Prohlédnout hůlku', exact: true }).waitFor();
+    assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Čekárna', 'server restores the completed preparation after reload');
     assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1, 'reload/resume does not duplicate manufacture');
     await page.screenshot({ path: path.join(output, `waiting-${width}.png`), fullPage: true }); captures++;
+    if (width === 390) {
+      await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+      assert.equal(await overflow(), false, 'waiting room fits at 200% text');
+      await page.screenshot({ path: path.join(output, 'waiting-text-200-percent.png'), fullPage: true }); captures++;
+      await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+    }
+    await page.getByRole('button', { name: 'Prohlédnout hůlku', exact: true }).click();
+    await page.getByRole('heading', { name: 'Tichý přístav', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).click();
+    assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1, 'viewing the saved wand does not manufacture a second one');
     await context.close();
   }
   assert.deepEqual(errors, []);

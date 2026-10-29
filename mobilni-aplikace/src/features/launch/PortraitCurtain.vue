@@ -4,9 +4,10 @@ import curtainLeft from '../../assets/brand/midnight/curtain-left.webp';
 import curtainRight from '../../assets/brand/midnight/curtain-right.webp';
 import frame from '../../assets/brand/midnight/frame.webp';
 import placeholder from '../../assets/brand/midnight/placeholder.webp';
+import userIcon from '../../assets/wns-v2/icons/regular/user.svg';
 import { presentationForeground } from './launchPresentation';
 
-const props = defineProps<{ image: string; identity: string; alt: string; preparing: boolean }>();
+const props = defineProps<{ image: string; identity: string; alt: string; preparing: boolean; unavailable?: boolean }>();
 const emit = defineEmits<{ revealed: [value: boolean]; failed: [] }>();
 const stage = ref<HTMLElement>();
 const phase = ref<'closed' | 'opening' | 'open'>('closed');
@@ -65,14 +66,16 @@ onBeforeUnmount(() => { cancel(); observer?.disconnect(); media?.removeEventList
 </script>
 
 <template>
-  <div ref="stage" class="portrait-stage" :class="{ 'is-open': open, 'is-preparing': preparing, 'reduced-motion': reduced }" :data-curtain="phase">
+  <div ref="stage" class="portrait-stage" :class="{ 'is-open': open || unavailable, 'is-preparing': preparing, 'reduced-motion': reduced }" :data-curtain="phase">
     <img v-if="image" class="portrait-stage-image" :src="image" :alt="alt" :aria-hidden="phase !== 'open'" fetchpriority="high" @error="emit('failed')" />
+    <img v-else-if="unavailable" class="portrait-missing-avatar" :src="userIcon" alt="" aria-hidden="true" />
     <img v-else class="portrait-stage-placeholder" :src="placeholder" alt="" aria-hidden="true" />
     <div class="curtain-wings" aria-hidden="true">
       <img class="curtain-wing curtain-wing-left" :src="curtainLeft" alt="" width="400" height="1000" />
       <img class="curtain-wing curtain-wing-right" :src="curtainRight" alt="" width="400" height="1000" />
     </div>
     <img class="curtain-frame" :src="frame" alt="" aria-hidden="true" width="800" height="1000" />
+    <p v-if="unavailable && !image" class="portrait-unavailable">Portrét zatím chybí.<br />Postava má místo jisté.</p>
   </div>
 </template>
 
@@ -92,5 +95,7 @@ onBeforeUnmount(() => { cancel(); observer?.disconnect(); media?.removeEventList
 .is-preparing:not(.is-open) .curtain-wings { filter: brightness(1.08); }
 .reduced-motion .curtain-wing { transition: none; }
 .curtain-wing { filter: saturate(.75); }
+.portrait-unavailable { position: absolute; inset: auto 9% 7%; margin: 0; padding: 16px; border-radius: 12px; background: var(--wns-violet); color: var(--wns-on-violet); text-align: center; font-size: .875rem; line-height: 1.5; }
+.portrait-missing-avatar { position: absolute; width: 40%; height: 40%; inset: 20% 30% auto; }
 @media (prefers-reduced-motion: reduce) { .curtain-wing { transition: none; } }
 </style>

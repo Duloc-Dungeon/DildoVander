@@ -1,5 +1,31 @@
 # WNS v2 — implementace a skutečně provedené kontroly
 
+## Příprava postavy a návrat do čekárny — 29. října 2026
+
+- Před otevřením večera `/launch` ukazuje kroky Postava → Portrét → Hůlka →
+  Čekárna podle načteného stavu. Během ukládání a přípravy portrétu zůstává
+  viditelný vtip: přednost má `artwork.loadingMessage`, bez něj uvítací věta
+  nebo stabilní český náhradní text. Polling vtip náhodně nestřídá.
+- Po odhalení portrétu se zpřístupní vstup do dílny. Selhání portrétu ukáže
+  náhradní podobu, možnost opakování a cestu do dílny bez obrázku. Samotný čas
+  neoznačí přípravu za hotovou. U postavy bez objednaného portrétu text
+  neoznamuje běžící výrobu; zůstává výslovná akce pro přípravu.
+- Otevření dílny skryje postavu, odpočet i přehled kroků, aby hlavní akce
+  výsledku zůstala dostupná i na malém telefonu. Po uložení a návratu se
+  zobrazí čekárna s postavou, jejím vtipem, názvem hůlky a akcí
+  **Prohlédnout hůlku**. Obnovení stránky načte hotovou hůlku ze serveru;
+  prohlížení nezakládá novou výrobu. Oprávnění a připravenost pro samotnou
+  výrobu nadále ověřuje [dílna](magicky-kufr-workshop.md#api-a-výroba).
+- Lokálně prošlo 47 testů v `LaunchView.spec.ts`, `PrelaunchWand.spec.ts`
+  a `PortraitCurtain.spec.ts`, produkční build a nezávislé review.
+  `test:prelaunch-wand:browser` ověřil čekání, chybějící portrét, dílnu,
+  uložený výsledek, návrat a obnovení při šířkách 320/390/1280 px,
+  omezeném pohybu a 200% textu; uložil 20 syntetických snímků.
+  Prošel také `test:launch:browser` včetně vytvoření postavy, soukromého
+  portrétu, označení postavy a přepnutí účtu. Mechanický sken změněných
+  obrazovek a `git diff --check` byly čisté. Jde o lokální webové fixtures,
+  nikoli živou AI, přejímku na fyzickém telefonu nebo nasazení.
+
 ## Přihlášený host — 29. října 2026
 
 - Navigace vede přímo do digitální Dílny, Her, Památek a účtu. Postava zůstává

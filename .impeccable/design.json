@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T02:38:19.226Z",
+  "generatedAt": "2026-10-29T02:45:07.444Z",
   "title": "Wand Night Stand — schválený design v2",
   "extensions": {
     "colorMeta": {
@@ -355,6 +355,11 @@
         "name": "duel-impact",
         "value": "2000ms",
         "purpose": "Místní jednorázový střet zveřejněné výměny. Celé průhledné osobní hůlky, odlišná stopa úderu/lsti/štítu, statický omezený pohyb a zrušení mimo viditelnou scénu. Ovládání ani výsledek nečekají na animaci."
+      },
+      {
+        "name": "prelaunch-portrait-curtain",
+        "value": "1.1s cubic-bezier(.32,0,.2,1)",
+        "purpose": "Místní odhalení portrétu v PortraitCurtain před dílnou; při omezeném pohybu bez přesunu. Nejde o časovou podmínku výroby."
       }
     ],
     "breakpoints": [
@@ -478,6 +483,13 @@
       "description": "Statický výřez skutečného třífázového indikátoru ve stavu výroby. Aktuální krok má aria-current, mintovou linku a tučný popisek. Náhled nic nespouští; ilustrace, měřené audio a výsledky zůstávají v autorizované aplikaci.",
       "html": "<ol class=\"ds-workshop-journey\" aria-label=\"Průběh tvorby hůlky\"><li data-complete=\"true\"><span>Rozhovor</span></li><li aria-current=\"step\"><span>Výroba</span></li><li><span>Tvoje hůlka</span></li></ol>",
       "css": ".ds-workshop-journey{display:flex;list-style:none;gap:.75rem;margin:0;padding:0;background:var(--wns-bg,#080909);font:400 1rem/1.55 'Manrope Variable',sans-serif}.ds-workshop-journey li{flex:1;min-width:0;padding-top:.65rem;border-top:2px solid var(--wns-line,#343939);color:var(--wns-muted,#b2b9b6);font-size:.8rem;overflow-wrap:anywhere}.ds-workshop-journey li[aria-current]{border-color:var(--wns-mint,#b8f3d4);color:var(--wns-mint,#b8f3d4);font-weight:760}.ds-workshop-journey li[data-complete=\"true\"]{border-color:var(--wns-mint,#b8f3d4)}"
+    },
+    {
+      "name": "Příprava postavy a předání do dílny",
+      "kind": "custom",
+      "description": "Místní vzor /launch z LaunchView.vue a PrelaunchWand.vue: pravdivý přehled kroků a mintové předání hlavní akce. Syntetická statická ukázka bez načítání účtu nebo nové výroby.",
+      "html": "<div class=\"ds-prelaunch\"><ol class=\"ds-prelaunch-steps\" aria-label=\"Příprava na večer\"><li class=\"ds-prelaunch-done\">Postava<span class=\"ds-prelaunch-hidden\"> — hotovo</span></li><li class=\"ds-prelaunch-done\">Portrét<span class=\"ds-prelaunch-hidden\"> — hotovo</span></li><li aria-current=\"step\">Hůlka</li><li>Čekárna</li></ol><section class=\"ds-prelaunch-handoff\" aria-labelledby=\"ds-prelaunch-title\"><div class=\"ds-prelaunch-copy\"><h2 id=\"ds-prelaunch-title\">Postavu už znáš. Teď tvoje hůlka.</h2><p>V dílně na tebe čeká kufr. Promluv si s ním a vytvoř hůlku pro svoji postavu.</p></div><button type=\"button\" class=\"ds-prelaunch-action\">Vytvořit hůlku</button><p class=\"ds-prelaunch-return\">Postava i uložený postup zůstávají pod tvým účtem. Můžeš odejít a vrátit se později.</p></section></div>",
+      "css": ".ds-prelaunch{width:min(100%,62rem);font-family:var(--wns-font-family,'Manrope Variable',sans-serif);color:var(--wns-text,#f5f5f0)}\n.ds-prelaunch-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0 0 24px;padding:0;list-style:none}\n.ds-prelaunch-steps li{min-width:0;padding:12px 4px 0;border-top:2px solid var(--wns-line,#343939);color:var(--wns-muted,#b2b9b6);font-size:clamp(.75rem,2.8vw,.9rem);line-height:1.5;overflow-wrap:anywhere}\n.ds-prelaunch-steps .ds-prelaunch-done{border-color:var(--wns-mint,#b8f3d4);color:var(--wns-mint,#b8f3d4)}\n.ds-prelaunch-steps [aria-current=step]{border-color:var(--wns-amber,#ffc662);color:var(--wns-amber,#ffc662);font-weight:750}\n.ds-prelaunch-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}\n.ds-prelaunch-handoff{display:grid;gap:12px;padding:clamp(20px,4vw,32px);border-radius:16px;background:var(--wns-mint,#b8f3d4);color:var(--wns-on-mint,#102419)}\n.ds-prelaunch-copy{display:grid;gap:12px;min-width:0}\n.ds-prelaunch-copy h2{max-width:28ch;margin:0;font-size:clamp(1.3rem,4.5vw,1.8rem);font-weight:760;line-height:1.2;letter-spacing:-.025em;text-wrap:balance}\n.ds-prelaunch-copy p{max-width:62ch;margin:0;font-size:1rem;line-height:1.5}\n.ds-prelaunch-action{display:inline-flex;align-items:center;justify-content:center;justify-self:start;min-height:52px;max-width:100%;padding:8px 14px;border:1px solid transparent;border-radius:16px;background:var(--wns-on-mint,#102419);color:var(--wns-mint,#b8f3d4);font-family:inherit;font-size:.95rem;font-weight:800;line-height:1.45;white-space:normal;cursor:pointer}\n.ds-prelaunch-action:hover{background:var(--wns-surface-raised,#222626)}\n.ds-prelaunch-action:focus-visible{outline:3px solid var(--wns-on-mint,#102419);outline-offset:4px}\n.ds-prelaunch-action:active{background:var(--wns-on-mint,#102419)}\n.ds-prelaunch-return{grid-column:1/-1;margin:0;font-size:.8rem;line-height:1.5}\n@media(min-width:760px){.ds-prelaunch-handoff{grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:32px}}"
     }
   ],
   "narrative": {

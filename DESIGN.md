@@ -193,6 +193,11 @@ na dvě oblasti od 760 px. Konkrétní stránka může mít vlastní kontejner:
 například formulář postavy 42 rem, představení 70 rem. Nejde o nový společný limit.
 Rozestupy v záhlaví jsou používaná část škály tokenů, nikoli inventář všech hodnot.
 
+Příprava před otevřením večera v `/launch` má vlastní kontejner (62 rem).
+Postava s portrétem a dolní čekárna přecházejí na dvě oblasti od 760 px;
+na telefonu se řadí pod sebe. Jméno, stav a osobní věta mají přednost před
+odpočtem a volitelnými nastaveními. Nejde o náhradu zákaznického shellu.
+
 Při 200% textu zůstávají popisky čitelné a nepřekrývají se. Pole, tlačítka a položky navigace mají
 nejméně 44px dotykový cíl. Pořadí a fokus ovládání zůstávají použitelné klávesnicí.
 
@@ -272,6 +277,28 @@ Chybějící obrázek má náhradní podobu a pravdivý stav. Nevyvolávej novou
 generaci kvůli přehrání efektu. Pravidlo deseti sekund v popředí před zobrazením
 „Pokračovat“ je výslovná místní výjimka vlastníka v `PRODUCT.md`, ne obecný
 časovač pro všechna tlačítka. Omezený pohyb zachovává obsah bez přesunů a škálování.
+
+### Příprava postavy a předání do dílny
+
+`LaunchView` používá klidný čtyřdílný přehled přípravy: hotový krok je mintový,
+aktuální jantarový a budoucí tlumený. Stav označuje také `aria-current="step"`;
+vynechaný portrét má výslovný popisek. Přehled není procentní ukazatel ani
+časový odhad a při otevřené dílně ustoupí jejímu hlavnímu ovládání.
+
+`PrelaunchWand` předává hlavní akci mintovou plochou s tmavým textem,
+klidnými rohy (16 px) a odsazením `clamp(20px, 4vw, 32px)`. Tmavé tlačítko
+s mintovým textem obrací barvy běžné primární akce; fokus je zde tmavý,
+aby zůstal čitelný na mintové. Od 760 px stojí akce vedle textu,
+na mobilu pod ním. Tato barevná inverze je místní vzor předání do dílny,
+nikoli nová globální varianta všech karet.
+
+Osobní věta vedle portrétu má výraznou sazbu (`clamp(1.4rem, 5vw, 2.1rem)`,
+váha 650, řádkování 1,4) a krátkou čtecí míru (28 ch). Stav přípravy je
+samostatný, aby vtip nezastoupil informaci nebo chybu. `PortraitCurtain`
+ponechává jeden místní pohyb opony (1,1 s), při omezeném pohybu statické
+odhalení. Při chybě zobrazuje ikonu postavy a doslovný náhradní text.
+Čekárna po dokončení uchovává osobní větu i přístup k uložené hůlce;
+přehrání scény samo nevyrábí nový obsah.
 
 ### Živý kufr
 

@@ -32,6 +32,7 @@ it('returns from the saved wand to waiting and can show it again', async () => {
   expect(wrapper.text()).toContain('Můžeš odejít a vrátit se později.');
   expect(wrapper.get('button').text()).toBe('Prohlédnout hůlku');
   expect(wrapper.emitted('open-change')).toEqual([[true], [false]]);
+  expect(wrapper.emitted('complete-change')).toEqual([[false], [true]]);
 });
 it.each(['asking', 'generating', 'complete'])('restores a %s workshop with reads after returning to the app', async status => {
   api.load.mockResolvedValue({ eligible: true, session: { status, wand: status === 'complete' ? { wandId: 'saved' } : null } });
@@ -45,6 +46,17 @@ it('offers a read retry after a failed state request', async () => {
   expect(wrapper.text()).toContain('Dílnu se nepodařilo načíst.');
   await wrapper.get('button').trigger('click'); await flushPromises();
   expect(wrapper.get('button').text()).toBe('Vytvořit hůlku');
+});
+it('restores the saved wand name and waiting state from the server', async () => {
+  api.load.mockResolvedValue({ eligible: true, session: { status: 'complete', wand: {
+    wandId: 'saved', name: 'Tichý přístav', material: 'Jasan', core: 'Vlákno mlhy',
+    temperament: 'Klidná', lore: 'Pamatuje cestu.', designDescription: 'Štíhlá hůlka.', affinity: 'Mlha', weakness: 'Spěch',
+    spells: ['strike', 'trick', 'shield'].map(action => ({ action, name: action, description: 'Kouzlo' })),
+  } } });
+  const wrapper = await render();
+  expect(wrapper.get('.prelaunch-wand-keepsake').text()).toContain('Tichý přístav');
+  expect(wrapper.emitted('complete-change')?.at(-1)).toEqual([true]);
+  expect(wrapper.findComponent({ name: 'WandWorkshop' }).exists()).toBe(false);
 });
 it('aborts its request when the account, character or admission scope is removed', async () => {
   const wrapper = await render();

@@ -49,3 +49,14 @@ it('L: reduced motion records a static display after paint without animationend'
     await vi.advanceTimersByTimeAsync(32); expect(localStorage.length).toBe(1); expect(view.emitted('revealed')?.at(-1)).toEqual([true]);
   } finally { view.unmount(); }
 });
+it('shows the missing portrait without marking an image as revealed or seen', async () => {
+  const view = stage();
+  try {
+    await view.setProps({ image: '', unavailable: true });
+    visibility(1); await vi.advanceTimersByTimeAsync(2000);
+    expect(view.classes()).toContain('is-open');
+    expect(view.text()).toContain('Portrét zatím chybí.');
+    expect(localStorage.length).toBe(0);
+    expect(view.emitted('revealed')?.some(event => event[0] === true)).toBe(false);
+  } finally { view.unmount(); }
+});
