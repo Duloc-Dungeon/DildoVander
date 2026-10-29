@@ -472,7 +472,7 @@ Barva sama nenese stav. Změna fáze přehraje pouze clonu (1,1 s) a náběh mí
 světla (0,7 s); neremountuje portrét ani nerozhodnutou volbu kouzla.
 
 `GameBossEnergy` ukazuje skutečnou zbývající energii: hráč nejvýše 6,
-Baron nejvýše 5, v exhibici 3. Hodnoty mají český číselný formát, přístupné
+Baron nejvýše 5 také v exhibici. Hodnoty mají český číselný formát, přístupné
 ukazatele `role="meter"` a vodorovné pásy s odezvou 0,35 s. Neznámá hodnota
 je pomlčka, nikoli domyšlený stav. Nápověda, Baronova jiskra, výsledek poslední
 výměny a možnost ukončit aktivní pokus zůstávají čitelné bez animace.
@@ -502,6 +502,23 @@ na skutečně odehranou lokální výměnu; nevytvářejí herní API zápisy an
 Nový trénink vynuluje místní skóre i nasvícení výsledku.
 Soupeř v tréninku má výslovně označenou „Cvičnou hůlku“ z existující fialové
 ilustrace. Její diagonální kompozice se natočí hrotem ke středu scény.
+
+**Pravidlo viditelného důsledku.** Odhalení pojmenuje protitah a skutečné
+body včetně doložených jisker. Při další volbě zůstávají přímo viditelné
+poslední tři odhalené výměny. Výsledek připomene skutečnou výměnu a vede
+k odvetě; nevymýšlí bilanci soupeřů z neúplné historie.
+
+Trénink má tři vedené výměny, jasný další krok a možnost přeskočení i opakování.
+Taktika zobrazuje zásoby obou stran ve společné tabulce. Strany odliší barva
+i jméno v záhlaví; číslice jsou tabulkové. Obnova zásob má stručnou stavovou
+větu. Tyto informační oddíly používají čárové oddělení místo dalších vnořených
+karet, mezery ze společné škály a nadpisy (1,125 rem).
+
+Úkol po prohře má přímé akce „Splněno“ a „Přeskočit úkol“. Zápis stavu
+potvrdí server před zpřístupněním odvety. Taktická historka je samostatný
+oddíl; připravovaný i neúspěšný text ponechají výsledek, XP a odvetu dostupné.
+Zvuk výběru a potvrzeného tahu respektuje vypnutí zvuku i skrytý dokument;
+polling ani pouhé načtení historie nevytvářejí další místní potvrzení.
 
 ### Týmová hra 2 na 2
 
@@ -549,16 +566,35 @@ cizích skrytých poloh nebo událostí. Místní styly vlastní
 
 ### YOLO lóže ve třech dějstvích
 
-`GameYoloStage` má vlastní scénu: dvě autorizované hůlky, jména obou soupeřů,
-malý portrét Křivopíska a dějství Nástup → Střet → Rozsudek. Ukázkové hůlky
-jsou výslovně označené také mimo obrázek. Chybějící obrázek zastoupí původní
-neutrální obrys. Scéna používá stejný Manrope a jantarovou/fialovou dvojici;
-není novým tématem ani novou herní mechanikou.
+`GameYoloStage` a `YoloDecisionStage` rozlišují přípravu, vlastní rozhodování
+a čtení hotového příběhu. Jména obou soupeřů zůstávají nad obsahem; ukázkové
+hůlky jsou označené také textem. Stejný Manrope a jantarová/fialová dvojice
+navazují na společný systém v2.
 
-Tempo určuje čtenář tlačítkem „Další část“. Druhé dějství má jediný 0,9s
-světelný střet v SVG, bez trvalého ambientu a bez nového zvuku. Omezený pohyb
-ponechá statický střet. Ovládání ani serverový výsledek na efekt nečekají.
-Obnovení stejného zápasu pollingem nepřeskakuje dějství a efekt nespouští znovu.
+**Pravidlo nabídky před efektem.** Při rozhodování ustoupí ilustrace střetu
+i portrét Křivopíska. Hlavním obsahem je společná situace, zvýrazněný cíl,
+aktuální dějství a tři vlastní možnosti hráče. Každá karta má konkrétní název,
+viditelnou výhodu a cenu. Výběr zůstává místní do akce „Potvrdit plán“.
+
+Karty možností používají povrch, tenký obrys a místní zaoblení (12 px).
+Vybraná karta má jantarový obrys a jemně tónované pozadí; označení výběru
+nese také nativní radio. Fokus používá společný token s odsazením (3 px).
+Cena zůstává čitelná tlumenou barvou. Zablokovaný výběr nelze potvrdit znovu;
+uzamčení a čekání na soupeře vysvětlí text. Stav se nespoléhá pouze na barvu.
+
+AI tvoří situaci, názvy akcí, protiakce a jejich ceny z obou postav a skutečných
+hůlek. Rozhraní před první volbou ukáže pravdivou přípravu bez předstíraného
+procenta postupu. Poté mají dějství názvy Plán → Komplikace → Poslední špatný
+nápad. Odhalené volby a následky jsou při rozhodování přímo dostupné; od šířky
+700 px stojí obě strany vedle sebe, na telefonu pod sebou. Při generování
+verdiktu a čtení jsou uložené plány pod rozbalením, aby neodsunuly hlavní stav.
+
+Hotový příběh vrací autorizované hůlky a malý portrét Křivopíska. Chybějící
+obrázek zastoupí původní neutrální obrys. Tempo určuje čtenář tlačítkem
+„Další část“; celý výsledek lze otevřít rovnou. Prostřední část má jediný
+světelný střet v SVG (0,9 s), bez trvalého ambientu. Omezený pohyb ponechá
+statický střet. Ovládání ani serverový výsledek na efekt nečekají. Obnovení
+stejného zápasu pollingem nepřeskakuje dějství a efekt nespouští znovu.
 
 Obsah scény má nejvýše 760 px a od 700 px používá boční odsazení 32 px.
 Nadpis dějství má vlastní `clamp(1.75rem, 6vw, 2.5rem)`; obecný herní nadpis
@@ -566,12 +602,14 @@ jej nesmí přepsat. Text příběhu má 1,125 rem, řádkování 1,75 a míru d
 Po přechodu klávesnicí nadpis ukáže fokus v barvě společného tokenu.
 Označení „· ukázka“ zůstává při zalomení pohromadě.
 
-Celý příběh lze odhalit najednou. Verdikt, zvýraznění vítězné strany, odveta
-a případný úkol poraženého přicházejí až s rozsudkem. Čtečka dostane oznámení
-o připraveném příběhu bez výsledku; ruční přechod přenese fokus na nadpis.
-Generování, chyba s opakováním a zrušení jsou samostatné pravdivé stavy.
-Zrušená ani neúplná odpověď se nepřehrává jako dokončený příběh. Vítěze vybírá
-AI, režim nepřiděluje bojové XP; obě informace zůstávají přímo ve scéně.
+Verdikt, zvýraznění vítězné strany, odveta a případný úkol poraženého přicházejí
+až s rozsudkem. Nové scénáře výslovně pojmenují i remízu nebo společné fiasko.
+Čtečka dostane oznámení o připraveném příběhu bez výsledku; ruční přechod
+přenese fokus na nadpis. Příprava scénáře, příprava verdiktu, chyba s opakováním
+a zrušení jsou samostatné pravdivé stavy. Zrušená ani neúplná odpověď se
+nepřehrává jako dokončený příběh. Historické příběhy zachovávají dějství
+Nástup → Střet → Rozsudek. AI vyhodnocuje uložené plány a jejich následky;
+režim nepřiděluje bojové XP. Obě informace zůstávají přímo ve scéně.
 
 ### Kaskáda a rozsah
 
@@ -607,8 +645,9 @@ Rozhraní i generované texty jsou pouze česky; humor je možný kdekoli, ne po
 Událost pro efekt smí pocházet jen z autorizované projekce. Zvuk je výchozí
 vypnutý; soukromé signály jsou tiché. Ztracený, skrytý nebo opakovaný event se
 nesmí přehrát jako nová událost. Změna skóre nesmí čekat na animaci.
-`presentationEffects.ts` testuje tuto hranici. `wnsSound.ts` zatím připojuje
-pouze explicitní uživatelský výběr; eventový adapter není důkaz serverového streamu.
+`presentationEffects.ts` testuje tuto hranici. `wnsSound.ts` připojuje explicitní
+uživatelský výběr a potvrzení tahu po úspěšné odpovědi nebo místním tréninkovém
+vyhodnocení; eventový adapter není důkaz serverového streamu.
 
 Pod pečetí je samostatná doména, nikoli nový duelový GameMode. Jediná WORLD_TRUTH
 se nesmí poslat klientovi a následně skrýt CSS. EXPERIENCE, PRESENTATION a

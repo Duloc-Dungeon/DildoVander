@@ -44,9 +44,9 @@ try {
       await page.getByRole('button', { name: 'Potvrdit tah', exact: true }).click();
       await page.locator(`.game-magic-clash--theatre[data-winner="${winner}"]`).waitFor();
       await page.getByText(title, { exact: true }).waitFor();
-      if (reducedMotion === 'no-preference') {
-        await page.locator('.game-magic-clash--theatre[data-motion="playing"]').waitFor();
-      }
+      // Confirming a turn may scroll the stage out of view. The optional effect
+      // correctly pauses offscreen; the persisted verdict must remain immediate.
+      await stage.scrollIntoViewIfNeeded();
       await page.locator('.game-magic-clash--theatre[data-motion="still"]').waitFor();
       if (reducedMotion === 'reduce') {
         assert.equal(await page.locator('.game-magic-clash__lights').evaluate(element => getComputedStyle(element).animationName), 'none');

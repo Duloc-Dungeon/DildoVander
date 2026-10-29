@@ -58,3 +58,31 @@
   .game-magic-clash--theatre .game-magic-clash__lights { animation: none; }
   .game-magic-clash--theatre .game-magic-clash__light { transition: none; }
 }
+
+
+/* Shared evidence stays in view while the next choice is still secret. */
+.duel-practice, .duel-stocks, .duel-recent, .duel-narration {
+  margin-block: var(--wns-space-24);
+  padding-block: var(--wns-space-16);
+  border-block: 1px solid var(--wns-line);
+}
+.duel-practice h2, .duel-stocks h2, .duel-recent h2, .duel-narration h2 {
+  margin: 0 0 var(--wns-space-8);
+  font-size: 1.125rem;
+}
+.duel-practice p, .duel-narration p { max-width: 65ch; }
+.duel-stocks table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.duel-stocks caption { text-align: start; color: var(--wns-muted); padding-bottom: var(--wns-space-12); font-size: .875rem; }
+.duel-stocks th, .duel-stocks td { padding: var(--wns-space-8); text-align: center; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.duel-stocks th:first-child { text-align: start; }
+.duel-stocks thead { border-bottom: 1px solid var(--wns-line); }
+.duel-stocks td:nth-child(2) { color: var(--wns-amber); }
+.duel-stocks td:nth-child(3) { color: var(--wns-violet); }
+.duel-recent ol { padding: 0; list-style: none; margin: 0; }
+.duel-recent li { padding-block: var(--wns-space-8); font-size: .875rem; color: var(--wns-muted); }
+.duel-recent li + li { border-top: 1px solid var(--wns-line); }
+.duel-recent strong { color: var(--wns-text); font-variant-numeric: tabular-nums; }
+.duel-highlight { max-width: 65ch; }
+.game-task-outcome { display: flex; flex-wrap: wrap; gap: var(--wns-space-12); }
+
+.duel-chronicle-narration { padding: 0 var(--wns-space-16) var(--wns-space-16); color: var(--wns-muted); font-size: .875rem; }

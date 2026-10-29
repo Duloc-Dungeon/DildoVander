@@ -150,9 +150,7 @@ internal sealed partial class GameStore
             var attempt = new BossAttempt
             {
                 Id = Guid.NewGuid().ToString("N"), GroupId = groupId, UserId = userId,
-                Strength = stats.Xp < 30 ? Math.Max(1m, (decimal)stats.Xp / profile.ReferenceXp)
-                    : (decimal)stats.Xp / profile.ReferenceXp,
-                BossEnergy = stats.Xp < 30 ? 3 : 5,
+                Strength = BossStrength(stats.Xp, profile.ReferenceXp),
                 Exhibition = stats.Xp < 30,
                 Seed = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
             };
@@ -186,7 +184,7 @@ internal sealed partial class GameStore
             if (request.Choice is not ("strike" or "trick" or "shield") || request.SparkBid is < 0 or > 1)
             { throw new GameFault(400, "boss_choice_invalid"); }
             if (request.SparkBid > (attempt.Exhibition ? 0 : attempt.PlayerSparks)
-                || !attempt.Exhibition && attempt.PlayerInventory[request.Choice] == 0)
+                || attempt.PlayerInventory[request.Choice] == 0)
             { throw new GameFault(409, "boss_inventory_exhausted"); }
             // The boss's choice was persisted before this request, independently of the player's card.
             var winner = request.Choice == attempt.BossChoice ? "draw"
@@ -197,7 +195,7 @@ internal sealed partial class GameStore
             attempt.BossEnergy = Math.Max(0, attempt.BossEnergy - playerDamage);
             attempt.PlayerEnergy = Math.Max(0, attempt.PlayerEnergy - bossDamage);
             attempt.PlayerSparks -= request.SparkBid; attempt.BossSparks -= attempt.BossBid;
-            if (!attempt.Exhibition) { attempt.PlayerInventory[request.Choice]--; }
+            attempt.PlayerInventory[request.Choice]--;
             attempt.BossInventory[attempt.BossChoice]--;
             attempt.Rounds.Add(new(attempt.Rounds.Count + 1, request.Choice, attempt.BossChoice, winner,
                 request.SparkBid, attempt.BossBid, playerDamage, bossDamage));
@@ -257,6 +255,13 @@ internal sealed partial class GameStore
 
     private static bool Beats(string left, string right) => (left, right) is
         ("strike", "trick") or ("trick", "shield") or ("shield", "strike");
+    private static decimal BossStrength(int xp, int referenceXp)
+    {
+        // Everyone can win at the same baseline. XP continuously improves damage, with
+        // diminishing returns below 3x so outliers cannot skip the fight in one hit.
+        var earnedXp = Math.Max(0m, xp);
+        return 1m + 2m * earnedXp / (earnedXp + Math.Max(1m, referenceXp));
+    }
     private static Dictionary<string, int> BossStock() => new() { ["strike"] = 2, ["trick"] = 2, ["shield"] = 2 };
     private static void PrepareBossChoice(BossAttempt attempt)
     {

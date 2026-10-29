@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import GameYoloStage from './GameYoloStage.vue';
-import type { Match } from './game';
+import type { Match, YoloScenario } from './game';
 
 const story = {
   status: 'complete',
@@ -89,4 +89,112 @@ describe('YOLO theatre', () => {
     await flushPromises();
     view.unmount();
   });
+});
+
+
+const scenario = (patch: Partial<YoloScenario> = {}): YoloScenario => ({
+  id: 'tea-inspector-v1', title: 'Čaj pro kontrolora', objective: 'Doručit čaj v šálku.', situation: 'Mezi konvicí a stolem je okno.', act: 1,
+  ownChoiceLocked: false, opponentChoiceLocked: false, revealed: [],
+  options: ['levitate', 'carry', 'slide'].map(id => ({ id, title: `Plán ${id}`, benefit: `Výhoda ${id}`, cost: `Cena ${id}` })), ...patch,
+});
+const choosingMatch = (value = scenario()) => match({ status: 'active', result: undefined, yolo: { status: 'choosing', beats: [], verdict: '', scenario: value } });
+
+describe('YOLO decisions', () => {
+  it('lets a player change cards locally and confirms only once', async () => {
+    const view = await render(choosingMatch());
+    expect(view.findAll('.yolo-decision__options label')).toHaveLength(3);
+    expect(view.find('.yolo-theatre__status').exists()).toBe(false);
+    await view.get('input[value="levitate"]').setValue();
+    await view.get('input[value="carry"]').setValue();
+    expect(view.emitted('choose')).toBeUndefined();
+    await view.get('form').trigger('submit');
+    await view.get('form').trigger('submit');
+    expect(view.emitted('choose')).toEqual([['carry']]);
+    expect(view.find('.yolo-theatre__outcome').exists()).toBe(false);
+    view.unmount();
+  });
+
+  it.each(['busy', 'uncertain'] as const)('blocks confirmation while %s and retains the selected plan through recovery', async state => {
+    const view = await render(choosingMatch());
+    await view.get('input[value="carry"]').setValue();
+    await view.setProps({ [state]: true });
+    await view.get('form').trigger('submit');
+    expect(view.emitted('choose')).toBeUndefined();
+    await view.setProps({ [state]: false });
+    expect((view.get('input[value="carry"]').element as HTMLInputElement).checked).toBe(true);
+    await view.get('form').trigger('submit');
+    expect(view.emitted('choose')).toEqual([['carry']]);
+    view.unmount();
+  });
+
+  it('resets selection for a new act but preserves already revealed consequences', async () => {
+    const view = await render(choosingMatch());
+    await view.get('input[value="carry"]').setValue();
+    const decision = { id: 'carry', act: 1, choice: 'carry', title: 'Nést šálek', benefit: 'Pevný úchop.', cost: 'Pomalá cesta.', consequence: 'Šálek zůstal v ruce.' };
+    const next = scenario({ act: 2, revealed: [{ act: 1, player: decision, opponent: { ...decision, consequence: 'Soupeřův šálek zůstal na tácu.' } }] });
+    await view.setProps({ match: choosingMatch(next) });
+    expect(view.findAll('input').every(input => !(input.element as HTMLInputElement).checked)).toBe(true);
+    expect(view.get('.yolo-decision__record').text()).toContain('Šálek zůstal v ruce.');
+    expect(view.get('.yolo-decision__record').text()).toContain('Soupeřův šálek zůstal na tácu.');
+    await view.setProps({ match: choosingMatch({ ...next, ownChoiceLocked: true }) });
+    expect(view.find('form').exists()).toBe(false);
+    expect(view.text()).toContain('Tvůj plán je uzamčený');
+    expect(view.find('.yolo-decision__record').exists()).toBe(true);
+    view.unmount();
+  });
+
+  it('clears a local plan on another match and keeps completed consequences during generation', async () => {
+    const view = await render(choosingMatch());
+    await view.get('input[value="carry"]').setValue();
+    await view.setProps({ match: { ...choosingMatch(), id: 'b'.repeat(32) } });
+    expect(view.findAll('input').every(input => !(input.element as HTMLInputElement).checked)).toBe(true);
+    const decision = { id: 'carry', act: 3, choice: 'carry', title: 'Nést šálek', benefit: 'Pevný úchop.', cost: 'Pomalá cesta.', consequence: 'Čaj dorazil na stůl.' };
+    await view.setProps({ match: match({ status: 'generating', result: undefined,
+      yolo: { status: 'generating', beats: [], verdict: '', scenario: scenario({ act: 3, options: [], revealed: [{ act: 3, player: decision, opponent: decision }] }) } }) });
+    expect(view.find('form').exists()).toBe(false);
+    expect(view.get('.yolo-decision__record').text()).toContain('Čaj dorazil na stůl.');
+    expect(view.find('.yolo-theatre__outcome').exists()).toBe(false);
+    expect(view.emitted('revealed')?.at(-1)).toEqual([false]);
+    view.unmount();
+  });
+
+  it('retains the selected card after a failed save has been verified', async () => {
+    const view = await render(choosingMatch());
+    await view.get('input[value="carry"]').setValue();
+    await view.get('form').trigger('submit');
+    await view.setProps({ busy: true });
+    await view.setProps({ busy: false, uncertain: true });
+    await view.get('form').trigger('submit');
+    expect(view.emitted('choose')).toHaveLength(1);
+    await view.setProps({ uncertain: false });
+    await view.get('form').trigger('submit');
+    expect(view.emitted('choose')).toEqual([['carry'], ['carry']]);
+    view.unmount();
+  });
+
+  it.each([['draw', 'Remíza.'], ['fiasco', 'Společné fiasko.']])('reveals the stored %s outcome only with the final verdict', async (outcome, title) => {
+    const view = await render(match({ result: 'draw', yolo: { ...story, scenario: scenario({ act: 3, options: [] }), outcome } }));
+    expect(view.find('.yolo-theatre__outcome').exists()).toBe(false);
+    await view.findAll('.yolo-theatre__reading-controls button')[1]!.trigger('click');
+    expect(view.get('.yolo-theatre__outcome').text()).toBe(title);
+    expect(view.emitted('revealed')?.at(-1)).toEqual([true]);
+    view.unmount();
+  });
+  it.each([['win', 'Tvůj plán zvítězil.'], ['loss', 'Soupeřův plán zvítězil.']])('reveals viewer-relative %s for outcome winner', async (result, title) => {
+    const view = await render(match({ result, yolo: { ...story, scenario: scenario({ act: 3, options: [] }), outcome: 'winner' } }));
+    await view.findAll('.yolo-theatre__reading-controls button')[1]!.trigger('click');
+    expect(view.get('.yolo-theatre__outcome').text()).toBe(title);
+    view.unmount();
+  });
+
+});
+
+it('shows AI preparation before any cards or winner exist', async () => {
+  const view = await render(match({ status: 'preparing', result: undefined,
+    yolo: { status: 'preparing', beats: [], verdict: '' } }));
+  expect(view.text()).toContain('Připravujeme váš scénář.');
+  expect(view.text()).toContain('obě postavy a jejich hůlky');
+  expect(view.find('form').exists()).toBe(false);
+  expect(view.find('.yolo-theatre__outcome').exists()).toBe(false);
+  view.unmount();
 });

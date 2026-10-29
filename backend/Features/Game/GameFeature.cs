@@ -31,7 +31,8 @@ internal sealed record GameLobbyOpponentView(string Id, string DisplayName, int 
 internal sealed record GamePartyTask(string Title, string Text, string Category, string Status, int ExchangeCount);
 internal sealed record GameYoloBeat(string Text, string[] DetailRefs);
 internal sealed record GameYoloView(string Status, IReadOnlyList<GameYoloBeat> Beats, string? Verdict,
-    string? WinnerId, string? ErrorCode);
+    string? WinnerId, string? ErrorCode, GameYoloScenarioView? Scenario = null, string? Outcome = null);
+internal sealed record GameCombatNarrationView(string Status, string? Text);
 internal sealed record GameMatchView(string Id, string Mode, string Status, long Revision,
     bool CanAccept, bool CanCancel,
     GameOpponentView Opponent, IReadOnlyList<GameRoundView> Rounds, int CompletedRounds,
@@ -41,7 +42,7 @@ internal sealed record GameMatchView(string Id, string Mode, string Status, long
     bool TasksEnabled, bool AdultConsent, bool FlirtConsent, GamePartyTask? PartyTask, long CreatedAt, long? CompletedAt,
     string? Result, int XpAwarded, GameYoloView? Yolo = null, string RulesVersion = "mobile-game-v0.3",
     bool LoadoutsEnabled = false, bool NeedsLoadout = false, bool OwnLoadoutLocked = false,
-    bool OpponentLoadoutLocked = false, bool LoadoutsAvailable = false);
+    bool OpponentLoadoutLocked = false, bool LoadoutsAvailable = false, GameCombatNarrationView? CombatNarration = null);
 internal sealed record GameLobby(GamePlayerView Player, IReadOnlyList<GameLobbyOpponentView> Opponents,
     IReadOnlyList<GameMatchView> Incoming, IReadOnlyList<GameMatchView> Active,
     IReadOnlyList<GameMatchView> History, GameBossView? Boss = null);
@@ -93,7 +94,7 @@ internal sealed partial class GameStore
         {
             var view = View(connection, m.Id, m.Group, m.Challenger, m.Opponent, m.State, userId);
             if (m.State.Status == "incoming" && m.Opponent == userId) incoming.Add(view);
-            else if (m.State.Status is "active" or "generating") active.Add(view);
+            else if (m.State.Status is "active" or "preparing" or "generating") active.Add(view);
             else history.Add(view);
         }
         return new(new(userId, displayName, profile.Xp, profile.Matches, profile.Xp >= 30, profile.Matches >= 3), opponents, incoming, active, history, ReadBoss(groupId, userId));
@@ -110,7 +111,7 @@ internal sealed partial class GameStore
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT CASE WHEN challenger_id=$user THEN opponent_id ELSE challenger_id END FROM game_matches WHERE group_id=$group AND (challenger_id=$user OR opponent_id=$user) AND json_extract(state_json,'$.status') IN ('incoming','active','generating')";
+        command.CommandText = "SELECT CASE WHEN challenger_id=$user THEN opponent_id ELSE challenger_id END FROM game_matches WHERE group_id=$group AND (challenger_id=$user OR opponent_id=$user) AND json_extract(state_json,'$.status') IN ('incoming','active','preparing','generating')";
         command.Parameters.AddWithValue("$group", groupId);
         command.Parameters.AddWithValue("$user", userId);
         using var reader = command.ExecuteReader();
@@ -125,7 +126,7 @@ internal sealed partial class GameStore
         {
             using var connection = Open(); using var transaction = connection.BeginTransaction(deferred: false);
             using var select = connection.CreateCommand(); select.Transaction = transaction;
-            select.CommandText = "SELECT id,challenger_id,opponent_id,state_json FROM game_matches WHERE group_id=$g AND json_extract(state_json,'$.status') IN ('incoming','active','generating')";
+            select.CommandText = "SELECT id,challenger_id,opponent_id,state_json FROM game_matches WHERE group_id=$g AND json_extract(state_json,'$.status') IN ('incoming','active','preparing','generating')";
             select.Parameters.AddWithValue("$g", groupId);
             var rows = new List<(string Id, State State)>();
             using (var reader = select.ExecuteReader()) while (reader.Read())
@@ -247,7 +248,7 @@ internal sealed partial class GameStore
     }
 
     internal GameMatchView Mutate(string id, string groupId, string userId, string action, GameCommand request, long now,
-        bool adultContentEnabled = true, bool flirtEnabled = true)
+        bool adultContentEnabled = true, bool flirtEnabled = true, GameYoloSetup? yoloSetup = null)
     {
         if (request.OperationId.Length is < 8 or > 80) throw new GameFault(400, "operation_id_invalid");
         lock (_writeGate)
@@ -281,15 +282,32 @@ internal sealed partial class GameStore
                     state.NeedsLoadout = state.LoadoutsEnabled;
                     if (state.Mode == "yolo")
                     {
-                        state.Status = "generating";
-                        state.YoloStatus = "generating";
-                        state.YoloGenerationRevision = state.Revision + 1;
+                        state.Status = "active";
+                        state.YoloStatus = "choosing";
+                        state.YoloScenarioId = GameYoloScenario.Id;
+                        if (yoloSetup is not null)
+                        {
+                            if (yoloSetup.Challenger.Id != state.ChallengerId || yoloSetup.Opponent.Id != state.OpponentId)
+                            {
+                                throw new InvalidDataException("YOLO setup participants mismatch.");
+                            }
+                            state.YoloSetting = yoloSetup.Setting;
+                            state.YoloScenarioId = yoloSetup.Setting?.Id;
+                            state.YoloPreparationRequired = yoloSetup.Setting is null;
+                            state.ChallengerPublicProfile = yoloSetup.Challenger with { Decisions = null, Setting = yoloSetup.Setting };
+                            state.OpponentPublicProfile = yoloSetup.Opponent with { Decisions = null, Setting = yoloSetup.Setting };
+                            if (state.YoloPreparationRequired)
+                            {
+                                state.Status = "preparing"; state.YoloStatus = "preparing";
+                                state.YoloGenerationRevision = state.Revision + 1;
+                            }
+                        }
                     }
                     else { state.Status = "active"; }
                     break;
                 case "decline": if (userId != state.OpponentId || state.Status != "incoming") throw new GameFault(409, "game_action_unavailable"); state.Status = "declined"; state.CompletedAt = now; break;
                 case "cancel":
-                    if (state.Mode == "yolo" && state.Status is "generating" or "failed")
+                    if (state.Mode == "yolo" && state.Status is "preparing" or "generating" or "failed")
                     {
                         state.Status = "cancelled"; state.YoloStatus = "cancelled"; state.YoloErrorCode = null; state.CompletedAt = now;
                     }
@@ -318,7 +336,8 @@ internal sealed partial class GameStore
                     if (ActiveCount(connection, tx, groupId, state.ChallengerId, id) >= 1
                         || ActiveCount(connection, tx, groupId, state.OpponentId, id) >= 1)
                         throw new GameFault(409, "match_already_active");
-                    state.Status = "generating"; state.YoloStatus = "generating"; state.YoloErrorCode = null;
+                    state.Status = state.YoloPreparationRequired && state.YoloSetting is null ? "preparing" : "generating";
+                    state.YoloStatus = state.Status; state.YoloErrorCode = null;
                     state.YoloGenerationRevision = state.Revision + 1;
                     break;
                 default: throw new GameFault(404, "game_action_unavailable");
@@ -351,6 +370,7 @@ internal sealed partial class GameStore
 
     private static void Choose(State s, string user, GameCommand r, long now)
     {
+        if (s.Mode == "yolo") { ChooseYolo(s, user, r); return; }
         if (s.Status != "active" || s.CompletedRounds >= s.TotalRounds || s.NeedsLoadout) throw new GameFault(409, "game_action_unavailable");
         var choice = (r.Choice ?? "").Trim().ToLowerInvariant() switch
         {
@@ -398,10 +418,12 @@ internal sealed partial class GameStore
                 maxCatchUp += Math.Min(remainingRounds, 2 - s.ChallengerSparks)
                     + Math.Min(remainingRounds, 2 - s.OpponentSparks);
             }
-            if (s.CompletedRounds == s.TotalRounds || s.Mode == "quick" && lead > maxCatchUp)
+            if (s.CompletedRounds == s.TotalRounds || lead > maxCatchUp)
             {
                 s.Status = "complete"; s.CompletedAt = now;
                 s.Result = s.ChallengerScore == s.OpponentScore ? "draw" : challengerLeads ? "challenger" : "opponent";
+                s.NeedsLoadout = false;
+                if (s.Mode == "tactical") { s.CombatNarrationStatus = "pending"; }
                 AssignLoserTask(s);
             }
         }
@@ -486,7 +508,7 @@ internal sealed partial class GameStore
     }
     private static void AddXp(SqliteConnection c, SqliteTransaction tx, string groupId, string id, int amount) { using var cmd = c.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "INSERT INTO game_players(group_id,user_id,xp,matches) VALUES($g,$u,$x,1) ON CONFLICT(group_id,user_id) DO UPDATE SET xp=xp+$x,matches=matches+1"; cmd.Parameters.AddWithValue("$g", groupId); cmd.Parameters.AddWithValue("$u", id); cmd.Parameters.AddWithValue("$x", amount); cmd.ExecuteNonQuery(); }
     private static (int Xp, int Matches) Player(SqliteConnection c, string id, SqliteTransaction? tx = null, string groupId = "") { using var cmd = c.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "SELECT xp,matches FROM game_players WHERE group_id=$g AND user_id=$u"; cmd.Parameters.AddWithValue("$g", groupId); cmd.Parameters.AddWithValue("$u", id); using var r = cmd.ExecuteReader(); return r.Read() ? (r.GetInt32(0), r.GetInt32(1)) : (0, 0); }
-    private static int ActiveCount(SqliteConnection c, SqliteTransaction tx, string groupId, string userId, string? exceptMatchId = null) { using var cmd = c.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "SELECT count(*) FROM game_matches WHERE group_id=$g AND (challenger_id=$u OR opponent_id=$u) AND json_extract(state_json,'$.status') IN ('incoming','active','generating') AND ($except IS NULL OR id!=$except)"; cmd.Parameters.AddWithValue("$g", groupId); cmd.Parameters.AddWithValue("$u", userId); cmd.Parameters.AddWithValue("$except", (object?)exceptMatchId ?? DBNull.Value); return Convert.ToInt32(cmd.ExecuteScalar()); }
+    private static int ActiveCount(SqliteConnection c, SqliteTransaction tx, string groupId, string userId, string? exceptMatchId = null) { using var cmd = c.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "SELECT count(*) FROM game_matches WHERE group_id=$g AND (challenger_id=$u OR opponent_id=$u) AND json_extract(state_json,'$.status') IN ('incoming','active','preparing','generating') AND ($except IS NULL OR id!=$except)"; cmd.Parameters.AddWithValue("$g", groupId); cmd.Parameters.AddWithValue("$u", userId); cmd.Parameters.AddWithValue("$except", (object?)exceptMatchId ?? DBNull.Value); return Convert.ToInt32(cmd.ExecuteScalar()); }
     private static int TacticalMatches(SqliteConnection c, SqliteTransaction tx, string groupId, string userId) { using var cmd = c.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "SELECT count(*) FROM game_matches WHERE group_id=$g AND (challenger_id=$u OR opponent_id=$u) AND json_extract(state_json,'$.mode')='tactical' AND json_extract(state_json,'$.status')='complete'"; cmd.Parameters.AddWithValue("$g", groupId); cmd.Parameters.AddWithValue("$u", userId); return Convert.ToInt32(cmd.ExecuteScalar()); }
     private static (string MatchId, string PayloadHash)? FindOperation(SqliteConnection c, SqliteTransaction tx, string id) { using var cmd = c.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "SELECT match_id,payload_hash FROM game_operations WHERE operation_id=$id"; cmd.Parameters.AddWithValue("$id", id); using var r = cmd.ExecuteReader(); return r.Read() ? (r.GetString(0), r.GetString(1)) : null; }
     private static void RecordOperation(SqliteConnection c, SqliteTransaction tx, string op, string id, string payloadHash) { using var cmd = c.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "INSERT INTO game_operations(operation_id,match_id,payload_hash) VALUES($o,$m,$p)"; cmd.Parameters.AddWithValue("$o", op); cmd.Parameters.AddWithValue("$m", id); cmd.Parameters.AddWithValue("$p", payloadHash); cmd.ExecuteNonQuery(); }
@@ -501,12 +523,12 @@ internal sealed partial class GameStore
         var currentRound = s.Rounds.ElementAtOrDefault(s.CompletedRounds);
         var ownChoiceLocked = currentRound is not null && (ownIsChallenger ? currentRound.ChallengerChoice : currentRound.OpponentChoice) is not null;
         var opponentChoiceLocked = currentRound is not null && (ownIsChallenger ? currentRound.OpponentChoice : currentRound.ChallengerChoice) is not null;
-        var outcome = s.Result is null ? null : s.Result == "draw" ? "draw" : (s.Result == (ownIsChallenger ? "challenger" : "opponent") ? "win" : "loss");
+        var outcome = s.Result is null ? null : s.Result is "draw" or "fiasco" ? s.Result : (s.Result == (ownIsChallenger ? "challenger" : "opponent") ? "win" : "loss");
         var xp = s.XpAwarded && s.Mode != "yolo" ? (s.Mode == "quick" ? (outcome == "win" ? 10 : 6) : (outcome == "win" ? 20 : 12)) : 0;
         var opponentStats = Player(c, oppId, transaction, group);
         var canCancel = s.Status == "incoming" && ownIsChallenger
             || s.Status == "active"
-            || s.Mode == "yolo" && s.Status is "generating" or "failed";
+            || s.Mode == "yolo" && s.Status is "preparing" or "generating" or "failed";
         return new(id, s.Mode, s.Status, s.Revision, s.Status == "incoming" && !ownIsChallenger, canCancel, new(oppId, oppName, opponentStats.Xp, opponentStats.Matches), rounds, s.CompletedRounds,
             ownIsChallenger ? s.ChallengerScore : s.OpponentScore, ownIsChallenger ? s.OpponentScore : s.ChallengerScore,
             s.SparksEnabled,
@@ -517,10 +539,11 @@ internal sealed partial class GameStore
                 ? (ownIsChallenger ? s.ChallengerNextLoadout : s.OpponentNextLoadout)
                 : (ownIsChallenger ? s.ChallengerActiveLoadout : s.OpponentActiveLoadout),
             s.TasksEnabled, s.AdultConsent, s.FlirtConsent, outcome == "loss" ? s.PartyTask : null, s.CreatedAt, s.CompletedAt, outcome, xp,
-            s.Mode == "yolo" ? new GameYoloView(s.YoloStatus ?? "awaiting_acceptance", s.YoloBeats, s.YoloVerdict, s.YoloWinnerId, s.YoloErrorCode) : null,
+            s.Mode == "yolo" ? new GameYoloView(s.YoloStatus ?? "awaiting_acceptance", s.YoloBeats, s.YoloVerdict, s.YoloWinnerId, s.YoloErrorCode, YoloScenarioView(s, ownIsChallenger), s.YoloOutcome) : null,
             s.RulesVersion, s.LoadoutsEnabled, s.NeedsLoadout,
             (ownIsChallenger ? s.ChallengerNextLoadout : s.OpponentNextLoadout) is not null,
-            (ownIsChallenger ? s.OpponentNextLoadout : s.ChallengerNextLoadout) is not null, s.LoadoutsUnlocked);
+            (ownIsChallenger ? s.OpponentNextLoadout : s.ChallengerNextLoadout) is not null, s.LoadoutsUnlocked,
+            s.CombatNarrationStatus is null ? null : new GameCombatNarrationView(s.CombatNarrationStatus, s.CombatNarrationText));
     }
 
     private static GameRoundView RoundView(int index, Round round, bool ownIsChallenger, int completedRounds)
@@ -546,7 +569,18 @@ internal sealed partial class GameStore
         ["trickery"] = new() { { "strike", 1 }, { "trick", 3 }, { "shield", 2 } },
         ["fortress"] = new() { { "strike", 2 }, { "trick", 1 }, { "shield", 3 } }
     };
-    private sealed class State { public string RulesVersion { get; set; } = "mobile-game-v0.3"; public bool LoadoutsUnlocked { get; set; } public bool ChallengerWantsLoadouts { get; set; } public bool LoadoutsEnabled { get; set; } public bool NeedsLoadout { get; set; } public string? ChallengerNextLoadout { get; set; } public string? OpponentNextLoadout { get; set; } public string? ChallengerActiveLoadout { get; set; } public string? OpponentActiveLoadout { get; set; } public string GroupId { get; set; } = ""; public string Mode { get; set; } = "quick"; public string Status { get; set; } = "incoming"; public long Revision { get; set; } public long CreatedAt { get; set; } public long? CompletedAt { get; set; } public int TotalRounds { get; set; } public int CompletedRounds { get; set; } public int ChallengerScore { get; set; } public int OpponentScore { get; set; } public bool SparksEnabled { get; set; } public int ChallengerSparks { get; set; } public int OpponentSparks { get; set; } public Dictionary<string, int> ChallengerInventory { get; set; } = NewInventory(); public Dictionary<string, int> OpponentInventory { get; set; } = NewInventory(); public string ChallengerId { get; set; } = ""; public string OpponentId { get; set; } = ""; public string ChallengerName { get; set; } = "Player"; public string OpponentName { get; set; } = "Player"; public string OperationId { get; set; } = ""; public bool ChallengerTasks { get; set; } public bool OpponentTasks { get; set; } public bool ChallengerAdultConsent { get; set; } public bool OpponentAdultConsent { get; set; } public bool ChallengerFlirtConsent { get; set; } public bool OpponentFlirtConsent { get; set; } public bool TasksEnabled { get; set; } public bool AdultConsent { get; set; } public bool FlirtConsent { get; set; } public GamePartyTask? PartyTask { get; set; } public int TaskSwapCount { get; set; } public List<Round> Rounds { get; set; } = []; public string? Result { get; set; } public bool XpAwarded { get; set; } public int TaskExchangeCount { get; set; } public string? YoloStatus { get; set; } public string? YoloErrorCode { get; set; } public long YoloGenerationRevision { get; set; } public string? YoloWinnerId { get; set; } public string? YoloVerdict { get; set; } public List<GameYoloBeat> YoloBeats { get; set; } = []; public GameYoloProfile? ChallengerPublicProfile { get; set; } public GameYoloProfile? OpponentPublicProfile { get; set; } }
+    private sealed class State { public string? YoloScenarioId { get; set; }
+        public GameYoloSetting? YoloSetting { get; set; }
+        public bool YoloPreparationRequired { get; set; }
+        public int YoloCompletedActs { get; set; }
+        public List<GameYoloDecision> ChallengerYoloDecisions { get; set; } = [];
+        public List<GameYoloDecision> OpponentYoloDecisions { get; set; } = [];
+        public string? YoloOutcome { get; set; }
+        public string? CombatNarrationStatus { get; set; }
+        public string? CombatNarrationText { get; set; }
+        public long CombatNarrationLeaseUntil { get; set; }
+        public long CombatNarrationGeneration { get; set; }
+        public string RulesVersion { get; set; } = "mobile-game-v0.3"; public bool LoadoutsUnlocked { get; set; } public bool ChallengerWantsLoadouts { get; set; } public bool LoadoutsEnabled { get; set; } public bool NeedsLoadout { get; set; } public string? ChallengerNextLoadout { get; set; } public string? OpponentNextLoadout { get; set; } public string? ChallengerActiveLoadout { get; set; } public string? OpponentActiveLoadout { get; set; } public string GroupId { get; set; } = ""; public string Mode { get; set; } = "quick"; public string Status { get; set; } = "incoming"; public long Revision { get; set; } public long CreatedAt { get; set; } public long? CompletedAt { get; set; } public int TotalRounds { get; set; } public int CompletedRounds { get; set; } public int ChallengerScore { get; set; } public int OpponentScore { get; set; } public bool SparksEnabled { get; set; } public int ChallengerSparks { get; set; } public int OpponentSparks { get; set; } public Dictionary<string, int> ChallengerInventory { get; set; } = NewInventory(); public Dictionary<string, int> OpponentInventory { get; set; } = NewInventory(); public string ChallengerId { get; set; } = ""; public string OpponentId { get; set; } = ""; public string ChallengerName { get; set; } = "Player"; public string OpponentName { get; set; } = "Player"; public string OperationId { get; set; } = ""; public bool ChallengerTasks { get; set; } public bool OpponentTasks { get; set; } public bool ChallengerAdultConsent { get; set; } public bool OpponentAdultConsent { get; set; } public bool ChallengerFlirtConsent { get; set; } public bool OpponentFlirtConsent { get; set; } public bool TasksEnabled { get; set; } public bool AdultConsent { get; set; } public bool FlirtConsent { get; set; } public GamePartyTask? PartyTask { get; set; } public int TaskSwapCount { get; set; } public List<Round> Rounds { get; set; } = []; public string? Result { get; set; } public bool XpAwarded { get; set; } public int TaskExchangeCount { get; set; } public string? YoloStatus { get; set; } public string? YoloErrorCode { get; set; } public long YoloGenerationRevision { get; set; } public string? YoloWinnerId { get; set; } public string? YoloVerdict { get; set; } public List<GameYoloBeat> YoloBeats { get; set; } = []; public GameYoloProfile? ChallengerPublicProfile { get; set; } public GameYoloProfile? OpponentPublicProfile { get; set; } }
     private sealed class Round { public string? ChallengerChoice { get; set; } public string? OpponentChoice { get; set; } public int ChallengerBid { get; set; } public int OpponentBid { get; set; } public string? Winner { get; set; } }
 }
 
@@ -559,6 +593,8 @@ internal static class GameEndpoints
             services.AddGameRateLimits();
             services.AddSingleton(sp => new GameStore(sp.GetRequiredService<AccountConfiguration>().DataRoot));
             services.AddSingleton<IGameYoloProvider, OpenAiGameYoloProvider>();
+            services.AddSingleton<IGameCombatNarrator, OpenAiGameYoloProvider>();
+            services.AddHostedService<GameCombatNarrationWorker>();
             services.AddSingleton<GameYoloWorker>();
             services.AddHostedService(sp => sp.GetRequiredService<GameYoloWorker>());
         }
@@ -692,10 +728,20 @@ internal static class GameEndpoints
                     await MobileWandSessions.RequireForGame(h, userId, snapshot.Mode == "tactical");
                     await MobileWandSessions.RequireForGame(h, snapshot.Opponent.Id, snapshot.Mode == "tactical");
                 }
+                GameYoloSetup? yoloSetup = null;
+                if (action == "accept" && snapshot.Mode == "yolo")
+                {
+                    var participants = store.Participants(id)!.Value;
+                    var accounts = h.RequestServices.GetRequiredService<AccountDatabase>();
+                    var wands = h.RequestServices.GetRequiredService<WandGenerationStore>();
+                    var left = await GameYoloWorker.ReadPublicProfile(participants.ChallengerId, "Kouzelník", profiles, wands, accounts, h.RequestAborted);
+                    var right = await GameYoloWorker.ReadPublicProfile(participants.OpponentId, "Kouzelník", profiles, wands, accounts, h.RequestAborted);
+                    yoloSetup = new(left, right);
+                }
                 var settings = launch.ReadGroup(groupId)!;
                 var result = store.Mutate(id, groupId, userId, action,
-                    request, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), settings.AdultContentEnabled, settings.FlirtEnabled);
-                if (result.Yolo?.Status == "generating") yolo.Enqueue(id, result.Revision);
+                    request, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), settings.AdultContentEnabled, settings.FlirtEnabled, yoloSetup);
+                if (result.Yolo?.Status is "preparing" or "generating") yolo.Enqueue(id, result.Revision);
                 if (h.RequestServices.GetService<KeepsakeStore>() is { } keepsakes)
                     result = await WithOpponentWandArtworkAsync(result, h, profiles, keepsakes);
                 return Results.Ok(await GameDisplayNames.DecorateAsync(result, profiles, h.RequestServices.GetRequiredService<AccountDatabase>(), h.RequestAborted));
