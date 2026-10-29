@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import InvitationGroupFields from './InvitationGroupFields.vue';
 import OperationsPanel from './OperationsPanel.vue';
 import ModelReleasesPanel from './ModelReleasesPanel.vue';
+import AdminNavigation from './AdminNavigation.vue';
+import AdminConfirmation from './AdminConfirmation.vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import { account, accountOrigin, accountRequest, authenticatePasskey, refreshIdentity, hasRole, type Account, type ResourceGrant } from './session';
@@ -74,14 +76,16 @@ async function reauthenticate() {
 </script>
 <template>
   <section class="page-stack" aria-labelledby="admin-title">
-    <header><p class="eyebrow">Správa aplikace</p><h1 id="admin-title">Uživatelé a oprávnění</h1><p>Vlastník řídí účty a obnovu. Správci přidělují přístup ke konkrétním prostředkům.</p></header>
+    <header><h1 id="admin-title">Uživatelé a oprávnění</h1><p>Vlastník řídí účty a obnovu. Správci přidělují přístup ke konkrétním prostředkům.</p><p class="admin-aside">Večer se tváří jako spontánní. Tady se mu to pečlivě plánuje.</p></header>
     <AwNotice v-if="error" tone="danger" role="alert">{{ error }}
       <p v-if="failureStatus || failureCode">{{ failureStatus ? `HTTP ${failureStatus}` : '' }}{{ failureStatus && failureCode ? ' · ' : '' }}{{ failureCode }}</p>
       <AwButton v-if="failureCode === 'recent_passkey_required'" :busy="busy" @click="reauthenticate">Ověřit totožnost přístupovým klíčem</AwButton>
     </AwNotice>
-    <AwNotice v-if="message" tone="info" role="status">{{ message }}</AwNotice>
+    <AdminConfirmation v-if="message && token">{{ message }}</AdminConfirmation>
+    <AwNotice v-else-if="message" tone="info" role="status">{{ message }}</AwNotice>
     <AwNotice v-if="!hasRole('Administrator')" tone="warning">Tato stránka vyžaduje oprávnění správce. <RouterLink to="/settings">Zpět na účet</RouterLink></AwNotice>
     <template v-else>
+      <AdminNavigation current="accounts" />
       <p><RouterLink :to="{path:'/signin',query:{return:'/settings/admin'}}">Znovu ověřit účet přístupovým klíčem</RouterLink></p>
       <OperationsPanel />
       <ModelReleasesPanel />
@@ -94,5 +98,6 @@ async function reauthenticate() {
   </section>
 </template>
 <style scoped>
+.admin-aside { max-width: 48ch; color: var(--wns-violet); }
 .identity-form { display: grid; gap: .75rem; max-width: 36rem; }.identity-list { list-style: none; padding: 0; }.identity-list li { border-top: 1px solid var(--aw-border-subtle); padding-block: 1rem; }.user-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }.invite-output { margin-top: 1.5rem; display: grid; gap: .75rem; }small { font-size: .8rem; }
 </style>
