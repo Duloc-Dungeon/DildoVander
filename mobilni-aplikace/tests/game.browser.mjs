@@ -22,9 +22,26 @@ try {
       assert.ok(await page.locator('.game-content').evaluate(element => getComputedStyle(element).fontFamily.includes('Manrope')), `${state}: Manrope font`);
       assert.equal(await page.locator('.scene-shell').evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(8, 9, 9)', `${state}: shared WNS charcoal background`);
       if (['choice', 'incoming', 'adult', 'result', 'challenge'].includes(state)) {
-        assert.equal(await page.locator('.game-content .aw-button--primary').first().evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(184, 243, 212)', `${state}: shared mint primary action`);
+        const primary = page.locator('.game-content .aw-button--primary').first();
+        const expectedBackground = await primary.isDisabled() ? 'rgb(34, 38, 38)' : 'rgb(184, 243, 212)';
+        assert.equal(await primary.evaluate(element => getComputedStyle(element).backgroundColor), expectedBackground, `${state}: action color communicates availability`);
       }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${state} ${width}: horizontal overflow`);
+      if (state === 'lobby') {
+        const teamLink = await page.getByRole('link', { name: /Najít spojence/ }).boundingBox();
+        assert.ok(teamLink && teamLink.y + teamLink.height < 760, `${width}: earned team mode is visible before the fixed navigation`);
+      }
+      if (state === 'choice' || state === 'team-choice') {
+        assert.equal(await page.locator('.game-spell-token').count(), 3, `${state}: shared spell tokens`);
+        assert.ok(await page.locator('.game-spark small').evaluate(element => parseFloat(getComputedStyle(element).fontSize) >= 14), `${state}: readable spark consequence`);
+        assert.ok(await page.locator('.game-spells small').first().evaluate(element => getComputedStyle(element).display !== 'none' && parseFloat(getComputedStyle(element).fontSize) >= 14), `${state}: readable action rules`);
+        const rules = page.locator('.game-rules summary');
+        await rules.click();
+        await page.getByText('Tři kouzla. Jedna volba.', { exact: true }).waitFor();
+        const rulesBox = await page.locator('.game-rules > div').boundingBox();
+        assert.ok(rulesBox && rulesBox.x >= 0 && rulesBox.x + rulesBox.width <= width, `${state}: rules remain inside the viewport`);
+        await rules.click();
+      }
       if (state === 'incoming' || state === 'challenge') assert.equal(await page.getByLabel('Chci po prohře krátký úkol').count(), 0);
       if (state === 'early-result') {
         assert.equal(await page.locator('.game-round-dots > .done').count(), 4);
@@ -52,16 +69,21 @@ try {
       if (state === 'upgrade-wand') assert.equal(await page.getByRole('link', {name:'Vylepšit hůlku v kufrově dílně'}).count(), 1);
       if (state === 'choice') {
         const count = requests.length;
-        await page.getByRole('radio', { name: /Lest/ }).check();
+        const spell = page.getByRole('radio', { name: /Lest/ });
+        await spell.focus();
+        await page.keyboard.press('Space');
+        assert.equal(await spell.isChecked(), true, 'a spell can be selected with the keyboard');
         assert.equal(requests.length, count, 'selection must remain local');
         const confirm = page.getByRole('button', { name: 'Potvrdit tah' });
+        assert.equal(await confirm.evaluate(button => getComputedStyle(button).backgroundColor), 'rgb(184, 243, 212)', 'selected spell enables the mint confirmation');
         await page.keyboard.press('Tab');
-        await confirm.focus();
+        await page.keyboard.press('Tab');
+        assert.equal(await confirm.evaluate(button => button === document.activeElement), true, 'confirmation follows the optional spark in keyboard order');
         assert.equal(await confirm.evaluate(button => button.matches(':focus-visible')), true);
         assert.equal(await confirm.evaluate(button => getComputedStyle(button).outlineColor), 'rgb(184, 243, 212)', 'WNS v2 mint confirmation focus remains visible');
         if (width === 390) await page.screenshot({ path: path.join(output, 'confirmation-focus-390.png'), fullPage: true });
         await page.getByRole('button', { name: 'Potvrdit tah' }).click();
-        await page.getByText('Tvůj tah je uzamčený.', { exact: false }).first().waitFor();
+        await page.locator('.game-clash-stage--locked').getByText('Tah uzamčený', { exact: false }).waitFor();
         assert.equal(requests.at(-1).body.choice, 'trick');
       }
       if (state === 'yolo') { await page.getByRole('button', { name: 'Ukázat celý výsledek' }).click(); await page.getByText('Eliška vítězí díky Děrovačce osudu.', { exact: true }).waitFor(); }
@@ -90,7 +112,11 @@ try {
         await page.getByRole('button', { name: 'Obnovit pořadí', exact: true }).waitFor();
         assert.equal(await page.locator('.game-ranking').count(), 0);
       }
-      if (state === 'team-half') { await page.getByRole('button', {name:'Předat 1 jiskru',exact:true}).click(); await page.getByText('Volba uložena.', {exact:false}).waitFor(); }
+      if (state === 'team-half') {
+        await page.getByRole('timer').waitFor();
+        await page.getByRole('button', {name:'Předat 1 jiskru',exact:true}).click();
+        await page.getByText('Volba uložena.', {exact:false}).waitFor();
+      }
       await page.screenshot({ path: path.join(output, `${state}-${width}.png`), fullPage: true }); captures++;
     }
     await page.goto(`${origin}/play/practice`);
@@ -105,6 +131,13 @@ try {
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `200% text ${width}`);
     await page.screenshot({ path: path.join(output, `large-text-${width}.png`), fullPage: true }); captures++;
+    for (const state of ['choice', 'team-choice', 'team-half', 'boss']) {
+      await page.goto(`${origin}/__game/${state}`);
+      if (state === 'team-half') await page.getByRole('timer').waitFor();
+      else await page.locator('.game-spells').waitFor();
+      await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${state}: 200% text ${width}`);
+    }
     await context.close();
   }
   assert.deepEqual(errors, []);

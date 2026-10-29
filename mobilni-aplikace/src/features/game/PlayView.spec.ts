@@ -24,6 +24,24 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('keeps earned game modes discoverable without exposing locked modes', async () => {
+    const player = { id: 'one', displayName: 'Mira', xp: 10, matchesPlayed: 1, tacticalUnlocked: false, yoloUnlocked: false };
+    let tacticalMatches = 0;
+    api.transport.mockImplementation(async (path: string) => Response.json(path.endsWith('/progress')
+      ? { pending: [], tacticalMatches }
+      : { player, opponents: [], incoming: [], active: [], history: [] }));
+    const view = await render('/play');
+    expect(view.find('.game-mode-links a').exists()).toBe(false);
+    player.tacticalUnlocked = true;
+    player.yoloUnlocked = true;
+    tacticalMatches = 3;
+    window.dispatchEvent(new Event('online'));
+    await flushPromises();
+    const destinations = view.findAll('.game-mode-links a').map(link => link.attributes('href'));
+    expect(destinations).toEqual(['/play/challenge?mode=tactical', '/play/teams', '/play/challenge?mode=yolo']);
+    expect(view.get('.game-start a').attributes('href')).toBe('/play/challenge');
+  });
+
   it('keeps the owner name Olivander even when the character has another label', async () => {
     api.setAccount({ id: 'one', displayName: 'Old name', roles: ['Owner'] });
     api.request.mockResolvedValue({ hasCharacter: true, wand: { wandId: 'saved' }, tier: 1, characterDisplayName: 'Jiná postava' });
