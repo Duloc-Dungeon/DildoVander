@@ -488,7 +488,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop[data-stage='unavailable'] .trunk-workshop__presentation, .trunk-workshop[data-stage='error'] .trunk-workshop__presentation { background: var(--wns-surface-raised); color: var(--wns-muted); }
 .trunk-workshop__conversation { padding-block: .5rem; }
 .trunk-workshop .trunk-workshop__conversation .trunk-workshop__greeting { font-size: clamp(1.5rem, 3vw, 2.2rem); line-height: 1.2; letter-spacing: -.025em; text-wrap: balance; }
-.trunk-workshop__caption { min-block-size: 3.5em; max-block-size: 8rem; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; scrollbar-color: var(--wns-line) var(--wns-bg); border-bottom: 1px solid var(--wns-line); }
+.trunk-workshop__caption { block-size: 8rem; min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; scrollbar-color: var(--wns-line) var(--wns-bg); border-bottom: 1px solid var(--wns-line); }
 .trunk-workshop .trunk-workshop__conversation .trunk-workshop__question { font-size: clamp(1.2rem, 2.5vw, 1.65rem); padding-block: .5rem 1rem; }
 .trunk-workshop__question[data-speaker='user'] { color: var(--wns-muted); font-weight: 500; }
 .trunk-workshop__live-line { display: grid; gap: .25rem; padding-block: .5rem; margin: 0; line-height: 1.5; overflow-wrap: anywhere; }

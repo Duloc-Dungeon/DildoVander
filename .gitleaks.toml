@@ -61,9 +61,19 @@ condition = "AND"
 paths = [
   '''^(kufr/)?mobilni-aplikace/tests/native_handsfree/socket_peer\.test\.mjs$''',
   '''^(kufr/)?firmware/tests/espidf_device_media_socket_test\.cpp$''',
+  '''^mobilni-aplikace/tests/speech-engine-gateway\.test\.mjs$''',
+  '''^backend-tests/PrelaunchWorkshopHttpTests\.cs$''',
 ]
 regexTarget = "secret"
 regexes = ['''^dGhlIHNhbXBsZSBub25jZQ==$''']
+
+[[allowlists]]
+description = "Deterministic local hub fixture capability, never a deployed credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^backend-tests/LocalTryHubTests\.cs$''']
+regexTarget = "line"
+regexes = ['''^\s*private const string LocalTrySecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
 
 [[allowlists]]
 description = "Synthetic host-only ESP-IDF socket test token"

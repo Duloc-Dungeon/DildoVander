@@ -304,6 +304,31 @@ class SecretScanIntegrationTests(SecretScanRepository):
         self.commit("Reviewed C++ socket fixture values")
         self.assertEqual([], self.scan(0))
 
+    def test_workshop_protocol_examples_are_exact_and_path_bound(self):
+        paths = ("mobilni-aplikace/tests/speech-engine-gateway.test.mjs",
+                 "backend-tests/PrelaunchWorkshopHttpTests.cs")
+        nonce = base64.b64encode(b"the sample nonce").decode("ascii")
+        for path in paths:
+            line = next(line for line in (ROOT / path).read_text(encoding="utf-8").splitlines()
+                        if nonce in line)
+            self.write(path, line)
+        fixture_path = "backend-tests/LocalTryHubTests.cs"
+        fixture_line = next(line for line in (ROOT / fixture_path).read_text(encoding="utf-8").splitlines()
+                            if "private const string LocalTrySecret" in line)
+        self.assertIn("0123456789abcdef" * 4, fixture_line)
+        self.write(fixture_path, fixture_line)
+        self.commit("Reviewed workshop protocol fixtures")
+        self.assertEqual([], self.scan(0))
+        changed_value = hashlib.sha256(b"changed workshop fixture credential").hexdigest()
+        for path in paths:
+            self.write(path, 'api_key = "' + changed_value + '"')
+        self.write(fixture_path, fixture_line.replace("0123456789abcdef" * 4, changed_value))
+        self.write("unrelated.cs", fixture_line)
+        self.commit("Changed values and unrelated fixture path remain blocked")
+        findings = self.scan(1)
+        self.assertEqual(set(paths) | {fixture_path, "unrelated.cs"}, {item["File"] for item in findings})
+        self.assertEqual({"generic-api-key"}, {item["RuleID"] for item in findings})
+
     def test_cpp_socket_exceptions_reject_changed_values_in_same_file(self):
         content = self.cpp_socket_statements()
         for original in (b"synthetic-test-token", b"the sample nonce"):
