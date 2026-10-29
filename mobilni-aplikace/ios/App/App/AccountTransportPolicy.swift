@@ -643,6 +643,7 @@ enum AccountTransportPolicy {
         if path == "/app/v1/game/boss/attempts" { return method == "POST" }
         if path.range(of: "^/app/v1/game/boss/attempts/[0-9a-f]{32}\\z", options: .regularExpression) != nil { return method == "GET" }
         if path.range(of: "^/app/v1/game/boss/attempts/[0-9a-f]{32}/(choose|cancel)\\z", options: .regularExpression) != nil { return method == "POST" }
+        if path.range(of: "^/app/v1/game/boss/attempts/[0-9a-f]{32}/(narration|audio)\\z", options: .regularExpression) != nil { return method == "POST" }
         if path.range(of: "^/app/v1/game/matches/[0-9a-f]{32}\\z", options: .regularExpression) != nil { return method == "GET" }
         if path.range(of: "^/app/v1/game/matches/[0-9a-f]{32}/(accept|decline|cancel|choose|loadout|task|retry)\\z", options: .regularExpression) != nil { return method == "POST" }
         if customerCompletionPage(path: path, method: method) || accountCollectionPage(path: path, method: method) { return true }
