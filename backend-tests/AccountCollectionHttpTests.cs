@@ -37,7 +37,7 @@ internal static partial class AccountIdentityTests
         var customerId = customerSession.GetProperty("account").GetProperty("id").GetString()!;
 
         var invitation = await JsonAsync(await administrator.PostAsJsonAsync("/app/v1/admin/invitations",
-            new { role = "Viewer", recoveryUserId = (string?)null }));
+            new { role = "Viewer" }));
         await EnrollAsync(viewer, viewerKey, invitation.GetProperty("token").GetString()!, "Collection linked viewer");
         var viewerId = (await CsrfAsync(viewer)).GetProperty("account").GetProperty("id").GetString()!;
 

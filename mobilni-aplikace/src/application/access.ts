@@ -27,6 +27,10 @@ export function canEnterStaffArea(account: Account | null): boolean {
   return !!account && account.roles.some(role => ['Owner', 'Administrator', 'Operator', 'Viewer'].includes(role));
 }
 
+export function requiresCustomerMembership(account: Account | null): boolean {
+  return isCustomerAccount(account) && !account?.roles.some(role => role === 'Owner' || role === 'Tester');
+}
+
 export function canOperateSuitcase(account: Account | null): boolean {
   return !!account && account.roles.some(role => ['Owner', 'Administrator', 'Operator'].includes(role));
 }

@@ -389,7 +389,6 @@ export async function accountRequest<T>(path: string, method = 'GET', body?: unk
       invitation_expired_or_used: 'Pozvánka už není platná. Vyžádejte si novou od vlastníka.',
       invalid_role: 'Server nepodporuje zvolenou roli. Správce musí ověřit, že aplikace a backend mají kompatibilní verzi.',
       invitation_limit: 'Je otevřeno příliš mnoho pozvánek. Počkejte na jejich využití nebo vypršení platnosti.',
-      recovery_unavailable: 'Vybraný účet nelze obnovit. Obnovte seznam účtů a zkontrolujte, že účet není zablokovaný.',
       owner_required: 'Pozvánku nebo obnovu účtu může vytvořit pouze vlastník.',
       account_required: 'Přihlášení vypršelo. Znovu se přihlaste a potom akci odešlete.',
       ceremony_expired_or_used: 'Ověření vypršelo. Spusťte ho znovu.',

@@ -79,9 +79,6 @@ internal static class ChronicleSourceTests
     {
         var launch = new LaunchPolicyStore(root);
         var group = launch.CreateGroup("admin", new("Testovací večer", null), 1000);
-        group = launch.SaveCountdown("admin", group.Id, new(group.Revision, 1, false), 1000);
-        group = launch.ConfirmCountdown("admin", group.Id, new(group.Revision), 1000);
-        group = launch.StartGroup("admin", group.Id, new(group.Revision), 2001);
         var input = new ChronicleEventInput("evening", group.Id + ":guest", group.Id, 1234,
             "Závěr večera", "Potvrzené vzpomínky", [new("guest", "Host", "owner")], Story: ["Doložená událost"], Visibility: "public");
         ChronicleOutboxEnvelope envelope = new(input, ["guest"], new Dictionary<string, IReadOnlyList<ChronicleAward>>());

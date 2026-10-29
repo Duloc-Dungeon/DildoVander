@@ -169,7 +169,7 @@ internal static partial class AccountIdentityTests
         Check((await owner.PutAsJsonAsync(path, change)).StatusCode == HttpStatusCode.Conflict, "stale voice revisions cannot overwrite newer choices");
         foreach (var role in new[] { AccountRoles.Tester, AccountRoles.Administrator })
         {
-            var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role, recoveryUserId = (string?)null }));
+            var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role }));
             using var member = fixture.Client();
             using var memberKey = new VirtualPasskey();
             await EnrollAsync(member, memberKey, invitation.GetProperty("token").GetString()!, role);

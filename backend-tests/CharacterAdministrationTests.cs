@@ -161,7 +161,7 @@ internal static partial class AccountIdentityTests
         noCsrf.DefaultRequestHeaders.Remove("X-DV-CSRF");
         var deniedCsrf = await noCsrf.PutAsJsonAsync("/app/v1/admin/characters/" + profile.ProfileId, request);
         Check(deniedCsrf.StatusCode == HttpStatusCode.BadRequest, "admin write requires global CSRF proof");
-        var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Operator", recoveryUserId = (string?)null }));
+        var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Operator" }));
         using var member = fixture.Client();
         using var memberKey = new VirtualPasskey();
         await EnrollAsync(member, memberKey, invitation.GetProperty("token").GetString()!, "Operator");

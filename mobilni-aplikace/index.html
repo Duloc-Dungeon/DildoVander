@@ -38,7 +38,7 @@
         document.head.append(robots);
       }
       if (location.pathname === '/signin' || location.pathname === '/signin/') {
-        const match = location.hash.match(/^#(invite|recovery)=([A-Za-z0-9_-]{32,256})$/);
+        const match = location.hash.match(/^#(invite)=([A-Za-z0-9_-]{32,256})$/);
         if (match) window.__dildovanderEnrollment = { kind: match[1], token: match[2] };
         if (location.hash) history.replaceState(null, '', location.pathname + location.search);
       }

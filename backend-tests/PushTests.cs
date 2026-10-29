@@ -70,7 +70,7 @@ internal static class PushTests
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
         await db.Database.EnsureCreatedAsync();
-        var group = launch.CreateGroup("operator", new("Offline evening", null), clock.GetUtcNow().ToUnixTimeMilliseconds());
+        var group = launch.CreateGroup("operator", new("Offline evening"), clock.GetUtcNow().ToUnixTimeMilliseconds());
         db.Users.AddRange(new AccountUser { Id = "recipient", UserName = "recipient", LaunchGroupId = group.Id },
             new AccountUser { Id = "challenger", UserName = "challenger", LaunchGroupId = group.Id },
             new AccountUser { Id = "other", UserName = "other", LaunchGroupId = group.Id });
@@ -91,8 +91,7 @@ internal static class PushTests
             pushConfiguration, clock, NullLogger<PushWorker>.Instance);
         await worker.RunOnceAsync(default);
         Check(sender.Messages.Count == 0, "registration does not replay old evening state");
-        group = launch.SaveCountdown("operator", group.Id, new(group.Revision, 2, true), clock.Milliseconds);
-        group = launch.ConfirmCountdown("operator", group.Id, new(group.Revision), clock.Milliseconds);
+        LaunchTestSchedule.Set(launch, group.Id, clock.Milliseconds + 2000, clock.Milliseconds);
         await worker.RunOnceAsync(default);
         Check(sender.Messages.Single().Message.Tag == "evening", "countdown change queued and delivered");
         clock.Advance(3);
@@ -123,7 +122,7 @@ internal static class PushTests
         await db.SaveChangesAsync();
         await worker.RunOnceAsync(default);
         Check(sender.Messages.Count == count, "new identity invitation never pushes to an unrelated enrolled account");
-        var nextGroup = launch.CreateGroup("operator", new("Next offline evening", null), clock.Milliseconds);
+        var nextGroup = launch.CreateGroup("operator", new("Next offline evening"), clock.Milliseconds);
         var recipient = await db.Users.SingleAsync(user => user.Id == "recipient");
         recipient.LaunchGroupId = nextGroup.Id;
         recipient.LaunchGroupAccessRevision++;

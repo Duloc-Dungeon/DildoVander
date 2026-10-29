@@ -484,7 +484,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop[data-stage='unavailable'] .trunk-workshop__presentation, .trunk-workshop[data-stage='error'] .trunk-workshop__presentation { background: var(--wns-surface-raised); color: var(--wns-muted); }
 .trunk-workshop__conversation { padding-block: .5rem; }
 .trunk-workshop .trunk-workshop__conversation .trunk-workshop__greeting { font-size: clamp(1.5rem, 3vw, 2.2rem); line-height: 1.2; letter-spacing: -.025em; text-wrap: balance; }
-.trunk-workshop__caption { block-size: 8rem; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; scrollbar-color: var(--wns-line) var(--wns-bg); border-bottom: 1px solid var(--wns-line); }
+.trunk-workshop__caption { min-block-size: 3.5em; max-block-size: 8rem; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; scrollbar-color: var(--wns-line) var(--wns-bg); border-bottom: 1px solid var(--wns-line); }
 .trunk-workshop .trunk-workshop__conversation .trunk-workshop__question { font-size: clamp(1.2rem, 2.5vw, 1.65rem); padding-block: .5rem 1rem; }
 .trunk-workshop__question[data-speaker='user'] { color: var(--wns-muted); font-weight: 500; }
 .trunk-workshop__live-line { display: grid; gap: .25rem; padding-block: .5rem; margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
@@ -501,11 +501,14 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__transcript li { border-bottom: 1px solid var(--wns-line); padding-block: .75rem; margin: 0; }
 .trunk-workshop__transcript li strong { color: var(--wns-mint); font-size: .85rem; }
 .trunk-workshop .aw-button--primary { box-shadow: none; border: 0; min-height: 56px; }
-@media (min-width: 850px) { .trunk-workshop__scene { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 2.5rem; margin-top: 2rem; align-items: start; } .trunk-workshop__presentation { position: sticky; top: 1rem; } }
+.trunk-workshop[data-result='false'] .trunk-workshop__presentation { padding: clamp(16px, 3vw, 32px); }
+.trunk-workshop[data-result='false'] :deep(.trunk-stage__visual) { width: min(100%, 36rem); }
+@media (min-width: 850px) { .trunk-workshop__scene { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 2.5rem; margin-top: 2rem; align-items: start; } .trunk-workshop__presentation { position: sticky; top: 1rem; } }
 @media (max-width: 849px) {
-  .trunk-workshop :deep(.trunk-stage__visual) { width: min(100%, 9rem); margin: 0; flex: 0 1 9rem; }
-  .trunk-workshop[data-result='false'] .trunk-workshop__presentation :deep(.trunk-stage) { display: flex; align-items: center; justify-content: center; gap: 1rem; }
-  .trunk-workshop :deep(.trunk-stage__activity) { flex-direction: column; gap: .25rem; text-align: center; min-width: 0; flex: 0 1 10rem; min-height: 5rem; }
+  .trunk-workshop { padding-inline: 0; }
+  .trunk-workshop__journey { margin-top: 1rem; }
+  .trunk-workshop[data-result='false'] :deep(.trunk-stage__visual) { width: min(100%, 26rem, 46svh); margin-inline: auto; }
+  .trunk-workshop :deep(.trunk-stage__activity) { min-height: 44px; text-align: center; }
   .trunk-workshop[data-result='true'] .trunk-workshop__presentation { width: min(100%, 26rem, 38svh); }
 }
 </style>

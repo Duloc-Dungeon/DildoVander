@@ -40,13 +40,6 @@ internal static partial class AccountIdentityTests
         var renamed = await JsonAsync(await resumed.GetAsync("/app/v1/account"));
         Check(renamed.GetProperty("passkeys").EnumerateArray().Any(key => key.GetProperty("name").GetString() == "Osobní iPhone"), "sign-in never overwrites a user's custom key label");
 
-        var recovery = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Viewer", recoveryUserId = session.GetProperty("account").GetProperty("id").GetString() }));
-        using var recoveryClient = fixture.Client();
-        await CsrfAsync(recoveryClient);
-        var recoveryOptions = await JsonAsync(await recoveryClient.PostAsJsonAsync("/app/v1/enrollment/options", new { token = recovery.GetProperty("token").GetString(), displayName = "Ignored replacement", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
-        Check(recoveryOptions.GetProperty("user").GetProperty("name").GetString() == "Wand Night Stand Owner · Olivander"
-            && recoveryOptions.GetProperty("user").GetProperty("id").GetString() == handle, "recovery label uses actual existing identity and role, not invitation role or supplied name");
-
         using var customer = fixture.Client();
         using var customerKey = new VirtualPasskey();
         await CsrfAsync(customer);

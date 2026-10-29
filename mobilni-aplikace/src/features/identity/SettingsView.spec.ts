@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils';
 import SettingsView from './SettingsView.vue';
 import { nextTick } from 'vue';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
-import { account } from './session';
+import { account, offlineSession } from './session';
 import { setOwnerPlayer } from '../../application/ownerMode';
 const api = vi.hoisted(() => ({
   request: vi.fn(),
@@ -17,13 +17,14 @@ vi.mock('./session', async () => {
   const accountDeletionRequested = ref(false);
   api.setAccount = value => { account.value = value; };
   api.setDeletionRequested = value => { accountDeletionRequested.value = value; };
-  return {account, accountDeletionRequested, accountRequest: api.request, signOut: api.signOut, refreshIdentity: vi.fn(), authenticatePasskey: vi.fn(), deleteAccount: vi.fn(), getAccountDeletionStatus: vi.fn().mockResolvedValue(null), hasRole: () => true};
+  return {account, accountDeletionRequested, offlineSession: ref(false), accountRequest: api.request, signOut: api.signOut, refreshIdentity: vi.fn(), authenticatePasskey: vi.fn(), deleteAccount: vi.fn(), getAccountDeletionStatus: vi.fn().mockResolvedValue(null), hasRole: () => true};
 });
 vi.mock('../../application/preferences', () => ({usePreferences: () => ({theme: 'lord-voldemort', themes: [{id: 'lord-voldemort', label: 'Stínový čaroděj'}, {id: 'olivander', label: 'Mistr hůlek'}]})}));
 beforeEach(() => {
   interfaceLanguagePreference.setScope(null);
   interfaceLanguagePreference.setLanguage('cs');
   setOwnerPlayer(null, false);
+  offlineSession.value = false;
   let name: string | null = null;
   api.setAccount({id: 'owner', displayName: 'Guest', roles: ['Owner']});
   api.setDeletionRequested(false);
@@ -33,6 +34,29 @@ beforeEach(() => {
   });
 });
 describe('credential naming settings', () => {
+  it.each([
+    { roles: ['Customer'], tools: [] },
+    { roles: ['Viewer'], tools: ['/persona-lab'] },
+    { roles: ['Operator'], tools: ['/persona-lab', '/admin/customer-sessions'] },
+    { roles: ['Administrator'], tools: ['/persona-lab', '/admin/customer-sessions'] },
+    { roles: ['Owner'], tools: ['/persona-lab', '/admin/customer-sessions'] },
+    { roles: ['Tester'], tools: ['/testing-sessions', '/persona-lab'] },
+    { roles: ['Beta', 'Tester'], tools: ['/testing-sessions', '/persona-lab'] },
+  ])('shows only permitted tool links for $roles', async identity => {
+    api.setAccount({ id: 'test', displayName: 'Test', roles: identity.roles });
+    const wrapper = mount(SettingsView, { props: { customerSurface: true }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } });
+    await flushPromises();
+    const tools = () => wrapper.findAll('nav[aria-label="Nástroje účtu"] a').map(link => link.attributes('to'));
+    expect(tools()).toEqual(identity.tools);
+    offlineSession.value = true;
+    await nextTick();
+    expect(tools()).toEqual([]);
+    offlineSession.value = false;
+    api.setDeletionRequested(true);
+    await nextTick();
+    expect(tools()).toEqual([]);
+    wrapper.unmount();
+  });
   it('localizes shared account controls and keeps customer settings free of staff resources', async () => {
     api.setAccount({id: 'customer', displayName: 'Guest', roles: ['Customer']});
     const wrapper = mount(SettingsView, { props: { customerSurface: true }, global: { stubs: { AccountArchiveList: true, EveningPanel: true, RouterLink: { template: '<a><slot /></a>' } } } });

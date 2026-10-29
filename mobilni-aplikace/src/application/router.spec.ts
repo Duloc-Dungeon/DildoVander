@@ -15,6 +15,28 @@ afterEach(async () => {
 });
 
 describe('customer entry routes', () => {
+  it.each(['/support/', '/SUPPORT', '/privacy/', '/PRIVACY', '/account-deletion/', '/ACCOUNT-DELETION', '/signin/', '/SIGNIN'])('keeps public route %s reachable even when identity is unavailable', async path => {
+    vi.mocked(fetch).mockRejectedValue(new Error('network unavailable'));
+    await router.push(`${path}?source=help#content`);
+    expect(router.currentRoute.value.path).toBe(path.toLowerCase().replace(/\/$/, ''));
+    expect(router.currentRoute.value.query.source).toBe('help');
+    expect(router.currentRoute.value.hash).toBe('#content');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('shows the not-found screen without requiring identity or launch access', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('network unavailable'));
+    await router.push('/missing-screen');
+    expect(router.currentRoute.value.name).toBe('notFound');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('canonicalizes protected screen URLs without changing dynamic identifiers', async () => {
+    await router.push('/PLAY/MATCH/AbC123/?view=details#turn');
+    expect(router.currentRoute.value.path).toBe('/signin');
+    expect(router.currentRoute.value.query.return).toBe('/play/match/AbC123?view=details#turn');
+  });
+
   it('redirects the old game chronicle route to the shared Keepsakes timeline', async () => {
     expect(router.resolve('/play/chronicle').matched[0]?.redirect).toBe('/me/keepsakes');
     await router.push('/play/chronicle');

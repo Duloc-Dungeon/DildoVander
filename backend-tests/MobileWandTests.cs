@@ -63,7 +63,7 @@ internal static class MobileWandTests
             await using var scope = app.Services.CreateAsyncScope();
             var users = scope.ServiceProvider.GetRequiredService<UserManager<AccountUser>>();
             var launch = app.Services.GetRequiredService<LaunchPolicyStore>();
-            var group = launch.CreateGroup("test", new("Closed workshop night", null),
+            var group = launch.CreateGroup("test", new("Closed workshop night"),
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             var user = new AccountUser { Id = "alice", UserName = "alice", DisplayName = "Alice", OpenAiConsentAt = 1,
                 LaunchGroupId = group.Id, LaunchGroupAccessRevision = 1,

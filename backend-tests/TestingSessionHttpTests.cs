@@ -152,7 +152,7 @@ internal static partial class AccountIdentityTests
         async Task InviteAndEnroll(HttpClient client,VirtualPasskey key,string role)
         {
             await CsrfAsync(owner);
-            var invitation=await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",new {role,recoveryUserId=(string?)null}));
+            var invitation=await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",new {role}));
             await EnrollAsync(client,key,invitation.GetProperty("token").GetString()!,role);await CsrfAsync(client);
         }
     }

@@ -723,7 +723,7 @@ create a native offline snapshot.
 
 Smartphone `/signin` používá jedno jméno pro nový účet i postavu (80 znaků)
 a univerzum (160). Účet/passkey lze dokončit bez AI souhlasu. Návrh se ukládá
-lokálně pod ID účtu bez pozvánkového či obnovovacího tokenu; až explicitní
+lokálně pod ID účtu bez pozvánkového tokenu; až explicitní
 souhlas povolí podmíněný prelaunch PUT. Nejistý zápis se nejprve rekonciluje GETem.
 
 `launchPresentation.ts` uchovává osm sekund viditelného času od skutečného PUTu,
@@ -750,33 +750,36 @@ Viewport s výškou 440 px simuluje dostupný prostor klávesnice; není důkaze
 nativní klávesnice. Nativní iPhone/Android a živé odpovědi provideru mají
 samostatné ověření.
 
-## Vstup do společné bety
+## Nábor hostů do skupiny
 
 Bez explicitní pozvánky aplikace načte serverový stav náboru a nabídne jméno,
 univerzum, samostatný AI souhlas a vytvoření vlastní passkey. Host dostává pouze
 instalační pozvánku TestFlight/Firebase. Pevné univerzum se řídí přiřazeným
 členstvím i po reinstalaci; změna výchozí skupiny nepřesouvá existující účty.
-Při zavřeném náboru zůstává přihlášení, obnova a podpora. Nejisté dokončení
+Při zavřeném náboru zůstává přihlášení a podpora. Kód obnovy účtu není podporovaný. Nejisté dokončení
 registrace nejprve ověří session; další registrace se automaticky nespouští.
 
-V existující správě otevřete „Beta skupina a účastníci“, vyberte nebo vytvořte
-výchozí skupinu, nastavte její termín a povolte přijímání. Po přijetí známých
+Ve správě „Večer a pozvánky“ vyberte skupinu pro nové hosty, nastavte datum
+a čas spuštění aplikace v pásmu Europe/Prague a povolte přijímání. Skupina,
+termín a nábor se uloží společně s kontrolou revizí. Po přijetí známých
 hostů nábor vypněte. Jednotlivý účet lze odebrat nebo obnovit bez smazání dat.
 Serverové kontrakty a postup migrace popisuje [backend README](../backend/README.md#samoobslužná-beta-a-členství).
 
 `npm run test:beta-admission:browser` používá pouze loopback fixture, kontroluje
-320/375/390/430 CSS px a obě témata a ukládá screenshoty do
-`.codex/artifacts/wand-beta-admission/`. Jde o webové ověření; transportní
+320/390/1280 CSS px a ukládá screenshoty do
+dočasné složky `wns-recruitment-audit` (nebo `APP_SCREENSHOTS`). Jde o webové ověření; transportní
 allowlisty mají vlastní iOS/Android regresní testy a vyžadují nativní toolchain.
 
 ### Správa čekárny a skupin
 
 Vlastník najde přípravu pod „Večer a pozvánky“ v navigaci i na úvodní stránce.
 Osobní pozvánky vytváří vlastník; správce může řídit skupiny a večer.
-U nové skupiny nejprve uložte návrh odpočtu, potom potvrďte jeho spuštění.
-Po doběhnutí otevřete večer ručně, nebo předem zvolte automatické otevření.
+Noví hosté se při registraci přiřadí do vybrané náborové skupiny a do jejího
+termínu čekají v čekárně. V termínu se skupina otevře automaticky podle času
+serveru. Dříve otevřené skupiny se při dalším náboru nezavírají ani nepřesouvají.
+Již otevřenou skupinu nelze znovu naplánovat; pro další čekárnu použijte novou.
 Při vypršení čerstvého ověření použijte nabízené ověření přístupovým klíčem
-a původní akci výslovně opakujte. Rozepsaný návrh zůstane zachovaný.
+a původní akci výslovně opakujte. Po chybě souběžné změny nejprve načtěte aktuální stav.
 
 `npm run test:owner:browser` po buildu ověřuje tuto cestu v izolované
 loopback simulaci včetně pozvánky, obnovy ověření, odpočtu a otevření večera.
@@ -809,12 +812,9 @@ nevytváří znovu; odebraný přístup zůstává odebraný. Přesun do již ot
 umožní aktivnímu účastníkovi vstup ihned a potvrzení na to upozorní. Tento výběr
 nemění výchozí skupinu pro nové registrace.
 
-Pro každou skupinu nastavte délku odpočtu a případně zaškrtněte Force, tedy
-automatické zahájení večera po jeho skončení. Uložení pouze připraví návrh: host
-zatím vidí „Brzy“. Teprve samostatné potvrzení spustí celou délku odpočtu.
-S Force se při nule otevře večer. Bez Force zůstane „Brzy“, dokud po skončení
-odpočtu nepotvrdíte zahájení večera. Force neotevírá večer okamžitě a nenahrazuje
-potvrzení začátku odpočtu. Ostatní skupiny se řídí svými vlastními potvrzeními.
+Délky odpočtů, samostatné potvrzení/Force a beta plán byly odstraněné.
+Ruční texty čekárny ani její admin náhled nejsou součástí nastavení. Zůstává
+zapnutí a pokyn pro generovanou osobní větu při přípravě nové postavy.
 
 ## Kontrola verze a povinná aktualizace
 

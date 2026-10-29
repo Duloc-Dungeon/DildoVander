@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
+import PortraitMirror from '../../components/scene/PortraitMirror.vue';
 
 const api = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('../identity/session', async () => {
@@ -33,6 +34,7 @@ it('reuses the existing private portrait with reads only and keeps it separate f
   const view = render();
   await flushPromises();
   expect(view.get('img').attributes('src')).toBe('blob:profile-a-1');
+  expect(view.getComponent(PortraitMirror).props()).toMatchObject({ open: true, animateReveal: false, replayable: true });
   expect(view.text()).toContain('Hotovo pro profile-a.');
   expect(view.text()).toContain('nikam nezveřejňuje automaticky');
   expect(api.request.mock.calls).toHaveLength(1);
@@ -57,6 +59,7 @@ it('offers explicit preparation without creating an image when an existing chara
   const view = render();
   await flushPromises();
   expect(view.find('figure').exists()).toBe(true);
+  expect(view.getComponent(PortraitMirror).props()).toMatchObject({ open: false, replayable: false });
   expect(view.get('button').text()).toBe('Připravit portrét');
   expect(api.request.mock.calls.every(([, method]) => method === 'GET')).toBe(true);
 });

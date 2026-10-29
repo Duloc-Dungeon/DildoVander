@@ -24,7 +24,6 @@ internal static partial class AccountIdentityTests
         await CsrfAsync(owner);
         var launch = fixture.App.Services.GetRequiredService<LaunchPolicyStore>();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        ConfigureProduction(now + 3_600_000);
         var selected = launch.CreateOrSelectBetaGroup("fixture-owner",
             new(launch.ReadBetaAdmission().Revision), now);
         await CsrfAsync(guest);
@@ -38,32 +37,32 @@ internal static partial class AccountIdentityTests
 
         var group = launch.ReadGroup(selected.Group.Id)!;
         var opened = launch.UpdateBetaAdmission("fixture-owner",
-            new(selected.Admission.Revision, group.Id, true, "The Shire"), now);
+            new(launch.ReadBetaAdmission().Revision, group.Id, true, "The Shire", launch.ReadGroup(group.Id)!.Revision, now + 3_600_000), now);
         var optionsResponse = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
             new { displayName = "Guest", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion });
         var options = await JsonAsync(optionsResponse);
         var closedBeforeFinish = launch.UpdateBetaAdmission("fixture-owner",
-            new(opened.Revision, group.Id, false, "The Shire"), now + 1);
+            new(launch.ReadBetaAdmission().Revision, group.Id, false, "The Shire", launch.ReadGroup(group.Id)!.Revision, now + 3_600_000), now + 1);
         var rejectedAfterClose = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/complete",
             new { credential = guestKey.Create(options) });
         Check((int)rejectedAfterClose.StatusCode == 409
             && (await ReadJsonAsync(rejectedAfterClose)).GetProperty("code").GetString() == "beta_enrollment_closed_or_changed",
             "closing recruitment invalidates an already-issued passkey ceremony");
 
-        var other = launch.CreateGroup("fixture-owner", new("Other group", null), now + 2);
+        var other = launch.CreateGroup("fixture-owner", new("Other group"), now + 2);
         var reopened = launch.UpdateBetaAdmission("fixture-owner",
-            new(closedBeforeFinish.Revision, group.Id, true, "The Shire"), now + 3);
+            new(launch.ReadBetaAdmission().Revision, group.Id, true, "The Shire", launch.ReadGroup(group.Id)!.Revision, now + 3_600_000), now + 3);
         var changedOptions = await JsonAsync(await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
             new { displayName = "Changed target", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         var retargeted = launch.UpdateBetaAdmission("fixture-owner",
-            new(reopened.Revision, other.Id, true, null), now + 4);
+            new(launch.ReadBetaAdmission().Revision, other.Id, true, null, launch.ReadGroup(other.Id)!.Revision, now + 3_600_000), now + 4);
         using var rejectedAfterRetarget = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/complete",
             new { credential = guestKey.Create(changedOptions) });
         Check((int)rejectedAfterRetarget.StatusCode == 409,
             "changing the default group invalidates an already-issued passkey ceremony");
 
         var finalConfig = launch.UpdateBetaAdmission("fixture-owner",
-            new(retargeted.Revision, group.Id, true, "The Shire"), now + 5);
+            new(launch.ReadBetaAdmission().Revision, group.Id, true, "The Shire", launch.ReadGroup(group.Id)!.Revision, now + 3_600_000), now + 5);
         var finalOptions = await JsonAsync(await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
             new { displayName = "Guest", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         using var completed = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/complete",
@@ -81,17 +80,9 @@ internal static partial class AccountIdentityTests
         Check(!waiting.GetProperty("allowed").GetBoolean()
             && waiting.GetProperty("launchAt").GetInt64() == now + 3_600_000,
             "public registration automatically joins the default and waits for the already configured production term");
-        ConfigureProduction(now - 1000);
-        Check((await JsonAsync(await guest.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean(),
-            "passing the production term automatically opens an enrolled customer's default group");
-        ConfigureProduction(now + 7_200_000);
-        Check(!(await JsonAsync(await guest.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean()
-            && (await guest.GetAsync("/app/v1/customer/character")).StatusCode == (HttpStatusCode)423,
-            "an already open customer's existing session returns to waiting when production is moved into the future");
-
         await CsrfAsync(owner);
         var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",
-            new { role = AccountRoles.Customer, recoveryUserId = (string?)null, launchGroupId = (string?)null }));
+            new { role = AccountRoles.Customer, launchGroupId = (string?)null }));
         await EnrollAsync(unassigned, unassignedKey, invitation.GetProperty("token").GetString()!, "Unassigned");
         var unassignedSession = await CsrfAsync(unassigned);
         var unassignedId = unassignedSession.GetProperty("account").GetProperty("id").GetString()!;
@@ -128,7 +119,7 @@ internal static partial class AccountIdentityTests
             new { expectedRevision = 0, name = "Guest", universe = "The Shire", openAiConsent = true }));
         var preparedId = prepared.GetProperty("character").GetProperty("profileId").GetString();
         launch.UpdateBetaAdmission("fixture-owner",
-            new(finalConfig.Revision, group.Id, false, "Another universe"), now + 6);
+            new(launch.ReadBetaAdmission().Revision, group.Id, false, "Another universe", launch.ReadGroup(group.Id)!.Revision, now + 3_600_000), now + 6);
         Check((await guest.GetAsync("/app/v1/prelaunch/character")).IsSuccessStatusCode,
             "closing recruitment does not block an existing member's waiting room");
 
@@ -142,10 +133,9 @@ internal static partial class AccountIdentityTests
         var guestAccess = await JsonAsync(await guest.GetAsync("/app/v1/customer/access"));
         Check(guestAccess.GetProperty("state").GetString() == "revoked",
             "existing session reads explicit revoked access state");
-        ConfigureProduction(now - 1000);
+        LaunchTestSchedule.Set(launch, group.Id, now - 1000, now);
         Check((await JsonAsync(await guest.GetAsync("/app/v1/customer/access"))).GetProperty("state").GetString() == "revoked",
             "opening production does not restore revoked membership");
-        ConfigureProduction(now + 7_200_000);
         using var rejectedGameRequest = await guest.GetAsync("/app/v1/customer/character");
         Check((int)rejectedGameRequest.StatusCode == 403
             && (await ReadJsonAsync(rejectedGameRequest)).GetProperty("code").GetString() == "customer_access_revoked",
@@ -171,16 +161,27 @@ internal static partial class AccountIdentityTests
         Check(restoredCharacter.GetProperty("character").GetProperty("profileId").GetString() == preparedId,
             "restoring during closed recruitment returns the same saved character");
 
+        launch.UpdateBetaAdmission("fixture-owner",
+            new(launch.ReadBetaAdmission().Revision, other.Id, true, null,
+                launch.ReadGroup(other.Id)!.Revision, now + 7_200_000), now + 7);
+        using var nextGuest = fixture.Client();
+        using var nextGuestKey = new VirtualPasskey();
+        await CsrfAsync(nextGuest);
+        var nextOptions = await JsonAsync(await nextGuest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
+            new { displayName = "Next evening guest", openAiConsent = true }));
+        Check((await nextGuest.PostAsJsonAsync("/app/v1/customer/enrollment/complete",
+            new { credential = nextGuestKey.Create(nextOptions) })).IsSuccessStatusCode,
+            "next recruitment accepts a new guest while an older evening stays open");
+        await CsrfAsync(nextGuest);
+        var nextAccess = await JsonAsync(await nextGuest.GetAsync("/app/v1/customer/access"));
+        Check(nextAccess.GetProperty("groupId").GetString() == other.Id
+            && !(await JsonAsync(await nextGuest.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean()
+            && (await JsonAsync(await guest.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean(),
+            "new enrollee waits in the newly selected group while the old active member retains play access");
+
         Console.WriteLine("Beta enrollment configuration, ceremony fencing and member access HTTP tests passed.");
 
-        void ConfigureProduction(long? term)
-        {
-            var configuration = launch.Read();
-            launch.Update("fixture-owner", new(configuration.Revision, configuration.BetaEnabled,
-                configuration.BetaLaunchAt, configuration.BetaUnlocked, true, term, false,
-                configuration.TimeZone, configuration.Teaser, configuration.InitialLoadingMessage,
-                configuration.PersonalizedLoadingEnabled, configuration.PersonalizedLoadingPrompt), now);
-        }
+
     }
 
     private static async Task<System.Text.Json.JsonElement> ReadJsonAsync(HttpResponseMessage response) =>

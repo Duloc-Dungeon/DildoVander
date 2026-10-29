@@ -13,7 +13,7 @@ internal static partial class AccountIdentityTests
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Owner");
         await CsrfAsync(owner);
         var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",
-            new { role = AccountRoles.Tester, recoveryUserId = (string?)null }));
+            new { role = AccountRoles.Tester }));
         using var tester = fixture.Client();
         using var testerKey = new VirtualPasskey();
         await EnrollAsync(tester, testerKey, invitation.GetProperty("token").GetString()!, "Tester");
