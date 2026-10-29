@@ -616,7 +616,16 @@ enum AccountTransportPolicy {
         )
     }
 
+    static func gameLiveRead(path: String, method: String) -> Bool {
+        method == "GET" && path.range(of: "^/app/v1/game/live\\?id=[A-Za-z0-9_-]{1,128}(&_=[0-9]{1,20})?\\z", options: .regularExpression) != nil
+    }
+
     static func account(path: String, method: String) -> Bool {
+        if path == "/app/v1/game/live/negotiate?negotiateVersion=1" { return method == "POST" }
+        if ["GET", "POST", "DELETE"].contains(method) {
+            let timestamp = method == "GET" ? "(&_=[0-9]{1,20})?" : ""
+            if path.range(of: "^/app/v1/game/live\\?id=[A-Za-z0-9_-]{1,128}" + timestamp + "\\z", options: .regularExpression) != nil { return true }
+        }
         if gameOpponentWandArtwork(path: path, method: method) { return true }
         if wandWorkshop(path: path, method: method) { return true }
         if path == "/app/v1/customer/wand" { return method == "GET" }
@@ -1074,8 +1083,24 @@ struct AccountDataTemporaryFile: Sendable {
     private var waiting: [Waiter] = []
     private var priorityActive: Lease?
     private var priorityWaiting: [Waiter] = []
+    private var gameLiveActive: Lease?
     private var committing = false
     var credentialCommitActive: Bool { committing }
+
+    // A held read-only poll must never occupy the account-command FIFO. A
+    // second poll is rejected rather than creating another unbounded queue.
+    func acquireGameLiveRead() throws -> Lease {
+        try Task.checkCancellation()
+        guard !committing else { throw Failure.contextChanged }
+        guard gameLiveActive == nil else { throw Failure.queueFull }
+        let lease = Lease(epoch: epoch, ceremony: false)
+        gameLiveActive = lease
+        return lease
+    }
+
+    func releaseGameLiveRead(_ lease: Lease) {
+        if gameLiveActive?.id == lease.id { gameLiveActive = nil }
+    }
 
     func acquire(ceremony: Bool = false, logout: Bool = false, requestId: UUID? = nil) async throws -> Lease {
         try Task.checkCancellation()
@@ -1160,6 +1185,16 @@ enum AccountPriorityHTTP {
         config.httpCookieStorage = nil; config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never; config.urlCredentialStorage = nil; config.urlCache = nil
         config.timeoutIntervalForRequest = 5; config.timeoutIntervalForResource = 8
+        return config
+    }
+}
+
+// Poll responses are invalidation frames only. Freeze authentication per read
+// and discard Set-Cookie, just like the separate priority cancellation channel.
+enum AccountGameLiveHTTP {
+    static func configuration() -> URLSessionConfiguration {
+        let config = AccountPriorityHTTP.configuration()
+        config.timeoutIntervalForRequest = 8; config.timeoutIntervalForResource = 10
         return config
     }
 }

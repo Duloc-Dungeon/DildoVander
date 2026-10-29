@@ -16,6 +16,7 @@ const notices = [
   ['../node_modules/vue/LICENSE', 'vue/LICENSE.txt'],
   ['../node_modules/vue-router/LICENSE', 'vue-router/LICENSE.txt'],
   ['../node_modules/pinia/LICENSE', 'pinia/LICENSE.txt'],
+  ['../third-party-notices/signalr-LICENSE.txt', 'signalr/LICENSE.txt'],
   ['../../contracts/node_modules/ajv/LICENSE', 'ajv/LICENSE.txt'],
   ['../../contracts/node_modules/jsonc-parser/LICENSE.md', 'jsonc-parser/LICENSE.txt'],
 ];

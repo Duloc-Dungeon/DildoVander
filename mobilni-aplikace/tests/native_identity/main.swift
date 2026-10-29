@@ -1366,11 +1366,75 @@ for status in [401, 403, 404] {
 }
 print("PASS SealedCase native routes, method/query denial and frozen portrait MIME/byte bounds")
 
+@MainActor private func nativeGameLiveSchedulingTests() async throws {
+    let pollPath = "/app/v1/game/live?id=connection_1-abc&_=1793275200000"
+    require(AccountTransportPolicy.gameLiveRead(path: pollPath, method: "GET"), "live read lane unavailable")
+    require(AccountTransportPolicy.account(path: pollPath, method: "GET"), "live polling route unavailable")
+    require(AccountTransportPolicy.account(path: "/app/v1/game/live/negotiate?negotiateVersion=1", method: "POST"), "live negotiate unavailable")
+    for path in ["/app/v1/game/live", pollPath + "&id=other", pollPath + "&access_token=secret", "/app/v1/game/live/other?id=one"] {
+        require(!AccountTransportPolicy.gameLiveRead(path: path, method: "GET"), "unbounded live read admitted")
+        require(!AccountTransportPolicy.account(path: path, method: "GET"), "unbounded live route admitted")
+    }
+    require(!AccountTransportPolicy.gameLiveRead(path: pollPath, method: "POST"), "mutation bypassed account FIFO")
+    require(!AccountTransportPolicy.account(path: pollPath, method: "POST"), "timestamp on live mutation accepted")
+
+    let gate = AccountRequestScheduler()
+    let config = AccountGameLiveHTTP.configuration()
+    config.protocolClasses = [DelayedIdentityProtocol.self]
+    require(config.httpCookieStorage == nil && !config.httpShouldSetCookies, "live session can persist credentials")
+    let live = URLSession(configuration: config)
+    let ordinaryConfig = URLSessionConfiguration.ephemeral
+    ordinaryConfig.protocolClasses = [DelayedIdentityProtocol.self]
+    let ordinary = URLSession(configuration: ordinaryConfig)
+    defer { live.invalidateAndCancel(); ordinary.invalidateAndCancel() }
+    let snapshot = AccountPrioritySessionSnapshot(binding: "player-one", csrf: "csrf", cookieHeaders: ["Cookie": "__Host-dv-account=frozen"])
+    let poll = Task { @MainActor in
+        let lease = try gate.acquireGameLiveRead()
+        defer { gate.releaseGameLiveRead(lease) }
+        let request = URLRequest(url: URL(string: "https://native-account.invalid/game-live-held")!)
+        let _ = try await live.data(for: snapshot.authorize(request))
+        try gate.requireCurrent(lease)
+    }
+    await eventually { DelayedIdentityProtocol.received["/game-live-held"] != nil }
+    do { _ = try gate.acquireGameLiveRead(); fatalError("duplicate live poll escaped bound") }
+    catch AccountRequestScheduler.Failure.queueFull { }
+    let command = Task { @MainActor in
+        let lease = try await gate.acquire()
+        defer { gate.release(lease) }
+        var request = URLRequest(url: URL(string: "https://native-account.invalid/game-command")!)
+        request.httpMethod = "POST"
+        let _ = try await ordinary.data(for: request)
+        try gate.requireCurrent(lease)
+    }
+    // The command must enter HTTP while the poll is still suspended.
+    await eventually { DelayedIdentityProtocol.received["/game-command"] != nil }
+    DelayedIdentityProtocol.received["/game-command"]!.complete()
+    try await command.value
+    DelayedIdentityProtocol.received["/game-live-held"]!.complete(cookie: "__Host-dv-account=untrusted; Path=/; Secure", cookieStorage: live.configuration.httpCookieStorage)
+    try await poll.value
+
+    let oldRead = try gate.acquireGameLiveRead()
+    let ceremony = try await gate.acquire(ceremony: true)
+    try await gate.beginCredentialCommit(ceremony)
+    do { try gate.requireCurrent(oldRead); fatalError("old live response crossed credential epoch") }
+    catch AccountRequestScheduler.Failure.contextChanged { }
+    do { _ = try gate.acquireGameLiveRead(); fatalError("live read started during credential commit") }
+    catch AccountRequestScheduler.Failure.contextChanged { }
+    gate.releaseGameLiveRead(oldRead); gate.release(ceremony)
+    let renewedRead = try gate.acquireGameLiveRead()
+    gate.invalidateQueuedScope()
+    do { try gate.requireCurrent(renewedRead); fatalError("live response crossed logout epoch") }
+    catch AccountRequestScheduler.Failure.contextChanged { }
+    gate.releaseGameLiveRead(renewedRead)
+    print("PASS game live read concurrency, bounded lane, cookie isolation and credential epoch fencing")
+}
+
 DispatchQueue.global().asyncAfter(deadline: .now() + 20) { fatalError("Native account scheduling regression timed out") }
 Task { @MainActor in
     do {
         try await anonymousAccountBootstrapTests()
         try await nativeAccountSchedulingTests()
+        try await nativeGameLiveSchedulingTests()
         try await accountDataShareLifecycleTests()
         print("PASS account data share lifecycle success, duplicate, cancellation and cleanup behavior")
         exit(0)

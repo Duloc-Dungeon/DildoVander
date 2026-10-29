@@ -145,6 +145,13 @@ final class NativeAccountRequestPolicy {
     }
 
     private static boolean allowsAppPath(String path, String method, String query) {
+        if ("/app/v1/game/live/negotiate".equals(path)) {
+            return "POST".equals(method) && "negotiateVersion=1".equals(query);
+        }
+        if ("/app/v1/game/live".equals(path)) {
+            return Arrays.asList("GET", "POST", "DELETE").contains(method) && query != null
+                && query.matches("^id=[A-Za-z0-9_-]{1,128}" + ("GET".equals(method) ? "(&_=[0-9]{1,20})?" : "") + "$");
+        }
         if (allowsWandWorkshopPath(path, method, query)) return true;
         if (query == null && allowsSealedCasePath(path, method)) return true;
         if (path.matches("^/app/v1/game/matches/[0-9a-f]{32}/opponent/wand-artwork$")) {

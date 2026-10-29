@@ -7,6 +7,27 @@ The group game at `/play` includes quick/tactical duels, sparks, loadouts, teams
 YOLO stories, voluntary tasks and a shared boss. See [mobile game](../docs/mobile-game.md)
 for rules, API boundaries, local preview and verification.
 
+Games subscribe to the authenticated SignalR hub at `/app/v1/game/live`.
+Successful game commands notify the affected players with a payload-free
+`gameChanged` event; the client immediately reads the authoritative match.
+Notifications arriving during a command or read are coalesced and read afterwards.
+Web browsers prefer WebSockets. Capacitor uses SignalR long polling through the
+native account transport so its session cookies and CSRF protection stay intact;
+server polls end after five seconds, below Android's HTTP read timeout.
+On iOS, held reads use a separate single-slot lane and a frozen authenticated
+cookie snapshot, so they cannot block game commands or persist response cookies.
+Credential changes fence obsolete poll results with the account scheduler epoch.
+The existing three-second REST check remains as recovery for a missed event,
+disconnection or background worker completion. Active-match updates fetch only
+the match, without waiting for lobby or wand metadata. The hub has no game-command
+methods and accepts only eligible signed-in players. A single backend instance
+owns connections; multiple backend replicas would require SignalR scale-out.
+
+After `npm run build`, `npm run test:game-live:browser` exercises two browser
+players against synthetic REST/WebSocket fixtures and checks both directions
+before the fallback poll. Backend `--mobile-game-http` tests cover the real hub
+and authenticated command notifications; `--owner-player-http` covers the owner.
+
 Quick duels and practice use at most seven exchanges and finish when the trailing
 player can no longer catch up. Without sparks, four wins decide the duel; with
 sparks, the server includes remaining bonus points before declaring a winner.
