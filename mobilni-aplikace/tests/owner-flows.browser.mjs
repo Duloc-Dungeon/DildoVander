@@ -80,6 +80,7 @@ try {
       if (url.pathname === '/app/v1/customer/character') return json({ profile: null });
       if (url.pathname === '/app/v1/customer/sessions') return json({ items: [] });
       if (url.pathname === '/app/v1/customer/wand') return json({ hasCharacter: false, wand: null, tier: 0 });
+      if (url.pathname === '/app/v1/game') return json({ opponents: [], incoming: [], active: [], history: [] });
       if (url.pathname === '/app/v1/passkeys/reauthentication-options') return json({ challenge: 'AQID', allowCredentials: [] });
       if (url.pathname === '/app/v1/passkeys/reauthenticate') { recent = true; reauthentications++; return json({}); }
       if (url.pathname === '/app/v1/admin/users') return json({ users: [], grants: [] });
@@ -178,13 +179,13 @@ try {
     await page.getByRole('navigation', { name: 'Sekce aplikace', exact: true }).getByRole('link', { name: 'Účet', exact: true }).click();
     await page.waitForURL(`${origin}/me/account`);
     assert.equal(await page.getByRole('link', { name: 'Večer a pozvánky', exact: true }).getAttribute('href'), '/settings/admin/launch');
-    await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: 'Večer', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: 'Hry', exact: true }).click();
     await page.waitForURL(`${origin}/play`);
     const sound = page.locator('.sound-toggle');
     assert.equal(await sound.getAttribute('aria-pressed'), 'false');
     await sound.click();
     assert.equal(await sound.getAttribute('aria-pressed'), 'true');
-    assert.match(await sound.innerText(), /Zapnuto/);
+    assert.equal(await sound.getAttribute('aria-label'), 'Zvuk zapnutý, vypnout');
     assert(await sound.evaluate(element => {
       const rect = element.getBoundingClientRect();
       return rect.width >= 44 && rect.height >= 44;
@@ -197,7 +198,7 @@ try {
       page.getByRole('combobox', { name: /Skupina hráčů/ }).selectOption('owner-saturday'),
     ]);
     assert.equal(ownerGroupId, 'owner-saturday');
-    await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: 'Postava', exact: true }).click();
+    await page.getByRole('link', { name: 'Moje postava', exact: false }).click();
     await page.waitForURL(`${origin}/me/character`);
     await page.locator('.customer-form').waitFor();
     assert.equal(await page.locator('details.character-extra').evaluate(element => element.open), false);
