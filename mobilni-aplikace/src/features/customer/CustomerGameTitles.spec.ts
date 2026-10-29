@@ -48,19 +48,19 @@ describe('CustomerGameTitles', () => {
     expect(wrapper.findAll('.game-titles__badge').map(badge => badge.text())).toEqual(['Oběť odborníka', 'Čtenář myšlenek']);
   });
 
-  it('rejects malformed title data and keeps English loading and empty states explicit', async () => {
+  it('rejects malformed title data and keeps Czech copy with the legacy English locale prop', async () => {
     request.mockResolvedValueOnce({ titles: ['valid', 42] });
     const failed = setup();
     await flushPromises();
-    expect(failed.text()).toContain('Tituly jsou dočasně nedostupné.');
+    expect(failed.text()).toContain('Tvoje tituly jsou dočasně nedostupné.');
     expect(failed.findAll('.game-titles__badge')).toHaveLength(0);
     failed.unmount();
 
     request.mockResolvedValueOnce({ titles: [] });
     const empty = setup('en');
     await flushPromises();
-    expect(empty.text()).toContain('Your game titles');
-    expect(empty.text()).toContain('No titles have been earned yet.');
+    expect(empty.text()).toContain('Tvé tituly');
+    expect(empty.text()).toContain('Zatím sis žádný titul neodnesl.');
     empty.unmount();
   });
 

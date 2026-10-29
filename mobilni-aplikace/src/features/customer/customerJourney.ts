@@ -38,7 +38,7 @@ export interface CustomerJourneyAction {
   label: string;
   route: string;
   meaning: CustomerJourneyMeaning;
-  /** UI hint only; never authority for device readiness, consent, proximity, or starting a session. */
+  /** Compatibility field: physical-device conversations are paused and cannot be started here. */
   canStartConversation: boolean;
 }
 
@@ -78,11 +78,11 @@ export function getCustomerJourneyAction(input: CustomerJourneyInput): CustomerJ
   }
 
   if (hasActiveSession(input.sessionState)) {
-    return action('resume-session', 'Pokračovat v rozhovoru', '/me/conversation', 'active-session');
+    return action('resume-session', 'Otevřít dílnu', '/play/wand', 'active-session');
   }
 
   if (input.loading || input.error || input.stale) {
-    return action('refresh-session', 'Obnovit stav rozhovoru', '/me/conversation', 'verification-required');
+    return action('refresh-session', 'Zkontrolovat postavu', '/me/character', 'verification-required');
   }
 
   if (!input.profile) {
@@ -102,7 +102,7 @@ export function getCustomerJourneyAction(input: CustomerJourneyInput): CustomerJ
   }
 
   if (input.resultPending) {
-    return action('check-result', 'Zkontrolovat památku', '/me/conversation', 'result-preparing');
+    return action('check-result', 'Zkontrolovat památku', '/me/keepsakes', 'result-preparing');
   }
 
   const locator = input.latestAuthorizedResult?.locator;
@@ -112,12 +112,11 @@ export function getCustomerJourneyAction(input: CustomerJourneyInput): CustomerJ
       'Otevřít poslední památku',
       `/keepsake/?account=1&k=${encodeURIComponent(locator)}`,
       'latest-result',
-      true,
     );
   }
 
   // `saved` means usable without AI preparation or additional consent.
-  return action('continue-conversation', 'Pokračovat k rozhovoru', '/me/conversation', 'conversation-ready', true);
+  return action('continue-conversation', 'Otevřít dílnu', '/play/wand', 'conversation-ready');
 }
 
 function hasActiveSession(state: string | null | undefined): boolean {

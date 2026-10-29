@@ -4,20 +4,14 @@ import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import { account, accountDeletionRequested, accountRequest, offlineSession, signingOut } from '../identity/session';
 
-const props = withDefaults(defineProps<{ locale?: 'cs' | 'en' }>(), { locale: 'cs' });
-const copy = computed(() => props.locale === 'en' ? {
-  title: 'Your game titles', intro: 'Awards earned in the player group linked to your account.',
-  refresh: 'Refresh titles', loading: 'Loading your titles…', empty: 'No titles have been earned yet.',
-  signedOut: 'Sign in to view titles saved to your account.', offline: 'Account titles are unavailable offline.',
-  unavailable: 'Account titles are unavailable while this session is changing.',
-  failure: 'Your titles are temporarily unavailable. Try refreshing.',
-} : {
+defineProps<{ locale?: 'cs' | 'en' }>();
+const copy = computed(() => ({
   title: 'Tvé tituly', intro: 'Ocenění za hru ve skupině propojené s tvým účtem.',
   refresh: 'Obnovit tituly', loading: 'Načítám tvoje tituly…', empty: 'Zatím sis žádný titul neodnesl.',
-  signedOut: 'Pro zobrazení titulů uložených k účtu se přihlaste.', offline: 'Tituly účtu nejsou offline dostupné.',
-  unavailable: 'Tituly účtu nejsou během změny relace dostupné.',
-  failure: 'Tituly jsou dočasně nedostupné. Zkus je obnovit.',
-});
+  signedOut: 'Přihlas se a zobraz tituly uložené ke svému účtu.', offline: 'Tvoje tituly nejsou dostupné offline.',
+  unavailable: 'Tituly nejsou dostupné, dokud se mění přihlášení.',
+  failure: 'Tvoje tituly jsou dočasně nedostupné. Zkus je obnovit.',
+}));
 
 const titles = ref<string[]>([]);
 const busy = ref(false);

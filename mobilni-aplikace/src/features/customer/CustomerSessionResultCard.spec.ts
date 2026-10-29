@@ -102,7 +102,7 @@ describe('customer session result card', () => {
     api.request.mockResolvedValue({ ...result('unavailable', { owner: false, locator: null, readiness: { reason: 'result_unavailable' } }), wandGeneration: { status: 'failed', canRetry: true } });
     const wrapper = await render(); await flushPromises();
     expect(wrapper.text()).toContain('Osobní hůlku se nepodařilo vytvořit');
-    expect(wrapper.get('a[href="/me/conversation"]').text()).toBe('Přejít k rozhovoru');
+    expect(wrapper.get('a[href="/play/wand"]').text()).toBe('Otevřít dílnu');
     expect(api.request.mock.calls.filter(call => call[1] !== 'GET')).toHaveLength(0);
   });
 

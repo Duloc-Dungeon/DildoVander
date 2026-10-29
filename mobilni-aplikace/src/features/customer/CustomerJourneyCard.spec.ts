@@ -33,7 +33,7 @@ describe('customer next-action guidance', () => {
   it('announces failed verification and links to recovery without offering a start', async () => {
     const wrapper = await render({ account: customer, profile: { status: 'ready' }, error: true });
     expect(wrapper.get('[role="status"]').text()).toContain('není ověřený');
-    expect(wrapper.get('.aw-button--primary').attributes('href')).toBe('/me/conversation');
+    expect(wrapper.get('.aw-button--primary').attributes('href')).toBe('/me/character');
     expect(wrapper.text()).not.toContain('Postava je uložená.');
     expect(wrapper.find('button').exists()).toBe(false);
     wrapper.unmount();
@@ -41,8 +41,8 @@ describe('customer next-action guidance', () => {
 
   it('returns to an unresolved session despite a missing profile and explains reachability', async () => {
     const wrapper = await render({ account: customer, profile: null, sessionState: 'recovering' });
-    expect(wrapper.get('.aw-button--primary').text()).toBe('Pokračovat v rozhovoru');
-    expect(wrapper.text()).toContain('nepotvrzuje aktuální spojení');
+    expect(wrapper.get('.aw-button--primary').text()).toBe('Otevřít dílnu');
+    expect(wrapper.text()).toContain('přímo v aplikaci');
     wrapper.unmount();
   });
 
@@ -57,16 +57,16 @@ describe('customer next-action guidance', () => {
   it('reactively localizes an active unknown session without changing its route or action', async () => {
     const wrapper = await render({ account: customer, profile: null, sessionState: 'future-active-state' });
     const action = wrapper.get('.aw-button--primary');
-    expect(action.text()).toBe('Pokračovat v rozhovoru');
-    expect(action.attributes('href')).toBe('/me/conversation');
+    expect(action.text()).toBe('Otevřít dílnu');
+    expect(action.attributes('href')).toBe('/play/wand');
 
     interfaceLanguagePreference.setLanguage('en');
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain('Postava, hra a tvoje památky');
-    expect(wrapper.text()).toContain('Vraťte se k existujícímu rozhovoru.');
-    expect(action.text()).toBe('Pokračovat v rozhovoru');
-    expect(action.attributes('href')).toBe('/me/conversation');
+    expect(wrapper.text()).toContain('Kufrovu dílnu najdeš přímo v aplikaci.');
+    expect(action.text()).toBe('Otevřít dílnu');
+    expect(action.attributes('href')).toBe('/play/wand');
     wrapper.unmount();
   });
 });

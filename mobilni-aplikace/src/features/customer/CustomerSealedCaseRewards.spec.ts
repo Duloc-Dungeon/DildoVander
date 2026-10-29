@@ -60,20 +60,20 @@ describe('CustomerSealedCaseRewards', () => {
     expect(wrapper.text()).not.toContain(ownerCase);
   });
 
-  it('rejects contradictory reward counts and localizes an empty collection', async () => {
+  it('rejects contradictory reward counts and keeps Czech copy with the legacy locale prop', async () => {
     request.mockResolvedValueOnce(page([
       { caseId: ownerCase, releasedAt: '2026-10-22T12:00:00Z', team: 'Guardian', confirmedPlans: 1, successfulPlans: 2 },
     ]));
     const failed = setup();
     await flushPromises();
-    expect(failed.text()).toContain('Stopy v případech jsou dočasně nedostupné.');
+    expect(failed.text()).toContain('Tvoje stopy v případech jsou dočasně nedostupné.');
     expect(failed.findAll('.case-rewards__item')).toHaveLength(0);
     failed.unmount();
 
     request.mockResolvedValueOnce(page([]));
     const empty = setup('en');
     await flushPromises();
-    expect(empty.text()).toContain('No released case keepsakes are saved to this account yet.');
+    expect(empty.text()).toContain('Zatím tu nejsou žádné uzavřené případy uložené k tomuto účtu.');
     empty.unmount();
   });
 
