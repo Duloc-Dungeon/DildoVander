@@ -66,6 +66,27 @@ describe('customer Live workshop', () => {
   it.each(['wand_character_preparing', 'wand_character_needs_clarification', 'wand_character_preparation_failed'])('blocks both modes while %s', async value => {
     reason = value; await render(); expect(view!.findAll('button').some(button => ['Promluvit s kufrem', 'Raději psát'].includes(button.text()))).toBe(false); expect(api.connect).not.toHaveBeenCalled();
   });
+  it('announces confirmed text replies without streaming fragments', async () => {
+    await render(); await click('Raději psát');
+    const announcement = view!.get('[aria-live="polite"]');
+    expect(announcement.text()).toBe('Co má hůlka zachránit?');
+    api.observer.transcript('assistant', 'Nedokončená věta'); await flushPromises();
+    expect(view!.get('.trunk-workshop__question').text()).toBe('Nedokončená věta');
+    expect(announcement.text()).toBe('Co má hůlka zachránit?');
+  });
+  it('prioritizes confirmed manufacture over speech and keeps failed work recoverable', async () => {
+    session = saved(); await render(); await click('Pokračovat hlasem');
+    api.observer.phase('speaking'); api.observer.outputLevel(.8); await flushPromises();
+    expect(view!.get('.trunk-stage').attributes('data-stage')).toBe('speaking');
+    api.observer.workshopSession({ ...saved(), status: 'generating' }); await flushPromises();
+    expect(view!.get('.trunk-stage').attributes('data-stage')).toBe('forging');
+    expect(view!.get('[aria-current="step"]').text()).toBe('Výroba');
+    expect(view!.get('.trunk-stage__visual').attributes('style')).toContain('--trunk-level: 0;');
+    api.observer.workshopSession({ ...saved(), status: 'failed', canRetry: true }); await flushPromises();
+    expect(view!.get('.trunk-stage').attributes('data-stage')).toBe('error');
+    expect(view!.text()).toContain('Obnovit výrobu');
+    expect(view!.text()).not.toContain('Pokračovat hlasem');
+  });
   it('explicitly connects customer workshop Live with its own ticket', async () => {
     await render(); await click('Promluvit s kufrem'); expect(api.connect).toHaveBeenCalledOnce(); expect(api.connect.mock.calls[0][3]).toEqual({ purpose: 'workshop' }); expect(api.request.mock.calls.some(call => call[0] === `${base}/sessions/${session.id}/ticket`)).toBe(true); expect(api.request.mock.calls.some(call => String(call[0]).includes('persona-lab'))).toBe(false);
   });
