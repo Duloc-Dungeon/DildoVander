@@ -23,8 +23,8 @@ export function captureAndroidAppLink(raw: string): string | null {
   const parsed = new URL(raw);
   if (['/signin', '/signin/'].includes(parsed.pathname)) {
     delete window.__dildovanderEnrollment;
-    const enrollment = parsed.hash.match(/^#(invite|recovery)=([A-Za-z0-9_-]{32,256})$/);
-    if (enrollment) window.__dildovanderEnrollment = { kind: enrollment[1] as 'invite' | 'recovery', token: enrollment[2]! };
+    const enrollment = parsed.hash.match(/^#(invite)=([A-Za-z0-9_-]{32,256})$/);
+    if (enrollment) window.__dildovanderEnrollment = { kind: enrollment[1] as 'invite', token: enrollment[2]! };
   } else if (['/archive/duel', '/keepsake/duel.html'].includes(parsed.pathname)) {
     delete window.__dildovanderDuelGrant;
     const grant = parsed.hash.match(/^#grant=([A-Za-z0-9_-]{43})&side=(left|right)$/);

@@ -24,10 +24,9 @@ const protectedReturn = !!route.query.return && route.query.return !== '/';
 const enrollment = ref(!protectedReturn && !signingOut.value && !logoutUnconfirmed.value);
 const arrival = ref(!protectedReturn && !signingOut.value && !logoutUnconfirmed.value);
 const linkedInvitation = ref(false);
-const linkedEnrollment = ref<{ kind: 'invite' | 'recovery'; token: string } | null>(null);
+const linkedEnrollment = ref<{ kind: 'invite'; token: string } | null>(null);
 const betaEntry = ref(enrollment.value);
 const customerEnrollment = ref(false);
-const enrollmentKind = ref<'invite' | 'recovery'>('invite');
 const token = ref('');
 const customerDisplayName = ref('');
 const invitationName = ref('');
@@ -51,7 +50,7 @@ const stepHeading = ref<HTMLHeadingElement | null>(null);
 const language = computed(() => interfaceLanguagePreference.language.value);
 watch(() => account.value?.id, id => interfaceLanguagePreference.setScope(id), { immediate: true });
 // These steps share a route, so route navigation cannot announce the new view.
-watch([arrival, enrollment, enrollmentKind, betaEntry, customerEnrollment], () => {
+watch([arrival, enrollment, betaEntry, customerEnrollment], () => {
   stepHeading.value?.focus();
 }, { flush: 'post' });
 function errorKey(value: unknown): CustomerCopyKey {
@@ -77,7 +76,7 @@ onMounted(async () => {
   if (logoutUnconfirmed.value) return;
   const suppliedCode = consumeEnrollment();
   linkedEnrollment.value = suppliedCode;
-  if (suppliedCode) { arrival.value = false; linkedInvitation.value = true; enrollment.value = true; betaEntry.value = false; enrollmentKind.value = suppliedCode.kind; token.value = suppliedCode.token; }
+  if (suppliedCode) { arrival.value = false; linkedInvitation.value = true; enrollment.value = true; betaEntry.value = false; token.value = suppliedCode.token; }
   await retryIdentity();
 });
 async function retryIdentity(): Promise<void> {
@@ -136,17 +135,15 @@ function beginFromArrival(): void {
   betaChangedError.value = false;
   const supplied = linkedEnrollment.value;
   linkedInvitation.value = !!supplied;
-  enrollmentKind.value = supplied?.kind ?? 'invite';
   betaEntry.value = !supplied;
   token.value = supplied?.token ?? '';
   if (!supplied) void refreshDefaultEnrollment();
 }
-function setEnrollmentMode(kind: 'invite' | 'recovery'): void {
+function setEnrollmentMode(): void {
   arrival.value = false;
   linkedInvitation.value = false;
   enrollment.value = true;
   betaEntry.value = false;
-  enrollmentKind.value = kind;
   customerEnrollment.value = false;
   token.value = '';
   aiConsent.value = false;
@@ -171,11 +168,11 @@ async function submit(): Promise<void> {
   const focusTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const returningAccount = !!account.value;
   try {
-    const betaRegistration = !account.value && enrollment.value && enrollmentKind.value === 'invite' && betaEntry.value;
-    const invitationRegistration = !account.value && enrollment.value && enrollmentKind.value === 'invite' && !betaEntry.value;
+    const betaRegistration = !account.value && enrollment.value && betaEntry.value;
+    const invitationRegistration = !account.value && enrollment.value && !betaEntry.value;
     const accountName = invitationRegistration ? invitationName.value.trim() : customerEnrollment.value ? customerDisplayName.value : '';
     const enrollmentName = betaRegistration ? invitationName.value.trim() : accountName;
-    if (!account.value && (customerEnrollment.value || enrollment.value && enrollmentKind.value === 'invite') && !aiConsent.value) { error.value = 'signin.ai-consent-required'; return; }
+    if (!account.value && (customerEnrollment.value || enrollment.value) && !aiConsent.value) { error.value = 'signin.ai-consent-required'; return; }
     if ((invitationRegistration || betaRegistration) && (!enrollmentName || !invitationUniverse.value.trim())) return;
     if (betaRegistration && !defaultEnrollment.value?.available) {
       await refreshDefaultEnrollment();
@@ -259,7 +256,7 @@ async function submit(): Promise<void> {
   <section class="signin-page" aria-labelledby="sign-in-title">
     <header class="signin-masthead">
       <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><WnsWordmark /></RouterLink>
-      <AwButton v-if="arrival && !account" class="signin-code-entry" @click="setEnrollmentMode('invite')">{{ customerCopy.text('signin.have-invite') }}</AwButton>
+      <AwButton v-if="arrival && !account" class="signin-code-entry" @click="setEnrollmentMode()">{{ customerCopy.text('signin.have-invite') }}</AwButton>
     </header>
     <div v-if="arrival && !account && !logoutUnconfirmed && !sessionUnavailable" class="arrival-content">
       <div class="signin-art signin-art--amber" aria-hidden="true"><img :src="amberWand" alt="" width="1254" height="1254" fetchpriority="high" /></div>
@@ -275,12 +272,11 @@ async function submit(): Promise<void> {
     <div v-else class="signin-content">
       <div v-if="!enrollment && !account && !customerEnrollment" class="signin-art signin-art--violet" aria-hidden="true"><img :src="accessKey" alt="" width="696" height="430" /></div>
       <header class="signin-intro">
-        <h1 id="sign-in-title" ref="stepHeading" tabindex="-1">{{ account ? customerCopy.text('signin.title') : enrollment || customerEnrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : (language === 'en' ? 'What shall we call you?' : 'Jak ti budou říkat?') : (language === 'en' ? 'Back on the scene.' : 'Zpátky na scénu.') }}</h1>
-        <p v-if="!account && enrollment && enrollmentKind === 'invite'" class="identity-hint">Vyber si postavu pro společný večer. Přijetím pozvánky si založíš účet pro svůj osobní zážitek.</p>
+        <h1 id="sign-in-title" ref="stepHeading" tabindex="-1">{{ account ? customerCopy.text('signin.title') : enrollment || customerEnrollment ? (language === 'en' ? 'What shall we call you?' : 'Jak ti budou říkat?') : (language === 'en' ? 'Back on the scene.' : 'Zpátky na scénu.') }}</h1>
+        <p v-if="!account && enrollment" class="identity-hint">Vyber si postavu pro společný večer. Přijetím pozvánky si založíš účet pro svůj osobní zážitek.</p>
       </header>
       <nav v-if="!account && !customerEnrollment" class="signin-options" aria-label="Způsob vstupu">
-        <AwButton v-if="!enrollment || enrollmentKind !== 'invite' || betaEntry" :disabled="busy || signingOut" @click="setEnrollmentMode('invite')">{{ customerCopy.text(enrollment && enrollmentKind === 'recovery' ? 'signin.back-to-invitation' : 'signin.have-invite') }}</AwButton>
-        <AwButton v-if="!enrollment || enrollmentKind !== 'recovery'" :disabled="busy || signingOut" @click="setEnrollmentMode('recovery')">{{ customerCopy.text('signin.use-recovery') }}</AwButton>
+        <AwButton v-if="!enrollment || betaEntry" :disabled="busy || signingOut" @click="setEnrollmentMode()">{{ customerCopy.text('signin.have-invite') }}</AwButton>
         <AwButton v-if="enrollment" :disabled="busy || signingOut" @click="showPasskeySignIn">{{ customerCopy.text('signin.have-passkey') }}</AwButton>
       </nav>
       <AwNotice v-if="error && !sessionUnavailable" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
@@ -299,8 +295,6 @@ async function submit(): Promise<void> {
           <p class="identity-hint">{{ customerCopy.text(launchAllowed === true ? 'signin.customer-purpose' : 'signin.customer-invite-purpose') }}</p>
         </template>
         <template v-else-if="enrollment">
-          <AwNotice v-if="enrollmentKind === 'recovery'" tone="warning">{{ customerCopy.text('signin.recovery-enrollment-warning') }} {{ customerCopy.text('signin.recovery-code-target') }}</AwNotice>
-          <template v-if="enrollmentKind === 'invite'">
             <p v-if="enrollmentLoading" role="status">{{ language === 'en' ? 'Checking beta access…' : 'Ověřuji možnost vstupu do bety…' }}</p>
             <AwNotice v-else-if="betaEntry && enrollmentUnavailable" tone="warning" role="alert">{{ language === 'en' ? 'We could not check invitation availability. Check your connection and try again.' : 'Možnost přijetí pozvánky se nepodařilo ověřit. Zkontroluj připojení a zkus to znovu.' }} <AwButton @click="refreshDefaultEnrollment">{{ language === 'en' ? 'Try again' : 'Zkusit znovu' }}</AwButton></AwNotice>
             <AwNotice v-else-if="betaEntry && ((defaultEnrollment?.available === false && !token) || betaClosedError)" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
@@ -308,18 +302,17 @@ async function submit(): Promise<void> {
             <AwField id="account-name" :label="customerCopy.text('signin.invite-name')" :hint="customerCopy.text('signin.invite-name-hint')"><input id="account-name" aria-describedby="account-name-hint" ref="invitationNameInput" v-model="invitationName" class="aw-input" placeholder="Např. Hermiona Granger" maxlength="80" autocomplete="nickname" required :disabled="busy" /></AwField>
             <div v-if="betaEntry && defaultEnrollment?.fixedUniverse" class="fixed-universe"><span>{{ customerCopy.text('signin.invite-universe') }}</span><p id="account-universe">{{ defaultEnrollment.fixedUniverse }}</p><small>{{ language === 'en' ? 'The invitation sets this universe.' : 'Univerzum je určené pozvánkou.' }}</small></div>
             <AwField v-else id="account-universe" :label="customerCopy.text('signin.invite-universe')" hint="Svět, ze kterého tvoje postava pochází."><input id="account-universe" aria-describedby="account-universe-hint" v-model="invitationUniverse" class="aw-input" placeholder="Např. Harry Potter" maxlength="160" autocomplete="off" required :disabled="busy" /></AwField>
-          </template>
-          <AwField v-if="(!betaEntry || enrollmentKind === 'recovery') && !linkedInvitation" id="account-invite" :label="customerCopy.text(enrollmentKind === 'recovery' ? 'signin.recovery-code-label' : 'signin.invite-code-label')" :hint="customerCopy.text('signin.token-hint')"><input id="account-invite" aria-describedby="account-invite-hint" ref="invitationCodeInput" v-model="token" class="aw-input" type="password" autocomplete="off" maxlength="256" required :disabled="busy" /></AwField>
+          <AwField v-if="!betaEntry && !linkedInvitation" id="account-invite" :label="customerCopy.text('signin.invite-code-label')" :hint="customerCopy.text('signin.token-hint')"><input id="account-invite" aria-describedby="account-invite-hint" ref="invitationCodeInput" v-model="token" class="aw-input" type="password" autocomplete="off" maxlength="256" required :disabled="busy" /></AwField>
 
         </template>
-          <fieldset v-if="customerEnrollment || enrollment && enrollmentKind === 'invite'" class="consent-fieldset">
+          <fieldset v-if="customerEnrollment || enrollment" class="consent-fieldset">
             <legend>Souhlas s osobním zážitkem</legend>
             <label><input v-model="aiConsent" type="checkbox" required :disabled="busy" /> <span>{{ language === 'en' ? 'I agree to use OpenAI to create my character and personal experience.' : 'Souhlasím se zpracováním údajů postavy a zvuku rozhovoru službou OpenAI pro vytvoření osobního zážitku.' }}</span></label>
             <p class="identity-hint">{{ language === 'en' ? 'Without this consent, we will not create your character.' : 'Bez tohoto souhlasu registraci nelze dokončit.' }}</p>
             <details><summary>{{ customerCopy.text('signin.ai-consent-details') }}</summary><p>{{ customerCopy.text('signin.ai-consent-copy') }} <RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></p></details>
           </fieldset>
-        <p v-if="customerEnrollment || enrollment && enrollmentKind === 'invite'" class="identity-hint">{{ customerCopy.text('signin.passkey-before-dialog') }}</p>
-        <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || ((customerEnrollment || enrollment && enrollmentKind === 'invite') && !aiConsent) || (betaEntry && (enrollmentLoading || !defaultEnrollment?.available)) || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment ? customerCopy.text('signin.customer-create') : enrollment ? enrollmentKind === 'recovery' ? customerCopy.text('signin.recovery-title') : betaEntry ? (language === 'en' ? 'Accept invitation' : 'Přijmout pozvánku') : customerCopy.text('signin.invite-create-key') : customerCopy.text('signin.submit-signin') }}</AwButton>
+        <p v-if="customerEnrollment || enrollment" class="identity-hint">{{ customerCopy.text('signin.passkey-before-dialog') }}</p>
+        <AwButton type="submit" variant="primary" :busy="busy" :disabled="!accountsEnabled || signingOut || ((customerEnrollment || enrollment) && !aiConsent) || (betaEntry && (enrollmentLoading || !defaultEnrollment?.available)) || (customerEnrollment && launchAllowed !== true)">{{ customerEnrollment ? customerCopy.text('signin.customer-create') : enrollment ? betaEntry ? (language === 'en' ? 'Accept invitation' : 'Přijmout pozvánku') : customerCopy.text('signin.invite-create-key') : customerCopy.text('signin.submit-signin') }}</AwButton>
         <p v-if="!enrollment && !customerEnrollment" class="identity-hint">{{ language === 'en' ? 'This opens system verification. Confirm with your device; no account password is needed.' : 'Otevře se systémové ověření. Potvrď ho na svém zařízení; heslo k účtu nepotřebuješ.' }}</p>
         <AwButton v-if="customerEnrollment" @click="customerEnrollment = false">{{ customerCopy.text('signin.back-to-signin') }}</AwButton>
         <AwButton v-else-if="!enrollment && launchAllowed === true" @click="customerEnrollment = true; error = ''">{{ customerCopy.text('signin.create-customer') }}</AwButton>

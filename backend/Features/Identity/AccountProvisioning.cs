@@ -1,6 +1,5 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
 
 namespace Kufr.Backend.Features.Identity;
 
@@ -12,6 +11,8 @@ internal static class AccountProvisioning
     {
         try
         {
+            if (args.Contains("--account-recovery", StringComparer.Ordinal))
+            { throw new InvalidOperationException("Account recovery codes are no longer supported."); }
             var config = app.Services.GetRequiredService<AccountConfiguration>();
             if (!config.Enabled) { throw new InvalidOperationException("ApplicationIdentity must be explicitly configured before account provisioning."); }
             if (args is ["--account-migrate"])
@@ -25,32 +26,24 @@ internal static class AccountProvisioning
             await app.InitializeAccountsAsync();
             using var scope = app.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
-            var users = scope.ServiceProvider.GetRequiredService<UserManager<AccountUser>>();
             AccountInvitation invitation;
             var token = AccountEndpoints.Secret();
             await using var transaction = await db.Database.BeginTransactionAsync();
             if (args is ["--account-bootstrap"])
             {
-                if (await db.Users.AnyAsync()) { throw new InvalidOperationException("Bootstrap is closed because accounts already exist. Use scoped account recovery."); }
+                if (await db.Users.AnyAsync()) { throw new InvalidOperationException("Bootstrap is closed because accounts already exist."); }
                 await db.Invitations.Where(x => x.Purpose == "bootstrap-local" && !x.Consumed)
                     .ExecuteUpdateAsync(update => update.SetProperty(x => x.Consumed, true));
                 invitation = new AccountInvitation { TokenHash = AccountEndpoints.Hash(token), Purpose = "bootstrap-local", Role = AccountRoles.Owner };
             }
-            else if (args is ["--account-recovery", var userId])
-            {
-                var user = await users.FindByIdAsync(userId);
-                if (user is not { Disabled: false }) { throw new InvalidOperationException("Recovery target must be an existing active account ID."); }
-                invitation = new AccountInvitation { TokenHash = AccountEndpoints.Hash(token), Purpose = "recovery", UserId = user.Id };
-            }
-            else { throw new InvalidOperationException("Use --account-migrate, --account-bootstrap, or --account-recovery <account-id>."); }
+            else { throw new InvalidOperationException("Use --account-migrate or --account-bootstrap."); }
             invitation.ExpiresAt = AccountEndpoints.Now() + 1800;
             db.Invitations.Add(invitation);
             await db.SaveChangesAsync();
             var directory = Path.Combine(config.DataRoot, "owner-delivery");
             CreatePrivateDirectory(directory);
             var path = Path.Combine(directory, $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.txt");
-            var kind = invitation.Purpose == "recovery" ? "recovery" : "invite";
-            await File.WriteAllTextAsync(path, $"{config.AllowedOrigins[0]}/signin#{kind}={token}\nExpires UTC: {DateTimeOffset.FromUnixTimeSeconds(invitation.ExpiresAt):O}\nSingle use. Deliver privately and remove this file after enrollment.\n");
+            await File.WriteAllTextAsync(path, $"{config.AllowedOrigins[0]}/signin#invite={token}\nExpires UTC: {DateTimeOffset.FromUnixTimeSeconds(invitation.ExpiresAt):O}\nSingle use. Deliver privately and remove this file after enrollment.\n");
             if (!OperatingSystem.IsWindows()) { File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
             await transaction.CommitAsync();
             Console.WriteLine($"One-time account link written to private file: {path}. Expires in 30 minutes. The link is never printed.");

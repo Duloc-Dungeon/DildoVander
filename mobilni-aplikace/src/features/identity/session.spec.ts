@@ -167,7 +167,6 @@ describe.each([false, true])('invitation error detail (native=%s)', native => {
   it.each([
     [400, 'invalid_role', 'Server nepodporuje zvolenou roli'],
     [429, 'invitation_limit', 'příliš mnoho pozvánek'],
-    [400, 'recovery_unavailable', 'Vybraný účet nelze obnovit'],
     [403, 'recent_passkey_required', 'znovu ověřte'],
     [429, undefined, 'omezuje počet požadavků'],
     [500, undefined, 'technické logy serveru'],
@@ -178,7 +177,7 @@ describe.each([false, true])('invitation error detail (native=%s)', native => {
     request.mockResolvedValue(new Response(body,{status}));
     vi.stubGlobal('confirm',vi.fn().mockReturnValue(true));
     const identity = await import('./session');
-    const error = await identity.accountRequest('/app/v1/admin/invitations','POST',{role:'Tester',recoveryUserId:null}).catch(value=>value);
+    const error = await identity.accountRequest('/app/v1/admin/invitations','POST',{role:'Tester'}).catch(value=>value);
     if (!(error instanceof Error)) throw new Error('Expected the rejected account request');
     expect(error).toMatchObject({status,code});expect(error.message).toContain(explanation);expect(error.message).not.toContain('never-render');
   });

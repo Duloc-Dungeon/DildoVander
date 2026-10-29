@@ -32,10 +32,12 @@ describe('account invitations',()=>{
 
   it('retains a confirmed one-use invitation without making an unrelated list refresh that could misreport failure',async()=>{
     const wrapper=render();await flushPromises();if(wrapper.find('#invitation-group').exists())await wrapper.get('#invitation-group').setValue('group-a');
+    expect(wrapper.find('#recovery-account').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('kód obnovy');
     await wrapper.get('#invite-role').setValue('Tester');
     api.request.mockImplementation(async(path:string)=>{if(path==='/app/v1/admin/users')throw failure('server_error',500);return{token:invitationToken,purpose:'invite'};});
     await wrapper.get('.identity-form').trigger('submit');await flushPromises();if(wrapper.find('#invitation-group').exists())await wrapper.get('#invitation-group').setValue('group-a');
-    expect(api.request).toHaveBeenCalledWith('/app/v1/admin/invitations','POST',{role:'Tester',recoveryUserId:null,launchGroupId:'group-a'});
+    expect(api.request).toHaveBeenCalledWith('/app/v1/admin/invitations','POST',{role:'Tester',launchGroupId:'group-a'});
     expect(api.request.mock.calls.filter(call=>call[0]==='/app/v1/admin/users')).toHaveLength(1);
     expect(wrapper.get('#invitation-link').element).toHaveProperty('value',`https://example.test/signin#invite=${invitationToken}`);
     expect(wrapper.find('[role=alert]').exists()).toBe(false);expect(wrapper.text()).toContain('Jednorázový odkaz byl vytvořen');wrapper.unmount();
@@ -64,4 +66,16 @@ describe('account invitations',()=>{
     expect(wrapper.get('[role=alert]').text()).toContain('Vytvoření nebylo potvrzeno');expect(wrapper.find('#invitation-token').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('Jednorázový odkaz byl vytvořen');wrapper.unmount();
   });
+  it('rejects a legacy recovery response instead of displaying it as an invitation', async () => {
+    const wrapper = render();
+    await flushPromises();
+    await wrapper.get('#invitation-group').setValue('group-a');
+    api.request.mockResolvedValue({ token: invitationToken, purpose: 'recovery' });
+    await wrapper.get('.identity-form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.get('[role=alert]').text()).toContain('Vytvoření nebylo potvrzeno');
+    expect(wrapper.find('#invitation-token').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
 });

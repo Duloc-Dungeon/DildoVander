@@ -60,13 +60,9 @@ internal static partial class AccountIdentityTests
         await CsrfAsync(owner);
         var launch = fixture.App.Services.GetRequiredService<LaunchPolicyStore>();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var launchConfiguration = launch.Read();
-        launch.Update("test-owner", new(launchConfiguration.Revision, false, null, false,
-            true, now + 86_400_000, false, launchConfiguration.TimeZone, launchConfiguration.Teaser,
-            launchConfiguration.InitialLoadingMessage, launchConfiguration.PersonalizedLoadingEnabled,
-            launchConfiguration.PersonalizedLoadingPrompt), now);
-        var group = launch.CreateGroup("test-owner", new("Closed wand night", null), now);
-        var otherGroup = launch.CreateGroup("test-owner", new("Other closed night", null), now);
+        var group = launch.CreateGroup("test-owner", new("Closed wand night"), now);
+        LaunchTestSchedule.Set(launch, group.Id, now + 86_400_000, now);
+        var otherGroup = launch.CreateGroup("test-owner", new("Other closed night"), now);
         var guestId = await EnrollWorkshopGuestAsync(guest, guestKey, "Early wand guest");
         var movedId = await EnrollWorkshopGuestAsync(movedGuest, movedKey, "Moving wand guest");
         var profiles = fixture.App.Services.GetRequiredService<CharacterProfileStore>();
@@ -250,11 +246,7 @@ internal static partial class AccountIdentityTests
             "portrait-only revision permits saving an exact reply from the completed historical workshop");
 
         var openingTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        launchConfiguration = launch.Read();
-        launch.Update("test-owner", new(launchConfiguration.Revision, false, null, false,
-            true, openingTime, true, launchConfiguration.TimeZone, launchConfiguration.Teaser,
-            launchConfiguration.InitialLoadingMessage, launchConfiguration.PersonalizedLoadingEnabled,
-            launchConfiguration.PersonalizedLoadingPrompt), openingTime);
+        LaunchTestSchedule.Set(launch, group.Id, openingTime, openingTime);
         var opened = (await JsonAsync(await guest.GetAsync(sessionPath))).GetProperty("session");
         Check(opened.GetProperty("wand").GetProperty("wandId").GetString() == wandId
             && (await guest.GetAsync(artworkPath)).IsSuccessStatusCode,

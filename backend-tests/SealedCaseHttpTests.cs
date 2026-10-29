@@ -449,10 +449,11 @@ internal static partial class SealedCaseHttpTests
         {
             await using var scope = app.Services.CreateAsyncScope(); var users = scope.ServiceProvider.GetRequiredService<UserManager<AccountUser>>();
             var launch = app.Services.GetRequiredService<LaunchPolicyStore>(); var config = launch.Read();
-            launch.Update("fixture", new(config.Revision, true, null, true, false, null, false, config.TimeZone, config.Teaser, config.InitialLoadingMessage, config.PersonalizedLoadingEnabled, config.PersonalizedLoadingPrompt), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var group = launch.CreateGroup("fixture", new("Pod pečetí HTTP", null), now);
-            var foreign = launch.CreateGroup("fixture", new("Jiná skupina", null), now);
+            var group = launch.CreateGroup("fixture", new("Pod pečetí HTTP"), now);
+            LaunchTestSchedule.Set(launch, group.Id, now, now);
+            var foreign = launch.CreateGroup("fixture", new("Jiná skupina"), now);
+            LaunchTestSchedule.Set(launch, foreign.Id, now, now);
             foreach (var id in Enumerable.Range(1, 32).Select(i => $"p{i}").Append("foreign"))
             {
                 var user = new AccountUser { Id = id, UserName = id + "@example.invalid", Email = id + "@example.invalid", EmailConfirmed = true, DisplayName = id, LaunchGroupId = id == "foreign" ? foreign.Id : group.Id, LaunchGroupJoinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), LaunchGroupAccessRevision = 1, CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };

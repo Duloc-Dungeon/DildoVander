@@ -5,7 +5,7 @@ import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AdminReauthentication from '../identity/AdminReauthentication.vue';
 import { account, accountRequest } from '../identity/session';
-const emit = defineEmits<{ 'edit-production-schedule': [] }>();
+import { formatLaunchDate, launchTimeZone, parseLaunchDate } from './launchDate';
 
 interface LaunchGroup {
   id: string;
@@ -31,6 +31,9 @@ const groups = ref<LaunchGroup[]>([]);
 const members = ref<WaitingMember[]>([]);
 const assignmentTargets = ref<Record<string, string>>({});
 const selectedGroup = ref('');
+const openingDate = ref('');
+const selectedRecruitmentGroup = computed(() => groups.value.find(group => group.id === selectedGroup.value));
+watch(selectedGroup, () => { openingDate.value = formatLaunchDate(selectedRecruitmentGroup.value?.launchAt ?? null); });
 const managementGroupId = ref('');
 const fixedUniverse = ref('');
 const recruitmentOpen = ref(false);
@@ -44,7 +47,7 @@ const reauthenticationRequired = ref(false);
 const message = ref('');
 const lastActionSection = ref<'members' | 'admission' | null>(null);
 const membersDisclosure = ref<HTMLDetailsElement>();
-const admissionDisclosure = ref<HTMLDetailsElement>();
+const admissionDisclosure = ref<HTMLElement>();
 const currentGroup = computed(() => groups.value.find(group => group.id === admission.value?.groupId) ?? null);
 const managedGroup = computed(() => groups.value.find(group => group.id === managementGroupId.value) ?? null);
 const managedWaitingCount = computed(() => members.value.filter(member =>
@@ -56,27 +59,27 @@ const invitationStatus = computed(() => {
 });
 const groupName = computed(() => admission.value?.groupName || currentGroup.value?.name || '');
 const groupLaunchLabel = computed(() => currentGroup.value?.openedAt ? 'Večer je otevřený' : currentGroup.value?.launchAt
-  ? new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' }).format(currentGroup.value.launchAt)
-  : 'společný termín zatím není potvrzený');
+  ? new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: launchTimeZone }).format(currentGroup.value.launchAt)
+  : 'Termín otevření není nastavený');
 const countdownStatus = computed(() => {
   if (!managedGroup.value) return 'Vyberte skupinu.';
   if (managedGroup.value.openedAt) return 'Noc už je otevřená.';
-  if (managedGroup.value.launchAt == null) return 'Společný termín otevření zatím není nastavený.';
+  if (managedGroup.value.launchAt == null) return 'Termín otevření této skupiny není nastavený.';
   const expired = managedGroup.value.launchAt <= currentTime.value;
-  if (expired) return 'Společný termín uplynul. Obnovte stav otevření.';
+  if (expired) return 'Termín uplynul. Obnovte stav otevření.';
   const remainingSeconds = Math.ceil(Math.max(0, managedGroup.value.launchAt - currentTime.value) / 1000);
   const days = Math.floor(remainingSeconds / 86400);
   const hours = Math.floor(remainingSeconds / 3600) % 24;
   const minutes = Math.floor(remainingSeconds / 60) % 60;
   const seconds = remainingSeconds % 60;
   const remaining = `${days ? `${days} d ` : ''}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  return `Společný odpočet: ${remaining} · otevření ${new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' }).format(managedGroup.value.launchAt)}.`;
+  return `Do otevření skupiny: ${remaining} · otevření ${new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: launchTimeZone }).format(managedGroup.value.launchAt)}.`;
 });
 
 watch([error, reauthenticationRequired], ([currentError, needsReauthentication]) => {
   if (!currentError && !needsReauthentication) return;
   if (lastActionSection.value === 'members' && membersDisclosure.value) membersDisclosure.value.open = true;
-  if (lastActionSection.value === 'admission' && admissionDisclosure.value) admissionDisclosure.value.open = true;
+  if (lastActionSection.value === 'admission') admissionDisclosure.value?.scrollIntoView?.({ block: 'nearest' });
 }, { flush: 'post' });
 
 async function loadWaitingRoom(): Promise<WaitingMember[]> {
@@ -112,6 +115,7 @@ async function load(): Promise<boolean> {
     groups.value = Array.isArray(groupList?.groups) ? groupList.groups : [];
     members.value = waitingRoom;
     selectedGroup.value = current.groupId ?? '';
+    openingDate.value = formatLaunchDate(groups.value.find(group => group.id === current.groupId)?.launchAt ?? null);
     // This management selection is intentionally independent of the recruitment default.
     if (!groups.value.some(group => group.id === managementGroupId.value)) {
       managementGroupId.value = current.groupId ?? groups.value[0]?.id ?? '';
@@ -139,31 +143,46 @@ async function reconcile(failureMessage: string, cause: unknown): Promise<void> 
   else error.value = 'Aktuální stav se nepodařilo ověřit. Obnovte ho před další změnou.';
 }
 async function saveConfiguration(): Promise<void> {
-  if (!admission.value || busy.value) return;
+  if (!admission.value || busy.value || mutationBlocked.value) return;
   lastActionSection.value = 'admission';
+  const group = selectedRecruitmentGroup.value;
+  if (!group) { error.value = 'Vyberte skupinu pro nové hosty.'; return; }
+  // An open group's disabled date is display-only; preserve its exact historical timestamp.
+  const launchAt = group.openedAt != null ? group.launchAt
+    : openingDate.value ? parseLaunchDate(openingDate.value) : null;
+  if (openingDate.value && launchAt == null) {
+    error.value = 'Zadaný čas v pásmu Europe/Prague neexistuje. Zkontrolujte datum a změnu letního času.';
+    return;
+  }
+  if (recruitmentOpen.value && launchAt == null && group.openedAt == null) {
+    error.value = 'Před otevřením náboru nastavte termín spuštění aplikace.';
+    return;
+  }
   busy.value = true; error.value = ''; message.value = '';
   try {
     admission.value = await accountRequest<Admission>('/app/v1/admin/launch/beta-admission', 'PUT', {
       expectedRevision: admission.value.revision,
-      groupId: admission.value.groupId,
+      groupId: group.id,
+      expectedGroupRevision: group.revision,
+      launchAt,
       recruitmentOpen: recruitmentOpen.value,
       fixedUniverse: fixedUniverse.value.trim() || null,
     });
-    message.value = recruitmentOpen.value ? 'Nábor do výchozí skupiny je otevřený.' : 'Nábor do výchozí skupiny je uzavřený.';
+    await load();
+    message.value = 'Skupina, termín spuštění a nábor jsou uložené.';
   } catch (cause) { await reconcile('Změnu náboru se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
-async function chooseDefault(groupId?: string): Promise<void> {
+async function createDefaultGroup(): Promise<void> {
   if (busy.value) return;
   lastActionSection.value = 'admission';
   busy.value = true; error.value = ''; message.value = '';
   try {
     const result = await accountRequest<Admission>('/app/v1/admin/launch/beta-admission/group', 'POST', {
       expectedRevision: admission.value?.revision,
-      ...(groupId ? { groupId } : {}),
     });
     if (!result || typeof result.revision !== 'number') throw new Error('unconfirmed');
-    message.value = groupId ? 'Výchozí beta skupina byla změněna.' : 'Byla vytvořena skupina Interní beta. Nábor zůstává uzavřený.';
+    message.value = 'Skupina pro nové hosty byla vytvořena. Nastavte termín spuštění a otevřete nábor.';
     await load();
   } catch (cause) { await reconcile('Skupinu se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
@@ -228,13 +247,13 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
 </script>
 
 <template>
-  <section id="waiting-room" class="aw-card beta-admission" aria-labelledby="beta-admission-title">
-    <h3 id="beta-admission-title">Pozvaní a otevření večera</h3>
-    <p>Všechny skupiny včetně beta sdílejí jeden termín otevření. Nábor nových beta účtů se spravuje zvlášť.</p>
+  <section id="waiting-room" class="aw-card admission-management" aria-labelledby="admission-management-title">
+    <h3 id="admission-management-title">Pozvaní a otevření večera</h3>
+    <p>Noví hosté se při registraci zařadí do náborové skupiny. Do jejího otevření čekají v čekárně; dříve otevřené skupiny pokračují dál.</p>
     <section class="evening-readiness" aria-label="Připravenost večera">
       <h4>Připravenost</h4>
       <dl>
-        <div><dt>Skupina</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading ? 'Načítám stav…' : managedGroup?.name ?? (groups.length ? 'Vyberte skupinu' : 'Skupina není dostupná') }}</dd></div>
+        <div><dt>Spravovaná skupina</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading ? 'Načítám stav…' : managedGroup?.name ?? (groups.length ? 'Vyberte skupinu' : 'Skupina není dostupná') }}</dd></div>
         <div><dt>Čekající hosté</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : managedWaitingCount }}</dd></div>
         <div><dt>Přijímání hostů</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !admission ? 'Stav není načtený' : `${invitationStatus}${groupName ? ` · ${groupName}` : ''}` }}</dd></div>
         <div><dt>Otevření</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : countdownStatus }}</dd></div>
@@ -247,8 +266,30 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
     <p v-if="message" role="status">{{ message }}</p>
     <p v-if="loading" role="status">Načítání čekárny…</p>
     <template v-else-if="admission">
-      <section class="waiting-room__section" aria-labelledby="group-countdown-title">
-        <h4 id="group-countdown-title">Skupina a otevření</h4>
+      <section ref="admissionDisclosure" class="waiting-room__section recruitment-settings" aria-labelledby="admission-management-settings-title">
+        <h4 id="admission-management-settings-title">Nábor a spuštění aplikace</h4>
+        <p v-if="admission.groupId">Aktuální náborová skupina: <strong>{{ groupName }}</strong> · {{ groupLaunchLabel }}</p>
+        <p v-else>Náborová skupina zatím není nastavená.</p>
+        <form class="admission-management__settings" @submit.prevent="saveConfiguration">
+          <fieldset :disabled="busy || mutationBlocked">
+            <legend>Noví hosté</legend>
+            <label for="admission-management-group">Skupina pro nově připojené hosty</label>
+            <select id="admission-management-group" v-model="selectedGroup" class="aw-select" required><option value="">Vyberte skupinu</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select>
+            <AwButton v-if="!groups.length" variant="secondary" :disabled="busy || mutationBlocked" @click="createDefaultGroup">Vytvořit skupinu pro nové hosty</AwButton>
+            <label for="admission-launch">Kdy se spustí aplikace pro tuto skupinu</label>
+            <input id="admission-launch" v-model="openingDate" class="aw-input" type="datetime-local" :disabled="!selectedRecruitmentGroup || selectedRecruitmentGroup.openedAt != null" :required="recruitmentOpen && selectedRecruitmentGroup?.openedAt == null" aria-describedby="admission-launch-help" />
+            <p id="admission-launch-help">Časové pásmo: {{ launchTimeZone }}. Noví hosté počkají do tohoto termínu. Změna náborové skupiny nepřesouvá stávající účastníky.</p>
+            <AwNotice v-if="selectedRecruitmentGroup?.openedAt != null" tone="info">Tato skupina už je otevřená. Noví hosté v ní vstoupí ihned. Pro další čekárnu vyberte dosud neotevřenou skupinu.</AwNotice>
+            <label><input v-model="recruitmentOpen" type="checkbox" /> Přijímat nové účastníky</label>
+            <label for="admission-fixed-universe">Pevné univerzum <span>(prázdné = účastník si zvolí vlastní)</span></label>
+            <input id="admission-fixed-universe" v-model="fixedUniverse" class="aw-input" maxlength="100" />
+            <AwButton type="submit" :busy="busy" :disabled="!selectedRecruitmentGroup">Uložit skupinu, spuštění a nábor</AwButton>
+          </fieldset>
+        </form>
+        <RouterLink to="/settings/admin#invitations">Spravovat skupiny a pozvánky</RouterLink>
+      </section>
+      <section class="waiting-room__section" aria-labelledby="group-opening-title">
+        <h4 id="group-opening-title">Skupina a otevření</h4>
         <label for="management-group">Spravovaná skupina</label>
         <select id="management-group" v-model="managementGroupId" class="aw-select" :disabled="busy || mutationBlocked">
           <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
@@ -259,10 +300,6 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
           <p v-if="managedGroup.chronicleClosedAt" role="status">Závěr večera je uložený {{ joinedDate(managedGroup.chronicleClosedAt) }}.</p>
           <AwButton v-else :disabled="busy || mutationBlocked || loading" @click="closeChronicle">Uložit závěr večera</AwButton>
         </template>
-        <div v-if="managedGroup" class="waiting-room__production-schedule">
-          <p>Tato skupina sdílí termín otevření se všemi ostatními skupinami včetně beta. Před termínem hosté čekají; termín nastavíte ve společném plánu.</p>
-          <AwButton :disabled="busy || mutationBlocked" @click="emit('edit-production-schedule')">Upravit společný termín</AwButton>
-        </div>
         <GameBossControl v-if="managedGroup?.openedAt" :key="managedGroup.id" :group-id="managedGroup.id" />
       </section>
 
@@ -270,7 +307,7 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
         <summary id="waiting-room-title">Účastníci v čekárně ({{ waitingMemberCount }} čekají)</summary>
         <section class="waiting-room__section" aria-label="Účastníci v čekárně">
         <p v-if="!members.length">Čekárna je zatím prázdná.</p>
-        <ul v-else class="beta-admission__members">
+        <ul v-else class="admission-management__members">
           <li v-for="member in members" :key="member.userId">
             <div class="waiting-room__identity"><strong>{{ member.displayName }}</strong><small>Účet {{ member.userId.slice(0, 8) }} · přijat {{ joinedDate(member.joinedAt) }}<template v-if="member.fixedUniverse"> · {{ member.fixedUniverse }}</template></small><span>{{ member.groupName || 'Bez skupiny' }} · {{ member.state === 'waiting' ? 'Čeká' : 'Přístup odebrán' }}</span></div>
             <div class="waiting-room__actions">
@@ -288,36 +325,14 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
         </section>
       </details>
 
-      <details ref="admissionDisclosure" class="waiting-room__disclosure" aria-labelledby="beta-admission-settings-title">
-        <summary id="beta-admission-settings-title">Nastavení nových přijetí</summary>
-      <section class="waiting-room__section" aria-labelledby="beta-admission-config-title">
-        <h4 id="beta-admission-config-title">Výchozí skupina pro nové hosty</h4>
-        <p v-if="admission.groupId"><strong>{{ groupName }}</strong> · {{ groupLaunchLabel }}</p>
-        <p v-else>Výchozí beta skupina zatím není nastavena. Nové přijetí zůstává uzavřené.</p>
-        <div class="beta-admission__group-controls">
-          <label for="beta-admission-group">Výchozí skupina pro nové přijetí</label>
-          <select id="beta-admission-group" v-model="selectedGroup" class="aw-select"><option value="">Vyberte skupinu</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select>
-          <AwButton :disabled="busy || mutationBlocked || !selectedGroup || selectedGroup === admission.groupId" @click="chooseDefault(selectedGroup)">Nastavit jako výchozí</AwButton>
-          <AwButton variant="secondary" :disabled="busy || mutationBlocked || !!admission.groupId" @click="chooseDefault()">Vytvořit Interní beta</AwButton>
-        </div>
-      </section>
 
-        <fieldset class="beta-admission__settings" :disabled="busy || mutationBlocked || !admission.groupId">
-          <legend>Nové přijetí</legend>
-          <label><input v-model="recruitmentOpen" type="checkbox" /> Přijímat nové účastníky</label>
-          <p>Při otevřeném náboru se lze zaregistrovat bez pozvánky. Noví hosté se automaticky zařadí do výchozí skupiny.</p>
-          <label for="beta-fixed-universe">Pevné univerzum <span>(prázdné = účastník si zvolí vlastní)</span></label>
-          <input id="beta-fixed-universe" v-model="fixedUniverse" class="aw-input" maxlength="160" />
-          <AwButton :busy="busy" @click="saveConfiguration">Uložit přístup a univerzum</AwButton>
-        </fieldset>
-      </details>
     </template>
   </section>
 </template>
 
 <style scoped>
-.beta-admission { display: grid; gap: 1rem; }
-.beta-admission h3, .beta-admission h4, .beta-admission p { margin: 0; }
+.admission-management { display: grid; gap: 1rem; }
+.admission-management h3, .admission-management h4, .admission-management p { margin: 0; }
 .waiting-room__section { display: grid; gap: .75rem; border-top: 1px solid var(--aw-border-subtle); padding-top: 1rem; }
 .evening-readiness { display: grid; gap: .5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--aw-border-subtle); }
 .evening-readiness h4, .evening-readiness dl, .evening-readiness p { margin: 0; }
@@ -328,20 +343,20 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
 .waiting-room__disclosure { border-top: 1px solid var(--aw-border-subtle); padding-top: 1rem; }
 .waiting-room__disclosure > summary { min-height: 44px; display: list-item; list-style-position: inside; padding-block: .65rem; cursor: pointer; font-weight: 650; }
 .waiting-room__disclosure[open] > section { margin-top: .75rem; }
-.beta-admission__group-controls, .beta-admission__settings { display: grid; gap: .75rem; }
-.beta-admission__settings { border: 1px solid var(--aw-border-subtle); border-radius: .65rem; padding: 1rem; }
-.beta-admission__settings legend { font-weight: 650; padding-inline: .4rem; }
-.beta-admission__settings label { min-height: 44px; display: flex; align-items: center; gap: .5rem; }
-.beta-admission__settings label span { color: var(--aw-muted); font-size: .85rem; }
-.beta-admission__settings input[type="checkbox"], .waiting-room__force input { width: 20px; height: 20px; }
-.waiting-room__force { min-height: 44px; display: flex; align-items: center; gap: .65rem; }
-.beta-admission__members { list-style: none; padding: 0; margin: 0; }
-.beta-admission__members li { display: grid; gap: .75rem; border-top: 1px solid var(--aw-border-subtle); padding-block: 1rem; }
+.admission-management__group-controls, .admission-management__settings { display: grid; gap: .75rem; }
+.admission-management__settings { border: 1px solid var(--aw-border-subtle); border-radius: .65rem; padding: 1rem; }
+.admission-management__settings legend { font-weight: 650; padding-inline: .4rem; }
+.admission-management__settings label { min-height: 44px; display: flex; align-items: center; gap: .5rem; }
+.admission-management__settings label span { color: var(--aw-muted); font-size: .85rem; }
+.admission-management__settings input[type="checkbox"] { width: 20px; height: 20px; }
+
+.admission-management__members { list-style: none; padding: 0; margin: 0; }
+.admission-management__members li { display: grid; gap: .75rem; border-top: 1px solid var(--aw-border-subtle); padding-block: 1rem; }
 .waiting-room__identity, .waiting-room__actions { display: grid; gap: .4rem; min-width: 0; }
 .waiting-room__identity small { overflow-wrap: anywhere; color: var(--aw-muted); }
 .waiting-room__actions label { font-size: .875rem; }
 @media (min-width: 760px) {
-  .beta-admission__members li { grid-template-columns: minmax(0, 1fr) minmax(14rem, .8fr); align-items: center; }
+  .admission-management__members li { grid-template-columns: minmax(0, 1fr) minmax(14rem, .8fr); align-items: center; }
   .waiting-room__actions { grid-template-columns: auto minmax(8rem, 1fr) auto; align-items: center; }
 }
 </style>

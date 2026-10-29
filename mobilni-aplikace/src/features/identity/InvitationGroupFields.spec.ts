@@ -4,13 +4,13 @@ import InvitationGroupFields from './InvitationGroupFields.vue';
 import { defineComponent, ref } from 'vue';
 const api = vi.hoisted(() => ({ request: vi.fn(), reauthenticate: vi.fn() }));
 vi.mock('./session', async () => { const {ref} = await import('vue'); return {account:ref({id:'owner'}),accountRequest:api.request,authenticatePasskey:api.reauthenticate}; });
-beforeEach(() => { api.request.mockReset(); api.request.mockImplementation(async (_path,method) => method ? {group:{id:'group-b',name:'Sobota',launchAt:null,revision:1}} : {groups:[{id:'group-a',name:'Pátek',launchAt:Date.UTC(2026,10,6,19),revision:3}]}); });
+beforeEach(() => { api.request.mockReset(); api.request.mockImplementation(async (_path,method) => method ? {group:{id:'group-b',name:'Sobota',revision:1}} : {groups:[{id:'group-a',name:'Pátek',launchAt:Date.UTC(2026,10,6,19),revision:3}]}); });
 it('creates a group without an independent term and selects it for subsequent invitation links', async () => {
   const view = mount(InvitationGroupFields,{props:{modelValue:''}});
   try {
     await flushPromises(); await view.get('#invitation-group-name').setValue(' Sobota ');
     await view.get('button').trigger('click'); await flushPromises();
-    expect(api.request).toHaveBeenCalledWith('/app/v1/admin/launch/groups','POST',{name:'Sobota',launchAt:null,adultContentEnabled:true,flirtEnabled:true});
+    expect(api.request).toHaveBeenCalledWith('/app/v1/admin/launch/groups','POST',{name:'Sobota',adultContentEnabled:true,flirtEnabled:true});
     expect(view.emitted('update:modelValue')?.at(-1)).toEqual(['group-b']);
     expect(api.request.mock.calls.some(([path])=>path==='/app/v1/admin/launch')).toBe(false);
   } finally { view.unmount(); }
@@ -21,7 +21,7 @@ it('updates only the selected group with its optimistic revision', async () => {
     await flushPromises(); await view.get('#invitation-group').setValue('group-a');
     expect(view.find('input[type="datetime-local"]').exists()).toBe(false);
     await view.findAll('button').at(-1)!.trigger('click'); await flushPromises();
-    expect(api.request).toHaveBeenCalledWith('/app/v1/admin/launch/groups/group-a','PUT',{expectedRevision:3,name:'Pátek',launchAt:null,adultContentEnabled:true,flirtEnabled:true});
+    expect(api.request).toHaveBeenCalledWith('/app/v1/admin/launch/groups/group-a','PUT',{expectedRevision:3,name:'Pátek',adultContentEnabled:true,flirtEnabled:true});
     expect(api.request.mock.calls.some(([path])=>path==='/app/v1/admin/launch')).toBe(false);
   } finally { view.unmount(); }
 });
@@ -42,8 +42,8 @@ it('keeps the save confirmation visible when the parent updates its selected gro
 });
 it('loads saved content settings and restores both defaults for a new group', async () => {
   api.request.mockReset().mockImplementation(async (_path, method) => method
-    ? { group: { id: 'group-a', name: 'Pátek', launchAt: null, revision: 4, adultContentEnabled: false, flirtEnabled: false } }
-    : { groups: [{ id: 'group-a', name: 'Pátek', launchAt: null, revision: 3, adultContentEnabled: false, flirtEnabled: true }] });
+    ? { group: { id: 'group-a', name: 'Pátek', revision: 4, adultContentEnabled: false, flirtEnabled: false } }
+    : { groups: [{ id: 'group-a', name: 'Pátek', revision: 3, adultContentEnabled: false, flirtEnabled: true }] });
   const view = mount(InvitationGroupFields, { props: { modelValue: 'group-a' } });
   try {
     await flushPromises();
@@ -54,7 +54,7 @@ it('loads saved content settings and restores both defaults for a new group', as
     await view.findAll('button').find(button => button.text() === 'Uložit skupinu')!.trigger('click');
     await flushPromises();
     expect(api.request).toHaveBeenCalledWith('/app/v1/admin/launch/groups/group-a', 'PUT', {
-      expectedRevision: 3, name: 'Pátek', launchAt: null, adultContentEnabled: false, flirtEnabled: false,
+      expectedRevision: 3, name: 'Pátek', adultContentEnabled: false, flirtEnabled: false,
     });
     expect(settings[0].element).toHaveProperty('checked', false);
     expect(settings[1].element).toHaveProperty('checked', false);

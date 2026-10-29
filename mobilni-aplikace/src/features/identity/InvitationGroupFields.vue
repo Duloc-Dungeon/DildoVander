@@ -44,14 +44,14 @@ async function save(): Promise<void> {
   busy.value = true;
   try {
     const result = await accountRequest<{ group: LaunchGroup }>(group ? `/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}` : '/app/v1/admin/launch/groups', group ? 'PUT' : 'POST', {
-      name: name.value.trim(), launchAt: null, adultContentEnabled: adultContentEnabled.value,
+      name: name.value.trim(), adultContentEnabled: adultContentEnabled.value,
       flirtEnabled: flirtEnabled.value, ...(group ? { expectedRevision: group.revision } : {}),
     });
     if (expected !== epoch) return;
     if (!result?.group?.id) throw new Error('group_unconfirmed');
     groups.value = [...groups.value.filter(value => value.id !== result.group.id), result.group];
     choose(result.group.id);
-    notice.value = 'Skupina je uložená. Všechny skupiny včetně beta sdílejí termín otevření nastavený ve správě čekárny.';
+    notice.value = 'Skupina je uložená. Termín spuštění náborové skupiny nastavíte ve správě večera. Již otevřené skupiny zůstávají přístupné.';
   } catch (cause) {
     if (expected === epoch) {
       reauthenticationRequired.value = (cause as { code?: string } | null)?.code === 'recent_passkey_required';
@@ -69,7 +69,7 @@ onBeforeUnmount(() => { epoch++; });
     <legend>Skupina pozvaných a pravidla večera</legend>
     <label for="invitation-group">Skupina pozvánky</label>
     <select id="invitation-group" class="aw-select" :value="modelValue" required @change="choose(($event.target as HTMLSelectElement).value)"><option value="">Vyberte nebo vytvořte skupinu</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select>
-    <p>Všechny skupiny včetně beta sdílejí jeden termín otevření. Nastavíte ho ve správě čekárny.</p>
+    <p>Skupina určuje spoluhráče a pravidla večera. Náborovou skupinu a její spuštění nastavíte ve správě večera.</p>
     <details><summary>{{ selected ? 'Upravit skupinu nebo vytvořit další' : 'Vytvořit skupinu' }}</summary>
       <div class="group-edit">
         <AwButton v-if="selected" :disabled="busy" @click="choose('')">Nová skupina</AwButton>

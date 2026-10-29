@@ -62,12 +62,8 @@ internal static partial class SealedCaseHttpTests
         await OwnerRoleAsync(fixture);
         // Owner access to staff screens must never open a party before production.
         var launch = fixture.Services.GetRequiredService<LaunchPolicyStore>(); var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var futureGroup = launch.CreateGroup("fixture", new("Budoucí skupina", null), now);
-        var launchConfiguration = launch.Read();
-        launch.Update("fixture", new(launchConfiguration.Revision, false, null, false,
-            true, now + 3_600_000, false, launchConfiguration.TimeZone, launchConfiguration.Teaser,
-            launchConfiguration.InitialLoadingMessage, launchConfiguration.PersonalizedLoadingEnabled,
-            launchConfiguration.PersonalizedLoadingPrompt), now);
+        var futureGroup = launch.CreateGroup("fixture", new("Budoucí skupina"), now);
+        LaunchTestSchedule.Set(launch, futureGroup.Id, now + 3_600_000, now);
         using (var scope = fixture.Services.CreateScope())
         {
             var users = scope.ServiceProvider.GetRequiredService<UserManager<AccountUser>>(); var futureOwner = (await users.FindByIdAsync("p32"))!;
@@ -81,11 +77,7 @@ internal static partial class SealedCaseHttpTests
             Equal(HttpStatusCode.Forbidden, (await futureOwner.PostAsJsonAsync("/app/v1/sealed-cases", new
             { operationId = "owner-future-group", expectedPlayers = 8, variant = "first" })).StatusCode);
         }
-        launchConfiguration = launch.Read();
-        launch.Update("fixture", new(launchConfiguration.Revision, false, null, false,
-            false, null, false, launchConfiguration.TimeZone, launchConfiguration.Teaser,
-            launchConfiguration.InitialLoadingMessage, launchConfiguration.PersonalizedLoadingEnabled,
-            launchConfiguration.PersonalizedLoadingPrompt), now);
+        LaunchTestSchedule.Set(launch, futureGroup.Id, now, now);
         var profiles = fixture.Services.GetRequiredService<CharacterProfileStore>(); var profile = (await profiles.ReadAsync("p1"))!;
         await profiles.SaveAsync("p1", new CharacterWriteRequest(profile.Revision, profile.UserInput with { Name = "HUMAN_NAME_CANARY" },
             ExpectedProfileId: profile.ProfileId, OpenAiConsent: true, PortraitConsent: true), canEditExisting: true);

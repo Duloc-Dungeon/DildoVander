@@ -19,7 +19,7 @@ describe('verified Android app links', () => {
     expect(captureAndroidAppLink('https://dildovander.de/signin#invite=' + 'a'.repeat(43))).toBe('/signin');
     expect(window.__dildovanderEnrollment).toEqual({ kind: 'invite', token: 'a'.repeat(43) });
     expect(captureAndroidAppLink('https://dildovander.de/signin#recovery=' + 'b'.repeat(43))).toBe('/signin');
-    expect(window.__dildovanderEnrollment).toEqual({ kind: 'recovery', token: 'b'.repeat(43) });
+    expect(window.__dildovanderEnrollment).toBeUndefined();
     expect(androidNavigationKey('/signin')).toMatch(/^\/signin:\d+$/);
     delete window.__dildovanderEnrollment;
   });

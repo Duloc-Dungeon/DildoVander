@@ -23,7 +23,7 @@ internal static class AccountShowTests
         }
         Task<HttpResponseMessage> Stop() => op.PostAsJsonAsync(path + "/commands", new {
             commandId = Guid.NewGuid().ToString("D"), expectedStateRevision = 0, kind = "stop", ttlSeconds = 30 });
-        Check((await anonymous.GetAsync(path)).StatusCode == HttpStatusCode.Unauthorized, "anonymous cannot direct show");
+        Check((await anonymous.GetAsync(path)).StatusCode == HttpStatusCode.Locked, "anonymous cannot bypass the group launch lock to direct show");
         Check((await op.GetAsync(path)).IsSuccessStatusCode, "exact granted device show read");
         Check((await op.GetAsync("/v1/show/devices/denied-device")).StatusCode == HttpStatusCode.Forbidden, "path cannot borrow another device header grant");
         await Permission("read");

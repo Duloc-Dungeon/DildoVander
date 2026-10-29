@@ -1684,15 +1684,13 @@ internal static partial class MobileGameTests
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
             var customer = await roles.FindByNameAsync(AccountRoles.Customer) ?? throw new InvalidOperationException("Customer role missing");
             var launch = app.Services.GetRequiredService<LaunchPolicyStore>();
-            var configuration = launch.Read();
-            launch.Update("fixture", new(configuration.Revision, true, null, true, false, null, false,
-                configuration.TimeZone, configuration.Teaser, configuration.InitialLoadingMessage,
-                configuration.PersonalizedLoadingEnabled, configuration.PersonalizedLoadingPrompt), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var active = launch.CreateGroup("fixture", new("Mobile Game HTTP", null, false, true), now);
+            var active = launch.CreateGroup("fixture", new("Mobile Game HTTP", false, true), now);
             ActiveGroupId = active.Id;
-            var foreign = launch.CreateGroup("fixture", new("Mobile Game Foreign", null), now);
-            var other = launch.CreateGroup("fixture", new("Mobile Game Paused", null), now);
+            LaunchTestSchedule.Set(launch, active.Id, now, now);
+            var foreign = launch.CreateGroup("fixture", new("Mobile Game Foreign"), now);
+            LaunchTestSchedule.Set(launch, foreign.Id, now, now);
+            var other = launch.CreateGroup("fixture", new("Mobile Game Paused"), now);
             foreach (var (id, name, groupId) in new[] { (AliceId, "Alice", active.Id), (BobId, "Bob", active.Id), (ForeignId, "Foreign", foreign.Id), (PausedId, "Paused", other.Id) })
             {
                 var user = new AccountUser { Id = id, UserName = id + "@example.invalid", Email = id + "@example.invalid", EmailConfirmed = true, DisplayName = name, OpenAiConsentAt = 1, OpenAiConsentVersion = AccountAiConsent.CurrentVersion, LaunchGroupId = groupId, LaunchGroupJoinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), LaunchGroupAccessRevision = 1, CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
@@ -1762,12 +1760,16 @@ internal static partial class MobileGameTests
 
         internal void SetProductionOpen(bool open)
         {
-            var launch = app.Services.GetRequiredService<LaunchPolicyStore>();
-            var configuration = launch.Read();
-            launch.Update("fixture", new(configuration.Revision, false, null, false,
-                !open, null, false, configuration.TimeZone, configuration.Teaser,
-                configuration.InitialLoadingMessage, configuration.PersonalizedLoadingEnabled,
-                configuration.PersonalizedLoadingPrompt), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            // Explicit fixture reset simulates another closed evening; production
+            // administration cannot reclose an already opened group.
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Path.Combine(app.Services.GetRequiredService<AccountConfiguration>().DataRoot, "launch.sqlite") }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE launch_groups SET opened_at=$opened,launch_at=$opened WHERE id=$group";
+            command.Parameters.AddWithValue("$group", ActiveGroupId);
+            command.Parameters.AddWithValue("$opened", open ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : DBNull.Value);
+            command.ExecuteNonQuery();
         }
 
         internal async Task MakeOwnerAsync(string id)

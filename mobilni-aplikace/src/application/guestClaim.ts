@@ -5,10 +5,10 @@ export function consumeGuestClaim(): string | null {
   return claim || null;
 }
 
-export function consumeEnrollment(): { kind: 'invite' | 'recovery'; token: string } | null {
+export function consumeEnrollment(): { kind: 'invite'; token: string } | null {
   const enrollment = window.__dildovanderEnrollment;
   delete window.__dildovanderEnrollment;
-  return enrollment ?? null;
+  return enrollment?.kind === 'invite' ? enrollment : null;
 }
 
 export function consumeDuelGrant(): { token: string; side: 'left' | 'right' } | null {
