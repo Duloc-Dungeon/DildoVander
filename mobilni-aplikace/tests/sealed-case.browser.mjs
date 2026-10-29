@@ -119,6 +119,11 @@ try {
     const assertNoHorizontalOverflow = async label => assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label} overflow ${width}`);
     await page.getByRole('button', { name: 'Moje akce', exact: true }).click();
+    await page.keyboard.press('Tab');
+    const actionPanel = page.locator('#sealed-panel');
+    await actionPanel.focus();
+    assert.equal(await actionPanel.evaluate(element => document.activeElement === element), true, 'action panel remains an announcement target');
+    assert.equal(await actionPanel.evaluate(element => getComputedStyle(element).outlineStyle), 'none', 'announcing the action panel does not frame the whole section');
     await page.getByRole('button', { name: /Pátrat/ }).click();
     assert.equal(requests.length, 0, 'draft selection is local');
     const extraPlanOptions = page.locator('details').filter({ has: page.getByText('Další možnosti tahu', { exact: true }) });
@@ -145,6 +150,10 @@ try {
     }
     assert.equal(confirmationReachedByKeyboard, true, 'keyboard can reach explicit plan confirmation');
     assert.equal(await confirm.evaluate(element => element.matches(':focus-visible')), true, 'keyboard confirmation focus is visible');
+    assert.equal(await confirm.evaluate(element => {
+      const style = getComputedStyle(element);
+      return style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0;
+    }), true, 'plan confirmation retains its rendered keyboard outline');
     assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true);
     await confirm.click();
     await page.getByRole('button', { name: /Ověřit původní potvrzení/ }).waitFor();

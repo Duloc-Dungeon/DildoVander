@@ -52,6 +52,18 @@ typography:
     fontWeight: 800
     lineHeight: 1.45
     letterSpacing: "-0.01em"
+  wordmark:
+    fontFamily: "'Manrope Variable', sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 800
+    lineHeight: 1
+    letterSpacing: "-0.03em"
+  maker:
+    fontFamily: "'Manrope Variable', sans-serif"
+    fontSize: ".625rem"
+    fontWeight: 500
+    lineHeight: 1.4
+    letterSpacing: "0"
 rounded:
   field: "14px"
   button: "16px"
@@ -71,6 +83,11 @@ spacing:
   "40": "40px"
   "48": "48px"
 components:
+  application-header:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.text}"
+    padding: "12px clamp(16px, 4vw, 32px)"
+    width: "64rem"
   button-primary:
     backgroundColor: "{colors.mint}"
     textColor: "{colors.on-mint}"
@@ -225,6 +242,15 @@ nejde o nový společný nadpis. Energie používá tabulkové číslice, hodnot
 
 ## Layout
 
+Všechny obrazovky sdílejí `ApplicationHeader`: wordmark Wand Night Stand a menší
+řádek OlivanderIndustries™ mají stejné písmo, velikost a rozestupy. Záhlaví
+zůstává i při přihlášení, v čekárně, dílně, hrách a při povinné aktualizaci.
+Jeho kontejner má nejvýše 64 rem a bezpečné okraje telefonu řeší právě záhlaví.
+Obrazovky mohou do jeho pravé části vložit své akce přes
+`ApplicationHeaderActions`; jejich chování nadále vlastní příslušná obrazovka.
+Výška záhlaví se měří a odečítá od dostupné výšky scén. Původní místní wordmarky
+a samostatné značkové popisky v dílně a Pod pečetí se neopakují.
+
 **Pravidlo vlastníka povrchu.** Aplikační shell, zákaznický shell a jednotlivé
 scény mají vlastní šířky a breakpointy. Hodnota předlohy 393 × 852 px je
 referenční plátno, nikoli breakpoint nebo požadavek na rozměr telefonu.
@@ -319,9 +345,11 @@ Hlavní varianta používá mintovou výplň, tmavý text, 16px poloměr a žád
 Stejná podoba platí pro hlavní odkazy v dílně, hrách, postavě a památkách;
 starší zlatá výplň ani stín kompatibilní vrstvy se na ně nepřenášejí.
 
-Hover mírně zesvětlí plochu. Disabled sníží opacity na 0,48 a zruší hover efekt.
-Busy nastaví `aria-busy`, zablokuje tlačítko a podle motion režimu může ukázat
-indikátor. Klávesnicový fokus je mintový obrys s odsazením; běžný shell má
+Hover při přesném ukazateli mírně zesvětlí plochu; vedlejší akce přejde na
+`line`. Stisk plochu mírně ztmaví. Odezva barev a filtru trvá 160 ms ease-out.
+Disabled přebírá sdílenou opacity 0,6 a zruší hover i stisk. Busy nastaví
+`aria-busy`, zablokuje tlačítko a ukáže kurzor průběhu. Klávesnicový fokus je
+mintový obrys s odsazením; běžný shell má
 3px obrys, zákaznická stránka místní 2px variantu.
 
 ### Cards / Containers
@@ -338,6 +366,13 @@ Fokus mění obrys a okraj. Disabled a `aria-invalid` přebírají sdílený sta
 `AwField` propojí popisek, nápovědu a chybu identifikátory; chyba má `role="alert"`.
 
 ### Navigation
+
+Společné záhlaví je přilepené k hornímu okraji. Značka používá role `wordmark`
+a `maker`, dvě řádky názvu a 5px mezeru před menším OlivanderIndustries™.
+Obsah má 12px svislé okraje a nejvýše 64rem šířku; bezpečné okraje telefonu
+jsou přičteny podle skutečného prostředí. Ovládání vpravo se při větším textu
+zalomí a jeho změna výšky aktualizuje dostupnou plochu scén i posun fokusu.
+Přilepené scény dílny a detaily kroniky zůstávají pod změřeným záhlavím.
 
 Čtyři položky **Dílna / Hry / Památky / Já** mají skutečné ikony Phosphor,
 viditelný text a označení aktivní stránky. Na mobilu je lišta přes celou šířku
@@ -386,6 +421,9 @@ Výběr textu je mintový s tmavým textem, textový kurzor mintový a posuvník
 používají `line` na `bg`. Odkazy mají podtržení odsazené o .25 em. Společný
 klávesnicový fokus je 3px mintový obrys s odsazením 4 px; lokální zákaznický
 2px fokus zůstává zachovanou výjimkou.
+Automaticky zaměřené nadpisy a obsahové panely s `tabindex="-1"` obrys
+nezobrazují; předání fokusu pro oznámení stránky nebo kroku zůstává zachované.
+Ovládací prvky a posuvné oblasti dostupné klávesnicí si viditelný fokus ponechají.
 
 ### Administrace: navigace a potvrzení
 

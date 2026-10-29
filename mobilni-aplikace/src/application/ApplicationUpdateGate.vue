@@ -40,7 +40,6 @@ onBeforeUnmount(() => {
 <template>
   <main v-if="updates.blocked.value" id="main-content" class="application-update-gate">
     <section class="application-update-card" aria-labelledby="application-update-title" :aria-busy="updates.checking.value">
-      <p class="eyebrow">Wand Night Stand</p>
       <h1 id="application-update-title" ref="heading" tabindex="-1">{{ updates.required.value ? 'Je čas na aktualizaci' : updates.checking.value ? 'Kontrolujeme verzi aplikace' : 'Ověřte verzi aplikace' }}</h1>
       <p v-if="updates.required.value">Tato verze už není podporovaná. Pro pokračování si nainstalujte aktualizaci a znovu otevřete aplikaci.</p>
       <p v-else-if="updates.checking.value" role="status">Chvilku strpení, ověřujeme dostupné aktualizace.</p>
@@ -62,7 +61,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.application-update-gate { min-height: 100svh; display: grid; place-items: center; padding: max(2rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left)); }
+.application-update-gate { min-height: var(--application-content-height, 100svh); display: grid; place-items: center; padding: 2rem max(1.25rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left)); }
 .application-update-card { width: min(100%, 32rem); padding: clamp(1.25rem, 5vw, 2.5rem); border: 1px solid var(--aw-border-subtle); border-radius: var(--aw-radius-card); background: var(--aw-surface); overflow-wrap: anywhere; }
 h1 { font-size: clamp(1.75rem, 6vw, 2.5rem); line-height: 1.15; }
 .application-update-gate h1:focus { outline: none; }
@@ -70,6 +69,6 @@ p { line-height: 1.6; }
 .application-update-version { color: var(--aw-muted); font-size: .875rem; }
 .application-update-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem; }
 .application-update-actions > * { min-height: 44px; text-align: center; }
-.application-update-banner { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .5rem 1rem; padding: max(.75rem, env(safe-area-inset-top)) 1rem .75rem; background: var(--aw-surface); border-bottom: 1px solid var(--aw-border-subtle); }
+.application-update-banner { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .5rem 1rem; padding: .75rem 1rem; background: var(--aw-surface); border-bottom: 1px solid var(--aw-border-subtle); }
 .application-update-banner a { display: inline-flex; align-items: center; min-height: 44px; }
 </style>

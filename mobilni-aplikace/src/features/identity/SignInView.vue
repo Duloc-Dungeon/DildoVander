@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { consumeEnrollment } from '../../application/guestClaim';
 import AwButton from '../../components/AwButton.vue';
-import WnsWordmark from '../../components/WnsWordmark.vue';
+import ApplicationHeaderActions from '../../application/ApplicationHeaderActions.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AwField from '../../components/AwField.vue';
 import LostAccessHelp from './LostAccessHelp.vue';
@@ -254,10 +254,9 @@ async function submit(): Promise<void> {
 <template>
   <SceneShell class="signin-scene">
   <section class="signin-page" aria-labelledby="sign-in-title">
-    <header class="signin-masthead">
-      <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><WnsWordmark /></RouterLink>
+    <ApplicationHeaderActions>
       <AwButton v-if="arrival && !account" class="signin-code-entry" @click="setEnrollmentMode()">{{ customerCopy.text('signin.have-invite') }}</AwButton>
-    </header>
+    </ApplicationHeaderActions>
     <div v-if="arrival && !account && !logoutUnconfirmed && !sessionUnavailable" class="arrival-content">
       <div class="signin-art signin-art--amber" aria-hidden="true"><img :src="amberWand" alt="" width="1254" height="1254" fetchpriority="high" /></div>
       <h1 id="sign-in-title" ref="stepHeading" tabindex="-1">{{ language === 'en' ? 'Enter on your own reputation.' : 'Vstup na vlastní pověst.' }}</h1>
@@ -328,14 +327,12 @@ async function submit(): Promise<void> {
 .signin-page {
   width: 100%;
   max-width: 34rem;
-  min-height: 100dvh;
+  min-height: var(--application-content-height, 100dvh);
   margin-inline: auto;
   padding-inline: max(24px, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) max(24px, var(--safe-area-inset-right, env(safe-area-inset-right, 0px)));
-  padding-block: max(24px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) max(32px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  padding-block: 24px max(32px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   color: var(--wns-text);
 }
-.signin-masthead { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: clamp(2rem, 6vh, 3rem); }
-.signin-wordmark { display: inline-flex; align-items: center; min-height: 44px; color: inherit; text-decoration: none; font: 800 1.15rem/1 var(--wns-font-family); letter-spacing: -.03em; }
 .arrival-content, .signin-content { display: grid; gap: 24px; min-width: 0; }
 .arrival-copy, .signin-intro { display: grid; gap: 12px; }
 .arrival-copy p { margin: 0; }
@@ -371,6 +368,6 @@ async function submit(): Promise<void> {
 .signin-page :deep(:focus-visible) { outline: 2px solid var(--wns-focus-ring); outline-offset: 4px; }
 .signin-page h1[tabindex='-1']:focus { outline: none; }
 @media (max-width: 359px) { .signin-page { padding-inline: max(16px, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) max(16px, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))); } }
-@media (max-height: 550px) { .signin-masthead { margin-bottom: 24px; } .signin-art { height: 10rem; } }
+@media (max-height: 550px) { .signin-art { height: 10rem; } }
 @media (min-width: 600px) { .signin-page { padding-block: 32px; } }
 </style>

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T17:35:45.111752Z",
+  "generatedAt": "2026-10-29T21:41:09.347732Z",
   "title": "Wand Night Stand — schválený design v2",
   "extensions": {
     "colorMeta": {
@@ -385,6 +385,14 @@
       "label": {
         "displayName": "Ovládání",
         "purpose": "Tučné popisky sdílených tlačítek."
+      },
+      "wordmark": {
+        "displayName": "Název aplikace",
+        "purpose": "Stejná značka ve společném horním záhlaví všech obrazovek."
+      },
+      "maker": {
+        "displayName": "OlivanderIndustries™",
+        "purpose": "Menší řádek pod názvem aplikace ve společném záhlaví."
       }
     },
     "shadows": [
@@ -397,8 +405,8 @@
     "motion": [
       {
         "name": "control-feedback",
-        "value": "160ms ease",
-        "purpose": "Zachovaná odezva ovládání při změně stavu."
+        "value": "160ms ease-out",
+        "purpose": "Odezva barev, okraje a filtru společných tlačítek při hoveru a stisku."
       },
       {
         "name": "reduced-motion",
@@ -551,7 +559,7 @@
       "refersTo": "button-primary",
       "description": "Společná hlavní akce: mintová plocha, tmavý text, 56px výška a 16px poloměr bez stínu. Stejná podoba pro tlačítko i odkaz.",
       "html": "<button class=\"ds-button\" type=\"button\">Pokračovat</button>",
-      "css": ".ds-button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 14px;border:1px solid transparent;border-radius:16px;background:var(--wns-mint, #b8f3d4);color:var(--wns-on-mint, #102419);font-family:'Manrope Variable', sans-serif;font-size:.95rem;font-weight:800;line-height:1.45;letter-spacing:-.01em;box-shadow:none;cursor:pointer}.ds-button:hover:not(:disabled){filter:brightness(1.06)}.ds-button:disabled{opacity:.48;cursor:not-allowed;filter:none}.ds-button:focus-visible{outline:3px solid var(--wns-mint, #b8f3d4);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}"
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 14px;border:1px solid transparent;border-radius:16px;background:var(--wns-mint,#b8f3d4);color:var(--wns-on-mint,#102419);font-family:'Manrope Variable',sans-serif;font-size:.95rem;font-weight:800;line-height:1.45;letter-spacing:-.01em;text-align:center;text-wrap:pretty;overflow-wrap:anywhere;box-shadow:none;cursor:pointer;transition:background-color 160ms ease-out,border-color 160ms ease-out,filter 160ms ease-out}@media(hover:hover) and (pointer:fine){.ds-button:not(:disabled):not([aria-disabled='true']):hover{filter:brightness(1.06)}}.ds-button:not(:disabled):not([aria-disabled='true']):active{filter:brightness(.94)}.ds-button:disabled{opacity:var(--aw-disabled-opacity,.6)}.ds-button:is(:disabled,[aria-disabled='true']){cursor:not-allowed;filter:none}.ds-button[aria-busy='true']{cursor:progress}.ds-button:focus-visible{outline:3px solid var(--wns-focus-ring,#b8f3d4);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}"
     },
     {
       "name": "Vedlejší tlačítko",
@@ -559,7 +567,7 @@
       "refersTo": "button-secondary",
       "description": "Vedlejší akce na zvýšené tmavé ploše.",
       "html": "<button class=\"ds-button ds-secondary\" type=\"button\">Zkusit znovu</button>",
-      "css": ".ds-button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 14px;border:1px solid transparent;border-radius:16px;background:var(--wns-mint, #b8f3d4);color:var(--wns-on-mint, #102419);font-family:'Manrope Variable', sans-serif;font-size:.95rem;font-weight:800;line-height:1.45;letter-spacing:-.01em;box-shadow:none;cursor:pointer}.ds-button:hover:not(:disabled){filter:brightness(1.06)}.ds-button:disabled{opacity:.48;cursor:not-allowed;filter:none}.ds-button:focus-visible{outline:3px solid var(--wns-mint, #b8f3d4);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}.ds-secondary{background:var(--wns-surface-raised, #222626);color:var(--wns-text, #f5f5f0);border-color:var(--wns-line, #343939)}"
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 14px;border:1px solid transparent;border-radius:16px;background:var(--wns-mint,#b8f3d4);color:var(--wns-on-mint,#102419);font-family:'Manrope Variable',sans-serif;font-size:.95rem;font-weight:800;line-height:1.45;letter-spacing:-.01em;text-align:center;text-wrap:pretty;overflow-wrap:anywhere;box-shadow:none;cursor:pointer;transition:background-color 160ms ease-out,border-color 160ms ease-out,filter 160ms ease-out}@media(hover:hover) and (pointer:fine){.ds-button:not(:disabled):not([aria-disabled='true']):hover{filter:brightness(1.06)}}.ds-button:not(:disabled):not([aria-disabled='true']):active{filter:brightness(.94)}.ds-button:disabled{opacity:var(--aw-disabled-opacity,.6)}.ds-button:is(:disabled,[aria-disabled='true']){cursor:not-allowed;filter:none}.ds-button[aria-busy='true']{cursor:progress}.ds-button:focus-visible{outline:3px solid var(--wns-focus-ring,#b8f3d4);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}.ds-secondary{background:var(--wns-surface-raised,#222626);color:var(--wns-text,#f5f5f0);border-color:var(--wns-line,#343939)}@media(hover:hover) and (pointer:fine){.ds-secondary:not(:disabled):not([aria-disabled='true']):hover{background:var(--wns-line,#343939)}}"
     },
     {
       "name": "Nebezpečná akce",
@@ -567,7 +575,7 @@
       "refersTo": "button-danger",
       "description": "Nebezpečná varianta AwButton; samotný náhled nic neprovádí.",
       "html": "<button class=\"ds-button ds-danger\" type=\"button\">Odstranit</button>",
-      "css": ".ds-button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 14px;border:1px solid transparent;border-radius:16px;background:var(--wns-mint, #b8f3d4);color:var(--wns-on-mint, #102419);font-family:'Manrope Variable', sans-serif;font-size:.95rem;font-weight:800;line-height:1.45;letter-spacing:-.01em;box-shadow:none;cursor:pointer}.ds-button:hover:not(:disabled){filter:brightness(1.06)}.ds-button:disabled{opacity:.48;cursor:not-allowed;filter:none}.ds-button:focus-visible{outline:3px solid var(--wns-mint, #b8f3d4);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}.ds-danger{background:var(--wns-peach, #f8b5a5);color:var(--wns-on-peach, #301814);border-color:#f3a59b}"
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 14px;border:1px solid transparent;border-radius:16px;background:var(--wns-mint,#b8f3d4);color:var(--wns-on-mint,#102419);font-family:'Manrope Variable',sans-serif;font-size:.95rem;font-weight:800;line-height:1.45;letter-spacing:-.01em;text-align:center;text-wrap:pretty;overflow-wrap:anywhere;box-shadow:none;cursor:pointer;transition:background-color 160ms ease-out,border-color 160ms ease-out,filter 160ms ease-out}@media(hover:hover) and (pointer:fine){.ds-button:not(:disabled):not([aria-disabled='true']):hover{filter:brightness(1.06)}}.ds-button:not(:disabled):not([aria-disabled='true']):active{filter:brightness(.94)}.ds-button:disabled{opacity:var(--aw-disabled-opacity,.6)}.ds-button:is(:disabled,[aria-disabled='true']){cursor:not-allowed;filter:none}.ds-button[aria-busy='true']{cursor:progress}.ds-button:focus-visible{outline:3px solid var(--wns-focus-ring,#b8f3d4);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}.ds-danger{background:var(--wns-peach,#f8b5a5);color:var(--wns-on-peach,#301814);border-color:var(--wns-danger,#f3a59b)}"
     },
     {
       "name": "Textové pole",
@@ -620,11 +628,19 @@
       "description": "Čitelný text se samostatným, výslovně zapínaným hlasem a oddělenými chybami; panelová ukázka nevolá službu.",
       "html": "<section class=\"ds-narration\"><p>Text odpovídá potvrzenému stavu souboje.</p><button type=\"button\" aria-pressed=\"false\">Zapnout hlas</button></section>",
       "css": ".ds-narration{max-width:36ch;font:16px/1.5 \"Manrope Variable\",sans-serif;color:var(--wns-text, #f5f5f0)}.ds-narration button{min-height:44px;padding:8px 14px;border:1px solid var(--wns-line, #343939);border-radius:14px;background:var(--wns-surface-raised, #222626);color:var(--wns-text, #f5f5f0);font:700 15px \"Manrope Variable\",sans-serif;cursor:pointer}.ds-narration button:hover{background:var(--wns-mint, #b8f3d4);color:var(--wns-on-mint, #102419)}.ds-narration button:focus-visible{outline:3px solid var(--wns-mint, #b8f3d4);outline-offset:4px}"
+    },
+    {
+      "name": "Společné horní záhlaví",
+      "kind": "nav",
+      "refersTo": "application-header",
+      "description": "Jeden wordmark a menší OlivanderIndustries™ na každé obrazovce; pravá část patří akcím daného kroku.",
+      "html": "<header class=\"ds-topbar\"><div class=\"ds-topbar-content\"><a class=\"ds-brand\" href=\"#\"><span class=\"ds-wordmark\">Wand<br>Night Stand</span><small class=\"ds-maker\">OlivanderIndustries™</small></a></div></header>",
+      "css": ".ds-topbar{position:sticky;top:0;z-index:25;padding-top:var(--safe-area-inset-top,env(safe-area-inset-top,0px));border-bottom:1px solid var(--wns-line,#343939);background:var(--wns-bg,#080909);color:var(--wns-text,#f5f5f0)}.ds-topbar-content{box-sizing:border-box;width:min(100%,64rem);margin-inline:auto;padding:12px max(clamp(16px,4vw,32px),var(--safe-area-inset-right,env(safe-area-inset-right,0px))) 12px max(clamp(16px,4vw,32px),var(--safe-area-inset-left,env(safe-area-inset-left,0px)));display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px}.ds-brand{display:inline-grid;gap:5px;min-height:44px;text-align:left;text-decoration:none}.ds-wordmark{color:var(--wns-text,#f5f5f0);font:800 1.25rem/1 'Manrope Variable',sans-serif;letter-spacing:-.03em}.ds-maker{color:var(--wns-muted,#b2b9b6);font:500 .625rem/1.4 'Manrope Variable',sans-serif;letter-spacing:0}.ds-topbar :focus-visible{outline:3px solid var(--wns-focus-ring,#b8f3d4);outline-offset:4px}"
     }
   ],
   "narrative": {
     "northStar": "Wand Night Stand — design v2",
-    "overview": "Téměř černé pozadí, místní Manrope s českou diakritikou, velké samostatné\nobjekty a ploché jantarové, mintové a fialové karty. Jedna dominantní scéna,\nčitelná hlavní akce; žádný trvalý ambient ani povinné dekorativní částice.\nToto je záznam schváleného systému a současné implementace, nikoli nový návrh.",
+    "overview": "Obnoveno podle implementace 29. října 2026. Dokument zachovává současný\nvýtvarný směr a popisuje sdílenou aplikaci Vue pro web a Capacitor; nepřevádí\ntechnické viewery na zákaznické téma. Zdrojové tokeny, aplikační adaptér,\nskutečné komponenty a jejich místní odchylky mají přednost před historickým\nmockupem. Rozšíření pro náhledy a pohyb jsou v `.impeccable/design.json`.\n\n**Creative North Star: \"Wand Night Stand — design v2\"**\n\nTéměř černé pozadí, místní Manrope s českou diakritikou, velké samostatné\nobjekty a ploché jantarové, mintové a fialové karty. Jedna dominantní scéna,\nčitelná hlavní akce; žádný trvalý ambient ani povinné dekorativní částice.\nToto je záznam schváleného systému a současné implementace, nikoli nový návrh.",
     "keyCharacteristics": [
       "Jedna výrazná postava nebo objekt místo dekorativní výplně.",
       "Plošné barevné plochy a tonální oddělení na tmavém podkladu.",

@@ -38,6 +38,19 @@ try {
     await page.getByRole('heading', { name: /Kufr si pamatuje/ }).waitFor();
     assert.equal(await page.getByText(/Otázka .* ze 3/).count(), 0);
     await page.screenshot({ path: path.join(output, `conversation-${width}.png`), fullPage: true }); captures++;
+    if (width === 1280) {
+      await page.locator('.trunk-workshop__transcript summary').click();
+      await page.evaluate(() => {
+        const scene = document.querySelector('.trunk-workshop__scene').getBoundingClientRect();
+        const header = document.querySelector('.application-topbar').getBoundingClientRect();
+        window.scrollTo(0, scrollY + scene.top - header.height + 32);
+      });
+      assert(await page.locator('.trunk-workshop__presentation').evaluate(element =>
+        element.getBoundingClientRect().top >= document.querySelector('.application-topbar').getBoundingClientRect().bottom + 15), 'desktop workshop stays below the sticky brand header');
+      await page.screenshot({ path: path.join(output, 'desktop-sticky-header.png') }); captures++;
+      await page.locator('.trunk-workshop__transcript summary').click();
+      await page.evaluate(() => window.scrollTo(0, 0));
+    }
     if (width === 390) {
       await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
       assert.equal(await overflow(), false, '200% text: no overflow');

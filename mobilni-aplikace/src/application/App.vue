@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
 import { Capacitor } from '@capacitor/core';
 import { androidNavigationKey } from '../platform/androidAppLinks';
 import { useRoute, useRouter } from 'vue-router';
 import AwButton from '../components/AwButton.vue';
-import WnsWordmark from '../components/WnsWordmark.vue';
+import ApplicationHeader from './ApplicationHeader.vue';
+import { applicationHeaderActionsKey } from './applicationHeader';
 import AwNotice from '../components/AwNotice.vue';
 import { notifications, dismissNotice, notify } from './notifications';
 import { startPushRuntime } from './pushRuntime';
@@ -39,6 +40,8 @@ const browserMode = !Capacitor.isNativePlatform();
 const main = ref<HTMLElement>();
 const navigationElement = ref<HTMLElement>();
 const navigationHeight = ref('calc(5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))');
+const headerHeight = ref('5.25rem');
+provide(applicationHeaderActionsKey, '#application-header-actions');
 let navigationObserver: ResizeObserver | undefined;
 const viewError = ref('');
 const groupContextRevision = ref(0);
@@ -206,12 +209,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <AwButton v-if="(applicationUpdates.blocked.value || launchExperience || gameExperience) && (deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" class="launch-emergency-stop" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>
-  <ApplicationUpdateGate :updates="applicationUpdates">
+  <div class="application-frame" :style="{ '--application-header-height': headerHeight }">
   <a class="skip-link" href="#main-content">{{ customerCopy.text('shell.skip') }}</a>
+  <AwButton v-if="(applicationUpdates.blocked.value || launchExperience || gameExperience) && (deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" class="launch-emergency-stop" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>
+  <ApplicationHeader @resize="headerHeight = `${$event}px`">
+    <template v-if="!applicationUpdates.blocked.value && !launchExperience && !gameExperience">
+      <RouterLink v-if="account" class="account-link" :to="customerAccount || account.roles.includes('Owner') ? '/me/account' : '/settings'">{{ account.displayName }}</RouterLink>
+      <AwButton v-if="deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>
+    </template>
+  </ApplicationHeader>
+  <ApplicationUpdateGate :updates="applicationUpdates">
   <div class="application-shell" :class="{ 'launch-mode': launchExperience, 'game-mode': gameExperience, 'customer-mode': customerAccount, 'has-customer-navigation': showCustomerNavigation }" :style="{ '--application-navigation-height': navigationHeight, '--application-navigation-count': navigation.length }">
     <aside v-if="!customerAccount && !launchExperience && !gameExperience" class="application-sidebar" :aria-label="customerCopy.text('shell.navigation')">
-      <RouterLink class="application-brand" to="/" :aria-label="customerCopy.text('shell.brand-home')"><img class="brand-mark" src="../assets/brand/emblem-small.webp" alt="" width="44" height="44" /><WnsWordmark /></RouterLink>
       <nav ref="navigationElement" class="primary-navigation" :aria-label="customerCopy.text('shell.sections')">
         <RouterLink v-for="item in navigation" :key="item.to" :to="item.to" :class="{ selected: item.to === activeNavigationPath }" :aria-current="item.to === activeNavigationPath ? 'page' : undefined">
           <span aria-hidden="true">{{ item.symbol }}</span><span>{{ item.label }}</span>
@@ -220,13 +229,6 @@ onBeforeUnmount(() => {
       <div class="sidebar-details"><span class="eyebrow">{{ customerCopy.text('shell.my-space') }}</span><p>{{ customerCopy.text(customerAccount ? 'shell.customer-guidance' : 'shell.public-guidance') }}</p></div>
     </aside>
     <div class="application-body">
-      <header v-if="!launchExperience && !gameExperience" class="application-header">
-        <p class="connection-context"><WnsWordmark /></p>
-        <div class="header-actions">
-          <RouterLink v-if="!account" class="account-link" to="/signin">{{ customerCopy.text('shell.sign-in') }}</RouterLink><RouterLink v-else class="account-link" :to="customerAccount || account.roles.includes('Owner') ? '/me/account' : '/settings'">{{ account.displayName }}</RouterLink>
-          <AwButton v-if="!launchExperience && !gameExperience && (deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>
-        </div>
-      </header>
       <div v-if="!launchExperience" class="notification-stack" :aria-label="customerCopy.text('shell.notifications')"><AwNotice v-for="notice in notifications" :key="notice.id" :tone="notice.tone"><div class="notification-content">{{ notice.message }}<button :aria-label="customerCopy.text('shell.close-notice')" @click="dismissNotice(notice.id)">×</button></div></AwNotice></div>
       <main id="main-content" ref="main" class="application-main" tabindex="-1">
         <OwnerPlayerControls v-if="isOwnerPlayer(account) && ['/play', '/me/account'].includes(route.path)" @context-changed="groupContextRevision++" />
@@ -243,4 +245,5 @@ onBeforeUnmount(() => {
     </div>
   </div>
   </ApplicationUpdateGate>
+  </div>
 </template>

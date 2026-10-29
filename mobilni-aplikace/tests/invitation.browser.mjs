@@ -1,5 +1,6 @@
 // Offline, repeatable mobile visual/interaction evidence. No provider or production calls.
 import assert from 'node:assert/strict';
+import { assertApplicationHeader } from './fixtures/application-header.mjs';
 import { createServer } from 'node:http';
 import { readFile, mkdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -44,11 +45,12 @@ async function enterReception(page) {
   await page.locator('.portrait-stage').waitFor();
 }
 async function capture(page,name,details){
+  await assertApplicationHeader(page);
   await page.evaluate(()=>document.fonts.ready);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,name+' overflow');
   const clipped=await page.evaluate(()=>[...document.querySelectorAll('input,select,button,a')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&(r.left<-.5||r.right>innerWidth+.5);}).map(el=>el.tagName+':'+el.textContent?.trim().slice(0,40)));
   assert.deepEqual(clipped,[],name+' clipped controls');
-  const shortTargets=await page.evaluate(()=>[...document.querySelectorAll('.signin-help a,.signin-options button,.signin-wordmark,.launch-wordmark,.launch-footer a,.launch-account-options summary,.consent-fieldset label,.consent-fieldset summary')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height<43.5;}).map(el=>el.textContent?.trim().slice(0,40)));
+  const shortTargets=await page.evaluate(()=>[...document.querySelectorAll('.signin-help a,.signin-options button,.application-topbar__brand,.launch-footer a,.launch-account-options summary,.consent-fieldset label,.consent-fieldset summary')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height<43.5;}).map(el=>el.textContent?.trim().slice(0,40)));
   assert.deepEqual(shortTargets,[],name+' touch targets below44px');
   await page.screenshot({path:path.join(output,name+'.png'),fullPage:true});
   records.push({file:name+'.png',...details,mode:'fixture',role:signedIn?'Customer':'anonymous'});

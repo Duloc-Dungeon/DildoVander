@@ -14,7 +14,7 @@ withDefaults(defineProps<{ background?: string; labelledBy?: string; active?: bo
 </template>
 
 <style scoped>
-.scene-shell { position: relative; isolation: isolate; min-height: 100dvh; color: var(--wns-text, #f5f5f0); background-color: var(--wns-bg, #080909); background-image: none; }
+.scene-shell { position: relative; isolation: isolate; min-height: var(--application-content-height, 100dvh); color: var(--wns-text, #f5f5f0); background-color: var(--wns-bg, #080909); background-image: none; }
 .scene-foreground { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .scene-shell :deep([data-scene-enter]) { animation: scene-enter .55s ease-out both; }
 .scene-shell--paused :deep([data-scene-enter]) { animation-play-state: paused; }
