@@ -82,9 +82,17 @@ internal static partial class AccountIdentityTests
         await fixture.App.Services.GetRequiredService<MobileWorkshopLiveRuntime>().RequireAuthorityAsync(admission, default);
         Check((await guest.PostAsJsonAsync(sessionPath + "/ticket", new { socketOrigin = "https://localhost" })).IsSuccessStatusCode,
             "closed-night guest can obtain the same protected Live admission as text");
+        var messageId = Guid.NewGuid().ToString("N");
+        const string messageText = "I find a new route before asking for directions.";
         Check((await guest.PostAsJsonAsync(sessionPath + "/messages",
-            new { messageId = Guid.NewGuid().ToString("N"), text = "I find a new route before asking for directions." })).IsSuccessStatusCode,
+            new { messageId, text = messageText })).IsSuccessStatusCode,
             "closed-night text dialogue persists owner evidence");
+        Check((await guest.PostAsJsonAsync(sessionPath + "/messages", new { messageId, text = messageText })).IsSuccessStatusCode,
+            "an uncertain message retry returns the accepted turn without another provider call");
+        Check((await guest.PostAsJsonAsync(sessionPath + "/messages", new { messageId, text = "A different answer." })).StatusCode == HttpStatusCode.Conflict,
+            "an edited payload cannot silently reuse the accepted message ID");
+        Check(wands.ReadWorkshopMessages(guestId, operation).Count(message => message.Role == "user") == 1,
+            "mismatched duplicate message never appends or replaces user evidence");
         Check((await guest.PostAsJsonAsync(sessionPath + "/finish", new { })).IsSuccessStatusCode,
             "closed-night conversation can finish");
         await RunWorkshopQueueAsync(() =>
@@ -143,6 +151,9 @@ internal static partial class AccountIdentityTests
         var movedSnapshot = await profiles.CapturePreparedAsync(movedId, movedProfile.ProfileId, movedProfile.Revision)
             ?? throw new InvalidOperationException();
         var movedAdmission = await WorkshopAdmissionAsync(movedId, movedOperation, movedSnapshot);
+        var mobileRuntime = fixture.App.Services.GetRequiredService<MobileWandRuntime>();
+        var oldTicket = mobileRuntime.Ticket(movedAdmission);
+        movedAdmission = mobileRuntime.Take(oldTicket, movedOperation, movedAdmission.Origin);
         wands.AppendWorkshopMessage(movedId, movedOperation, Guid.NewGuid().ToString("N"), "user", "Use the map.", "text");
         Check((await movedGuest.PostAsJsonAsync(movedPath + "/finish", new { })).IsSuccessStatusCode,
             "second workshop is queued before membership moves");
@@ -154,6 +165,44 @@ internal static partial class AccountIdentityTests
         await RunWorkshopQueueAsync(() => wands.ReadWorkshopState(movedId, movedOperation).Status == "failed");
         Check(generation.Calls == 1 && wands.ReadWorkshopState(movedId, movedOperation).Wand is null,
             "worker rejects a moved member without manufacturing their queued wand");
+        var recoverable = await JsonAsync(await movedGuest.GetAsync("/app/v1/customer/wand/workshop"));
+        Check(recoverable.GetProperty("eligible").GetBoolean() && recoverable.GetProperty("session").ValueKind == JsonValueKind.Null,
+            "valid new membership offers explicit recovery without exposing the fenced conversation");
+        var recovered = (await JsonAsync(await movedGuest.PostAsJsonAsync("/app/v1/customer/wand/workshop/sessions",
+            new { operationId = Guid.NewGuid().ToString("N") }))).GetProperty("session");
+        Check(recovered.GetProperty("id").GetString() == movedOperation
+            && recovered.GetProperty("messages").GetArrayLength() == 1
+            && recovered.GetProperty("status").GetString() == "generating",
+            "explicit authorized recovery retains the operation and conversation after a group move");
+        Check((await movedGuest.PostAsJsonAsync(movedPath + "/messages",
+            new { messageId = Guid.NewGuid().ToString("N"), text = "Change frozen evidence." })).StatusCode == HttpStatusCode.Conflict,
+            "recovered accepted manufacture cannot return to editable conversation");
+        Check(!await mobileRuntime.Authorized(movedAdmission, default),
+            "membership recovery never revives a ticket issued under the old launch snapshot");
+        await ChangeWorkshopMemberAsync(movedId, user => { user.LaunchGroupRevokedAt = AccountEndpoints.Now(); user.LaunchGroupAccessRevision++; });
+        Check(!(await movedGuest.PostAsJsonAsync("/app/v1/customer/wand/workshop/sessions",
+            new { operationId = Guid.NewGuid().ToString("N") })).IsSuccessStatusCode,
+            "revoked membership cannot rebind or create a workshop");
+        await ChangeWorkshopMemberAsync(movedId, user => { user.LaunchGroupRevokedAt = null; user.LaunchGroupAccessRevision++; });
+        Check((await movedGuest.PostAsJsonAsync("/app/v1/customer/wand/workshop/sessions",
+            new { operationId = Guid.NewGuid().ToString("N") })).IsSuccessStatusCode,
+            "re-enabled current membership can recover the same workshop again");
+        await RunWorkshopQueueAsync(() => wands.ReadWorkshopState(movedId, movedOperation).Status == "complete");
+        Check(generation.Calls == 2 && wands.ReadWorkshopState(movedId, movedOperation).Wand is not null,
+            "recovered unstarted manufacture runs once under the current membership");
+
+        var portraitReplacement = profiles.ReplaceAdminPortrait(prepared.ProfileId, prepared.Revision,
+            CharacterAdminEndpoints.NormalizePortrait(CharacterAdministrationTests.Png(), "image/png"));
+        var afterPortrait = await JsonAsync(await guest.GetAsync("/app/v1/customer/wand/workshop"));
+        Check(portraitReplacement.Revision == prepared.Revision + 1
+            && afterPortrait.GetProperty("session").GetProperty("id").GetString() == operation
+            && afterPortrait.GetProperty("session").GetProperty("wand").GetProperty("wandId").GetString() == wandId,
+            "portrait-only revision returns the existing completed wand rather than offering blocked recreation");
+        Check((await guest.GetAsync(sessionPath)).IsSuccessStatusCode && (await guest.GetAsync(artworkPath)).IsSuccessStatusCode
+            && (await guest.GetAsync("/app/v1/customer/wand/workshop/sessions/current")).IsSuccessStatusCode,
+            "portrait-only revision preserves protected completed-session and artwork reads");
+        Check((await guest.PostAsJsonAsync(sessionPath + "/messages", new { messageId = Guid.NewGuid().ToString("N"), text = "Edit old work." })).StatusCode == HttpStatusCode.Conflict,
+            "portrait-only completed projection does not authorize editing the older workshop revision");
         var currentGroup = launch.ReadGroup(group.Id) ?? throw new InvalidOperationException("Workshop group disappeared.");
         var openingTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var countdownDraft = launch.SaveCountdown("test-owner", group.Id,
@@ -165,7 +214,7 @@ internal static partial class AccountIdentityTests
         Check(opened.GetProperty("wand").GetProperty("wandId").GetString() == wandId
             && (await guest.GetAsync(artworkPath)).IsSuccessStatusCode,
             "opening the same night preserves the saved first wand and artwork without recreation");
-        await profiles.SaveAsync(guestId, new(prepared.Revision, new("Raven", "A revised fictional world"),
+        await profiles.SaveAsync(guestId, new(portraitReplacement.Revision, new("Raven", "A revised fictional world"),
             prepared.ProfileId, OpenAiConsent: true), canEditExisting: true);
         Check((await guest.GetAsync(artworkPath)).StatusCode == HttpStatusCode.Conflict
             && (await guest.PostAsJsonAsync(sessionPath + "/artwork/retry", new { })).StatusCode == HttpStatusCode.Conflict,

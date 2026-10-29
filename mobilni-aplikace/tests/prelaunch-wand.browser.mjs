@@ -35,6 +35,18 @@ try {
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
     await page.route('**/app/v1/push', route => route.fulfill({ json: { web: true, android: false, ios: false, publicKey: 'offline-fixture', enabled: false } }));
     let portraitStatus = 'running';
+    let researchFailed = width === 390;
+    const failedProfile = { profileId: character.profileId, revision: character.revision, name: character.name,
+      world: character.universe, status: 'failed' };
+    let characterRetry;
+    await page.route('**/app/v1/customer/wand/workshop', route => researchFailed
+      ? route.fulfill({ json: { eligible: false, reason: 'wand_character_preparation_failed',
+        profile: failedProfile, tier: 0, session: null } }) : route.continue());
+    await page.route('**/app/v1/prelaunch/character/retry', route => {
+      characterRetry = route.request().postDataJSON();
+      researchFailed = false;
+      return route.fulfill({ json: {} });
+    });
     await page.route('**/app/v1/prelaunch/character', route => route.fulfill({ json: {
       character, artwork: { status: portraitStatus, loadingMessage: loadingJoke, welcome },
     } }));
@@ -124,6 +136,14 @@ try {
     assert.equal(focus.minHeight, '52px', 'handoff retains its local control size');
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Kufrova dílna', exact: true }).waitFor();
+    if (width === 390) {
+      await page.getByRole('button', { name: 'Zopakovat přípravu postavy', exact: true }).click();
+      await page.getByRole('button', { name: 'Raději psát', exact: true }).waitFor();
+      await page.waitForFunction(() => document.activeElement?.id === 'workshop-title');
+      assert.deepEqual(characterRetry, { expectedProfileId: failedProfile.profileId, expectedRevision: failedProfile.revision });
+      assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 0,
+        'character recovery does not silently start manufacturing');
+    }
     assert.equal(await page.locator('.launch-card').isVisible(), false, 'portrait yields to workshop');
     assert.equal(await page.locator('#workshop-title').evaluate(element => element === document.activeElement), true);
     assert.equal(await page.locator('a[href="/play"]').count(), 0, 'prelaunch workshop stays outside the game');
@@ -206,6 +226,7 @@ try {
     }
     await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).click();
     assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1, 'viewing the saved wand does not manufacture a second one');
+    await page.unrouteAll({ behavior: 'wait' });
     await context.close();
   }
   // Real document time: record every native frame of the curtain, without JS clock mocking.

@@ -178,6 +178,87 @@ internal sealed partial class WandGenerationStore
         return row is null ? null : (row.LaunchGroupId, row.LaunchAccessRevision);
     }
 
+    internal string? FindCompletedWorkshop(string accountId, CharacterProfile profile, int tier)
+    {
+        using var connection = Open(); EnsureWorkshop(connection);
+        using var command = Command(connection, null, """
+            SELECT w.operation_id,w.profile_json FROM mobile_wand_workshops w
+            JOIN wand_generation_sessions s ON s.account_id=w.account_id AND s.operation_id=w.operation_id
+            WHERE w.account_id=$a AND w.profile_id=$p AND w.profile_revision<$r AND w.tier=$t
+                AND w.status='complete' AND s.state='selected' AND s.selected_json IS NOT NULL
+            ORDER BY w.profile_revision DESC
+            """, ("$a", accountId), ("$p", profile.ProfileId), ("$r", profile.Revision), ("$t", tier));
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            // Portrait replacement advances the revision without changing the character.
+            if (Deserialize<CharacterConversationSnapshot>(reader.GetString(1)).UserInput == profile.UserInput)
+            {
+                return reader.GetString(0);
+            }
+        }
+        return null;
+    }
+
+    // The caller must authorize the current membership. Recovery never grants authority from saved history.
+    internal void RecoverWorkshopMembership(string accountId, string operationId,
+        (string GroupId, long AccessRevision) expected, string groupId, long accessRevision)
+    {
+        using var connection = Open(); EnsureWorkshop(connection);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        RequireWorkshopSnapshot(connection, transaction, accountId, operationId, expected);
+        var row = ReadWorkshop(connection, transaction, accountId, operationId)!;
+        var generation = Read(connection, transaction, accountId, operationId);
+        // A dispatched provider request may already be billed. Fence its result, but require explicit retry.
+        Execute(connection, transaction, """
+            UPDATE wand_generation_sessions SET state='unavailable',error_code='generation_interrupted',
+                lease_token=NULL,lease_until=0
+            WHERE account_id=$a AND operation_id=$o AND state='running'
+            """, ("$a", accountId), ("$o", operationId));
+        var status = row.Status;
+        if (generation?.SelectedWand is not null)
+        {
+            status = row.KeepsakeId is not null || row.Status == "complete" ? "complete" : "generating";
+        }
+        else if (generation?.Status is "running" or "unavailable")
+        {
+            status = "failed";
+        }
+        else if (generation?.Status is "queued" or "ready")
+        {
+            // Manufacture has frozen its evidence; recovery must not reopen the conversation.
+            status = "generating";
+        }
+        else if (row.Status is "failed" or "paused")
+        {
+            // FailWorkshop only transitions generating rows. Legacy authoring failures
+            // are migrated by EnsureWorkshop before this row is read.
+            status = row.FinishRequested || row.Status == "failed" || row.PausedFromStatus == "generating"
+                ? "generating" : "asking";
+        }
+        Execute(connection, transaction, """
+            UPDATE mobile_wand_workshops SET launch_group_id=$g,launch_access_revision=$r,status=$status,
+                paused_from_status=NULL,error_code=$error,retry_requested=0,
+                question_lease=NULL,question_lease_until=0,updated_at=$now
+            WHERE account_id=$a AND operation_id=$o
+            """, ("$g", groupId), ("$r", accessRevision), ("$status", status),
+            ("$error", status == "failed" ? generation?.ErrorCode ?? "generation_interrupted" : null),
+            ("$now", Now), ("$a", accountId), ("$o", operationId));
+        transaction.Commit();
+    }
+
+    private void RequireWorkshopSnapshot(SqliteConnection connection, SqliteTransaction transaction,
+        string accountId, string operationId, (string GroupId, long AccessRevision)? expected)
+    {
+        if (expected is null) { return; }
+        var row = ReadWorkshop(connection, transaction, accountId, operationId);
+        if (row is null || row.LaunchGroupId != expected.Value.GroupId
+            || row.LaunchAccessRevision != expected.Value.AccessRevision)
+        {
+            throw new WandGenerationException("wand_session_unavailable", 404);
+        }
+    }
+
     internal bool WorkshopMatchesLaunchSnapshot(string accountId, string operationId,
         string groupId, long accessRevision)
     {
@@ -330,7 +411,7 @@ internal sealed partial class WandGenerationStore
         }
         if (row.Status != "asking") throw new WandGenerationException("wand_conversation_not_active", 409);
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var changed = Execute(connection, transaction, "UPDATE mobile_wand_workshops SET status='generating',error_code=NULL,retry_requested=0,updated_at=$now WHERE account_id=$a AND operation_id=$o AND status='asking'",
+        var changed = Execute(connection, transaction, "UPDATE mobile_wand_workshops SET status='generating',finish_requested=1,error_code=NULL,retry_requested=0,updated_at=$now WHERE account_id=$a AND operation_id=$o AND status='asking'",
             ("$now", now), ("$a", accountId), ("$o", operationId));
         transaction.Commit();
         return changed == 1;
@@ -409,24 +490,28 @@ internal sealed partial class WandGenerationStore
             ("$a", accountId), ("$o", operationId));
     }
 
-    internal void CompleteWorkshop(string accountId, string operationId, string keepsakeId)
+    internal void CompleteWorkshop(string accountId, string operationId, string keepsakeId,
+        (string GroupId, long AccessRevision)? expected = null)
     {
         using var connection = Open(); EnsureWorkshop(connection);
         Execute(connection, null, """
             UPDATE mobile_wand_workshops SET status='complete',keepsake_id=$k,error_code=NULL,artwork_error=NULL,
                 updated_at=$now WHERE account_id=$a AND operation_id=$o AND status='generating'
+                AND ($g IS NULL OR (launch_group_id=$g AND launch_access_revision=$r))
             """, ("$k", keepsakeId), ("$now", DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
-            ("$a", accountId), ("$o", operationId));
+            ("$a", accountId), ("$o", operationId), ("$g", expected?.GroupId), ("$r", expected?.AccessRevision));
     }
 
-    internal void CompleteWorkshopWithoutArtwork(string accountId, string operationId, string errorCode)
+    internal void CompleteWorkshopWithoutArtwork(string accountId, string operationId, string errorCode,
+        (string GroupId, long AccessRevision)? expected = null)
     {
         using var connection = Open(); EnsureWorkshop(connection);
         Execute(connection, null, """
             UPDATE mobile_wand_workshops SET status='complete',keepsake_id=NULL,error_code=NULL,
                 artwork_error=$e,updated_at=$now WHERE account_id=$a AND operation_id=$o AND status='generating'
+                AND ($g IS NULL OR (launch_group_id=$g AND launch_access_revision=$r))
             """, ("$e", errorCode), ("$now", DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
-            ("$a", accountId), ("$o", operationId));
+            ("$a", accountId), ("$o", operationId), ("$g", expected?.GroupId), ("$r", expected?.AccessRevision));
     }
 
     internal void RecordWorkshopArtworkUnavailable(string accountId, string operationId, string errorCode)
@@ -447,11 +532,16 @@ internal sealed partial class WandGenerationStore
             ("$a", accountId), ("$o", operationId));
     }
 
-    internal void FailWorkshop(string accountId, string operationId, string errorCode)
+    internal void FailWorkshop(string accountId, string operationId, string errorCode,
+        (string GroupId, long AccessRevision)? expected = null)
     {
         using var connection = Open(); EnsureWorkshop(connection);
-        Execute(connection, null, "UPDATE mobile_wand_workshops SET status='failed',error_code=$e,retry_requested=0,updated_at=$now WHERE account_id=$a AND operation_id=$o AND status='generating'",
-            ("$e", errorCode), ("$now", DateTimeOffset.UtcNow.ToUnixTimeSeconds()), ("$a", accountId), ("$o", operationId));
+        Execute(connection, null, """
+            UPDATE mobile_wand_workshops SET status='failed',error_code=$e,retry_requested=0,updated_at=$now
+            WHERE account_id=$a AND operation_id=$o AND status='generating'
+                AND ($g IS NULL OR (launch_group_id=$g AND launch_access_revision=$r))
+            """, ("$e", errorCode), ("$now", Now), ("$a", accountId), ("$o", operationId),
+            ("$g", expected?.GroupId), ("$r", expected?.AccessRevision));
     }
 
     internal void ResumeWorkshop(string accountId, string operationId)
@@ -461,10 +551,12 @@ internal sealed partial class WandGenerationStore
             ("$now", DateTimeOffset.UtcNow.ToUnixTimeSeconds()), ("$a", accountId), ("$o", operationId));
     }
 
-    internal bool PauseWorkshopForBoss(string accountId, string operationId)
+    internal bool PauseWorkshopForBoss(string accountId, string operationId,
+        (string GroupId, long AccessRevision)? expected = null)
     {
         using var connection = Open(); EnsureWorkshop(connection);
         using var transaction = connection.BeginTransaction(deferred: false);
+        RequireWorkshopSnapshot(connection, transaction, accountId, operationId, expected);
         var row = ReadWorkshop(connection, transaction, accountId, operationId)
             ?? throw new WandGenerationException("wand_session_unavailable", 404);
         if (row.Status == "paused") { transaction.Commit(); return false; }

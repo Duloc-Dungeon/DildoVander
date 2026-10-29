@@ -3,12 +3,21 @@ import { chromium } from 'playwright';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createServer as createViteServer } from 'vite';
 
-const origin = process.env.PUSH_BROWSER_URL ?? 'http://127.0.0.1:5179';
-const browser = await chromium.launch();
+// Own the loopback harness unless a caller explicitly supplies its server.
+const server = process.env.PUSH_BROWSER_URL ? undefined : await createViteServer({
+  root: fileURLToPath(new URL('../', import.meta.url)),
+  server: { host: '127.0.0.1', port: 0 },
+});
+let browser;
 const screenshots = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'dildovander-push-entry');
 await mkdir(screenshots, { recursive: true });
 try {
+  await server?.listen();
+  const origin = process.env.PUSH_BROWSER_URL ?? server.resolvedUrls.local[0].replace(/\/$/, '');
+  browser = await chromium.launch();
   for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
     const page = await browser.newPage({ viewport });
     const errors = [];
@@ -66,4 +75,4 @@ try {
     assert.deepEqual(errors, []);
     console.log(`Push settings browser fixture passed at ${viewport.width}x${viewport.height}`);
   }
-} finally { await browser.close(); }
+} finally { await browser?.close(); await server?.close(); }

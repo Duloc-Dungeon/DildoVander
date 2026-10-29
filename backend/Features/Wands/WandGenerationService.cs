@@ -5,7 +5,8 @@ internal sealed class WandGenerationService(WandGenerationStore store, IWandGene
     // Authority belongs to the authenticated caller. The callback must check its
     // current revocation/profile/operation fences; persisted input cannot grant it.
     internal async Task<WandGenerationSession> GenerateAsync(string accountId, string operationId,
-        Func<CancellationToken, Task<bool>> authority, CancellationToken token = default, bool retry = false, IReadOnlyList<string>? evidence = null)
+        Func<CancellationToken, Task<bool>> authority, CancellationToken token = default, bool retry = false,
+        IReadOnlyList<string>? evidence = null, (string GroupId, long AccessRevision)? workshopSnapshot = null)
     {
         using var activity = Kufr.Backend.Features.Observability.BackendTelemetry.StartOperation("wand.generate");
         activity?.SetTag("app.operation_id", operationId);
@@ -14,7 +15,7 @@ internal sealed class WandGenerationService(WandGenerationStore store, IWandGene
         // may carry the full accepted 2,000-character response without truncation.
         if (evidence?.Count > 32 || evidence?.Any(text => !WandGenerationValidation.Text(text, 16_384)) == true)
             throw new WandGenerationException("invalid_wand_evidence", 400);
-        var job = store.Claim(accountId, operationId, retry);
+        var job = store.Claim(accountId, operationId, retry, workshopSnapshot);
         if (job is null) return store.Read(accountId, operationId)
             ?? throw new WandGenerationException("wand_session_unavailable", 404);
         try

@@ -70,11 +70,15 @@ try{
       await page.goto(origin+'/launch');await page.locator('.portrait-stage').waitFor();
       assert.equal(await page.getByText('DO NOT SHOW HOST NOTE').count(),0);
       const frame=await page.locator('.portrait-stage').boundingBox();assert.ok(Math.abs(frame.width/frame.height-.8)<.001);
-      const countdownY=(await page.locator('.countdown').boundingBox()).y;
+      assert.equal(await page.locator('.prelaunch-wand').count(),0,'the workshop waits for the portrait');
       await capture(page,`launch-waiting-${width}x${height}-${theme}-cs`,{route:'/launch',state:'saved, image pending',viewport:`${width}x${height}`,theme,language:'cs'});
       ready=true;await page.reload();await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('[data-curtain="open"]').waitFor();await page.locator('.launch-final').waitFor();
       await page.evaluate(()=>window.scrollTo(0,0));
-      assert.equal((await page.locator('.countdown').boundingBox()).y,countdownY,'reveal cannot move countdown');
+      await page.getByRole('button',{name:'Vytvořit hůlku',exact:true}).waitFor();
+      const workshop=await page.locator('.prelaunch-wand').boundingBox();
+      const countdown=await page.locator('.countdown').boundingBox();
+      assert.ok(workshop && countdown && countdown.y>=workshop.y+workshop.height,
+        'the countdown stays below the newly available workshop without overlapping it');
       await capture(page,`launch-revealed-${width}x${height}-${theme}-cs`,{route:'/launch',state:'revealed card',viewport:`${width}x${height}`,theme,language:'cs'});
       long=true;revision++;await page.reload();await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('.launch-final').waitFor();
       await page.evaluate(()=>{document.documentElement.style.fontSize='125%';window.scrollTo(0,0);});
