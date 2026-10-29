@@ -36,6 +36,17 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('published spell clash', () => {
+  it('uses a labelled generic wand only for practice and keeps the fallback on image failure', async () => {
+    wrapper = mount(GameClash, { props: { practiceOpponent: true, opponentWandUrl: 'blob:stale-match' } });
+    const opponent = () => wrapper!.get('.game-magic-clash__origin--opponent');
+    expect(opponent().get('img').attributes('src')).toContain('wand-violet');
+    expect(wrapper.text()).toContain('Cvičná hůlka');
+    await opponent().get('img').trigger('error');
+    expect(opponent().find('svg').exists()).toBe(true);
+    await wrapper.setProps({ practiceOpponent: false, opponentWandUrl: 'blob:real-opponent' });
+    expect(opponent().get('img').attributes('src')).toBe('blob:real-opponent');
+    expect(opponent().get('img').classes()).not.toContain('game-magic-clash__artifact--practice');
+  });
   it('keeps a loaded result static and never replays the same round on polling', async () => {
     wrapper = mount(GameClash, { props: { round, theatrical: true } });
     intersect([{ isIntersecting: true }]);

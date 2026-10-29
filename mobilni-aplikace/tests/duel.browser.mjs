@@ -91,7 +91,7 @@ try {
     assert.equal(await page.locator('.game-duel-scene').count(), 0, 'boss keeps its own stage');
     await page.goto(`${origin}/__game/teams`);
     await page.locator('.game-content').waitFor();
-    assert.equal(await page.locator('.game-duel-scene').count(), 0, 'team flow is unchanged');
+    assert.equal(await page.locator('.game-duel-scene').count(), 0, 'team lobby keeps its preparation layout');
     await context.close();
     console.log(`PvP checked at ${width} px (${reducedMotion}).`);
   }

@@ -24,6 +24,19 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('shows the actual opponent wand in YOLO without inventing combat rounds', async () => {
+    const path = `/app/v1/game/matches/${id}/opponent/wand-artwork?revision=${'b'.repeat(64)}`;
+    const yolo = snapshot({ mode: 'yolo', opponent: { id: 'two', displayName: 'Eliška', xp: 20, matchesPlayed: 3, wandArtworkUrl: path, wandName: 'Uložená hůlka' }, yolo: { status: 'generating', beats: [], verdict: '' } });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:yolo-opponent');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    api.transport.mockImplementation(async (url: string) => url === path
+      ? new Response(new Blob(['image'], { type: 'image/png' })) : Response.json(yolo));
+    const view = await render();
+    expect(view.get('.game-yolo .game-magic-clash__origin--opponent img').attributes('src')).toBe('blob:yolo-opponent');
+    expect(view.get('.game-yolo').text()).toContain('Uložená hůlka');
+    expect(view.get('.game-clash-stage').attributes('data-winner')).toBeUndefined();
+    expect(view.find('.game-magic-clash__spells').exists()).toBe(false);
+  });
   it('keeps YOLO result announcements and the loser task out of the opening acts', async () => {
     const value = snapshot({ mode: 'yolo', status: 'complete', result: 'loss',
       yolo: { status: 'complete', beats: ['Nástup.', 'Střet.', 'Rozsudek.'].map(text => ({ text, detailRefs: [] })), verdict: 'Eliška vítězí.' },
@@ -288,12 +301,18 @@ describe('mobile game interaction', () => {
   it('offers practice without making game requests or awarding XP', async () => {
     vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => { (array as Uint32Array).fill(0); return array; });
     const view = await render('/play/practice');
+    expect(view.classes()).toContain('game-practice-scene');
+    expect(view.classes()).toContain('game-duel-scene');
+    expect(view.get('.game-clash-stage').classes()).toContain('game-magic-clash--theatre');
+    expect(view.get('.game-magic-clash__origin--opponent img').classes()).toContain('game-magic-clash__artifact--practice');
     for (let index = 0; index < 7; index++) {
       await view.get('input[value="strike"]').setValue();
       await view.findAll('button').find(button => button.text() === 'Potvrdit tah')!.trigger('click');
     }
     expect(view.text()).toContain('Trénink dokončen'); expect(api.transport).not.toHaveBeenCalled();
     expect(view.text()).not.toMatch(/\+\d+ XP/);
+    expect(view.attributes('data-duel-result')).toBe('draw');
+    expect(view.get('.duel-round-verdict').text()).toBe('Nerozhodná výměna.');
   });
   it('lets a new guest reach the captured workshop rescue without a first wand', async () => {
     api.request.mockResolvedValue({ hasCharacter: true, wand: null, tier: 0 });
@@ -352,6 +371,8 @@ describe('mobile game interaction', () => {
     expect(view.findAll('.game-round-dots > .done')).toHaveLength(4);
     expect(view.find('input[value="strike"]').exists()).toBe(false);
     expect(api.transport).not.toHaveBeenCalled();
+    expect(view.attributes('data-duel-result')).toBe(winner === 'player' ? 'win' : 'loss');
+    expect(view.get('.duel-round-verdict').text()).toBe(winner === 'player' ? 'Tvoje výměna.' : 'Soupeřova výměna.');
   });
 
   it.each(['done', 'skip'] as const)('requires explicit confirmation and retains saved task outcome %s after reload', async outcome => {

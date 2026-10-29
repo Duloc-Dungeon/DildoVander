@@ -25,6 +25,16 @@ assert.equal(command({ operationId: uuid, expectedRevision: 1, choice: 'fireball
 const team = ajv.getSchema('urn:game:GameTeamCreate');
 assert.ok(team({ operationId: uuid, partnerId: 'one', opponentIds: ['two', 'three'] }));
 assert.equal(team({ operationId: uuid, partnerId: 'one', opponentIds: ['two', 'two'] }), false);
+const opponentWand = ajv.getSchema('urn:game:GameTeamOpponentWand');
+const artworkUrl = `/app/v1/game/teams/${'1'.repeat(32)}/opponents/player-two/wand-artwork?revision=${'a'.repeat(64)}`;
+assert.ok(opponentWand({ wandArtworkUrl: artworkUrl, wandName: 'Published wand', wandSynthetic: true }));
+assert.equal(opponentWand({ wandArtworkUrl: 'https://example.invalid/private.png', wandName: 'Private', wandSynthetic: false }), false);
+assert.equal(opponentWand({ wandArtworkUrl: artworkUrl.replace('a'.repeat(64), 'stale'), wandName: 'Stale', wandSynthetic: false }), false);
+const teamArtwork = document.paths['/app/v1/game/teams/{id}/opponents/{opponentId}/wand-artwork'].get;
+assert.ok(teamArtwork.parameters.some(parameter => parameter.in === 'query' && parameter.name === 'revision' && parameter.required));
+assert.ok(teamArtwork.responses['200'].content['image/png']);
+assert.equal(teamArtwork.responses['200'].headers['Cache-Control'].schema.const, 'no-store');
+assert.equal(teamArtwork.responses['200'].headers['X-Content-Type-Options'].schema.const, 'nosniff');
 const boss = ajv.getSchema('urn:game:GameBossCommand');
 assert.ok(boss({ operationId: uuid, expectedRevision: 1, choice: 'shield', sparkBid: 1 }));
 assert.equal(boss({ operationId: 'not-a-guid', expectedRevision: 1 }), false);

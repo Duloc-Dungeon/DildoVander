@@ -438,7 +438,7 @@
       {
         "name": "duel-impact",
         "value": "2000ms",
-        "purpose": "Místní jednorázový střet zveřejněné výměny. Celé průhledné osobní hůlky, odlišná stopa úderu/lsti/štítu, statický omezený pohyb a zrušení mimo viditelnou scénu. Ovládání ani výsledek nečekají na animaci."
+        "purpose": "Místní jednorázový střet zveřejněné výměny. Celé schválené osobní hůlky, v týmu podle stejné zveřejněné dvojice; trénink má označenou obecnou cvičnou hůlku. Odlišná stopa úderu/lsti/štítu, statický omezený pohyb a zrušení mimo viditelnou scénu. YOLO ukazuje hůlky bez RPS výsledku; vlastní světlo řídí ručně odhalené dějství. Ovládání ani výsledek nečekají."
       },
       {
         "name": "wand-sealed",
@@ -473,12 +473,12 @@
       {
         "name": "duel-light-impact",
         "value": "750ms cubic-bezier(.16,1,.3,1)",
-        "purpose": "Místní světelná reakce pouze při nově zveřejněné výměně PvP; používá existující data-motion, bez dalšího časovače."
+        "purpose": "Místní světelná reakce na novou zveřejněnou výměnu rychlého/taktického duelu, tréninku nebo osobní dvojice 2 na 2; používá existující data-motion bez dalšího časovače."
       },
       {
         "name": "duel-side-light",
         "value": "300ms ease-out",
-        "purpose": "Odezva opacity jantarové/fialové strany podle zveřejněného vítěze a uzamčení tahu. Omezený pohyb ponechá statický stav."
+        "purpose": "Odezva opacity jantarové/fialové strany podle zveřejněného výsledku osobní dvojice a uzamčení tahu. Týmové skóre vlastní odděleně server; omezený pohyb ponechá statický stav."
       },
       {
         "name": "yolo-clash",
