@@ -20,6 +20,7 @@ let statusTimer: ReturnType<typeof setTimeout> | undefined;
 let checksRemaining = 60;
 let submitting = false;
 let disposed = false;
+let deferredWhileHidden = false;
 let generation = 0;
 function cancelStatus() {
   clearTimeout(statusTimer);
@@ -28,7 +29,9 @@ function cancelStatus() {
   checking.value = false;
 }
 async function checkStatus() {
-  if (disposed || account.value || checking.value || document.visibilityState === 'hidden') return;
+  if (disposed || account.value || checking.value) return;
+  if (document.visibilityState === 'hidden') { deferredWhileHidden = true; return; }
+  deferredWhileHidden = false;
   clearTimeout(statusTimer);
   const controller = new AbortController();
   statusRequest = controller;
@@ -52,14 +55,18 @@ async function checkStatus() {
   }
 }
 function visibilityChanged() {
-  if (document.visibilityState === 'hidden') cancelStatus();
-  else if (accepted.value && !completed.value && checksRemaining > 0) void checkStatus();
+  if (document.visibilityState === 'hidden') {
+    if (checking.value) deferredWhileHidden = true;
+    cancelStatus();
+  }
+  else if ((deferredWhileHidden || accepted.value) && !completed.value && checksRemaining > 0) void checkStatus();
 }
 onMounted(() => { document.addEventListener('visibilitychange', visibilityChanged); if (!account.value) void checkStatus(); });
 onBeforeUnmount(() => { disposed = true; cancelStatus(); document.removeEventListener('visibilitychange', visibilityChanged); });
 watch(() => account.value?.id, next => {
   ++generation;
   cancelStatus();
+  deferredWhileHidden = false;
   verifiedAccountId.value = '';
   error.value = '';
   accepted.value = false;
