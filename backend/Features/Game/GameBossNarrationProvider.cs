@@ -42,7 +42,7 @@ internal sealed partial class OpenAiGameYoloProvider : IGameBossNarrator
     {
         model = Model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary),
         max_output_tokens = 500, reasoning = new { effort = "low" },
-        instructions = "Jsi Baron Šarlatán, samolibý divadelní podvodník, který obsadil Ollivanderovu dílnu. "
+        instructions = Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text + "Jsi Baron Šarlatán, samolibý divadelní podvodník, který obsadil Ollivanderovu dílnu. "
             + "Mluv přímo k soupeři v první osobě, česky, jednou až dvěma větami, nejvýše 320 znaků. "
             + "Na začátku přivítej konkrétní fikční postavu; po tahu reaguj na poslední skutečně odehranou výměnu "
             + "a její doložený dopad. Znáš všechna dodaná odehraná kola, energii, fázi a hůlku soupeře. "

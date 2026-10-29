@@ -49,18 +49,20 @@ test('manual quick CI rejects main, forks, stale candidates and unrelated refs',
   }
 });
 
-test('development runs quick read-only checks and a distinct fail-closed gate', () => {
+test('development runs affected product checks and a distinct fail-closed gate', () => {
   const workflow = read('.github/workflows/development-ci.yml');
   assert.match(workflow, /pull_request:\n    branches: \[development\]/);
   assert.match(workflow, /name: Development required/);
-  assert.match(workflow, /needs: \[candidate, secret-scan, repository\]/);
+  assert.match(workflow, /needs: \[candidate, secret-scan, repository, changes, backend, firmware, web, ios, android, ai-eval, site\]/);
   assert.match(workflow, /if: always\(\)/);
-  assert.match(workflow, /job\['result'\] != 'success'/);
+  assert.match(workflow, /uses: \.\/\.github\/workflows\/kufr-backend.yml/);
+  assert.match(workflow, /uses: \.\/\.github\/workflows\/kufr-site.yml/);
+  assert.match(workflow, /selected.get\(name\) == 'true' else 'skipped'/);
   assert.match(workflow, /verifyDevelopmentCandidate\(\{ github, context \}, process.env\)/);
   assert.match(workflow, /gitleaks.*git --config=.*--redact=100/);
   assert.match(workflow, /actionlint.*-shellcheck= -pyflakes=/);
   assert.match(workflow, /node --test scripts\/ci\/\*\.test.cjs/);
-  assert.doesNotMatch(workflow, /workflow_call:|uses: \.\/\.github\/workflows\/kufr-|\$\{\{\s*secrets\.|: write\b|self-hosted/);
+  assert.doesNotMatch(workflow, /workflow_call:|\$\{\{\s*secrets\.|: write\b|self-hosted/);
 });
 
 test('development promotion selects every existing project while release stays main-only', () => {
@@ -84,6 +86,7 @@ test('persistent development is protected and main preserves promotion ancestry'
   assert.deepEqual(gate.required_status_checks, [{ context: 'Development required', integration_id: 15368 }]);
   assert.equal(gate.strict_required_status_checks_policy, false);
   assert.deepEqual(main.rules.find(rule => rule.type === 'pull_request').parameters.allowed_merge_methods, ['merge']);
+  assert.deepEqual(development.rules.find(rule => rule.type === 'pull_request').parameters.allowed_merge_methods, ['squash', 'merge']);
   assert.equal(settings.allow_merge_commit, true);
   assert.equal(settings.allow_squash_merge, true);
 });

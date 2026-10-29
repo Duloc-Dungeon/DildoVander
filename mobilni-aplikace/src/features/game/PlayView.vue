@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useVisitHumor } from "../humor/visitHumor";
+const { copy: humor } = useVisitHumor();
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import SceneShell from '../../components/scene/SceneShell.vue';
@@ -534,7 +536,7 @@ onBeforeUnmount(() => {
             <p class="game-eyebrow">Ollivander je v zajetí.</p><h1 id="game-title">Dílnu převzal Baron.</h1><GameCharacter class="game-boss-portrait" character="boss" />
             <PaperSurface class="game-paper"><p>„Osobní obsluha? Zrušena. Reklamace? Zamítnuta. Další otázky po mém vítězství.“</p><RouterLink class="aw-button aw-button--primary" to="/play/boss">Vyzvat Barona</RouterLink><p>Dílna se znovu otevře po porážce Barona. Tvoje hůlka i nárok na vylepšení zůstávají zachované.</p></PaperSurface>
           </template>
-          <template v-else><p class="game-eyebrow">Digitální dílna</p><h1 id="game-title">Kufr má slovo.</h1><PaperSurface class="game-paper"><h2>{{ progress?.keeperState === 'rescued' ? 'Vždycky jsem ti věřil. Skoro.' : lobby.player.xp >= 30 ? 'Tohle dřevo už ti nestačí.' : 'Každá hůlka začíná od tří kouzel.' }}</h2><p>Odehrál jsi {{ lobby.player.matchesPlayed }} zápasů a získal {{ lobby.player.xp }} XP. {{ lobby.player.tacticalUnlocked ? 'Hůlka II ti otevírá taktiku. Úder, Lest a Štít teď mají omezenou zásobu.' : lobby.player.xp >= 30 ? 'Na vylepšení už máš nárok. Nejdřív ho dokonči v dílně, potom se otevře taktika.' : 'Na 30 XP získáš nárok na vylepšení hůlky. Zatím poznávej soupeře a dej si odvetu.' }}</p><RouterLink class="aw-button aw-button--primary" :to="lobby.player.tacticalUnlocked ? { path: '/play/challenge', query: { mode: 'tactical' } } : '/play/challenge'">{{ lobby.player.tacticalUnlocked ? 'Vyzkoušet taktiku' : 'Vyzvat soupeře' }}</RouterLink></PaperSurface></template>
+          <template v-else><p class="game-eyebrow">Digitální dílna</p><h1 id="game-title">Kufr má slovo.</h1><PaperSurface class="game-paper"><h2>{{ progress?.keeperState === 'rescued' ? humor.rescued : lobby.player.xp >= 30 ? humor.upgrade : humor.novice }}</h2><p>Odehrál jsi {{ lobby.player.matchesPlayed }} zápasů a získal {{ lobby.player.xp }} XP. {{ lobby.player.tacticalUnlocked ? 'Hůlka II ti otevírá taktiku. Úder, Lest a Štít teď mají omezenou zásobu.' : lobby.player.xp >= 30 ? 'Na vylepšení už máš nárok. Nejdřív ho dokonči v dílně, potom se otevře taktika.' : 'Na 30 XP získáš nárok na vylepšení hůlky. Zatím poznávej soupeře a dej si odvetu.' }}</p><RouterLink class="aw-button aw-button--primary" :to="lobby.player.tacticalUnlocked ? { path: '/play/challenge', query: { mode: 'tactical' } } : '/play/challenge'">{{ lobby.player.tacticalUnlocked ? 'Vyzkoušet taktiku' : 'Vyzvat soupeře' }}</RouterLink></PaperSurface></template>
         </template>
         <template v-else-if="ranking">
           <h1 id="game-title">Žebříček</h1>
@@ -585,7 +587,7 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="chronicle">
           <p class="game-eyebrow">Tvé skutečné zápasy</p><h1 id="game-title">Moje kronika</h1>
-          <PaperSurface class="game-paper"><p v-if="!lobby.history.length">Zatím nemáš odehraný zápas. Kronikář už si připravil oslavný úvod; jméno vítěze pro jistotu vynechal.</p><ol class="game-match-list"><li v-for="item in lobby.history" :key="item.id"><RouterLink :to="`/play/match/${item.id}`"><span>{{ modeName(item.mode) }}<strong>{{ item.opponent.displayName }}</strong></span><span>{{ item.playerScore }} : {{ item.opponentScore }}<small>+{{ item.xpAwarded }} XP</small></span></RouterLink><p v-if="item.mode === 'tactical' && item.combatNarration?.status === 'complete' && item.combatNarration.text" class="duel-chronicle-narration">{{ item.combatNarration.text }}</p></li></ol></PaperSurface>
+          <PaperSurface class="game-paper"><p v-if="!lobby.history.length">Zatím nemáš odehraný zápas. {{ humor.chronicle }}</p><ol class="game-match-list"><li v-for="item in lobby.history" :key="item.id"><RouterLink :to="`/play/match/${item.id}`"><span>{{ modeName(item.mode) }}<strong>{{ item.opponent.displayName }}</strong></span><span>{{ item.playerScore }} : {{ item.opponentScore }}<small>+{{ item.xpAwarded }} XP</small></span></RouterLink><p v-if="item.mode === 'tactical' && item.combatNarration?.status === 'complete' && item.combatNarration.text" class="duel-chronicle-narration">{{ item.combatNarration.text }}</p></li></ol></PaperSurface>
         </template>
         <template v-else>
           <h1 id="game-title">Tvůj tah,<br /><em>{{ lobby.player.displayName }}.</em></h1>

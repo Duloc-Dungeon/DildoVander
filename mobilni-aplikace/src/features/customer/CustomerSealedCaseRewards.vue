@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useVisitHumor } from "../humor/visitHumor";
+const { copy: humor } = useVisitHumor();
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
@@ -16,7 +18,7 @@ interface SealedCaseReward {
 
 defineProps<{ locale?: 'cs' | 'en' }>();
 const copy = computed(() => ({
-  title: 'Památky z Pod pečetí', intro: 'Záznam tvé účasti v uzavřených případech aktuální skupiny.',
+  title: 'Památky z Pod pečetí', intro: `Záznam tvé účasti v uzavřených případech aktuální skupiny. ${humor.value.cases}`,
   caseTitle: 'Případ posledního zvonu', keeper: 'Strážce', conspirator: 'Spiklenec',
   confirmed: 'Potvrzené hlavní plány', successful: 'Provedené zásahy', released: 'Uzavřeno',
   refresh: 'Obnovit záznamy případů', loading: 'Načítám tvoje stopy v případech…',

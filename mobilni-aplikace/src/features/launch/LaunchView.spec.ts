@@ -1,3 +1,4 @@
+import { humorVariants } from '../humor/visitHumor';
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
@@ -7,7 +8,7 @@ import { beginInvitationPresentation, presentationForeground, selectInvitationPr
 import { customerFixedUniverse, customerMembershipState } from '../../application/launchAccess';
 
 const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: vi.fn(), portrait: vi.fn(), signOut: vi.fn() }));
-vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
+vi.mock('vue-router', async (importOriginal) => ({ ...await importOriginal<typeof import('vue-router')>(), useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
 vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', props: ['image'], template: '<div class="portrait-stage" />' } }));
 vi.mock('./PrelaunchWand.vue', () => ({ default: { name: 'PrelaunchWand', emits: ['open-change', 'complete-change'], template: '<section><button @click="$emit(\'open-change\', true)">Vytvořit hůlku</button><button @click="$emit(\'open-change\', false)">Zpět k odpočtu</button></section>' } }));
@@ -349,7 +350,7 @@ it('replaces a recovered draft universe with the persisted group universe after 
 });
 it('old characters get no introduction and public loading ignores host and research text', async () => {
   persisted = true; const view = entry();
-  try { await flushPromises(); expect(view.get('.launch-status').text()).toContain('Postava je uložená.'); expect(view.text()).toContain('Zrcadlo si zatím vyjednává'); expect(view.text()).not.toContain('PRIVATE FINAL'); expect(view.text()).not.toContain('Od pořadatele'); }
+  try { await flushPromises(); expect(view.get('.launch-status').text()).toContain('Postava je uložená.'); expect(humorVariants.portrait.some(text => view.text().includes(text))).toBe(true); expect(view.text()).not.toContain('PRIVATE FINAL'); expect(view.text()).not.toContain('Od pořadatele'); }
   finally { view.unmount(); }
 });
 it('does not announce running portrait preparation when none has been requested', async () => {
@@ -594,7 +595,7 @@ it('polls for a not-yet-available character during the entrance without generati
   try {
     await flushPromises();
     await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
-    expect(view.text()).toContain('Zrcadlo si zatím vyjednává');
+    expect(humorVariants.portrait.some(text => view.text().includes(text))).toBe(true);
     persisted = true;
     await vi.advanceTimersByTimeAsync(5000); await flushPromises();
     image.value = 'blob:portrait';

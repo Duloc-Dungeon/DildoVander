@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--character-portrait-live", var portraitOutput]) { await CharacterPortraitLiveTests.RunAsync(portraitOutput); return; }
 if (args is ["--chronicle"]) { PersonalChronicleTests.Run(); ChronicleSourceTests.Run(); GameChronicleBackfillTests.Run(); return; }
 if (args is ["--chronicle-http"]) { await MobileGameTests.RunChronicleHttpAsync(); return; }
 if (args is ["--push"]) { await PushTests.RunAsync(); return; }

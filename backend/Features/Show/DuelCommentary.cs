@@ -81,7 +81,7 @@ internal sealed class DuelCommentaryService : IDisposable
         {
             model = ResponsesTextDialogBudget.Model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary),
             reasoning = new { effort = "low" }, max_output_tokens = personalized ? 1800 : 1000,
-            instructions = (personalized ? """
+            instructions = (personalized ? Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text : "") + (personalized ? """
                 Vytvoř tři původní, propojené české komediální obraty hlasem kouzelného kufru z Wand Night Stand:
                 suchá britská satira, absurdní kouzelnická byrokracie a návazný motiv napříč koly.
                 Olivander je v noci opilý jak dělo, hůlky prodávat nedokáže a prodej přebírá kouzelný kufr.

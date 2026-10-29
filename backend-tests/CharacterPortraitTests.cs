@@ -17,7 +17,16 @@ internal static class CharacterPortraitTests
             await AccountIdentityTests.RunPortraitFallbackAsync();
             await AttributionMigrationAsync(Path.Combine(root, "attribution"));
             await ExperienceWireContractAsync();
+            await PortraitRejectionAsync();
             await ImagePromptWireContractAsync();
+            var variants = CharacterWelcomePolicy.Fallback with
+            {
+                Jokes = [CharacterWelcomePolicy.Fallback.Joke, "Druhá samostatná pointa.", "Třetí samostatná pointa."]
+            };
+            Check(CharacterWelcomePolicy.ValidText(variants), "three stored welcome variants accepted");
+            Check(!CharacterWelcomePolicy.ValidText(variants with { Jokes = [variants.Joke, variants.Joke, "Jiná."] }), "duplicate variants rejected");
+            Check(!CharacterWelcomePolicy.ValidText(variants with { Jokes = [variants.Joke, "null", "Jiná."] }), "placeholder variants rejected");
+            Check(!CharacterWelcomePolicy.ValidText(variants with { Jokes = ["Jiná.", "Druhá.", "Třetí."] }), "primary joke must match first variant");
             WelcomeContract();
             await ConsentAndDurabilityAsync(Path.Combine(root, "durable"));
             await ProfileIdentityFenceAsync(Path.Combine(root, "identity"));
@@ -81,6 +90,58 @@ internal static class CharacterPortraitTests
         }
     }
 
+    private static async Task PortraitRejectionAsync()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["OPENAI_API_KEY"] = "offline-refusal-only" }).Build();
+        var handler = new PortraitRefusalHandler();
+        using var provider = new OpenAiCharacterPortraitProvider(config, new HttpClient(handler));
+        try
+        {
+            await provider.GeneratePortraitAsync(WelcomeJob("Harry Potter", "Harry Potter", "synthetic", 1), default);
+            throw new Exception("Provider refusal was swallowed.");
+        }
+        catch (CharacterException error)
+        {
+            Check(error.Code == "portrait_content_rejected" && handler.Calls == 1,
+                "actual portrait transport classifies refusal without retrying or changing character identity");
+        }
+
+        foreach (var code in new[] { "moderation_blocked", "content_policy_violation", "safety_violation" })
+        {
+            using var content = new StringContent(JsonSerializer.Serialize(new { error = new { code, message = "private upstream text" } }));
+            try
+            {
+                await CharacterProviderFailure.InspectPortraitFailureAsync(content, default);
+                throw new Exception("Portrait refusal was not classified.");
+            }
+            catch (CharacterException error)
+            {
+                Check(error.Code == "portrait_content_rejected" && !error.Message.Contains("private", StringComparison.Ordinal)
+                    && !CharacterProviderFailure.IsTransient(error), "portrait refusal is explicit, private and not transient");
+            }
+        }
+        foreach (var body in new[] { "not json", "{}", "{\"error\":{\"code\":\"private-code\"}}",
+            "{\"error\":{\"code\":\"moderation_blocked\",\"code\":\"other\"}}", new string('x', 5000) })
+        {
+            using var content = new StringContent(body);
+            await CharacterProviderFailure.InspectPortraitFailureAsync(content, default);
+        }
+    }
+
+    private sealed class PortraitRefusalHandler : HttpMessageHandler
+    {
+        internal int Calls;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Calls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("{\"error\":{\"code\":\"moderation_blocked\",\"message\":\"private provider details\"}}")
+            });
+        }
+    }
+
     private static async Task ImagePromptWireContractAsync()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -96,7 +157,20 @@ internal static class CharacterPortraitTests
         var bytes = await provider.GeneratePortraitAsync(job, default);
         using var image = SKBitmap.Decode(bytes);
         Check(handler.Calls == 1 && image is not null, "portrait generation uses one offline image request and keeps image decoding intact");
+        var harry = job with { Input = new("Harry Potter", "Harry Potter"), Enrichment = enrichment with
+        { Summary = "Harry has round glasses, messy black hair and a lightning-shaped forehead scar." } };
+        var harryPrompt = OpenAiCharacterPortraitProvider.BuildPortraitPrompt(harry);
+        Check(harryPrompt.Contains("Fictional character: „Harry Potter“", StringComparison.Ordinal)
+            && harryPrompt.Contains("Fictional universe: „Harry Potter“", StringComparison.Ordinal)
+            && harryPrompt.Contains("lightning-shaped forehead scar", StringComparison.Ordinal)
+            && harryPrompt.Contains("age-appropriate", StringComparison.Ordinal)
+            && !harryPrompt.Contains("Never describe this application's purpose", StringComparison.Ordinal),
+            "Harry Potter portrait retains recognizable fictional traits without narrative-only instructions");
         var prompt = handler.Prompt!;
+        Check(prompt.Contains("One gentle visual joke", StringComparison.Ordinal)
+            && prompt.Contains("identifying visual features faithful", StringComparison.Ordinal)
+            && prompt.Contains("weapons, wands or suitcase", StringComparison.Ordinal),
+            "actual portrait request includes situational visual humor while excluding wands");
         Check(prompt.Contains("Fictional character: „Raven“", StringComparison.Ordinal)
             && prompt.Contains("Original fiction", StringComparison.Ordinal)
             && prompt.Contains("Raven wears a copper cloak", StringComparison.Ordinal)
@@ -144,6 +218,14 @@ internal static class CharacterPortraitTests
             && result.Welcome?.Identity == PortraitExperienceHandler.Identity
             && result.FinalMessage == PortraitExperienceHandler.Joke + " " + PortraitExperienceHandler.Identity,
             "one Responses call parses structured welcome and retains the legacy finalMessage projection");
+        handler.Jokes = [PortraitExperienceHandler.Joke, "Tvá pověst dorazila první. Kabát si ovšem musíš odložit sám.", "Na velký příchod stačí dveře. Potlesk se objednává zvlášť."];
+        var varied = await provider.GenerateExperienceAsync(job, "Keep the surprise secret.", true, CancellationToken.None);
+        Check(varied.Welcome?.Jokes?.SequenceEqual(handler.Jokes) == true,
+            "one preparation response retains all finished variants");
+        handler.Jokes = [PortraitExperienceHandler.Joke, PortraitExperienceHandler.Joke, "Jiná."];
+        var duplicate = await provider.GenerateExperienceAsync(job, "Keep the surprise secret.", true, CancellationToken.None);
+        Check(duplicate.Welcome == CharacterWelcomePolicy.Fallback, "duplicate provider variants fail closed");
+        handler.Jokes = null;
         handler.ServiceTier = "default";
         var downgraded = await provider.GenerateExperienceAsync(job, "Keep the surprise secret.", true, CancellationToken.None);
         Check(downgraded.Welcome?.Joke == PortraitExperienceHandler.Joke,
@@ -292,6 +374,7 @@ internal static class CharacterPortraitTests
         internal const string Identity = "Vystupuješ jako Raven ze světa Original fiction.";
         internal int Calls { get; private set; }
         internal string? MissingText { get; set; }
+        internal string[]? Jokes { get; set; }
         internal string? ServiceTier { get; set; } = "fast";
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -314,7 +397,8 @@ internal static class CharacterPortraitTests
             using var writerInput = JsonDocument.Parse(payload.GetProperty("input").GetString()!.Split('\n', 2)[1]);
             Check(writerInput.RootElement.GetProperty("welcome").GetProperty("character").GetProperty("inputIdentity").GetString() == Identity,
                 "unverified identity is grounded in the exact supplied character name and world");
-            var text = JsonSerializer.Serialize(new { loadingMessage = MissingText ?? Loading, joke = MissingText ?? Joke, identity = Identity, teaser = "", usedFactIds = Array.Empty<string>(), teaserId = (string?)null });
+            var text = JsonSerializer.Serialize(new { jokes = Jokes, loadingMessage = MissingText ?? Loading, joke = MissingText ?? Joke, identity = Identity, teaser = "", usedFactIds = Array.Empty<string>(), teaserId = (string?)null }, new JsonSerializerOptions());
+            if (Jokes is null) text = text.Replace("\"jokes\":null,", "", StringComparison.Ordinal);
             var response = JsonSerializer.Serialize(new
             {
                 status = "completed", service_tier = ServiceTier,
@@ -470,8 +554,11 @@ internal static class CharacterPortraitTests
         var portrait = store.ClaimPortrait()!;
         var welcome = new CharacterWelcome("Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.", "",
             "Některé věci tu mají vlastní vůli.", [], WelcomeWriterInput.AllowedTeaserId(portrait.Input, portrait.Enrichment));
+        welcome = welcome with { Jokes = [welcome.Joke, "Tvá pověst dorazila první. Kabát si ovšem musíš odložit sám.", "Na velký příchod stačí dveře. Potlesk se objednává zvlášť."] };
         var final = CharacterWelcomePolicy.LegacyText(welcome);
         Check(store.SetPortraitExperience(portrait, final, welcome), "successful welcome persists before the image request");
+        Check(new CharacterProfileStore(root).ReadPortrait("alice", profile.ProfileId, profile.Revision)?.Welcome?.Jokes?.SequenceEqual(welcome.Jokes!) == true,
+            "finished variants survive reopening the persistent store");
         Check(store.ReadPortrait("alice", profile.ProfileId, profile.Revision) is { Status: "running", Welcome: not null },
             "welcome is readable while image generation runs");
         Check(store.CompletePortrait(portrait, null, "openai_http_503"), "image failure completes independently");

@@ -119,7 +119,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
                 };
             }
             if (request.Variant is not null || request.UploadId is not null) { throw new KeepsakeException("portrait_source_missing"); }
-            var storyPrompt = "Napis cesky literarni pribeh digitalni hulky o 200 az 450 slovech a konkretni textovy design cele hulky. "
+            var storyPrompt = Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text + "Napis cesky literarni pribeh digitalni hulky o 200 az 450 slovech a konkretni textovy design cele hulky. "
                 + "Wand Night Stand mluvi suchym dospelym humorem; bez povinne chvaly, bez nenavisti a bez vymyslene biografie. "
                 + "Fantazie neni skutecny zivotopis a novy design neni fotografie ani presna replika fyzicke rekvizity. "
                 + "Vytvor take ceskou wizardIdentity: fiktivni alias do 60 znaku, vlastnosti do 160 znaku, motto do 120, microStory do 900. "

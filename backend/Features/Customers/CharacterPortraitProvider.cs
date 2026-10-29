@@ -69,7 +69,7 @@ internal static class CharacterWelcomePolicy
 
         NEJDŘÍV POCHOP TYPY HUMORU
         A. Suchý britský roast: klidný zdánlivě zdvořilý začátek, potom přesné snížení hostovy důležitosti. Použij například pochvalu obrácenou proti němu, velkolepost končící všedností nebo doslovný obrat významu. Pointu nech na konci. Nevysvětluj ji a nepřidávej smajlík ani omluvu.
-        B. Pratchettovsky laděná obecná absurdita: obyčejná věc má neobvykle důslednou vlastní logiku. Opona může mít trému kvůli hostovi. Velké očekávání skončí trapně všedním důsledkem. Piš vlastní krátký text, nekopíruj existující hlášky. Tento způsob použij bez spolehlivého osobního podkladu; není to režim pro morálně neutrální postavu.
+        B. Pratchettovsky laděná obecná absurdita: obyčejná věc má neobvykle důslednou vlastní logiku. Pouhá tréma opony není pointa; rozpor musí mít konkrétní důsledek. Velké očekávání skončí trapně všedním důsledkem. Piš vlastní krátký text, nekopíruj existující hlášky. Tento způsob použij bez spolehlivého osobního podkladu; není to režim pro morálně neutrální postavu.
         C. Vulgarismus může zvýšit účinek obratu. Není povinný a sám není pointou. Nadávky lze napsat bez cenzury; obvykle stačí jedna. Nezaměňuj roast za nahodilou urážku bez nápadu.
 
         POTOM NAVAŽ NA POSTAVU
@@ -90,7 +90,14 @@ internal static class CharacterWelcomePolicy
 
         VÝSTUP
         Vrať jeden validní JSON objekt a žádný další text:
-        {"joke":"","identity":"","teaser":"","usedFactIds":[],"teaserId":null}
+        {"joke":"","identity":"","teaser":"","usedFactIds":[],"teaserId":null,"jokes":[]}
+        Připrav 3 až 6 samostatně fungujících variant v jokes; první je totožná s joke.
+        Všechny se vztahují k této fikční postavě a smějí použít pouze dodaná fakta.
+        usedFactIds zahrnuje také fakta použitá v kterékoli variantě. Každý vtip má jiný
+        konkrétní obrat, ne jen přehozená slova. Napiš více kandidátů a vyřaď slabší;
+        nevyplňuj počet urážkami či opakováním. Bez osobního podkladu použij situační humor.
+        Všechny varianty patří k představení postavy, nesmějí předjímat jiné části aplikace.
+        Limity platí pro každou variantu samostatně spolu se stejnými identity a teaser.
         Limity: joke nejvýše 120 znaků, identity 120, teaser 100. Součet všech tří textů včetně dvou oddělovacích mezer je nejvýše 250 znaků. Krátit úvod a opakování; zachovat pointu. Nevracej pracovní úvahy.
         Hostovi se zobrazí pouze joke → identity → teaser, každý jako vlastní odstavec. usedFactIds a teaserId jsou interní evidence.
         """;
@@ -98,7 +105,7 @@ internal static class CharacterWelcomePolicy
     internal static bool Valid(CharacterWelcome? value, CharacterPortraitJob job)
     {
         if (value is { Joke: "Tvá pověst dorazila před tebou. Už jsme se jí omluvili.", Identity: "", Teaser: "", TeaserId: null }
-            && value.UsedFactIds is { Length: 0 }) { return true; }
+            && value.UsedFactIds is { Length: 0 } && value.Jokes is null) { return true; }
         var input = job.Input;
         var enrichment = job.Enrichment;
         if (value is null || value.Joke == "Opona má trému. Slyšela, koho má představit." || !ValidText(value)
@@ -128,9 +135,16 @@ internal static class CharacterWelcomePolicy
 
     internal static bool ValidIdentity(string? text) => SafeText(text, 120);
 
+    private static bool ValidVariants(CharacterWelcome value) => value.Jokes is null
+        || (value.Jokes.Length is >= 3 and <= 6
+            && value.Jokes[0] == value.Joke
+            && value.Jokes.Distinct(StringComparer.Ordinal).Count() == value.Jokes.Length
+            && value.Jokes.All(joke => !string.IsNullOrWhiteSpace(joke) && SafeText(joke, 120)
+                && joke.Length + value.Identity.Length + value.Teaser.Length + 2 <= 250));
+
     internal static bool ValidText(CharacterWelcome value) => !string.IsNullOrWhiteSpace(value.Joke)
         && SafeText(value.Joke, 120) && ValidIdentity(value.Identity) && SafeText(value.Teaser, 100)
-        && value.Joke.Length + value.Identity.Length + value.Teaser.Length + 2 <= 250;
+        && value.Joke.Length + value.Identity.Length + value.Teaser.Length + 2 <= 250 && ValidVariants(value);
 
     private static bool SafeText(string? text, int maximum) => text is not null && text.Length <= maximum
         && !PortraitContentPolicy.IsSerializedMissingValue(text)
@@ -317,7 +331,8 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
     public async Task<byte[]> GeneratePortraitAsync(CharacterPortraitJob job, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(key)) { throw new CharacterException("portrait_provider_unavailable", 503); }
-        using var bounded = BoundedSdkTransport.Create(http, 32 * 1024 * 1024, ["application/json"]);
+        using var bounded = BoundedSdkTransport.Create(http, 32 * 1024 * 1024, ["application/json"],
+            CharacterProviderFailure.InspectPortraitFailureAsync);
         var client = new ImageClient(imageModel, new ApiKeyCredential(key), new OpenAIClientOptions
         {
             Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
@@ -350,13 +365,16 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
     internal static string BuildPortraitPrompt(CharacterPortraitJob job)
     {
         var character = PortraitContentPolicy.CharacterData(job.Input, job.Enrichment);
-        return ImageVisualizer.Describe(PortraitContentPolicy.SafetyInstructions + "\n"
-            + "Premium cinematic character illustration, elegant and slightly eccentric, atmospheric lighting, "
-            + "layered painterly detail, intentional costume and colors specific to the fictional universe. "
-            + "Vertical half-body portrait, textured depth, striking silhouette. No text, typography, logos, weapons, "
-            + "wands, suitcase or unexplained equipment. Do not invent certainty where interpretation is ambiguous.",
+        return ImageVisualizer.Describe(
+            "Original illustrated portrait of the named fictional book or story character, recognizable from their canonical appearance. "
+            + "Keep the character's age, distinctive face, hairstyle, clothing and identifying visual features faithful to the story. "
+            + "A fully clothed, age-appropriate character in a friendly storybook scene. "
+            + "Portrait composition, atmospheric light, painterly detail and colors appropriate to the fictional world. "
+            + "One gentle visual joke may come from the supplied trait, such as a solemn expression contrasted with unruly hair. "
+            + "Keep the face and identifying features clear. No lettering, logos, weapons, wands or suitcase. "
+            + "Use only the fictional identity and public trait below; do not invent biographical events.",
             ("Fictional character", character.Name), ("Fictional universe", character.Universe),
-            ("One harmless public fictional trait", character.PublicFictionalSummary));
+            ("Public fictional appearance or trait", character.PublicFictionalSummary));
     }
 
     public async Task<string?> GenerateMessageAsync(CharacterUserInput input, CharacterEnrichment? enrichment,
@@ -372,7 +390,7 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
         {
             model = WandDecisionBudget.Luna, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.CharacterWelcome), max_output_tokens = 160,
             reasoning = new { effort = "none" },
-            instructions = PortraitContentPolicy.SafetyInstructions
+            instructions = Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text + PortraitContentPolicy.SafetyInstructions
                 + " Reply only with one playful Czech sentence of at most 250 characters. No quotes or formatting.",
             input = JsonSerializer.Serialize(new { creativeDirection = creativePrompt,
                 character = PortraitContentPolicy.CharacterData(input, enrichment) })
@@ -408,12 +426,12 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
         });
         var request = JsonSerializer.Serialize(new
         {
-            model = WandDecisionBudget.Luna, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.CharacterWelcome), max_output_tokens = 240,
+            model = WandDecisionBudget.Luna, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.CharacterWelcome), max_output_tokens = 700,
             reasoning = new { effort = "none" },
-            instructions = PortraitContentPolicy.SafetyInstructions + "\n"
+            instructions = Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text + PortraitContentPolicy.SafetyInstructions + "\n"
                 + PortraitContentPolicy.LoadingMessageInstructions
                 + CharacterWelcomePolicy.Prompt
-                + " Return only a JSON object with nullable loadingMessage and the five welcome fields. No Markdown."
+                + " Return only a JSON object with nullable loadingMessage and the welcome fields including jokes. No Markdown."
                 + " The joke must contain an actual joke, never a missing-value placeholder."
                 + " For an omitted loadingMessage use JSON null, never the strings null or undefined."
                 + " For omitted identity or teaser use an empty string.",
@@ -467,7 +485,7 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
     {
         string[] expected = ["joke", "identity", "teaser", "usedFactIds", "teaserId"];
         if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Any(property =>
-                property.Name != "loadingMessage" && !expected.Contains(property.Name, StringComparer.Ordinal))
+                property.Name != "loadingMessage" && property.Name != "jokes" && !expected.Contains(property.Name, StringComparer.Ordinal))
             || expected.Any(name => !root.TryGetProperty(name, out _))) { return null; }
         if (root.TryGetProperty("loadingMessage", out var loadingMessage)
             && loadingMessage.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)) { return null; }
@@ -480,9 +498,16 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
             || teaser.ValueKind != JsonValueKind.String || used.ValueKind != JsonValueKind.Array
             || used.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String)
             || (teaserId.ValueKind != JsonValueKind.String && teaserId.ValueKind != JsonValueKind.Null)) { return null; }
+        string[]? jokes = null;
+        if (root.TryGetProperty("jokes", out var variants))
+        {
+            if (variants.ValueKind != JsonValueKind.Array || variants.GetArrayLength() is < 3 or > 6
+                || variants.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String)) { return null; }
+            jokes = variants.EnumerateArray().Select(item => item.GetString()!).ToArray();
+        }
         return new(joke.GetString()!, identity.GetString()!, teaser.GetString()!,
             used.EnumerateArray().Select(item => item.GetString()!).ToArray(),
-            teaserId.ValueKind == JsonValueKind.Null ? null : teaserId.GetString());
+            teaserId.ValueKind == JsonValueKind.Null ? null : teaserId.GetString(), jokes);
     }
 
     public void Dispose() => http.Dispose();

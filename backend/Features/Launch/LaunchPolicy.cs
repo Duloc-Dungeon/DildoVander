@@ -10,7 +10,7 @@ internal sealed record LaunchConfiguration(long Revision, string TimeZone, bool 
     string PersonalizedLoadingPrompt)
 {
     internal const string DefaultPersonalizedLoadingPrompt =
-        "Napiš jednu krátkou českou větu jako napínavou předzvěst pro právě uloženou fikční postavu. Využij její jméno a nejvýše jeden neškodný veřejný fikční rys z bezpečného shrnutí, aniž prozradíš, co se chystá. Přidej suchý britský humor a drobnou narážku na Olivanderovu kocovinu.";
+        "Napiš jednu krátkou českou větu jako napínavou předzvěst pro právě uloženou fikční postavu. Využij její jméno a nejvýše jeden neškodný veřejný fikční rys z bezpečného shrnutí, aniž prozradíš, co se chystá. Pointu založ na konkrétním rozporu, antiklimaxu nebo českém rčení; kocovina není povinný motiv.";
 
     internal static LaunchConfiguration Default => new(0, "Europe/Prague", true, DefaultPersonalizedLoadingPrompt);
 }

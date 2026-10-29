@@ -1,3 +1,4 @@
+import { humorVariants } from '../humor/visitHumor';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import CharacterEntrance from './CharacterEntrance.vue';
@@ -14,7 +15,7 @@ describe('progressive character entrance', () => {
     try {
       await vi.advanceTimersByTimeAsync(1000);
       expect(view.attributes('data-entrance')).toBe('waiting');
-      expect(view.get('.entrance-joke').text()).toContain('Zrcadlo si zatím vyjednává');
+      expect(humorVariants.portrait).toContain(view.get('.entrance-joke').text());
     } finally { view.unmount(); }
   });
   it('shows and clears the display label without changing the character name', async () => {
@@ -30,7 +31,7 @@ describe('progressive character entrance', () => {
     const view = mount(CharacterEntrance, { props: initial });
     try {
       expect(view.attributes('data-entrance')).toBe('waiting');
-      expect(view.text()).toContain('Zrcadlo si zatím vyjednává');
+      expect(humorVariants.portrait.some(text => view.text().includes(text))).toBe(true);
       expect(view.find('.entrance-continue').exists()).toBe(false);
       await vi.advanceTimersByTimeAsync(299900);
       expect(view.find('.entrance-continue').exists()).toBe(false);

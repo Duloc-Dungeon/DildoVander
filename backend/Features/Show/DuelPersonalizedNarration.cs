@@ -12,16 +12,16 @@ internal static class DuelPersonalizedNarration
 
     internal static string Round(DuelIdentitySnapshot left, DuelIdentitySnapshot right, DuelRound round)
     {
-        var opening = round.Number switch { 1 => "Opona vzhůru.", 2 => "Důstojnost už odešla na přestávku.", _ => "Poslední kolo; ministerská komise předstírá napětí." };
+        var opening = round.Number switch { 1 => "Opona vzhůru.", 2 => "Druhé kolo.", _ => "Poslední kolo." };
         var exchange = (round.LeftAction, round.RightAction) switch
         {
             ("strike", "trick") or ("trick", "strike") => "Přímá magie proniká kouřovou clonou.",
-            ("trick", "shield") or ("shield", "trick") => "Klam obchází obranu postranním vchodem pro úředníky.",
-            ("shield", "strike") or ("strike", "shield") => "Zásah naráží do štítu jako stížnost do zavřené podatelny.",
+            ("trick", "shield") or ("shield", "trick") => "Obrana počítala s útokem zepředu. Lest si návod přečetla také.",
+            ("shield", "strike") or ("strike", "shield") => "Úder šel přímo k věci. Tou věcí byl štít.",
             _ => "Stejná kouzla; rozhoduje jejich vlastní povaha, nikoli rozhodčího nálada."
         };
-        var outcome = round.LeftScore == round.RightScore ? "Oba získávají půl bodu. Komise žádá celé razítko."
-            : $"Bod získává {Bound(round.LeftScore > round.RightScore ? left.DisplayName : right.DisplayName)}. Poražená důstojnost se neproplácí.";
+        var outcome = round.LeftScore == round.RightScore ? "Oba získávají půl bodu. Vítězství se dnes prodává na váhu."
+            : $"Bod získává {Bound(round.LeftScore > round.RightScore ? left.DisplayName : right.DisplayName)}.";
         return $"{opening} {Bound(left.DisplayName)} sesílá {Bound(Spell(left, round.LeftAction))}; {Bound(right.DisplayName)} odpovídá {Bound(Spell(right, round.RightAction))}. {exchange} {outcome}";
     }
 
@@ -50,11 +50,11 @@ internal static class DuelPersonalizedNarration
         if (stage == "final_dispatch")
         {
             var winner = duel.Result!.Winner == "draw" ? "Remíza." : $"Vítězí {(duel.Result.Winner == "left" ? left : right)}.";
-            return $"{(duel.Mode == "exhibition" ? "Fiktivní exhibice. " : "")}{winner} Body {duel.Result.LeftPoints} ku {duel.Result.RightPoints}. Komise tleská na vlastní náklady.";
+            return $"{(duel.Mode == "exhibition" ? "Fiktivní exhibice. " : "")}{winner} Body {duel.Result.LeftPoints} ku {duel.Result.RightPoints}. Potlesk skóre nezmění.";
         }
         var round = duel.Rounds[^1];
         var outcome = round.LeftScore == round.RightScore ? "Remíza kola." : $"Bod získává {(round.LeftScore > round.RightScore ? left : right)}.";
-        return $"Kolo {round.Number}. {left}: {Short(Spell(duel.Left, round.LeftAction))}. {right}: {Short(Spell(duel.Right, round.RightAction))}. {outcome} Skóre {round.LeftScore} ku {round.RightScore}. Ministerstvo zadržuje potlesk.";
+        return $"Kolo {round.Number}. {left}: {Short(Spell(duel.Left, round.LeftAction))}. {right}: {Short(Spell(duel.Right, round.RightAction))}. {outcome} Skóre {round.LeftScore} ku {round.RightScore}. ";
     }
 
     internal static bool Flavor(string? text) => text is { Length: >= 1 and <= 360 }

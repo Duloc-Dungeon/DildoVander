@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useVisitHumor } from "../humor/visitHumor";
+const { copy: humor } = useVisitHumor();
 import keepsakeArtwork from '../../assets/wns-v2/art/memory-orb.png';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
@@ -24,7 +26,7 @@ const copy = computed(() => ({
   loading: 'Načítám tvoje památky…', refresh: 'Obnovit památky', searchLabel: 'Hledat v památkách',
   accessLabel: 'Přístup', allAccess: 'Všechny památky', ownedAccess: 'Tvoje památky', linkedAccess: 'Propojené pouze ke čtení',
   submitSearch: 'Hledat', loadMore: 'Načíst další', loadingMore: 'Načítám další…', refreshing: 'Obnovuji…',
-  empty: 'Zatím tu nemáš žádné dostupné památky. Archiv považuje prázdnou polici za důkaz, že má ve všem pořádek.', filteredEmpty: 'Těmto filtrům nic neodpovídá. Zkus hledat jinak nebo vyber Všechny památky.',
+  empty: `Zatím tu nemáš žádné dostupné památky. ${humor.value.archive}`, filteredEmpty: 'Těmto filtrům nic neodpovídá. Zkus hledat jinak nebo vyber Všechny památky.',
   failure: 'Památky se nepodařilo načíst. Přístup se mohl změnit nebo je služba dočasně nedostupná. Zkus ji obnovit.',
   moreFailure: 'Další památky se nepodařilo načíst. Zkus to znovu.', noMore: 'Další památky tu zatím nejsou.',
   morePaused: 'Při prohlížení starších památek se automatické obnovování pozastaví. Obnovením památek ověříš aktuální stav.',

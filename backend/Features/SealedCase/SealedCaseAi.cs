@@ -25,7 +25,8 @@ internal static class SealedCaseAi
             var name = assembly.GetManifestResourceNames().Single(n => n.EndsWith(".Content." + file, StringComparison.Ordinal));
             using var stream = assembly.GetManifestResourceStream(name)!; using var reader = new StreamReader(stream); return reader.ReadToEnd();
         }
-        return Read("00_protokol_a_integrace.md") + "\n" + Read(PromptNames[(int)role]) + "\n" + """
+        return (role is SealedAiRole.PrivateNarrator or SealedAiRole.PublicNarrator or SealedAiRole.Epilogue
+            ? Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text : "") + Read("00_protokol_a_integrace.md") + "\n" + Read(PromptNames[(int)role]) + "\n" + """
             AKTUÁLNÍ SCÉNÁŘ A HLAS: Použij pouze scénář dodaný v autorizované projekci.
             Názvy týmů, místa, minulost, podoba Ozvěny a následek krajního činu pocházejí ze scénáře;
             nepřenášej zvon, dům ani smrt z jiného scénáře. LETHAL a BREAKING_SEAL jsou stabilní

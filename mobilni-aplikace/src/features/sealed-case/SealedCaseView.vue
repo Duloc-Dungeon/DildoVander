@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useVisitHumor } from "../humor/visitHumor";
+const { copy: humor } = useVisitHumor();
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import SceneShell from '../../components/scene/SceneShell.vue';
@@ -743,7 +745,7 @@ async function openAction() {
                   <p>{{ statement.body }}</p>
                 </li>
               </ol>
-              <p v-else class="sealed-empty">Zatím tu nikdo nic netvrdil. Podezřelé ticho, ale samo o sobě nic nedokazuje.</p>
+              <p v-else class="sealed-empty">Zatím tu nikdo nic netvrdil. {{ humor.silence }}</p>
               <form v-if="view.ownState !== 'Operator'" class="sealed-message-form" @submit.prevent="sendMessage">
                 <p v-if="shareStatus" role="status">{{ shareStatus }}</p>
                 <label>Komu

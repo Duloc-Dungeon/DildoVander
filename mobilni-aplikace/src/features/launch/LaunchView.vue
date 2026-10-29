@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useVisitHumor } from "../humor/visitHumor";
+const { copy: humor, roll: humorRoll } = useVisitHumor();
 import PushNotifications from '../identity/PushNotifications.vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -14,7 +16,7 @@ import { clearInvitationRegistration, getInvitationRegistration, invitationRegis
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
 import { launchCopy as copy } from './launchCopy';
-import { characterIntroductionFallback, characterIntroductionText, characterWelcomeText } from './characterWelcomeText';
+import { characterIntroductionText, characterWelcomeText } from './characterWelcomeText';
 import PortraitCurtain from './PortraitCurtain.vue';
 import CharacterIntroduction from './CharacterIntroduction.vue';
 import CharacterEntrance from './CharacterEntrance.vue';
@@ -112,8 +114,8 @@ const statusMessage = computed(() => {
   return copy.value.saved;
 });
 const receptionJoke = computed(() => {
-  const personal = characterIntroductionText(state.value?.artwork ?? null, state.value?.artwork?.status === 'ready' || phase.value === 'failed');
-  return personal || characterIntroductionFallback;
+  const personal = characterIntroductionText(state.value?.artwork ?? null, state.value?.artwork?.status === 'ready' || phase.value === 'failed', humorRoll.value);
+  return personal || humor.value.portrait;
 });
 const receptionStatus = computed(() => {
   if (displayedError.value || phase.value === 'failed') return '';
@@ -530,7 +532,7 @@ onBeforeUnmount(() => {
 <template>
   <RickrollVideo v-if="rickrollSource" :src="rickrollSource" :active="rickrollActive" @dismiss="dismissRickroll" />
   <SceneShell v-if="!rickrollActive && (!receptionEntered || groupOpening)" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
-    <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!displayedError" :active="presentationForeground" :busy="groupBusy" :retrying="entranceRetrying" :retry-attempted="entranceRetryAttempted" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
+    <CharacterEntrance v-if="groupPresenting" :humor-roll="humorRoll" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!displayedError" :active="presentationForeground" :busy="groupBusy" :retrying="entranceRetrying" :retry-attempted="entranceRetryAttempted" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
       <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }}</AwNotice>
       <p v-if="portraitSource && hasPortrait" class="launch-attribution">Obrázek z internetu: <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> · {{ portraitSource.author }} · <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
     </CharacterEntrance>
@@ -571,7 +573,7 @@ onBeforeUnmount(() => {
       <PaperSurface class="launch-copy">
         <h1 v-if="!state?.character" id="launch-title">{{ readError && account ? copy.waitingTitle : writing ? 'Tvoje postava se připravuje.' : draftProvided ? name : copy.title }}</h1>
         <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
-        <AwNotice v-if="phase === 'failed'" tone="warning" role="alert">{{ copy.failed }} <button class="launch-retry" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
+        <AwNotice v-if="phase === 'failed'" tone="warning" role="alert">{{ state?.artwork?.errorCode === 'portrait_content_rejected' ? copy.portraitRejected : copy.failed }} <button class="launch-retry" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
         <template v-if="!account"><RouterLink class="aw-button aw-button--primary" to="/signin">{{ copy.invitation }}</RouterLink></template>
         <form v-else-if="characterVerified && !state?.character && !writing" class="launch-form" @submit.prevent="saveCharacter" @focusin="formFocusIn" @focusout="formFocusOut">
           <p v-if="draftProvided && !uncertain">{{ copy.accountReady }}</p>

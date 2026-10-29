@@ -409,7 +409,7 @@ internal static partial class AccountIdentityTests
         }
         try
         {
-            var welcome = new CharacterWelcome("joke-field", "identity-field", "teaser-field", [], null);
+            var welcome = new CharacterWelcome("joke-field", "identity-field", "teaser-field", [], null, ["joke-field", "second-joke", "third-joke"]);
             await WriteTextAsync("loading-field", "final-field", welcome);
             var response = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character"));
             var artwork = response.GetProperty("artwork");
@@ -417,7 +417,8 @@ internal static partial class AccountIdentityTests
                 && artwork.GetProperty("finalMessage").GetString() == "final-field"
                 && artwork.GetProperty("welcome").GetProperty("joke").GetString() == "joke-field"
                 && artwork.GetProperty("welcome").GetProperty("identity").GetString() == "identity-field"
-                && artwork.GetProperty("welcome").GetProperty("teaser").GetString() == "teaser-field",
+                && artwork.GetProperty("welcome").GetProperty("teaser").GetString() == "teaser-field"
+                && artwork.GetProperty("welcome").GetProperty("jokes")[2].GetString() == "third-joke",
                 "database columns and structured welcome fields map to distinct HTTP fields without substitution");
             await WriteTextAsync("null", "final-field", welcome);
             response = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character"));

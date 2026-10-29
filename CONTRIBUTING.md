@@ -54,7 +54,7 @@ CODEOWNERS určuje vlastníka review. Vynucení ochrany větve závisí na dostu
 GitHub rulesets; skutečná omezení přístupu a tarifu jsou popsaná v CI/CD návodu.
 
 Běžný tok je `pracovní větev → development → main`. PR do `development`
-se slučují přes squash po rychlých kontrolách. Vydání je samostatný PR
+se slučují přes squash po kontrolách repozitáře a dotčených produktových testech. Vydání je samostatný PR
 `development → main`, který spouští všechny běžné buildy a slučuje se přes
 merge commit. Podrobnosti, ochrany větví a první aktivaci popisuje
 [Git workflow](docs/git-workflow.md). Povýšení do `main` vyžaduje zadání vydání;

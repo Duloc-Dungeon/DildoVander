@@ -158,7 +158,7 @@ try {
   await page.getByRole('heading', { name: /Matylda/ }).waitFor();
   assert.match(await page.locator('.launch-status').innerText(), /Chvíli strpení|Postava je uložená/);
   assert.match(await page.locator('.countdown').innerText(), /dní/);
-  await page.getByText('Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.').waitFor();
+  await page.locator('.launch-joke').filter({ hasText: /^(Portrét: způsob, jak udělat dojem a ani se přitom nepohnout\.|Portrét zachytí i prchavý dojem\. Rám mu znemožní útěk\.|Na portrétu můžeš hledět do budoucnosti\. Bez povinnosti tam dojít\.)$/ }).waitFor();
   assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Portrét');
   assert.doesNotMatch(await page.locator('.launch-copy').innerText(), /Poznáváme postavu|Mícháme barvy|rešerš|malujeme/i);
   await page.locator('.launch-notifications > summary').click();
@@ -197,7 +197,7 @@ try {
   artwork = { status: 'running', loadingMessage: 'null', welcome: { joke: ' null ', identity: '', teaser: '' }, finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
-  await page.getByText('Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.').waitFor();
+  await page.locator('.launch-joke').filter({ hasText: /^(Portrét: způsob, jak udělat dojem a ani se přitom nepohnout\.|Portrét zachytí i prchavý dojem\. Rám mu znemožní útěk\.|Na portrétu můžeš hledět do budoucnosti\. Bez povinnosti tam dojít\.)$/ }).waitFor();
   const fallbackLoading = await page.locator('.launch-status').innerText();
   assert.match(fallbackLoading, /Chvíli strpení|Postava je uložená/);
   assert.doesNotMatch(fallbackLoading, /rešerš|malujeme|avatar/i);
