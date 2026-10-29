@@ -37,11 +37,27 @@ afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks();
 
 describe('published spell clash', () => {
   it('keeps a loaded result static and never replays the same round on polling', async () => {
-    wrapper = mount(GameClash, { props: { round } });
+    wrapper = mount(GameClash, { props: { round, theatrical: true } });
     intersect([{ isIntersecting: true }]);
     await wrapper.setProps({ round: { ...round } });
     expect(requestAnimationFrame).not.toHaveBeenCalled();
     expect(wrapper.findAll('.game-magic-clash__spells img')).toHaveLength(2);
+    expect(wrapper.attributes('data-winner')).toBe('opponent');
+    expect(wrapper.attributes('data-motion')).toBe('still');
+  });
+
+  it('lights a side only after both choices have been published', async () => {
+    wrapper = mount(GameClash, { props: { theatrical: true, locked: true } });
+    intersect([{ isIntersecting: true }]);
+    expect(wrapper.attributes('data-winner')).toBeUndefined();
+    await wrapper.setProps({ locked: false, round: { ...round, opponentChoice: 'hidden' } });
+    expect(wrapper.attributes('data-winner')).toBeUndefined();
+    expect(requestAnimationFrame).not.toHaveBeenCalled();
+    await wrapper.setProps({ round: { ...round, index: 2 } });
+    await flushPromises();
+    expect(wrapper.attributes('data-winner')).toBe('opponent');
+    expect(wrapper.attributes('data-motion')).toBe('playing');
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
   });
 
   it('animates one newly published round and settles within two seconds', async () => {

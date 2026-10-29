@@ -8,6 +8,8 @@ import AwNotice from '../../components/AwNotice.vue';
 
 import amberWand from '../../assets/wns-v2/art/wand-amber.png';
 import GameCharacter from './GameCharacter.vue';
+import GameBossStage from './GameBossStage.vue';
+import GameBossEnergy from './GameBossEnergy.vue';
 import GameLoadouts from './GameLoadouts.vue';
 import GameRanking from './GameRanking.vue';
 import GameRules from './GameRules.vue';
@@ -19,6 +21,8 @@ import { account, accountRequest } from '../identity/session';
 import { actions, actionName, modeName, gameRequest, gameErrorText, GameError, operation, practiceRound,
   type Choice, type GameMode, type Lobby, type Match, type Round, type BossProfile, type Progress, type Milestone } from './game';
 import './game.css';
+import './boss.css';
+import './duel.css';
 import SoundToggle from '../../application/SoundToggle.vue';
 import { wnsSound } from '../../application/wnsSound';
 
@@ -66,6 +70,7 @@ const practiceDone = computed(() => practiceRounds.value.length >= 7
 const completed = computed(() => practice.value ? practiceDone.value : match.value?.status === 'complete');
 const tableDuel = computed(() => practice.value || Boolean(match.value && match.value.mode !== 'yolo'
   && (match.value.status === 'active' || match.value.status === 'complete')));
+const playerDuel = computed(() => tableDuel.value && (match.value?.mode === 'quick' || match.value?.mode === 'tactical'));
 const roundCount = computed(() => practice.value ? 7 : match.value?.totalRounds ?? 0);
 const completedRoundCount = computed(() => practice.value ? practiceRounds.value.length : match.value?.completedRounds ?? 0);
 const playerName = computed(() => account.value?.roles?.includes('Owner') ? 'Olivander'
@@ -73,6 +78,14 @@ const playerName = computed(() => account.value?.roles?.includes('Owner') ? 'Oli
 const opponentName = computed(() => practice.value ? 'Cvičný mág' : match.value?.opponent.displayName || 'Soupeř');
 const selectedAction = computed(() => actions.find(action => action.id === selected.value));
 const lastRound = computed(() => practice.value ? practiceRounds.value.at(-1) : match.value?.rounds.at(-1));
+const duelRoundTitle = computed(() => {
+  switch (lastRound.value?.winner) {
+    case 'player': return 'Tvoje výměna.';
+    case 'opponent': return 'Soupeřova výměna.';
+    case 'draw': return 'Nerozhodná výměna.';
+    default: return 'Poslední odhalení';
+  }
+});
 const pendingTasks = computed(() => lobby.value?.history.filter(item => item.partyTask?.status === 'pending') ?? []);
 const canReviewTask = computed(() => match.value?.status === 'complete' && Boolean(match.value.partyTask));
 const selectedOpponent = computed(() => lobby.value?.opponents.find(opponent => opponent.id === opponentId.value));
@@ -289,7 +302,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SceneShell class="game-scene game-experience" :class="{ 'responsive-table': tableDuel }" labelled-by="game-title">
+  <SceneShell class="game-scene game-experience"
+    :class="{ 'responsive-table': tableDuel, 'game-duel-scene': playerDuel, 'game-boss-scene': bossSetup && bossProfile?.revealed || match?.mode === 'boss' }"
+    :data-duel-result="playerDuel && completed ? match?.result : undefined"
+    :data-boss-phase="match?.mode === 'boss' ? match.phase : undefined" labelled-by="game-title">
+    <div v-if="bossSetup && bossProfile?.revealed || match?.mode === 'boss'" :key="match?.phase" class="boss-scene-light" aria-hidden="true" />
     <div class="game-content">
       <header class="game-header">
         <SoundToggle />
@@ -314,7 +331,7 @@ onBeforeUnmount(() => {
       <template v-else-if="practice || match">
         <div class="game-match-heading" :class="{ 'game-sr': tableDuel }">
           <p class="game-eyebrow">{{ practice ? 'Trénink · bez XP' : modeName(match!.mode) }}</p>
-          <h1 id="game-title">{{ practice ? 'Zkus kouzlo.' : match!.opponent.displayName }}</h1>
+          <h1 id="game-title">{{ practice ? 'Zkus kouzlo.' : match!.mode === 'boss' ? 'Zápas s bossem' : match!.opponent.displayName }}</h1>
         </div>
         <PaperSurface v-if="!practice && match?.status === 'incoming'" class="game-paper">
           <p class="game-eyebrow">Výzva u stolu</p>
@@ -350,13 +367,21 @@ onBeforeUnmount(() => {
             </PaperSurface>
           </div>
           <template v-else>
-            <div v-if="match?.mode === 'boss'" class="game-boss-stage">
-              <GameCharacter character="boss" :expression="match.result === 'win' ? 2 : (match.opponentEnergy ?? 5) <= 2 ? 1 : 0" />
-              <div><p class="game-eyebrow">Fáze {{ match.phase }} ze 3</p><p>{{ match.hint }}</p><p v-if="match.bossSpark"><strong>Baron v této výměně přisazuje jiskru.</strong></p><p>Síla tvé hůlky: {{ match.strength?.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) }}×</p></div>
-            </div>
-            <div v-if="match?.mode === 'boss'" class="game-score" aria-label="Zbývající bojová energie">
-              <div><span>Tvoje energie</span><strong>{{ match.playerEnergy?.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) }} / 6</strong></div><span class="game-score-divider" aria-hidden="true">·</span><div><span>Baronova energie</span><strong>{{ match.opponentEnergy?.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) }} / {{ match.exhibition ? 3 : 5 }}</strong></div>
-            </div>
+            <template v-if="match?.mode === 'boss'">
+              <GameBossStage :phase="match.phase" :expression="match.result === 'win' ? 2 : (match.opponentEnergy ?? 5) <= 2 ? 1 : 0">
+                <h2 class="boss-identity">Baron Šarlatán</h2>
+                <p v-if="match.phase" class="boss-phase" aria-live="polite">Fáze {{ match.phase }} ze 3</p>
+                <ol v-if="match.phase" class="boss-phases" aria-label="Fáze souboje">
+                  <li v-for="phase in 3" :key="phase" :aria-current="phase === match.phase ? 'step' : undefined" :aria-label="`Fáze ${phase}`" />
+                </ol>
+              </GameBossStage>
+              <GameBossEnergy :player-energy="match.playerEnergy" :opponent-energy="match.opponentEnergy" :exhibition="match.exhibition" />
+              <div class="boss-tactics">
+                <p v-if="match.hint">{{ match.hint }}</p>
+                <p v-if="match.bossSpark" class="boss-spark">Baron v této výměně přisazuje jiskru.</p>
+                <p class="boss-strength">Síla tvé hůlky: {{ match.strength?.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) }}×</p>
+              </div>
+            </template>
             <div v-else class="game-score game-score--duel" aria-label="Skóre zápasu">
               <span class="game-player-avatar" aria-hidden="true">{{ playerName.slice(0, 1) }}</span>
               <div><span>{{ playerName }}</span><strong :key="`player-${playerScore}`">{{ playerScore }}</strong></div>
@@ -364,12 +389,14 @@ onBeforeUnmount(() => {
               <div><span>{{ opponentName }}</span><strong :key="`opponent-${opponentScore}`">{{ opponentScore }}</strong></div>
               <span class="game-player-avatar game-player-avatar--opponent" aria-hidden="true">{{ opponentName.slice(0, 1) }}</span>
             </div>
-            <p class="game-round-label">{{ completed ? 'Dohráno' : `Výměna ${Math.min((practice ? practiceRounds.length : match!.completedRounds) + 1, practice ? 7 : match!.totalRounds)} ze ${practice ? 7 : match!.totalRounds}` }}<span v-if="match?.mode === 'tactical'"> · blok {{ match.block }}</span></p>
-            <div class="game-round-dots" aria-hidden="true"><span v-for="round in roundCount" :key="round" :class="{ done: round <= completedRoundCount, current: !completed && round === completedRoundCount + 1 }" /></div>
-            <div class="game-table-stage" :class="{ 'game-table-stage--complete': completed }">
-            <GameClash :key="practice ? 'practice' : match?.id" :round="lastRound" :locked="match?.ownChoiceLocked" :wand-url="playerWand.url.value" :wand-name="playerWand.name.value" :synthetic="playerWand.synthetic.value" :opponent-wand-url="opponentWand.url.value" :opponent-wand-name="match?.opponent.wandName ?? undefined" :opponent-synthetic="match?.opponent.wandSynthetic" />
+            <div :class="{ 'boss-round': match?.mode === 'boss', 'duel-round': playerDuel }">
+              <p class="game-round-label">{{ completed ? 'Dohráno' : `Výměna ${Math.min((practice ? practiceRounds.length : match!.completedRounds) + 1, practice ? 7 : match!.totalRounds)} ze ${practice ? 7 : match!.totalRounds}` }}<span v-if="match?.mode === 'tactical'"> · blok {{ match.block }}</span></p>
+              <div class="game-round-dots" aria-hidden="true"><span v-for="round in roundCount" :key="round" :class="{ done: round <= completedRoundCount, current: !completed && round === completedRoundCount + 1 }" /></div>
+            </div>
+            <div v-if="match?.mode !== 'boss' || lastRound" class="game-table-stage" :class="{ 'game-table-stage--complete': completed }">
+            <GameClash v-if="match?.mode !== 'boss'" :key="practice ? 'practice' : match?.id" :theatrical="playerDuel" :round="lastRound" :locked="match?.ownChoiceLocked" :wand-url="playerWand.url.value" :wand-name="playerWand.name.value" :synthetic="playerWand.synthetic.value" :opponent-wand-url="opponentWand.url.value" :opponent-wand-name="match?.opponent.wandName ?? undefined" :opponent-synthetic="match?.opponent.wandSynthetic" />
             <PaperSurface v-if="lastRound" class="game-paper game-reveal" :key="completedRoundCount" aria-live="polite" aria-atomic="true">
-              <p class="game-eyebrow">{{ lastRound ? 'Poslední odhalení' : 'Tři kouzla. Jedna volba.' }}</p>
+              <p :class="playerDuel ? 'duel-round-verdict' : 'game-eyebrow'" :data-winner="playerDuel ? lastRound.winner : undefined">{{ playerDuel ? duelRoundTitle : 'Poslední odhalení' }}</p>
               <p v-if="lastRound">{{ roundText(lastRound) }}</p>
               <p v-else>Úder přeruší lest. Lest obejde štít. Štít zastaví úder. Oba hráči volí tajně.</p>
             </PaperSurface>
@@ -396,6 +423,7 @@ onBeforeUnmount(() => {
                 <AwButton variant="primary" :busy="busy" :disabled="!selected || uncertain" @click="submitChoice">Potvrdit tah</AwButton>
                 <p v-if="match?.opponentChoiceLocked" class="game-helper">Soupeř je připraven. Jeho tah zůstává tajný.</p>
               </template>
+              <p v-else-if="match?.mode === 'boss'" class="game-helper">Tvůj tah je uzamčený. Čekáme na soupeře.</p>
             </PaperSurface>
           </template>
           <p v-if="match?.opponentInventory && (match.mode === 'boss' || match.mode === 'tactical')" class="game-helper">Soupeři zbývá: Úder {{ match.opponentInventory.strike }}, Lest {{ match.opponentInventory.trick }}, Štít {{ match.opponentInventory.shield }}.</p>
@@ -441,11 +469,21 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="bossSetup">
           <template v-if="bossProfile?.revealed">
-            <p class="game-eyebrow">{{ bossProfile.rescued ? 'Ollivander je volný.' : 'Ollivander je v zajetí.' }}</p><h1 id="game-title">Baron Šarlatán</h1>
-            <GameCharacter class="game-boss-portrait" character="boss" />
-            <PaperSurface class="game-paper"><h2>{{ bossProfile.rescued ? 'Ještě jednu reklamaci?' : 'Je čas zvednout oponu.' }}</h2><p>6 energie proti {{ lobby.player.xp < 30 ? 3 : 5 }}. Nejvýše 12 výměn, tři čitelné fáze. Hůlku ani XP neztrácíš.</p><p>Obtížnost je zmrazená pro celou skupinu. Referenční síla: {{ bossProfile.referenceXp }} XP. První výhra osvobodí Ollivandera všem.</p><p v-if="lobby.player.xp < 30">V exhibici dostaneš neomezená kouzla, žádné vlastní jiskry. Můžeš hrát i bez hůlky.</p><p>Nesoutěžní hra · bez fyzické ceny</p>
+            <GameBossStage intro>
+              <h1 id="game-title" class="boss-title">Baron <span>Šarlatán</span></h1>
+              <p class="boss-captive">{{ bossProfile.rescued ? 'Ollivander je volný.' : 'Ollivander je v zajetí.' }}</p>
+            </GameBossStage>
+            <section class="boss-invitation" aria-labelledby="boss-invitation-title">
+              <h2 id="boss-invitation-title">{{ bossProfile.rescued ? 'Ještě jednu reklamaci?' : 'Je čas zvednout oponu.' }}</h2>
+              <p>6 energie proti {{ lobby.player.xp < 30 ? 3 : 5 }}. Nejvýše 12 výměn, tři čitelné fáze. Hůlku ani XP neztrácíš.</p>
+              <p v-if="!bossProfile.rescued">První výhra osvobodí Ollivandera všem.</p>
               <RouterLink v-if="bossProfile.activeAttemptId" class="aw-button aw-button--primary" :to="`/play/boss/${bossProfile.activeAttemptId}`">Pokračovat v pokusu</RouterLink><AwButton v-else variant="primary" :busy="busy" :disabled="uncertain" @click="startBoss">Vyzvat Barona</AwButton>
-            </PaperSurface>
+              <details class="boss-terms"><summary>Jak souboj funguje</summary>
+                <p>Obtížnost je zmrazená pro celou skupinu. Referenční síla: {{ bossProfile.referenceXp }} XP.</p>
+                <p v-if="lobby.player.xp < 30">V exhibici dostaneš neomezená kouzla, žádné vlastní jiskry. Můžeš hrát i bez hůlky.</p>
+                <p>Nesoutěžní hra · bez fyzické ceny</p>
+              </details>
+            </section>
           </template>
           <template v-else><h1 id="game-title">Opona zůstává zavřená.</h1><p>Další kapitola večera zatím nebyla odhalena.</p></template>
         </template>
