@@ -255,6 +255,26 @@ rezervuje 32 px nad její změřenou výšku. Odkazy mají nejméně
 zůstávají světlé s rozlišením opacity. Odsazení roste o bezpečné okraje telefonu.
 Samostatné herní scény mohou lištu záměrně skrýt.
 
+### Administrace: navigace a potvrzení
+
+`AdminNavigation.vue` propojuje účty, večer a postavy pod názvem „Zákulisí
+večera“. Je to místní navigace správy, nikoli náhrada zákaznické lišty. Plochu
+oddělují dvě 1px linky; odkazy mají nejméně 48px výšku, 22px ikony Phosphor
+a zaoblení `field`. Aktivní stránka používá mintovou výplň, text `on-mint`
+a `aria-current="page"`. Fokus má 2px mintový obrys s 3px odstupem.
+Do 560 px se odkazy skládají do tří stejně širokých sloupců s ikonou nad textem.
+
+`AdminConfirmation.vue` ukazuje pouze potvrzený výsledek zápisu. Tmavá plocha
+`--aw-accent-soft`, mintový text a 36px kruh s fajfkou dávají klidnou jistotu;
+text nese `role="status"`, dekorace nenese význam pro čtečku. Fajfka se odkrývá
+přes `clip-path` za 240 ms s `cubic-bezier(.16, 1, .3, 1)`; omezený pohyb
+ponechá statický znak. Zápis ani další ovládání na animaci nečekají.
+
+Humor patří do úvodu nebo prázdného detailu, nikoli místo chybového hlášení.
+Hledání postav bez výsledků nabízí přímo zrušení filtru; návrat načtených
+postav nevyžaduje další požadavek. Neověřený výsledek obnovení seznamu se
+nesmí zobrazit jako nové úspěšné potvrzení.
+
 ### Zákaznický přehled postavy a památek
 
 Přehled postavy začíná jménem, světem a pravdivým stavem přípravy. Má jednu

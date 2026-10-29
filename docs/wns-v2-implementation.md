@@ -134,6 +134,27 @@ Tyto kontroly nenahrazují nativní iOS sestavení a přejímku na telefonu.
   320/390/1280/1440 px, u hlavního průchodu také 200% text; nejde o nativní
   přejímku telefonu. Mechanický designový sken změněných obrazovek byl čistý.
 
+## Drobné zpříjemnění administrace — 29. října 2026
+
+- Stránky účtů (`/settings/admin`), večera (`/settings/admin/launch`) a postav
+  (`/settings/admin/characters`) sdílejí navigaci „Zákulisí večera“ přes
+  `AdminNavigation.vue`. Aktuální stránka má `aria-current="page"`; všechny
+  odkazy jsou dostupné klávesnicí i na úzkém telefonu.
+- `AdminConfirmation.vue` doprovází potvrzené vytvoření pozvánky či obnovy
+  a uložení údajů nebo portrétu postavy. Text zůstává ve stavovém oznámení
+  `role="status"`; fajfka se vykreslí za 240 ms a při omezeném pohybu je
+  statická. Chyby a nejistý výsledek obnovení seznamu zachovávají původní hlášení.
+- Hledání bez výsledků nabízí `Zrušit hledání`, které obnoví načtený seznam
+  bez dalšího požadavku. Úvod správy a prázdný detail postavy přidávají krátký
+  situační humor; oprávnění, souhlasy a potvrzování zápisů se nemění.
+- Lokální Windows ověření s Node 24.21.0: build včetně typechecku a kontroly
+  generovaných kontraktů, 20 cílených komponentových testů a rozšířený
+  `test:character-admin:browser` na 320/390/1280 px. Scénář ověřuje aktivní
+  navigaci, klávesnici, zrušení hledání, potvrzení uložení, omezený pohyb,
+  náhradu obrázku a konflikt revizí. Doplňková lokální kontrola ověřila
+  přechody mezi všemi třemi stránkami, 200% text na 320/1280 px a běžnou animaci.
+  Všechny průchody použily syntetická data; nejde o produkční ani nativní přejímku.
+
 ## Ověřené průchody
 
 Prostředí: izolovaný Linux ARM64 VPS, Node 24.21.0, .NET SDK 10.0.303,

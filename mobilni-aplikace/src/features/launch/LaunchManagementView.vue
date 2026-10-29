@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import LaunchManagementPanel from './LaunchManagementPanel.vue';
+import AdminNavigation from '../identity/AdminNavigation.vue';
 </script>
 
 <template>
   <div class="page-stack launch-management-page">
-    <RouterLink to="/settings/admin">← Zpět ke správě účtů a oprávnění</RouterLink>
-    <RouterLink to="/settings/admin/characters">Spravovat postavy a portréty</RouterLink>
     <header>
       <h1>Večer a pozvánky</h1>
       <p>Připravte skupinu, pozvěte účastníky a potvrďte odpočet do otevření večera.</p>
     </header>
+    <AdminNavigation current="evening" />
     <LaunchManagementPanel />
   </div>
 </template>
