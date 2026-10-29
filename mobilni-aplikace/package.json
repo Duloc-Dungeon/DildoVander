@@ -31,7 +31,8 @@
     "preview:game": "node tests/game.preview.mjs",
     "test:game:browser": "node tests/game.browser.mjs",
     "test:wand:browser": "node tests/wand-workshop.browser.mjs",
-    "test:wand-upgrade-voice:browser": "node tests/wand-upgrade-voice.browser.mjs"
+    "test:wand-upgrade-voice:browser": "node tests/wand-upgrade-voice.browser.mjs",
+    "test:living-trunk:browser": "node tests/living-trunk.browser.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.3",

@@ -54,7 +54,8 @@ const active = computed(() => ['connecting', 'listening', 'waiting', 'speaking']
 const speaking = computed(() => livePhase.value === 'speaking' || narrationPhase.value === 'speaking');
 const canStart = computed(() => entry.value?.eligible === true && account.value?.openAiConsent === true);
 const canAnswer = computed(() => canStart.value && session.value?.status === 'asking' && !busy.value);
-const subtitle = computed(() => partial.value || [...messages.value].reverse().find(message => message.role === 'assistant')?.text || session.value?.question?.text || '');
+const confirmedReply = computed(() => [...messages.value].reverse().find(message => message.role === 'assistant')?.text || session.value?.question?.text || '');
+const subtitle = computed(() => partial.value || confirmedReply.value);
 const unavailable = computed(() => {
   const reason = entry.value?.reason;
   if (!entry.value?.profile) return 'Nejdřív připrav svoji postavu.';
@@ -67,13 +68,23 @@ const unavailable = computed(() => {
 const status = computed(() => {
   if (speaking.value) return 'Kufr mluví. Jeho řeč můžeš zastavit.';
   if (livePhase.value === 'connecting') return 'Připravujeme mikrofon a živé spojení…';
-  if (active.value) return muted.value ? 'Mikrofon je ztlumený. Spojení zůstává aktivní.' : 'Mikrofon je zapnutý. Mluv přirozeně, kufra můžeš přerušit.';
+  if (active.value) return muted.value ? 'Mikrofon je ztlumený. Spojení zůstává aktivní.' : 'Mikrofon je zapnutý. Mluv přirozeně, kufr můžeš přerušit.';
   if (session.value?.status === 'generating') return '';
   if (session.value?.status === 'paused') return 'Rozhovor je pozastavený do osvobození dílny.';
   if (wand.value) return '';
   return busy.value ? 'Kufr zpracovává tvoje sdělení…' : mode.value === 'voice' ? 'Mikrofon je vypnutý.' : '';
 });
-const stage = computed(() => wand.value ? 'revealed' : unavailable.value ? 'unavailable' : session.value?.status === 'generating' ? 'forging' : speaking.value ? 'speaking' : livePhase.value === 'connecting' ? 'connecting' : active.value ? 'listening' : session.value ? 'waiting' : 'ready');
+// Presentation follows confirmed manufacturing state before transient voice state.
+const stage = computed(() => wand.value ? 'revealed' : unavailable.value || session.value?.status === 'paused' ? 'unavailable'
+  : session.value?.status === 'failed' ? 'error' : session.value?.status === 'generating' ? 'forging'
+  : speaking.value ? 'speaking' : livePhase.value === 'connecting' ? 'connecting'
+  : active.value && !muted.value && livePhase.value === 'listening' ? 'listening' : session.value ? 'waiting' : 'ready');
+const activityLabel = computed(() => loading.value ? 'Ověřujeme dílnu' : ({
+  ready: 'Kufr čeká na tebe', connecting: 'Navazujeme spojení', listening: 'Kufr naslouchá',
+  speaking: 'Kufr má slovo', waiting: active.value ? muted.value ? 'Mikrofon je ztlumený' : 'Kufr chystá odpověď' : 'Rozhovor je uložený',
+  forging: 'Kufr pracuje', revealed: 'Tvoje hůlka', unavailable: 'Dílna vyčkává', error: 'Výroba potřebuje pozornost',
+})[stage.value]);
+const journey = computed(() => wand.value ? 2 : session.value?.status === 'generating' || session.value?.status === 'failed' ? 1 : 0);
 const artworkState = computed(() => artworkError.value ? 'failed' : session.value?.artwork?.status === 'ready' ? 'ready' : session.value?.artwork?.status === 'running' ? 'running' : session.value?.artwork?.status === 'failed' ? 'failed' : 'queued');
 const artworkMessage = computed(() => {
   if (artworkError.value) return artworkError.value;
@@ -258,22 +269,31 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 </script>
 
 <template>
-  <section class="trunk-workshop" :data-result="!!wand" :data-mode="mode" aria-labelledby="workshop-title">
+  <section class="trunk-workshop" :data-result="!!wand" :data-mode="mode" :data-stage="stage" aria-labelledby="workshop-title">
     <header class="trunk-workshop__header"><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton><RouterLink v-else to="/play" @click="stopMedia">← Zpět do hry</RouterLink><RouterLink v-if="!prelaunch" to="/me/character" @click="stopMedia">Moje postava</RouterLink><span>Ollivander Industries™</span></header>
     <div class="trunk-workshop__identity">
       <h1 id="workshop-title" ref="title" tabindex="-1">{{ wand ? wand.name : upgrade ? 'Nová kapitola tvé hůlky' : 'Kufrova dílna' }}</h1>
       <p v-if="entry?.profile"><strong>{{ entry.profile.name }}</strong> · {{ entry.profile.universe }}</p>
     </div>
+    <ol v-if="!loading && !unavailable" class="trunk-workshop__journey" aria-label="Průběh tvorby hůlky">
+      <li v-for="(step, index) in ['Rozhovor', 'Výroba', 'Tvoje hůlka']" :key="step" :aria-current="journey === index ? 'step' : undefined" :data-complete="journey > index"><span>{{ step }}</span></li>
+    </ol>
     <div class="trunk-workshop__scene" :data-artwork-visible="!wand || artworkState === 'ready'">
-      <TrunkStage v-show="!wand || artworkState === 'ready'" :stage="stage" :assistant-output-level="outputLevel" :wand-artwork-url="artworkUrl" :wand-name="wand?.name" :artwork-status="artworkState" :show-caption="false" :show-artwork-status="false" @artwork-loaded="artworkDecoded = true" @artwork-error="artworkError = 'Ilustraci se nepodařilo načíst.'" />
+      <TrunkStage v-show="!wand || artworkState === 'ready'" :stage="stage" :activity-label="activityLabel" :assistant-output-level="outputLevel" :wand-artwork-url="artworkUrl" :wand-name="wand?.name" :artwork-status="artworkState" :show-caption="false" :show-artwork-status="false" @artwork-loaded="artworkDecoded = true" @artwork-error="artworkError = 'Ilustraci se nepodařilo načíst.'" />
       <section class="trunk-workshop__conversation" :aria-label="wand ? 'Hotová hůlka' : 'Rozhovor s magickým kufrem'">
+        <div v-if="active || speaking || narrationPending" class="trunk-workshop__media-controls">
+          <AwButton v-if="speaking || narrationPending" @click="stopSpeech">Stop řeč</AwButton>
+          <button v-if="active" type="button" class="trunk-workshop__text-action" @click="stopMedia">Ukončit rozhovor</button>
+        </div>
+        <p class="trunk-workshop__announcement" aria-live="polite" aria-atomic="true">{{ mode === 'text' && session?.status === 'asking' ? confirmedReply : '' }}</p>
         <p v-if="loading" role="status">Ověřujeme tvoji postavu a dílnu…</p>
         <template v-else-if="unavailable"><p role="status">{{ unavailable }}</p><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k postavě</AwButton><RouterLink v-else to="/me/character">Upravit nebo dokončit přípravu postavy</RouterLink><RouterLink v-if="!prelaunch && entry?.reason?.includes('boss')" to="/play">Pomoci osvobodit dílnu</RouterLink></template>
         <template v-else-if="wand">
           <p class="trunk-workshop__saved" role="status">{{ prelaunch ? 'Hůlka je uložená. Tvoje příprava je hotová.' : 'Hůlka je uložená a připravená ke hře.' }}</p>
-          <p>{{ wand.material }} · {{ wand.core }}</p><p v-if="session?.verdict" class="trunk-workshop__verdict">{{ session.verdict }}</p>
+          <p>{{ wand.material }} · {{ wand.core }}</p>
           <AwButton v-if="prelaunch" variant="primary" @click="stopMedia(); emit('exit')">Počkat na začátek večera</AwButton>
           <RouterLink v-else class="aw-button aw-button--primary" to="/play" @click="stopMedia">Pokračovat s hůlkou</RouterLink>
+          <p v-if="session?.verdict" class="trunk-workshop__verdict">{{ session.verdict }}</p>
           <div v-if="artworkMessage || session?.artwork?.canRepair" class="trunk-workshop__artwork-notice">
             <p v-if="artworkMessage" role="status">{{ artworkMessage }}</p>
             <button v-if="session?.artwork?.canRetry || artworkError" type="button" class="trunk-workshop__text-action" :disabled="busy" @click="artworkAction()">Zkusit ilustraci znovu</button>
@@ -282,10 +302,13 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
           <button v-if="!speaking" type="button" class="trunk-workshop__text-action" :disabled="narrationPending" @click="speak">Přehrát verdikt kufru</button>
           <details class="trunk-workshop__properties"><summary>Vlastnosti a kouzla hůlky</summary><GeneratedWand :wand="session?.wand" mobile :show-artwork="false" /></details>
         </template>
-        <template v-else-if="session?.status === 'generating'"><h2>Hůlka dostává tvar</h2><p role="status">Výroba poběží i po odchodu z obrazovky. Rozhovor už je uložený.</p></template>
+        <template v-else-if="session?.status === 'generating'"><h2 class="trunk-workshop__greeting">Hůlka dostává tvar</h2><p role="status">Výroba poběží i po odchodu z obrazovky. Rozhovor už je uložený.</p><p class="trunk-workshop__hint">Až bude hotová, objeví se tady. Ilustrace se může dokončit později.</p></template>
+        <template v-else-if="session?.status === 'failed'"><h2>Výroba se zastavila</h2><p>Rozhovor zůstává uložený. Obnov stav dílny{{ session.canRetry ? ' nebo zkus výrobu znovu' : '' }}.</p></template>
+        <template v-else-if="session?.status === 'paused'"><h2>Dílna čeká na osvobození</h2><p>Rozhovor zůstává uložený. Po osvobození dílny můžeš navázat.</p></template>
         <template v-else>
+          <h2 v-if="!session" class="trunk-workshop__greeting">Hůlka začíná rozhovorem.</h2>
           <p v-if="!session">Promluv si s kufrem o své hůlce. Lidem rozumí. Po staletí mu sedají na víko a tvrdí, že se tam ještě něco vejde.</p>
-          <h2 v-if="subtitle" class="trunk-workshop__question" aria-live="polite">{{ subtitle }}</h2>
+          <h2 v-if="subtitle" class="trunk-workshop__question" :data-speaker="partial && partialRole === 'user' ? 'user' : 'assistant'">{{ subtitle }}</h2>
           <template v-if="mode === 'voice'"><AwButton v-if="!active && canStart" variant="primary" :disabled="busy" @click="startVoice">{{ session ? 'Pokračovat hlasem' : 'Promluvit s kufrem' }}</AwButton><AwButton v-if="active" @click="muted = !muted; live.setMuted(muted)">{{ muted ? 'Zapnout mikrofon' : 'Ztlumit mikrofon' }}</AwButton></template>
           <template v-else-if="session?.status === 'asking'">
             <form @submit.prevent="submit">
@@ -303,8 +326,6 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
           </div>
         </template>
         <AwButton v-if="session?.status === 'failed' && session.canRetry" :disabled="busy" @click="retryManufacture">Obnovit výrobu</AwButton>
-        <AwButton v-if="active" @click="stopMedia">Ukončit rozhovor</AwButton>
-        <AwButton v-if="speaking || narrationPending" @click="stopSpeech">Stop řeč</AwButton>
         <p v-if="status && !loading && !unavailable" class="trunk-workshop__status" role="status">{{ status }}</p><p v-if="error" role="alert">{{ error }}</p><p v-if="syncError" role="status">{{ syncError }}</p>
         <AwButton v-if="error || syncError || session?.status === 'paused' || session?.status === 'failed'" :disabled="busy" @click="refresh">Obnovit stav</AwButton>
         <details v-if="messages.length" class="trunk-workshop__transcript"><summary>Přepis rozhovoru</summary><ol><li v-for="message in messages" :key="message.messageId"><strong>{{ message.role === 'user' ? 'Ty' : 'Kufr' }}</strong><p>{{ message.text }}</p><button v-if="mode === 'text' && canAnswer && message.role === 'user'" type="button" @click="correction = message; correctionText = message.text">Opravit sdělení</button></li></ol><form v-if="correction" @submit.prevent="saveCorrection"><label for="trunk-correction">Oprava sdělení</label><textarea id="trunk-correction" v-model="correctionText" maxlength="2000" /><AwButton type="submit" :disabled="busy || !correctionText.trim()">Uložit opravu</AwButton></form></details>
@@ -344,10 +365,44 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__verdict { padding: 1.25rem; border-radius: var(--wns-radius-card); background: var(--wns-violet); color: var(--wns-on-violet); }
 .trunk-workshop[data-result='true'] :deep(.trunk-stage__artwork) { width: min(100%, 26rem); min-height: 0; }
 .trunk-workshop__scene[data-artwork-visible='false'] { grid-template-columns: minmax(0, 1fr); max-width: 42rem; }
-@media (min-width: 850px) { .trunk-workshop__scene { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 2.5rem; margin-top: 2rem; align-items: start; } }
+.trunk-workshop__announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* The scene carries the expression; controls and durable state stay still. */
+.trunk-workshop { padding-inline: clamp(1rem, 3vw, 2rem); }
+.trunk-workshop ::selection { background: var(--wns-mint); color: var(--wns-on-mint); }
+.trunk-workshop :is(a, button, textarea, summary):focus-visible { outline: 3px solid var(--wns-mint); outline-offset: 4px; }
+.trunk-workshop textarea { caret-color: var(--wns-mint); }
+.trunk-workshop__header { padding-bottom: .75rem; border-bottom: 1px solid var(--wns-line); }
+.trunk-workshop__header a { display: inline-flex; min-height: 44px; align-items: center; text-underline-offset: .25em; }
+.trunk-workshop__identity h1 { font-size: clamp(1.75rem, 4vw, 2.75rem); line-height: 1.15; text-wrap: balance; }
+.trunk-workshop__identity p { color: var(--wns-muted); }
+.trunk-workshop__identity strong { color: var(--wns-text); }
+.trunk-workshop__journey { display: flex; list-style: none; gap: .75rem; margin: 1.5rem 0 0; padding: 0; }
+.trunk-workshop__journey li { flex: 1; min-width: 0; padding-top: .65rem; border-top: 2px solid var(--wns-line); color: var(--wns-muted); font-size: .8rem; }
+.trunk-workshop__journey li[aria-current] { border-color: var(--wns-mint); color: var(--wns-mint); font-weight: 760; }
+.trunk-workshop__journey li[data-complete='true'] { border-color: var(--wns-mint); }
+.trunk-workshop__scene > :deep(.trunk-stage) { padding: .75rem; background: var(--wns-amber); color: var(--wns-on-amber); border-radius: var(--wns-radius-card); overflow: hidden; }
+.trunk-workshop[data-stage='forging'] .trunk-workshop__scene > :deep(.trunk-stage) { background: var(--wns-violet); color: var(--wns-on-violet); }
+.trunk-workshop[data-result='true'] .trunk-workshop__scene > :deep(.trunk-stage) { background: var(--wns-violet); color: var(--wns-on-violet); }
+.trunk-workshop[data-stage='unavailable'] .trunk-workshop__scene > :deep(.trunk-stage), .trunk-workshop[data-stage='error'] .trunk-workshop__scene > :deep(.trunk-stage) { background: var(--wns-surface-raised); color: var(--wns-muted); }
+.trunk-workshop__conversation { padding-block: .5rem; }
+.trunk-workshop .trunk-workshop__conversation .trunk-workshop__greeting { font-size: clamp(1.5rem, 3vw, 2.2rem); line-height: 1.2; letter-spacing: -.025em; text-wrap: balance; }
+.trunk-workshop .trunk-workshop__conversation .trunk-workshop__question { font-size: clamp(1.2rem, 2.5vw, 1.65rem); padding-block: .5rem 1rem; border-bottom: 1px solid var(--wns-line); text-wrap: pretty; }
+.trunk-workshop__question[data-speaker='user'] { color: var(--wns-muted); font-weight: 500; }
+.trunk-workshop__media-controls { position: sticky; top: .5rem; z-index: 2; background: var(--wns-bg); padding-block: .5rem; display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1.25rem; }
+.trunk-workshop__transcript { scrollbar-color: var(--wns-line) var(--wns-bg); }
+.trunk-workshop__transcript summary, .trunk-workshop__properties summary { display: list-item; align-content: center; }
+.trunk-workshop__transcript ol { list-style: none; padding: 0; }
+.trunk-workshop__transcript li { border-bottom: 1px solid var(--wns-line); padding-block: .75rem; margin: 0; }
+.trunk-workshop__transcript li strong { color: var(--wns-mint); font-size: .85rem; }
+.trunk-workshop .aw-button--primary { box-shadow: none; border: 0; min-height: 56px; }
+@media (min-width: 850px) { .trunk-workshop__scene { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 2.5rem; margin-top: 2rem; align-items: center; } .trunk-workshop__scene > :deep(.trunk-stage) { align-self: start; position: sticky; top: 1rem; } }
 @media (max-width: 849px) {
-  .trunk-workshop :deep(.trunk-stage__visual) { width: min(100%, 17rem, 30dvh); }
+  .trunk-workshop :deep(.trunk-stage__visual) { width: min(100%, 15rem, 25dvh); }
+  .trunk-workshop[data-mode='voice']:is([data-stage='listening'], [data-stage='speaking'], [data-stage='waiting'], [data-stage='connecting']) :deep(.trunk-stage__visual) { width: min(100%, 12rem, 20dvh); }
   .trunk-workshop[data-mode='text'] :deep(.trunk-stage__visual) { width: min(100%, 9rem, 18dvh); }
+  .trunk-workshop[data-mode='text'] .trunk-workshop__scene > :deep(.trunk-stage) { display: flex; align-items: center; justify-content: center; gap: 1rem; }
+  .trunk-workshop[data-mode='text'] :deep(.trunk-stage__visual) { margin: 0; flex: 0 1 9rem; }
+  .trunk-workshop[data-mode='text'] :deep(.trunk-stage__activity) { flex-direction: column; gap: .25rem; text-align: center; }
   .trunk-workshop[data-result='true'] :deep(.trunk-stage__artwork) { width: min(100%, 14rem, 26dvh); }
 }
 @media (max-height: 560px) and (max-width: 849px) { .trunk-workshop :deep(.trunk-stage__visual) { width: min(100%, 18dvh); } }

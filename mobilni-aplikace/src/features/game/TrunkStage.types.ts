@@ -30,6 +30,8 @@ export interface TrunkStageProjection {
    * Never derive this value from the user's microphone or a random timer.
    */
   assistantOutputLevel?: number;
+  /** Short factual label supplied by the owning workshop. */
+  activityLabel?: string;
   /** A canonical protected same-origin URL, or an already-authorized local
    * blob URL. Fetching with credentials/headers belongs to the adapter.
    * Do not pass model/provider URLs, access tokens, or public share links.
