@@ -32,13 +32,7 @@ let account = { id: 'launch-guest', displayName: 'Host', roles: ['Customer'], op
 let characterReads = 0;
 let character = null;
 let artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
-let config = {
-  revision: 4, betaEnabled: true, betaLaunchAt: null, betaUnlocked: false,
-  productionEnabled: true, productionLaunchAt: null, productionUnlocked: false,
-  timeZone: 'Europe/Prague', teaser: 'Ještě chvíli. Hvězdy hledají správné místo.',
-  initialLoadingMessage: 'Někdo už klepe na dveře osudu. Olivander má kocovinu, a tak se i proroctví postavilo do fronty.',
-  personalizedLoadingEnabled: true, personalizedLoadingPrompt: 'Věta hravě a tajemně.',
-};
+let config = { revision: 4, timeZone: 'Europe/Prague', personalizedLoadingEnabled: true, personalizedLoadingPrompt: 'Věta hravě a tajemně.' };
 let jobs = [{ profileId: 'portrait-fixture', revision: 3, status: 'failed', attempt: 2, errorCode: 'provider_unavailable', updatedAt: Date.now() }];
 let audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: 4, changeSummary: 'schedule' }];
 const writes = [];
@@ -78,7 +72,7 @@ try {
     if (url.pathname === '/app/v1/session' && request.method() === 'DELETE') { account = null; return route.fulfill({ status: 204, body: '' }); }
     if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'launch-fixture-beta', groupName: 'Interní beta', joinedAt: Math.floor(Date.now() / 1000), accessRevision: 1, fixedUniverse: null, recruitmentOpen: false, launchAt: null });
     if (url.pathname === '/app/v1/enrollment/default') return json({ available: true, groupId: 'launch-fixture-beta', groupName: 'Interní beta', fixedUniverse: null, universe: null });
-    if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked || countdownDeadline !== null && Date.now() >= countdownDeadline), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: countdownDeadline ?? Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
+    if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || countdownDeadline !== null && Date.now() >= countdownDeadline), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: countdownDeadline ?? Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'GET') return json({ character, artwork: character ? artwork : null });
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'PUT') {
       const body = request.postDataJSON(); writes.push(body);
@@ -105,7 +99,7 @@ try {
     if (url.pathname === '/app/v1/admin/launch' && request.method() === 'GET') return json(config);
     if (url.pathname === '/app/v1/admin/launch' && request.method() === 'PUT') {
       const body = request.postDataJSON(); writes.push(body); config = { ...config, ...body, revision: config.revision + 1 };
-      audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: config.revision, changeSummary: 'guest_experience' }, ...audit];
+      audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: config.revision, changeSummary: 'personalization' }, ...audit];
       return json(config);
     }
     if (url.pathname === '/app/v1/admin/launch/artwork') return json({ jobs });
@@ -279,15 +273,13 @@ try {
   await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();
   await page.getByRole('heading', { name: 'Příprava večera' }).waitFor();
-  await page.getByText('Společný termín otevření všech skupin', { exact: true }).click();
-  assert.equal(await page.locator('#beta-launch, #launch-audience, #countdown-minutes').count(), 0);
-  await page.getByLabel('Časové pásmo').selectOption('Europe/Prague');
-  await page.locator('#production-launch').fill('2026-03-30T10:00');
-  await page.getByRole('button', { name: 'Uložit plán' }).click();
-  assert(writes.some(write => write.expectedRevision === 4 && write.productionLaunchAt === Date.UTC(2026, 2, 30, 8)));
+  assert.equal(await page.locator('#beta-launch, #launch-audience, #countdown-minutes, #production-launch, #launch-teaser, #launch-loading').count(), 0);
+  await page.getByText('Osobní věty při přípravě postavy', { exact: true }).click();
+  await page.locator('#launch-prompt').fill('Nový pokyn pro osobní větu.');
+  await page.getByRole('button', { name: 'Uložit osobní věty', exact: true }).click();
+  assert(writes.some(write => write.expectedRevision === 4 && write.personalizedLoadingPrompt === 'Nový pokyn pro osobní větu.'));
   const beforePreview = writes.length;
   assert.equal(beforePreview, 3);
-  await page.getByText('Zprávy a osobní věta', { exact: true }).click();
   await page.getByRole('button', { name: 'Vytvořit ukázku' }).click();
   await page.getByText(/Hvězdy se schovaly/).waitFor();
   await page.locator('details.launch-admin__disclosure > summary').filter({ hasText: 'Příprava portrétů' }).click();
@@ -297,7 +289,6 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'launch-desktop-admin.png'), fullPage: true });
   for (const [audience, width, height] of rickrollVideo ? [['production', 390, 844], ['beta', 1440, 1000]] : []) {
     account = { id: 'launch-guest', displayName: 'Host', roles: audience === 'beta' ? ['Customer', 'Beta'] : ['Customer'], openAiConsent: true };
-    config.productionUnlocked = false;
     countdownDeadline = Date.now() + 5_000;
     await page.setViewportSize({ width, height });
     await page.goto(`${origin}/launch`, { waitUntil: 'networkidle' });
@@ -320,7 +311,7 @@ try {
     assert.equal(await page.locator('.rickroll-video').isVisible(), false, 'restart after zero must enter normally');
   }
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ mobile: '390x844', tablet: '820x1180', desktop: '1440x1000', realMp4Playback: !!rickrollVideo, states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'admin schedule save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
+  console.log(JSON.stringify({ mobile: '390x844', tablet: '820x1180', desktop: '1440x1000', realMp4Playback: !!rickrollVideo, states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'personalization save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
   await context.close();
 } finally {
   if (browser) await browser.close();

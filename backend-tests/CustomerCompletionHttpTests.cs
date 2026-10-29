@@ -16,7 +16,7 @@ internal static partial class AccountIdentityTests
         using var viewer = fixture.Client();
         using var viewerKey = new VirtualPasskey();
         var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",
-            new { role = "Viewer", recoveryUserId = (string?)null }));
+            new { role = "Viewer" }));
         await EnrollAsync(viewer, viewerKey, invitation.GetProperty("token").GetString()!, "Another account");
         await CsrfAsync(viewer);
         using var anonymous = fixture.Client();

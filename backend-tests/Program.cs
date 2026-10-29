@@ -169,6 +169,8 @@ if (args is ["--keepsake-readiness"])
 }
 if (args is ["--identity-rate-limits"]) { await AccountIdentityTests.RunAccountRateLimitsAsync(); return; }
 if (args is ["--android-identity"]) { await AccountIdentityTests.RunAndroidAssociationAsync(); return; }
+if (args is ["--identity-no-recovery"]) { await AccountIdentityTests.RunRemovedRecoveryAsync(); return; }
+if (args is ["--identity-accounts"]) { await AccountIdentityTests.RunAsync(); return; }
 if (args is ["--identity"])
 {
     await LaunchPolicyTests.RunAsync();

@@ -26,7 +26,7 @@ describe('Android native lifecycle contract', () => {
     expect(window.__dildovanderEnrollment?.token).toBe('a'.repeat(43));
     runtime.listeners.get('appUrlOpen')!({ url: 'https://dildovander.de/signin#recovery=' + 'b'.repeat(43) });
     await vi.waitFor(() => expect(runtime.stop).toHaveBeenCalledTimes(2));
-    await vi.waitFor(() => expect(window.__dildovanderEnrollment?.token).toBe('b'.repeat(43)));
+    await vi.waitFor(() => expect(window.__dildovanderEnrollment).toBeUndefined());
     expect(router.replace.mock.calls.every(call => call[0] === '/signin')).toBe(true);
   });
   it('does not install Android navigation on web or accept an unrelated URL', async () => {

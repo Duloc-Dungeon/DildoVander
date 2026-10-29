@@ -347,21 +347,18 @@ Instalační pozvánka TestFlight/Firebase stačí pro vstup do aplikace. Neprok
 identitu účastníka: po dobu otevřeného náboru je beta samoobslužná. Nový účet
 získá pouze roli `Customer`. Pro malou známou skupinu po přijetí všech nábor zavřete.
 
-Majitel v existující správě vybere nebo vytvoří výchozí náborovou skupinu a výslovně
-povolí přijímání. Tato skupina automaticky přebírá globální produkční termín a stav
-odemčení; členství s rolí Beta na tom nic nemění. Poté pošle pouze instalaci.
-Uzavření náboru neblokuje aktivní členy. V přehledu účastníků lze
-jednomu účtu odebrat nebo obnovit přístup; obnova vrátí stejná data i při zavřeném
-náboru a sama nespustí zrušenou práci. Shodná jména rozlišuje ID účtu.
+Majitel ve správě vybere nebo vytvoří náborovou skupinu, uloží její absolutní
+čas otevření a povolí přijímání. Nové účty se při registraci přiřadí této skupině
+a čekají na její termín. Uzavření náboru neblokuje aktivní členy. V přehledu
+účastníků lze jednomu účtu odebrat nebo obnovit přístup; obnovení zachová stejná
+data i při zavřeném náboru. Shodná jména rozlišuje ID účtu.
 
-Konfigurace náboru začíná zavřená a migrace ani restart ji neotevřou.
-Výchozí skupina se při dosažení produkčního termínu otevře automaticky. Posunutí
-produkčního termínu do budoucnosti ji vrátí do čekání i po předchozím otevření.
-Zapnutá produkční brána bez termínu zůstává uzavřená; vypnutá brána nebo výslovné
-produkční odemčení ji otevře ihned. Nábor je nezávislý a změna plánu jej nezapíná.
-Konfigurace i výchozí skupina se mění v jedné transakci. Start serveru jednorázově
-srovná i dříve uložený termín bez nutnosti nového uložení správcem; opakování beze
-změny neposouvá revizi skupiny ani nepřidává audit. Ostatní skupiny mají vlastní odpočty.
+Konfigurace náboru začíná zavřená. Výběr skupiny, její termín a stav náboru
+se ukládají v jedné transakci s očekávanou revizí konfigurace i skupiny.
+Otevřený nábor uzavřené skupiny vyžaduje čas otevření. Nová skupina bez termínu
+zůstává uzavřená. Dosažení termínu server vyhodnotí automaticky a otevření uloží.
+Již otevřenou skupinu nelze změnou termínu znovu uzavřít. Výběr další náborové
+skupiny ani její budoucí termín nemění přístup členů dříve otevřených skupin.
 Změna výchozí skupiny nepřesouvá přijaté účty. Passkey registrace váže skupinu
 a revizi pravidel při zahájení a znovu je ověřuje před založením účtu a členství.
 Pevné univerzum se ukládá s přijetím a server je vynucuje i při pozdějších zápisech.
@@ -390,65 +387,52 @@ Existující historická data se nemažou. Souhlas s AI není souhlas s publikac
 mikrofonem ani osobní pamětí.
 
 Před nasazením je potřeba standardně zazálohovat data a aplikovat aditivní
-Identity migraci obvyklým release postupem. Nastavení skupiny a povolení náboru
-jsou samostatné správcovské kroky; lokální testy je v produkci neprovedou.
+Identity migraci obvyklým release postupem. Nastavení skupiny, termínu a náboru
+je správcovská akce; lokální testy ji v produkci neprovedou.
 
 `GET/POST /app/v1/admin/launch/groups` a
-`PUT /app/v1/admin/launch/groups/{id}` spravují samostatné skupiny
-`{id,name,launchAt,revision,countdownDurationSeconds,forceStartAtEnd,countdownConfirmedAt,openedAt}`.
-Zápis termínu používá očekávanou revizi;
-u nezávislé skupiny `launchAt=null` drží vstup uzavřený. API pro pozvánky přijímá volitelné
-`launchGroupId`. Členství se uloží pouze při skutečném založení nového účtu
-z dané pozvánky; obnova účtu jej nepřepisuje. Správa je chráněna stávajícími
-administrátorskými/operačními kontrolami.
+`PUT /app/v1/admin/launch/groups/{id}` spravují názvy a obsah skupin.
+Skupina vrací `{id,name,launchAt,revision,openedAt,adultContentEnabled,flirtEnabled,chronicleClosedAt}`.
+Vytvoření přijímá `{name,adultContentEnabled?,flirtEnabled?}`; úprava přidává
+`expectedRevision`. API pro pozvánky přijímá volitelné `launchGroupId`.
+Členství se uloží při skutečném založení nového účtu z dané pozvánky.
 
-### Čekárna a potvrzené odpočty skupin
+`PUT /app/v1/admin/launch/beta-admission` přijímá
+`{expectedRevision,groupId,recruitmentOpen,fixedUniverse,expectedGroupRevision,launchAt}`.
+Čtení vrací také `groupRevision` a `groupLaunchAt`. Konflikt kterékoli revize
+neuloží žádnou část změny. Název cesty zůstává kvůli kompatibilitě registrace;
+samostatný beta kalendář již neexistuje.
+
+`GET/PUT /app/v1/admin/launch` obsahuje pouze revizi, časové pásmo a aktivní
+nastavení personalizace: `{revision,timeZone,personalizedLoadingEnabled,personalizedLoadingPrompt}`.
+Zápis posílá `expectedRevision`. Globální kalendář, ruční teaser a úvodní text,
+statický náhled čekárny i cesty pro délku odpočtu, potvrzení odpočtu a ruční start
+byly odstraněny. Výslovné generování ukázky aktivní osobní věty zůstává dostupné. `/app/v1/launch` vrací účinné oprávnění, čas otevření skupiny,
+serverový čas a příznak personalizace.
+
+### Čekárna a otevírání skupin
 
 Správa čekárny zobrazuje přijaté zákaznické účty, které čekají na otevření své
 skupiny, i nepřiřazené účty a odebraný přístup. Nejde o ukazatel okamžité online
 přítomnosti. Přesun je výslovná správcovská akce se zdrojovou skupinou a očekávanou
 revizí členství; zachovává účet, postavu, passkeys, souhlasy, univerzum i případnou
-revokaci. Výchozí náborová skupina se tím nemění. Již otevřená zdrojová skupina
+revokaci. Náborová skupina se tím nemění. Již otevřená zdrojová skupina
 nepatří do této čekárny. Přesun do otevřené cílové skupiny umožní aktivnímu členovi
 vstup ihned; odebranému členovi přístup neobnovuje.
 
-Ostatní skupiny mají vlastní návrh délky odpočtu a volbu `forceStartAtEnd`.
-Výchozí náborové skupině nelze návrh uložit, potvrdit ani ručně zahájit: server vrací
-`409 launch_group_uses_production_schedule`; změna názvu a obsahu zůstává povolená.
-Její termín upravuje globální produkční kalendář přes `PUT /app/v1/admin/launch`.
-
-Pro nezávislé skupiny platí:
-
-1. Uložení návrhu odpočet nespouští; host vidí „Brzy“.
-2. Potvrzení spustí celou nastavenou délku od serverového času potvrzení.
-3. S volbou Force se večer otevře automaticky až po skončení potvrzeného odpočtu.
-4. Bez Force zůstává po skončení odpočtu vstup uzavřený a host vidí „Brzy“, dokud
-   správce výslovně nepotvrdí zahájení večera.
-
-Force nikdy neznamená okamžité otevření při uložení návrhu nebo přeskočení
-potvrzení odpočtu. Globální odemčení nepotlačuje potvrzení nezávislých skupin ani revokaci.
-Změna názvu skupiny běžící odpočet nemění. U nezávislých skupin migrace ani restart
-nic automaticky nepotvrzují; starší uložený termín se převádí na nepotvrzený návrh délky od
-poslední změny plánu (nejméně jedna sekunda), nikoli na povolení otevřít skupinu.
-
 `GET /app/v1/admin/launch/waiting-room` vrací soukromý přehled pro správu
 ve stránkách po 100 účtech jako `{members,nextCursor}`. Další stránka používá
-`?after=<nextCursor>`; aplikace načte všechny stránky před povolením změn.
-`PUT /app/v1/admin/launch/waiting-room/{userId}/group` přijímá
+`?after=<nextCursor>`. `PUT /app/v1/admin/launch/waiting-room/{userId}/group` přijímá
 `{expectedMembershipRevision,expectedSourceGroupId,targetGroupId}`.
-Návrh odpočtu ukládá `PUT /app/v1/admin/launch/groups/{id}/countdown` s
-`{expectedRevision,durationSeconds,forceStartAtEnd}`. Potvrzení používá
-`POST /app/v1/admin/launch/groups/{id}/countdown/confirm` a ruční zahájení po
-skončení odpočtu `POST /app/v1/admin/launch/groups/{id}/start`; obě akce posílají
-`{expectedRevision}`. Zůstávají platné dosavadní CSRF/origin, správcovské role,
-recent-passkey, potvrzení a audit. Veřejné `/app/v1/launch` vrací účinný čas až
-po potvrzení odpočtu; neověřený nebo ukončený neotevřený odpočet neodemyká API.
+Zůstávají platné CSRF/origin, správcovské role, recent-passkey, potvrzení a audit.
 
 EF migrace `20261026045830_AccountLaunchGroupMembership` přidává nullable
-členství účtům a pozvánkám. Nepřiřazené starší účty používají dosavadní plán.
-Pro přiřazený účet je autoritou potvrzený odpočet a stav otevření jeho skupiny,
-i když je globální plán otevřený; neexistující skupina zůstává uzavřená. Výjimky staff/tester
-a ostatní audience/capability/resource oprávnění zůstávají samostatné.
+členství účtům a pozvánkám. Nepřiřazený zákazník ani neexistující skupina
+nedostanou vstup do hry. Výjimky staff/tester a ostatní capability/resource
+oprávnění zůstávají samostatné. SQLite zachovává historické sloupce starého
+plánu i odpočtů bez destruktivní migrace; aktuální policy je nepoužívá.
+Restart zachová absolutní termíny a již uložený stav otevření a otevře pouze
+skupiny, jejichž vlastní termín již nastal.
 
 Prelaunch artwork vrací volitelné `welcome:{joke,identity,teaser}` vedle
 kompatibilního `finalMessage`. ID ověřených faktů, zdroje a povolené téma

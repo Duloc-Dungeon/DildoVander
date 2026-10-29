@@ -10,7 +10,6 @@ import { customerCopy } from '../../application/customerCopy';
       <p>{{ customerCopy.text('signin.try-backup-key') }}</p>
       <p>{{ customerCopy.text('signin.trusted-device') }}</p>
       <p>{{ customerCopy.text('signin.contact-support-before') }}<RouterLink to="/support">{{ customerCopy.text('signin.contact-support-link') }}</RouterLink>{{ customerCopy.text('signin.contact-support-after') }}</p>
-      <p>{{ customerCopy.text('signin.recovery-effects') }}</p>
       <p>{{ customerCopy.text('signin.never-share-secrets') }}</p>
     </div>
   </details>

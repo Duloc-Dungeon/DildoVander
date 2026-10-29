@@ -551,9 +551,9 @@ onBeforeUnmount(() => {
     <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">
       <PaperSurface class="launch-copy">
         <h1 id="launch-title">{{ language === 'en' ? 'Request beta access' : 'Požádat o přístup do bety' }}</h1>
-        <p>{{ language === 'en' ? 'Your account is ready. You can join the current beta group while it is accepting participants.' : 'Tvůj účet je připravený. Do současné beta skupiny můžeš vstoupit, dokud přijímá účastníky.' }}</p>
+        <p>{{ language === 'en' ? 'Your account is ready. You can join the current beta group while it is accepting participants.' : 'Tvůj účet je připravený. Do skupiny pro nové hosty můžeš vstoupit, dokud přijímá účastníky.' }}</p>
         <AwNotice v-if="betaEnrollmentAvailable === false" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
-        <p v-else-if="betaEnrollmentAvailable === null" role="status">{{ language === 'en' ? 'We could not check the current beta access rules.' : 'Aktuální pravidla vstupu do bety se nepodařilo ověřit.' }}</p>
+        <p v-else-if="betaEnrollmentAvailable === null" role="status">{{ language === 'en' ? 'We could not check the current admission rules.' : 'Aktuální pravidla přijetí do skupiny se nepodařilo ověřit.' }}</p>
         <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <p v-if="membershipRequestMessage" role="status">{{ membershipRequestMessage }}</p>
         <AwButton v-if="betaEnrollmentAvailable === true" variant="primary" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>

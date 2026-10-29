@@ -43,7 +43,7 @@ internal static partial class AccountIdentityTests
             "the last active owner cannot delete the only operating account");
 
         var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",
-            new { role = "Owner", recoveryUserId = (string?)null }));
+            new { role = "Owner" }));
         using var remainingOwner = fixture.Client();
         using var remainingKey = new VirtualPasskey();
         await EnrollAsync(remainingOwner, remainingKey, invitation.GetProperty("token").GetString()!, "Remaining owner");

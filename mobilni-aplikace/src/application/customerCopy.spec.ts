@@ -98,9 +98,7 @@ describe('customer copy catalog', () => {
     expect(customerCopyCs['export.contents']).toContain('propojené soukromé památky jiných vlastníků');
     expect(customerCopyCs['export.delete-confirmation']).toContain('pouze technickou úlohu exportu');
     expect(customerCopyCs['export.delete-confirmation']).toContain('Zdrojová data, postava ani památky se tím nesmažou');
-    expect(customerCopyCs['signin.contact-support-after']).toContain('pouze vlastník služby');
-    expect(customerCopyCs['signin.recovery-effects']).toContain('původní klíče odebrány');
-    expect(customerCopyCs['signin.recovery-code-target']).toContain('soukromý kód');
+    expect(customerCopyCs['signin.contact-support-after']).toContain('další možnosti přístupu');
     expect(customerCopyCs['new-character.intro']).toContain('rozhovory a památky té předchozí zůstanou uložené.');
     expect(customerCopyCs['new-character.consent']).toContain('službě AI');
     expect(customerCopyCs['new-character.consent']).toContain('Bez zaškrtnutí uložíš profil bez AI přípravy.');

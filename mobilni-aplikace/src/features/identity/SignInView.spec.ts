@@ -13,7 +13,7 @@ const api = vi.hoisted(() => ({
   refreshIdentity: vi.fn(),
   signOut: vi.fn(),
   request: vi.fn(),
-  enrollment: null as { kind: 'invite' | 'recovery'; token: string } | null,
+  enrollment: null as { kind: 'invite'; token: string } | null,
 }));
 
 vi.mock('./session', async () => {
@@ -386,57 +386,23 @@ describe('sign-in destinations', () => {
     wrapper.unmount();
   });
 
-  it('offers code paths before character details and clears an invitation code when switching to recovery', async () => {
+  it('offers invitation entry before character details without a recovery-code path', async () => {
     const { wrapper } = await mountSignIn(undefined, true);
     expect(wrapper.find('#account-invite').exists()).toBe(false);
     const entryChoices = wrapper.get('.signin-options');
-    const enrollmentForm = wrapper.get('form');
     expect(entryChoices.attributes('aria-label')).toBeTruthy();
-    expect(entryChoices.element.compareDocumentPosition(enrollmentForm.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(entryChoices.element.compareDocumentPosition(wrapper.get('form').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(wrapper.text()).not.toContain('Mám kód obnovy');
     await wrapper.findAll('button').find(button => button.text() === 'Mám kód pozvánky')!.trigger('click');
     expect(wrapper.find('#account-name').exists()).toBe(true);
     expect(wrapper.find('#account-universe').exists()).toBe(true);
     expect(wrapper.find('#account-invite').exists()).toBe(true);
-    expect(wrapper.find('select#enrollment-kind').exists()).toBe(false);
-    expect(wrapper.find('h1').text()).toBe('Jak ti budou říkat?');
-    await wrapper.get('#account-invite').setValue('invitation-secret');
-    await wrapper.get('input[type="checkbox"]').setValue(true);
-    await wrapper.findAll('button').find(button => button.text() === 'Mám kód obnovy')!.trigger('click');
-    expect(wrapper.find('#account-name').exists()).toBe(false);
-    expect(wrapper.find('#account-universe').exists()).toBe(false);
-    expect((wrapper.get('#account-invite').element as HTMLInputElement).value).toBe('');
-    expect(wrapper.text()).toContain('nahradí všechny původní klíče');
+    expect(wrapper.get('h1').text()).toBe('Jak ti budou říkat?');
     expect(wrapper.find('a[href="/support"]').exists()).toBe(true);
-    expect(wrapper.find('a[href="/privacy"]').exists()).toBe(true);
-    await wrapper.findAll('button').find(button => button.text() === 'Zpět k pozvánce')!.trigger('click');
-    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false);
-    expect(wrapper.find('#account-invite').exists()).toBe(true);
-    expect((wrapper.get('#account-invite').element as HTMLInputElement).value).toBe('');
     wrapper.unmount();
   });
 
-  it('keeps recovery enrollment behavior and defaults a staff account to settings', async () => {
-    api.enrollment = { kind: 'recovery', token: 'private-recovery-code' };
-    api.authenticate.mockImplementation(async () => {
-      account.value = { id: 'staff', displayName: 'Obsluha', roles: ['Operator'] };
-    });
-    const { router, wrapper } = await mountSignIn();
-
-    expect(wrapper.get('h1').text()).toBe('Obnovit přístup');
-    expect(wrapper.find('#account-name').exists()).toBe(false);
-    expect(wrapper.text()).toContain('nahradí všechny původní klíče');
-    expect(wrapper.text()).toContain('oprávnění zůstanou zachovány');
-    expect(wrapper.find('.consent-fieldset details').exists()).toBe(false);
-    if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
-    await wrapper.get('form').trigger('submit');
-    await flushPromises();
-
-    expect(api.authenticate).toHaveBeenCalledWith('enroll', 'private-recovery-code', '', false);
-    expect(router.currentRoute.value.path).toBe('/settings');
-    wrapper.unmount();
-  });
-
-  it('collects one shared name and universe, requires AI consent, and preserves recovery separation', async () => {
+  it('collects one shared name and universe, requires AI consent, and accepts an invitation', async () => {
     api.enrollment = { kind: 'invite', token: 'private-invitation-code' };
     api.authenticate.mockImplementation(async () => {
       account.value = { id: 'new-invitee', displayName: 'Luna Lovegood', roles: ['Customer'] };
