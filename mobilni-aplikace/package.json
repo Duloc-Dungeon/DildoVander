@@ -28,6 +28,8 @@
     "preview:opening": "node tests/opening.preview.mjs",
     "test:opening:browser": "node tests/opening.browser.mjs",
     "test:character-entrance:browser": "node tests/character-entrance.browser.mjs",
+    "test:identity-recovery:browser": "node tests/identity-recovery.browser.mjs",
+    "test:default-group-launch:browser": "node tests/default-group-launch.browser.mjs",
     "preview:game": "node tests/game.preview.mjs",
     "test:game:browser": "node tests/game.browser.mjs",
     "preview:sealed-case": "node tests/sealed-case.preview.mjs",

@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { nextTick } from 'vue';
 import SignInView from './SignInView.vue';
-import { account } from './session';
+import { account, accountsEnabled, initialized } from './session';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { launchAllowed } from '../../application/launchAccess';
 import { clearInvitationRegistration, getInvitationRegistration } from './invitationRegistration';
@@ -70,6 +70,8 @@ beforeEach(() => {
   interfaceLanguagePreference.setScope(null);
   interfaceLanguagePreference.setLanguage('cs');
   account.value = null;
+  accountsEnabled.value = true;
+  initialized.value = true;
   launchAllowed.value = true;
   api.authenticate.mockReset();
   api.refreshIdentity.mockReset();
@@ -489,6 +491,12 @@ describe('sign-in destinations', () => {
     await wrapper.findAll('button').find(button => button.text().includes('pozvánkou'))!.trigger('click'); await flushPromises();
     expect(api.signOut).toHaveBeenCalledOnce();
     expect(wrapper.find('#account-invite').exists()).toBe(false);
+    await wrapper.get('#account-name').setValue('Raven');
+    await wrapper.get('#account-universe').setValue('Fiction');
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(api.authenticate).toHaveBeenCalledWith('enroll', 'private-invitation-code', 'Raven', true);
     wrapper.unmount();
   });
 
@@ -581,9 +589,52 @@ it('reauthenticates an existing account from the default invitation screen witho
   account.value = { id: 'existing', displayName: 'Existing', roles: ['Customer'] };
   const { wrapper } = await mountSignIn(undefined, true);
   try {
-    await wrapper.get('button').trigger('click');
+    await wrapper.get('.signed-in-actions button').trigger('click');
     await flushPromises();
     expect(api.authenticate).toHaveBeenCalledWith('reauth', '', '', false);
+  } finally { wrapper.unmount(); }
+});
+
+it('keeps unconfirmed logout recovery visible without silently restoring the old account', async () => {
+  const router = createSignInRouter();
+  await router.push('/signin?logout=unconfirmed');
+  const wrapper = mount(SignInView, { global: { plugins: [router] } });
+  try {
+    await flushPromises();
+    expect(api.refreshIdentity).not.toHaveBeenCalled();
+    expect(wrapper.get('[role="alert"]').text()).toContain('Odhlášení se nepodařilo potvrdit');
+    api.signOut.mockRejectedValueOnce(new Error('Network unavailable'));
+    const logout = wrapper.findAll('button').find(button => button.text() === 'Odhlásit se')!;
+    await logout.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query.logout).toBe('unconfirmed');
+    expect(logout.attributes('disabled')).toBeUndefined();
+    api.signOut.mockResolvedValueOnce(undefined);
+    await logout.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query.logout).toBeUndefined();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  } finally { wrapper.unmount(); }
+});
+
+it('retries an unavailable session and enables sign-in only after the server confirms it is enabled', async () => {
+  accountsEnabled.value = false;
+  initialized.value = false;
+  api.refreshIdentity.mockRejectedValueOnce(new TypeError('Network unavailable'));
+  const { wrapper } = await mountSignIn();
+  try {
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.text()).toContain('Nepodařilo se ověřit spojení');
+    api.refreshIdentity.mockImplementationOnce(async () => {
+      accountsEnabled.value = true;
+      initialized.value = true;
+    });
+    await wrapper.findAll('button').find(button => button.text() === 'Zkusit načíst přihlášení znovu')!.trigger('click');
+    await flushPromises();
+    expect(api.refreshIdentity).toHaveBeenCalledTimes(2);
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Nepodařilo se ověřit spojení');
   } finally { wrapper.unmount(); }
 });
 

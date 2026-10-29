@@ -14,10 +14,14 @@ const props = defineProps<{
   readFailed: boolean;
   active: boolean;
   busy: boolean;
+  retryAttempted?: boolean;
+  retrying?: boolean;
 }>();
 const emit = defineEmits<{ continue: []; retry: []; failed: [] }>();
 const elapsed = ref(0);
-const canContinue = computed(() => elapsed.value >= 10_000);
+const preparationWaitMs = 5 * 60_000;
+const canContinue = computed(() => !props.busy && (props.retryAttempted && !props.retrying
+  || phase.value === 'portrait' && !!props.character || elapsed.value >= preparationWaitMs));
 const revealed = ref(false);
 const heading = ref<HTMLElement>();
 const personalSince = ref(0);
@@ -25,19 +29,25 @@ let lastTick = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
 const personalJoke = computed(() => characterWelcomeText(props.artwork?.welcome?.joke) || characterWelcomeText(props.artwork?.loadingMessage));
 const showPersonal = computed(() => !!personalJoke.value && elapsed.value >= 900);
-const unavailable = computed(() => !props.image && (props.failed || props.readFailed
-  || ['failed', 'not_requested', 'unavailable'].includes(props.artwork?.status ?? '') || elapsed.value >= 15_000));
-const phase = computed(() => revealed.value && props.image ? 'portrait' : unavailable.value ? 'placeholder' : showPersonal.value ? 'personal' : 'waiting');
+const preparationFailed = computed(() => props.failed || props.readFailed
+  || ['failed', 'not_requested', 'unavailable'].includes(props.artwork?.status ?? ''));
+const unavailable = computed(() => preparationFailed.value || !props.image && elapsed.value >= preparationWaitMs);
+const phase = computed(() => unavailable.value ? 'placeholder' : revealed.value && props.image ? 'portrait' : showPersonal.value ? 'personal' : 'waiting');
 const title = computed(() => {
   if (phase.value === 'portrait' || phase.value === 'placeholder' && props.character) {
     return props.character ? characterDisplayName(props.character.name, props.character.label) : 'Tvoje postava';
   }
   return phase.value === 'placeholder' ? 'Podoba se nedostavila.' : 'Tohle je tvůj nástup.';
 });
-const status = computed(() => phase.value === 'portrait' ? 'Postava je připravená. Večer může začít.'
-  : phase.value === 'placeholder' ? canContinue.value ? 'Portrét není dostupný. Můžeš pokračovat i bez něj.' : 'Portrét zatím není dostupný. Za chvíli můžeš pokračovat i bez něj.'
-    : props.character ? canContinue.value ? 'Portrét se ještě připravuje. Můžeš pokračovat i bez něj.' : 'Portrét se ještě připravuje. Dej mu chvilku na příchod.'
-      : canContinue.value ? 'Čekáme na podklady postavy. Můžeš pokračovat.' : 'Hledáme podklady postavy. Za chvíli bude možné pokračovat.');
+const status = computed(() => {
+  if (props.busy) return 'Ověřujeme vstup do večera…';
+  if (props.retrying && elapsed.value < preparationWaitMs) return 'Zkoušíme znovu načíst postavu a portrét…';
+  if (phase.value === 'portrait' && props.character) return 'Postava je připravená. Večer může začít.';
+  if (props.retryAttempted && !props.retrying) return 'Pokus o načtení je dokončený. Můžeš pokračovat i bez dokončené přípravy.';
+  if (elapsed.value >= preparationWaitMs) return 'Příprava zatím není dokončená. Můžeš pokračovat a vrátit se k ní později.';
+  if (preparationFailed.value) return 'Načtení se nepodařilo. Můžeš ho jednou zkusit znovu.';
+  return 'Čekáme na postavu a portrét, nejvýše pět minut. Jakmile budou připravené, můžeš pokračovat.';
+});
 
 function tick(): void {
   const now = performance.now();
@@ -86,7 +96,7 @@ onBeforeUnmount(() => clearInterval(timer));
       <slot />
       <p class="entrance-status" role="status">{{ status }}</p>
       <AwButton v-if="canContinue" class="entrance-continue" variant="primary" :busy="busy" @click="emit('continue')">Pokračovat</AwButton>
-      <button v-if="phase === 'placeholder'" class="entrance-retry" :disabled="busy" @click="emit('retry')">Zkusit načíst znovu</button>
+      <button v-if="phase === 'placeholder' && !retryAttempted" class="entrance-retry" :disabled="busy || retrying" @click="emit('retry')">Zkusit načíst znovu</button>
     </div>
   </section>
 </template>

@@ -37,7 +37,7 @@ internal sealed partial class OpenAiGameYoloProvider
             });
             var request = JsonSerializer.Serialize(new
             {
-                model = Model, store = false, service_tier = "default", max_output_tokens = 500,
+                model = Model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary), max_output_tokens = 500,
                 reasoning = new { effort = "low" },
                 instructions = "Napiš česky 2 až 3 krátké věty do kroniky taktického duelu, nejvýše 420 znaků. "
                     + "Použij pouze dodané fikční profily a skutečně odehrané výměny. Pojmenuj jedno doložené rozhodnutí a skutečný výsledek. "

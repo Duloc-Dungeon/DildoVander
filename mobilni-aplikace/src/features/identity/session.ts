@@ -453,7 +453,7 @@ export function signOut(): Promise<void> {
   const authentication = authenticationPending;
   // Without an active ceremony, dispatch with the current CSRF token before clearing it.
   const request = authentication ? null : accountRequest('/app/v1/session', 'DELETE');
-  const generation = advanceAuthentication(true);
+  let generation = advanceAuthentication(true);
   signingOut.value = true;
   const operation = (async () => {
     if (authentication) {
@@ -463,7 +463,27 @@ export function signOut(): Promise<void> {
       const session = await accountRequest<{csrfToken: string | null}>('/app/v1/session');
       csrfToken = session.csrfToken ?? '';
       await accountRequest('/app/v1/session', 'DELETE');
-    } else await request;
+    } else {
+      try { await request; }
+      catch (cause) {
+        // Another tab or an expired antiforgery cookie can retire the token.
+        // Confirm an already-ended session after a lost response; other network
+        // failures remain unconfirmed. Neither verification restores local authority.
+        if (native || !(cause instanceof IdentityRequestError)
+          || cause.code !== 'csrf_required' && cause.status !== 401) throw cause;
+        const session = await accountRequest<{account: Account | null; csrfToken: string | null}>('/app/v1/session');
+        if (session.account === null) { generation = authGeneration; return; }
+        if (cause.status === 401) throw cause;
+        csrfToken = session.csrfToken ?? '';
+        try { await accountRequest('/app/v1/session', 'DELETE'); }
+        catch (retryCause) {
+          if (!(retryCause instanceof IdentityRequestError) || retryCause.status !== 401) throw retryCause;
+          const verified = await accountRequest<{account: Account | null}>('/app/v1/session');
+          if (verified.account !== null) throw retryCause;
+          generation = authGeneration;
+        }
+      }
+    }
   })();
   const pending = operation.finally(() => {
     if (logoutPending === pending) { logoutPending = null; signingOut.value = false; }

@@ -8,6 +8,86 @@ let request: ReturnType<typeof vi.fn>;
 beforeEach(() => { vi.resetModules(); bridge.native = false; bridge.request.mockReset(); bridge.passkey.mockReset(); bridge.accountTransport.mockReset(); bridge.shareAccountDataFile.mockReset(); bridge.cancelAccountRequest.mockReset().mockResolvedValue({cancelled: true}); request = vi.fn(); vi.stubGlobal('fetch', request); });
 afterEach(() => { interfaceLanguagePreference.setScope(null); interfaceLanguagePreference.setLanguage('cs'); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+describe('browser logout recovery', () => {
+  it('confirms an already-ended server session after a lost logout response and refreshes sign-in availability', async () => {
+    const identity = await import('./session');
+    request.mockResolvedValueOnce(Response.json(user('current')));
+    await identity.refreshIdentity();
+    request.mockRejectedValueOnce(new TypeError('Response lost'));
+    await expect(identity.signOut()).rejects.toThrow('Response lost');
+    request.mockResolvedValueOnce(Response.json({ code: 'account_required' }, { status: 401 }));
+    request.mockResolvedValueOnce(Response.json(user(null)));
+    request.mockResolvedValueOnce(Response.json(user(null)));
+    await identity.signOut();
+    expect(identity.account.value).toBeNull();
+    expect(identity.accountsEnabled.value).toBe(true);
+    expect(identity.initialized.value).toBe(true);
+    expect(identity.signingOut.value).toBe(false);
+  });
+
+  it.each([user('still-signed-in'), {}])('does not confirm a rejected logout without an explicitly anonymous session', async verification => {
+    const identity = await import('./session');
+    request.mockResolvedValueOnce(Response.json(user('current')));
+    await identity.refreshIdentity();
+    request.mockResolvedValueOnce(Response.json({ code: 'account_required' }, { status: 401 }));
+    request.mockResolvedValueOnce(Response.json(verification));
+    await expect(identity.signOut()).rejects.toMatchObject({ status: 401 });
+    expect(identity.account.value).toBeNull();
+    expect(identity.signingOut.value).toBe(false);
+  });
+
+  it('confirms an anonymous session when a retry with a renewed token is rejected as unauthenticated', async () => {
+    const identity = await import('./session');
+    request.mockResolvedValueOnce(Response.json(user('current')));
+    await identity.refreshIdentity();
+    request.mockResolvedValueOnce(Response.json({ code: 'csrf_required' }, { status: 400 }));
+    request.mockResolvedValueOnce(Response.json(user('current', 'renewed')));
+    request.mockResolvedValueOnce(Response.json({ code: 'account_required' }, { status: 401 }));
+    request.mockResolvedValueOnce(Response.json(user(null)));
+    request.mockResolvedValueOnce(Response.json(user(null)));
+    await identity.signOut();
+    expect(identity.account.value).toBeNull();
+    expect(identity.accountsEnabled.value).toBe(true);
+  });
+
+  it('refreshes an expired antiforgery token once without restoring local account authority', async () => {
+    const identity = await import('./session');
+    request.mockResolvedValueOnce(Response.json(user('current', 'old-token')));
+    await identity.refreshIdentity();
+    request.mockResolvedValueOnce(Response.json({ code: 'csrf_required' }, { status: 400 }));
+    request.mockImplementationOnce(async () => {
+      expect(identity.account.value).toBeNull();
+      expect(identity.signingOut.value).toBe(true);
+      return Response.json(user('current', 'new-token'));
+    });
+    request.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    request.mockResolvedValueOnce(Response.json(user(null)));
+    await identity.signOut();
+    const deletes = request.mock.calls.filter(([, options]) => options.method === 'DELETE');
+    expect(deletes).toHaveLength(2);
+    expect(deletes[0][1].headers['X-DV-CSRF']).toBe('old-token');
+    expect(deletes[1][1].headers['X-DV-CSRF']).toBe('new-token');
+    expect(identity.account.value).toBeNull();
+    expect(identity.signingOut.value).toBe(false);
+  });
+
+  it('reports a repeated antiforgery rejection and allows an explicit retry after a failed network request', async () => {
+    const identity = await import('./session');
+    request.mockResolvedValueOnce(Response.json(user('current')));
+    await identity.refreshIdentity();
+    request.mockRejectedValueOnce(new TypeError('Network unavailable'));
+    await expect(identity.signOut()).rejects.toThrow('Network unavailable');
+    expect(identity.signingOut.value).toBe(false);
+    request.mockResolvedValueOnce(Response.json({ code: 'csrf_required' }, { status: 400 }));
+    request.mockResolvedValueOnce(Response.json(user('current', 'fresh')));
+    request.mockResolvedValueOnce(Response.json({ code: 'csrf_required' }, { status: 400 }));
+    await expect(identity.signOut()).rejects.toMatchObject({ code: 'csrf_required' });
+    expect(identity.signingOut.value).toBe(false);
+    expect(identity.account.value).toBeNull();
+    expect(request.mock.calls.filter(([, options]) => options.method === 'DELETE')).toHaveLength(3);
+  });
+});
+
 describe.each([false, true])('session verification recovery (native=%s)', native => {
   function response(status: number, body: string) {
     if (native) bridge.request.mockResolvedValueOnce({ status, body });

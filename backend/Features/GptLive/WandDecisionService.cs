@@ -131,7 +131,7 @@ internal sealed class WandDecisionService : IDisposable
         };
         var payload = JsonSerializer.Serialize(new
         {
-            model, store = false, service_tier = "default",
+            model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary),
             reasoning = new { effort = model == WandDecisionBudget.Luna ? "none" : "low" },
             max_output_tokens = WandDecisionBudget.OutputTokens(model),
             instructions = """

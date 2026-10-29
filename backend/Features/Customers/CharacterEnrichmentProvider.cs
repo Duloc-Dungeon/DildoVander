@@ -55,6 +55,7 @@ internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentPr
                 await store.RecordProviderUsageAsync(job.Id, actualModel,
                     usage.GetProperty("input_tokens").GetInt32(), usage.GetProperty("output_tokens").GetInt32());
             }
+            OpenAiServiceTierPolicy.ValidateResponse(document.RootElement, OpenAiOperation.CharacterEnrichment);
             using var parsing = BackendTelemetry.StartOperation("character.enrichment.validate");
             try
             {
@@ -108,7 +109,7 @@ internal sealed class OpenAiCharacterEnrichmentProvider : ICharacterEnrichmentPr
             """ + "\nVSTUP:\n" + input;
         return JsonSerializer.Serialize(new
         {
-            model, store = false, max_output_tokens = 2400, max_tool_calls = 2,
+            model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.CharacterEnrichment), max_output_tokens = 2400, max_tool_calls = 2,
             reasoning = new { effort = "low" },
             tools = webSearch ? new object[] { new { type = "web_search", search_context_size = "low" } } : [],
             include = webSearch ? new[] { "web_search_call.action.sources" } : [],

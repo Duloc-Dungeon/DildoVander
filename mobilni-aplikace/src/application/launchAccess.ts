@@ -10,6 +10,7 @@ export const customerFixedUniverse = ref<string | null>(null);
 let membershipGeneration = 0;
 let membershipAccountKey: string | null = null;
 let membershipRevision = -1;
+let launchRequest = 0;
 if (typeof window !== 'undefined') {
   window.addEventListener('customer-access-revoked', () => {
     membershipGeneration++;
@@ -25,14 +26,19 @@ watch(() => account.value ? `${account.value.id}:${account.value.roles.join(',')
     customerFixedUniverse.value = null;
   }
   launchAllowed.value = null;
+  launchRequest++;
 }, { flush: 'sync' });
 
 export async function refreshLaunchAccess(): Promise<boolean> {
+  const request = ++launchRequest;
+  const owner = account.value?.id;
   try {
     const result = await accountRequest<{ allowed: boolean }>('/app/v1/launch');
-    launchAllowed.value = result.allowed === true;
+    if (request === launchRequest && owner === account.value?.id) {
+      launchAllowed.value = typeof result?.allowed === 'boolean' ? result.allowed : null;
+    }
   } catch {
-    launchAllowed.value = null;
+    if (request === launchRequest && owner === account.value?.id) launchAllowed.value = null;
   }
   return launchAllowed.value === true;
 }

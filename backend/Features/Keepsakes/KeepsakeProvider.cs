@@ -119,7 +119,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
                 }, Json);
             var storyBody = JsonSerializer.Serialize(new
             {
-                model = storyModel, store = false, max_output_tokens = 2600, input = storyPrompt,
+                model = storyModel, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary), max_output_tokens = 2600, input = storyPrompt,
                 text = new { format = new { type = "json_schema", name = "wand_keepsake", strict = true, schema = StorySchema } }
             }, Json);
             var responses = new ResponsesClient(new ApiKeyCredential(apiKey), new ResponsesClientOptions
@@ -136,6 +136,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
             }, cancellationToken);
             Stage(request, "story", "completed", response.GetRawResponse().Content.ToString());
             using var storyResponse = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
+            OpenAiServiceTierPolicy.ValidateResponse(storyResponse.RootElement, OpenAiOperation.Ordinary);
             var story = ParseStory(storyResponse.RootElement);
             if (request.Snapshot.GeneratedWand is { } wand)
                 story = story with { Design = CanonicalDesign(wand) };

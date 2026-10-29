@@ -38,10 +38,10 @@ internal static partial class AccountIdentityTests
         var admission = launch.ReadBetaAdmission();
         var selected = launch.CreateOrSelectBetaGroup("guest-browser-fixture",
             new(admission.Revision), now);
-        var countdown = launch.SaveCountdown("guest-browser-fixture", selected.Group.Id,
-            new(selected.Group.Revision, 86400, true), now);
-        launch.ConfirmCountdown("guest-browser-fixture", selected.Group.Id,
-            new(countdown.Revision), now);
+        var production = launch.Read();
+        launch.Update("guest-browser-fixture", new(production.Revision, production.BetaEnabled, production.BetaLaunchAt,
+            production.BetaUnlocked, true, now + 86_400_000, false, production.TimeZone, production.Teaser,
+            production.InitialLoadingMessage, production.PersonalizedLoadingEnabled, production.PersonalizedLoadingPrompt), now);
         launch.UpdateBetaAdmission("guest-browser-fixture",
             new(selected.Admission.Revision, selected.Group.Id, true, null), now);
         var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",

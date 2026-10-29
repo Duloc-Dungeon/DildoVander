@@ -15,7 +15,7 @@ import { nativeDebug } from '../features/suitcase/nativeDebug';
 import { directorStop, clearDirectorStop } from '../features/director/directorStop';
 import { servoBench } from '../features/suitcase/servoBench';
 import { accessDenial, canEnterStaffArea, isCustomerAccount } from './access';
-import { accessRedirect } from './accessGuard';
+import { accessRedirect, waitingRoomRedirect } from './accessGuard';
 import WnsNavigation from './WnsNavigation.vue';
 import { wnsSound } from './wnsSound';
 import { customerCopy } from './customerCopy';
@@ -162,18 +162,41 @@ function refreshSession(): void {
       if (document.hidden) return;
       // Account changes reset cached access state synchronously. Fetch policies
       // after identity reconciliation so own-account routes can render the shell.
-      void refreshLaunchAccess();
+      void refreshLaunchAccess().then(() => {
+        if (disposed) return;
+        const redirect = waitingRoomRedirect(route);
+        if (redirect) void router.replace(redirect);
+      });
       void refreshCustomerMembership();
     }).catch(() => { /* Keep established identity and policies until verification succeeds. */ });
   }
 }
+let launchTimer: ReturnType<typeof setInterval> | undefined;
+let launchRefreshPending = false;
+let disposed = false;
+async function refreshOpenEvening(): Promise<void> {
+  if (disposed || document.hidden || launchRefreshPending || !account.value || !route.meta.requiresAccount
+    || canEnterStaffArea(account.value) || account.value.roles.includes('Tester')
+    || ['/launch', '/me/account', '/access-revoked'].includes(route.path)) return;
+  launchRefreshPending = true;
+  const owner = account.value.id;
+  try {
+    await refreshLaunchAccess();
+    if (disposed || document.hidden || account.value?.id !== owner) return;
+    const redirect = waitingRoomRedirect(route);
+    if (redirect) await router.replace(redirect);
+  } finally { launchRefreshPending = false; }
+}
 onMounted(() => {
   refreshSession();
+  launchTimer = setInterval(() => { void refreshOpenEvening(); }, 15_000);
   document.addEventListener('visibilitychange', refreshSession);
   void document.fonts?.ready.then(revealActiveNavigation);
   window.addEventListener('online', refreshSession);
 });
 onBeforeUnmount(() => {
+  disposed = true;
+  if (launchTimer) clearInterval(launchTimer);
   wnsSound.visible(false);
   removeRouterError();
   navigationObserver?.disconnect();

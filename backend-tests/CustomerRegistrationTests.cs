@@ -26,8 +26,10 @@ internal static partial class AccountIdentityTests
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var initialAdmission = launch.ReadBetaAdmission();
         var selected = launch.CreateOrSelectBetaGroup("fixture-owner", new(initialAdmission.Revision), now);
-        launch.UpdateGroup("fixture-owner", selected.Group.Id,
-            new(selected.Group.Revision, selected.Group.Name, now + 3_600_000), now);
+        var production = launch.Read();
+        launch.Update("fixture-owner", new(production.Revision, production.BetaEnabled, production.BetaLaunchAt,
+            production.BetaUnlocked, true, now + 3_600_000, false, production.TimeZone, production.Teaser,
+            production.InitialLoadingMessage, production.PersonalizedLoadingEnabled, production.PersonalizedLoadingPrompt), now);
         launch.UpdateBetaAdmission("fixture-owner",
             new(selected.Admission.Revision, selected.Group.Id, true, null), now);
         customer.DefaultRequestHeaders.Remove("Origin");
@@ -65,10 +67,10 @@ internal static partial class AccountIdentityTests
             "customer joins only the configured default group and starts active even while group launch is future");
         Check((await customer.GetAsync("/app/v1/prelaunch/character")).IsSuccessStatusCode,
             "new member can prepare a character before the group's launch");
-        var launchDraft = launch.ReadGroup(selected.Group.Id)!;
-        var countdown = launch.SaveCountdown("fixture-owner", launchDraft.Id,
-            new(launchDraft.Revision, 1, true), now - 2000);
-        launch.ConfirmCountdown("fixture-owner", launchDraft.Id, new(countdown.Revision), now - 2000);
+        production = launch.Read();
+        launch.Update("fixture-owner", new(production.Revision, production.BetaEnabled, production.BetaLaunchAt,
+            production.BetaUnlocked, true, now - 1000, false, production.TimeZone, production.Teaser,
+            production.InitialLoadingMessage, production.PersonalizedLoadingEnabled, production.PersonalizedLoadingPrompt), now);
         Check((await customer.GetAsync("/app/v1/admin/users")).StatusCode == HttpStatusCode.Forbidden,
             "customer has no account administration permission");
         await SeedAsync(fixture.App, async db =>

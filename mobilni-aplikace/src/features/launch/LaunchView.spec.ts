@@ -6,7 +6,7 @@ import { getInvitationRegistration, invitationRegistration, setInvitationDraft }
 import { beginInvitationPresentation, presentationForeground, selectInvitationPresentation } from './launchPresentation';
 import { customerFixedUniverse, customerMembershipState } from '../../application/launchAccess';
 
-const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: vi.fn(), portrait: vi.fn() }));
+const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: vi.fn(), portrait: vi.fn(), signOut: vi.fn() }));
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
 vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', props: ['image'], template: '<div class="portrait-stage" />' } }));
@@ -17,7 +17,7 @@ vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
   const account = ref({ id: 'guest', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
   api.setAccount.mockImplementation(value => { account.value = value; });
-  return { account, accountDeletionRequested: ref(false), accountRequest: api.request, accountTransport: vi.fn() };
+  return { account, accountDeletionRequested: ref(false), accountRequest: api.request, accountTransport: vi.fn(), signOut: api.signOut, signingOut: ref(false) };
 });
 let image: ReturnType<typeof ref<string>>;
 let failed: ReturnType<typeof ref<boolean>>;
@@ -39,6 +39,8 @@ beforeEach(() => {
   vi.useFakeTimers(); localStorage.clear(); sessionStorage.clear(); invitationRegistration.value = null;
   selectInvitationPresentation(); presentationForeground.value = true;
   api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
+  api.signOut.mockReset();
+  api.signOut.mockImplementation(async () => { api.setAccount(null); });
   image = ref(''); failed = ref(false);
   api.portrait.mockReturnValue({ url: image, failed, pending: ref(false), clear: vi.fn(() => { image.value = ''; }), retry: vi.fn(), fail: vi.fn() });
   persisted = false; allowed = false; revokedAudience = false; artworkStatus = 'queued'; artworkSource = null;
@@ -227,7 +229,7 @@ it('lets an existing unassigned customer explicitly request beta admission befor
     expect(view.text()).toContain('Požádat o přístup do bety');
     expect(api.request).not.toHaveBeenCalledWith('/app/v1/enrollment/default/admit', 'POST', {});
     expect(api.request).not.toHaveBeenCalledWith('/app/v1/prelaunch/character', 'GET', undefined, expect.anything());
-    await view.get('button').trigger('click');
+    await view.get('.beta-admission-request button').trigger('click');
     await flushPromises();
     expect(api.request).toHaveBeenCalledWith('/app/v1/enrollment/default/admit', 'POST', {});
     expect(api.request).toHaveBeenCalledWith('/app/v1/customer/access');
@@ -250,7 +252,7 @@ it('replaces a recovered draft universe with the persisted group universe after 
   const view = entry();
   try {
     await flushPromises();
-    await view.get('button').trigger('click');
+    await view.get('.beta-admission-request button').trigger('click');
     await flushPromises();
     expect(customerFixedUniverse.value).toBe('Astronomy');
     expect(getInvitationRegistration('guest')?.universe).toBe('Astronomy');
@@ -352,6 +354,97 @@ it('announces offline immediately during the presentation and reconnects with re
   } finally { view.unmount(); }
 });
 
+it('keeps the countdown and logout accessible when the first character read fails and recovers automatically', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  let failRead = true;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/prelaunch/character' && failRead) throw new Error('Temporary outage');
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('[role="alert"]').text()).toContain('Tvoji postavu');
+    expect(view.find('.countdown').exists()).toBe(true);
+    expect(view.find('.portrait-stage').exists()).toBe(false);
+    expect(view.get('.launch-signout').text()).toBe('Odhlásit se');
+    failRead = false;
+    await vi.advanceTimersByTimeAsync(15_000);
+    await flushPromises();
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    expect(view.find('.portrait-stage').exists()).toBe(true);
+    expect(api.request.mock.calls.every(([, method]) => !method || method === 'GET')).toBe(true);
+  } finally { view.unmount(); }
+});
+
+it('rechecks membership when retrying an initially unavailable account status', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  let failMembership = true;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/customer/access' && failMembership) throw new Error('Unavailable');
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.find('[role="alert"]').exists()).toBe(true);
+    expect(api.request.mock.calls.some(([path]) => path === '/app/v1/prelaunch/character')).toBe(false);
+    failMembership = false;
+    await view.get('.launch-retry').trigger('click');
+    await flushPromises();
+    expect(customerMembershipState.value).toBe('active');
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    expect(view.find('.portrait-stage').exists()).toBe(true);
+  } finally { view.unmount(); }
+});
+
+it('clears a failed preparation poll after a successful read without another write', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  let failRead = false;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/prelaunch/character' && failRead) throw new Error('Unavailable');
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    failRead = true;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(view.find('[role="alert"]').exists()).toBe(true);
+    failRead = false;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    expect(api.request.mock.calls.every(([, method]) => !method || method === 'GET')).toBe(true);
+  } finally { view.unmount(); }
+});
+
+it.each([false, true])('offers shared logout in the waiting and opening scenes (allowed=%s)', async opening => {
+  allowed = opening;
+  const view = entry();
+  try {
+    await flushPromises();
+    const logout = view.findAll('button').find(button => button.text() === 'Odhlásit se')!;
+    await logout.trigger('click');
+    await flushPromises();
+    expect(api.signOut).toHaveBeenCalledOnce();
+    expect(api.replace).toHaveBeenCalledWith('/signin');
+  } finally { view.unmount(); }
+});
+
+it('routes an unconfirmed logout to a public recovery screen even after local identity is cleared', async () => {
+  api.signOut.mockImplementation(async () => { api.setAccount(null); throw new Error('Network unavailable'); });
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.launch-signout').trigger('click');
+    await flushPromises();
+    expect(api.replace).toHaveBeenCalledWith({ path: '/signin', query: { logout: 'unconfirmed' } });
+  } finally { view.unmount(); }
+});
+
 it('K: entering starts the character presentation and only continuing completes entry', async () => {
   const deadline=Date.now()+4000;
   persisted=true; savedCreation();
@@ -370,7 +463,7 @@ it('K: entering starts the character presentation and only continuing completes 
     expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBeNull();
     expect(view.text()).not.toContain('Přeskočit animaci');
     expect(view.find('.entrance-continue').exists()).toBe(false);
-    await vi.advanceTimersByTimeAsync(10000); await flushPromises();
+    await vi.advanceTimersByTimeAsync(300000); await flushPromises();
     await view.get('.entrance-continue').trigger('click'); await flushPromises();
     expect(api.replace).toHaveBeenCalledWith('/me/character');
     expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBe('seen');
@@ -385,6 +478,7 @@ it('polls for a not-yet-available character during the entrance without generati
     expect(view.text()).toContain('Slavná osoba se ještě hledá');
     persisted = true;
     await vi.advanceTimersByTimeAsync(5000); await flushPromises();
+    image.value = 'blob:portrait';
     expect(view.findComponent({ name: 'CharacterEntrance' }).props('character')?.name).toBe('Raven');
     expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/prelaunch/character').length).toBeGreaterThanOrEqual(2);
     expect(api.request.mock.calls.some(([, method]) => method && method !== 'GET')).toBe(false);
@@ -400,6 +494,7 @@ it('does not mark a cancelled entry as seen and removes the presentation immedia
     await flushPromises();
     await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
     api.replace.mockResolvedValueOnce({ type: 4 });
+    image.value = 'blob:portrait';
     await vi.advanceTimersByTimeAsync(10000); await flushPromises();
     await view.get('.entrance-continue').trigger('click'); await flushPromises();
     expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBeNull();
@@ -407,6 +502,62 @@ it('does not mark a cancelled entry as seen and removes the presentation immedia
     expect(view.find('[data-entrance]').exists()).toBe(false);
     expect(view.text()).not.toContain('Raven');
   } finally { view.unmount(); }
+});
+it('allows one requested entrance retry and then continuation without waiting five minutes', async () => {
+  allowed = true;
+  persisted = true;
+  artworkStatus = 'failed';
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.group-opening-copy button').trigger('click');
+    await flushPromises();
+    expect(view.find('.entrance-continue').exists()).toBe(false);
+    await view.get('.entrance-retry').trigger('click');
+    await flushPromises();
+    expect(api.request.mock.calls.filter(([path, method]) => path === '/app/v1/prelaunch/character/retry' && method === 'POST')).toHaveLength(1);
+    expect(view.find('.entrance-retry').exists()).toBe(false);
+    expect(view.find('.entrance-continue').exists()).toBe(true);
+    view.findComponent({ name: 'CharacterEntrance' }).vm.$emit('retry');
+    await flushPromises();
+    expect(api.request.mock.calls.filter(([path, method]) => path === '/app/v1/prelaunch/character/retry' && method === 'POST')).toHaveLength(1);
+    await view.get('.entrance-continue').trigger('click');
+    await flushPromises();
+    expect(api.replace).toHaveBeenCalledWith('/me/character');
+  } finally { view.unmount(); }
+});
+it('does not let a stalled preparation retry block entry after five minutes and still verifies authorization', async () => {
+  allowed = true;
+  const original = api.request.getMockImplementation()!;
+  let retrying = false;
+  let finishRead!: (value: unknown) => void;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/prelaunch/character') {
+      if (retrying) return new Promise(resolve => { finishRead = resolve; });
+      throw new Error('Unavailable');
+    }
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.group-opening-copy button').trigger('click');
+    await flushPromises();
+    retrying = true;
+    await view.get('.entrance-retry').trigger('click');
+    await flushPromises();
+    expect(view.find('.entrance-continue').exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(300000);
+    const policyReads = api.request.mock.calls.filter(([path]) => path === '/app/v1/launch').length;
+    await view.get('.entrance-continue').trigger('click');
+    await flushPromises();
+    expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/launch').length).toBeGreaterThan(policyReads);
+    expect(api.replace).toHaveBeenCalledWith('/me/character');
+  } finally {
+    view.unmount();
+    finishRead?.({ character, artwork: { status: 'ready' } });
+    await flushPromises();
+  }
 });
 it('rechecks server authorization when entering and closes the scene if access was revoked', async () => {
   allowed = true;

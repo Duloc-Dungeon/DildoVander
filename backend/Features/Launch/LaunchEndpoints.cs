@@ -211,6 +211,7 @@ internal static class LaunchEndpoints
         if (!accounts.Enabled) { return services; }
         services.AddSingleton(new LaunchPolicyStore(accounts.DataRoot));
         services.AddSingleton<LaunchAccessService>();
+        services.AddHostedService<LaunchScheduleStartup>();
         return services;
     }
 
