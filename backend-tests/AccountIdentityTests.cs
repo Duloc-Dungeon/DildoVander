@@ -584,6 +584,15 @@ internal static partial class AccountIdentityTests
             jars[client] = jar; return client;
         }
         public CookieContainer Cookies(HttpClient client) => jars[client];
+        public void OpenSelectedCustomerGroup()
+        {
+            // Functional customer APIs run after opening; prelaunch fixtures keep the default future schedule.
+            var launch = App.Services.GetRequiredService<LaunchPolicyStore>();
+            var groupId = launch.ReadBetaAdmission().GroupId
+                ?? throw new InvalidOperationException("Customer fixture has no selected launch group.");
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            LaunchTestSchedule.Set(launch, groupId, now - 1000, now);
+        }
         public static async Task<Fixture> StartAsync(bool browserMode = false, bool customerFeatures = false,
             bool deletionFeatures = false, bool customerMemoryFeatures = false,
             bool accountDataExportFeatures = false, Action<WebApplication>? configureEndpoints = null,

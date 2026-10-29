@@ -25,6 +25,7 @@ internal static partial class AccountIdentityTests
             // Persisted text limits do not by themselves bound escaped JSON.
         }
         await using var fixture = await Fixture.StartAsync(customerMemoryFeatures: true);
+        fixture.OpenSelectedCustomerGroup();
         using var owner = fixture.Client();
         using var ownerKey = new VirtualPasskey();
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Memory HTTP fixture owner");

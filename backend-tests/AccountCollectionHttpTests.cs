@@ -19,6 +19,7 @@ internal static partial class AccountIdentityTests
     {
         await RunCompactProjectionCoverageAsync();
         await using var fixture = await Fixture.StartAsync(customerFeatures: true);
+        fixture.OpenSelectedCustomerGroup();
         using var administrator = fixture.Client();
         using var customer = fixture.Client();
         using var viewer = fixture.Client();

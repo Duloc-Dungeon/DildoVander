@@ -24,6 +24,7 @@ internal static partial class AccountIdentityTests
     internal static async Task RunCustomerMemoryDataAsync()
     {
         await using var fixture = await Fixture.StartAsync(customerFeatures: true);
+        fixture.OpenSelectedCustomerGroup();
         using var owner = fixture.Client();
         using var ownerKey = new VirtualPasskey();
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Customer-memory owner");

@@ -16,6 +16,7 @@ internal static partial class AccountIdentityTests
     internal static async Task RunCustomerWaitingHttpAsync()
     {
         await using var fixture = await Fixture.StartAsync(customerFeatures: true);
+        fixture.OpenSelectedCustomerGroup();
         using var owner = fixture.Client();
         using var customer = fixture.Client();
         using var anonymous = fixture.Client();
