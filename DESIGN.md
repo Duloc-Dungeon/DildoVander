@@ -42,7 +42,7 @@ typography:
     lineHeight: 1.65
   label:
     fontFamily: "'Manrope Variable', sans-serif"
-    fontSize: "1rem"
+    fontSize: ".95rem"
     fontWeight: 800
     lineHeight: 1.45
     letterSpacing: "-0.01em"
@@ -67,6 +67,7 @@ components:
     typography: "{typography.label}"
     rounded: "{rounded.button}"
     padding: "8px 14px"
+    height: "56px"
   button-secondary:
     backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.text}"
@@ -209,8 +210,9 @@ scénických ploch. Hrany a obrysy jsou klidné; fotka si zachovává proporce
 a ořez určuje konkrétní portrétní komponenta.
 
 Lokální výjimky jsou skutečné, nikoli nové globální tokeny: zákaznická stránka
-používá 24px karty a pilulkové hlavní tlačítko, slavnostní představení oblouk.
-Základní sdílené tlačítko zůstává zaobleným obdélníkem podle záhlaví.
+používá 24px karty, slavnostní představení oblouk. Hlavní tlačítka i odkazy
+stylované jako hlavní tlačítko mají společný 16px poloměr; zákaznické stránky
+už nepřepisují tuto podobu pilulkou.
 
 ## Components
 
@@ -220,6 +222,9 @@ Základní sdílené tlačítko zůstává zaobleným obdélníkem podle záhlav
 používá nejméně 56px výšku; kompaktní varianty jednotlivých obrazovek nejsou
 přepsáním této dokumentované výchozí podoby. Vnitřní odsazení může dědit
 kompatibilní tématickou vrstvu; záhlaví zachycuje aktuální základní vzorek.
+Hlavní varianta používá mintovou výplň, tmavý text, 16px poloměr a žádný stín.
+Stejná podoba platí pro hlavní odkazy v dílně, hrách, postavě a památkách;
+starší zlatá výplň ani stín kompatibilní vrstvy se na ně nepřenášejí.
 
 Hover mírně zesvětlí plochu. Disabled sníží opacity na 0,48 a zruší hover efekt.
 Busy nastaví `aria-busy`, zablokuje tlačítko a podle motion režimu může ukázat
@@ -249,6 +254,42 @@ rezervuje 32 px nad její změřenou výšku. Odkazy mají nejméně
 58px výšku; ikony 23 px. Aktivní text je mintový, neaktivní tlumený, ikony
 zůstávají světlé s rozlišením opacity. Odsazení roste o bezpečné okraje telefonu.
 Samostatné herní scény mohou lištu záměrně skrýt.
+Aktivní položka má zvýšenou tmavou plochu a horní mintovou značku 20 × 2 px.
+Detail uloženého souboje `/archive/duel` zůstává v sekci Památky; příprava
+postavy patří do Dílny. Hover neaktivní položky nemění označení aktuální stránky.
+
+### Stavové zprávy
+
+`AwNotice` má informační, varovnou, chybovou a úspěšnou variantu. Na tmavé
+ploše je čitelný text a 24px značka se skutečnou ikonou Phosphor: informace,
+varování nebo potvrzovací pečeť. Barevný podklad značky používá modrou, jantar,
+broskvovou nebo mintovou podle významu. Ikona je dekorativní; text a role nesou
+celé sdělení. Chyba používá `alert`, ostatní živé zprávy `status`; `live=false`
+živou roli vypne.
+
+Dvousloupcové rozložení patří pouze do `AwNotice` s ikonou. Starší textové
+elementy s třídou `aw-notice` zachovávají celou šířku textu bez prázdného
+sloupce pro ikonu. Zpráva má 16px odsazení, 14px poloměr a 1px linku.
+
+### Dokončení hůlky a další krok
+
+Uložená hůlka dostane pravdivé potvrzení s pečetí a jednu hlavní pokračovací
+akci. Pečeť se krátce odhalí jen při dokončení stejného rozpracovaného rozhovoru
+pozorovaném na viditelné obrazovce: 480 ms, `cubic-bezier(.16, 1, .3, 1)`.
+Opakovaný polling ani návrat k hotovému výsledku efekt nespouští. Omezený pohyb
+zachovává statickou pečeť i celé potvrzení; žádná akce nečeká na animaci.
+
+Herní vstup bez hůlky používá jantarovou scénickou plochu s existující ilustrací
+hůlky a další krok podle potvrzeného stavu. Dílna vede volný rozhovor hlasem
+nebo psaním; rozhraní neslibuje pevný počet otázek. Prázdné památky nabízejí
+hlavní akci ke hře a klidnější odkaz na žebříček.
+
+### Povrchy prohlížeče
+
+Výběr textu je mintový s tmavým textem, textový kurzor mintový a posuvníky
+používají `line` na `bg`. Odkazy mají podtržení odsazené o .25 em. Společný
+klávesnicový fokus je 3px mintový obrys s odsazením 4 px; lokální zákaznický
+2px fokus zůstává zachovanou výjimkou.
 
 ### Zákaznický přehled postavy a památek
 

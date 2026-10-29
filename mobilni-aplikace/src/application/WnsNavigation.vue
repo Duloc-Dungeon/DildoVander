@@ -21,7 +21,7 @@ onBeforeUnmount(() => observer?.disconnect());
 const links = [
   { to: '/play/wand', alias: '/me/character', label: 'Dílna', icon: character },
   { to: '/play', label: 'Hry', icon: evening },
-  { to: '/me/keepsakes', label: 'Památky', icon: keepsakes },
+  { to: '/me/keepsakes', alias: '/archive/duel', label: 'Památky', icon: keepsakes },
   { to: '/me/account', label: 'Já', icon: account },
 ];
 function isSelected(link: { to: string; alias?: string }): boolean {
