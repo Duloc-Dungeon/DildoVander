@@ -138,7 +138,10 @@ internal static partial class SealedCaseHttpTests
                     { await AiBoundariesAsync(view.Deserialize<SealedPlayView>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!); }
                     Equal(chapter, view.GetProperty("chapter").GetInt32()); Equal("planning", view.GetProperty("phase").GetString());
                     Equal(3, view.GetProperty("choices").GetArrayLength());
-                    Check(!view.TryGetProperty("serverSeed", out _) && !view.TryGetProperty("scenario", out _), "no secret graph/seed envelope");
+                    Check(!view.TryGetProperty("serverSeed", out _) && !view.TryGetProperty("presentation", out _)
+                        && HasExactProperties(view.GetProperty("scenario"), "id", "version", "title", "summary", "universe", "tone",
+                            "guardianLabel", "conspiratorLabel", "echoLabel", "echoExplanation", "extremeActionLabel", "extremeConsequence"),
+                        "scenario exposes only an allowlisted presentation, never the secret graph/seed or frozen pack");
                     var choice = view.GetProperty("choices")[0].GetProperty("plan");
                     if (chapter == 2 && index == 0)
                     { choice = JsonSerializer.SerializeToElement(new SealedPlanConfirmation(chapter, 0, true, SealedIntent.Stun, "p2", Method: "IMPACT_SEAL"), new JsonSerializerOptions(JsonSerializerDefaults.Web)); }

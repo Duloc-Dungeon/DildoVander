@@ -142,7 +142,7 @@ internal sealed partial class SealedCaseStore
         using var resolved = connection.CreateCommand(); resolved.Transaction = transaction;
         resolved.CommandText = "SELECT COALESCE(MAX(chapter),0) FROM sealed_case_resolutions WHERE case_id=$case"; resolved.Parameters.AddWithValue("$case", caseId);
         if (phase == "released" && (long)resolved.ExecuteScalar()! != timing.Chapters) { phase = "resolving"; }
-        string[]? selected = null; string? winner = null; string[]? conspirators = null; SealedRecap[]? recap = null;
+        string[]? selected = null; string? winner = null; string[]? conspirators = null; SealedRecap[]? recap = null; string? message = null;
         if (phase == "released")
         {
             if (!tally.NeedsRunoff) { selected = tally.Selected.ToArray(); }
@@ -155,10 +155,17 @@ internal sealed partial class SealedCaseStore
                 selected = tally.Selected.Concat(chosen).ToArray();
             }
             conspirators = members.Where(m => m.Team == SealedSecretTeam.Conspirator).Select(m => m.PlayerId).ToArray();
-            winner = SealedCaseRules.GuardiansWin(selected, conspirators, conspirators.Length) ? "Strážci" : "Spiklenci";
+            using var setupQuery = connection.CreateCommand(); setupQuery.Transaction = transaction;
+            setupQuery.CommandText = "SELECT setup_json FROM sealed_cases WHERE id=$case";
+            setupQuery.Parameters.AddWithValue("$case", caseId);
+            using var setup = JsonDocument.Parse((string)setupQuery.ExecuteScalar()!);
+            var presentation = SealedScenarioCatalog.FromSetup(setup.RootElement);
+            var guardiansWin = SealedCaseRules.GuardiansWin(selected, conspirators, conspirators.Length);
+            winner = guardiansWin ? presentation.GuardianLabel : presentation.ConspiratorLabel;
+            message = guardiansWin ? presentation.FinaleGuardian : presentation.FinaleConspirator;
             recap = Recap(connection, transaction, caseId);
         }
         return new(phase, ballotSize, active.ContainsKey(actor), active.GetValueOrDefault(actor, []),
-            time >= firstDeadline && tally.NeedsRunoff ? tally.TiedCandidates.ToArray() : [], time >= firstDeadline && tally.NeedsRunoff ? tally.OpenPlaces : 0, selected, winner, conspirators, recap);
+            time >= firstDeadline && tally.NeedsRunoff ? tally.TiedCandidates.ToArray() : [], time >= firstDeadline && tally.NeedsRunoff ? tally.OpenPlaces : 0, selected, winner, conspirators, recap, message);
     }
 }

@@ -49,7 +49,7 @@ export const customerCopyCs = {
   'home.duels-link': 'Souboje',
   'home.duels-path': 'Vyzvi soupeře nebo přijmi pozvání',
   'home.sealed-case-link': 'Pod pečetí',
-  'home.sealed-case-path': 'Vstup do případu posledního zvonu',
+  'home.sealed-case-path': 'Otevři společný případ Pod pečetí',
   'home.keepsakes-path': 'Tvoje dokončené příběhy',
   'home.account-path': 'Nastavení a přístup',
   'home.evening-aria': 'Aktivní večer',

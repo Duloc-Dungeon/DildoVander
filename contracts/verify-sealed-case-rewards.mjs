@@ -31,4 +31,9 @@ const fixture = {
 assert.ok(validate(fixture));
 assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], privateNotes: 'secret' }] }), false);
 assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], team: 'unknown' }] }), false);
-console.log('Sealed-case reward contract: session scope, exact projection and closed item schema passed.');
+const scenario = { id: 'HP_SPOLECENSTVI_KRBU_V1', title: 'Společenství vlastníků krbu', teamLabel: 'Sousedé' };
+assert.ok(validate({ ...fixture, items: [{ ...fixture.items[0], scenario }] }), 'opt-in scenario metadata validates');
+assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], scenario: { ...scenario, covertActions: ['secret'] } }] }), false);
+assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], scenario: { ...scenario, teamLabel: '' } }] }), false);
+assert.equal(route.parameters.find(parameter => parameter.name === 'scenarioMetadata')?.schema.default, false);
+console.log('Sealed-case reward contract: session scope, legacy response, opt-in scenario metadata and closed projections passed.');

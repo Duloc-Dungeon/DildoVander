@@ -1,0 +1,115 @@
+{
+  "variants": [
+    {
+      "id": "HP_SMRTIJEDI_BYSTROZOROVE_V1",
+      "version": "1.0.0",
+      "title": "Smrtijedi a bystrozorové: Případ zamčeného letaxu",
+      "summary": "V bystrozorském úkrytu někdo změnil ochranu tajné letaxové trasy. Smrtijedi se ukrývají mezi přítomnými. Odliš stopy od přesvědčivých výpovědí, než přijde závěrečné hlasování.",
+      "universe": "Harry Potter",
+      "tone": "Infiltrace a nedůvěra",
+      "guardianLabel": "Bystrozorové",
+      "conspiratorLabel": "Smrtijedi",
+      "guardianObjective": "Propoj stopy původního zásahu do ochrany krbu a v závěrečném hlasování odhal dost Smrtijedů. Přesný počet míst a potřebných správných označení ukazují pravidla této partie. Jméno postavy ani její výpověď nejsou důkazem příslušnosti.",
+      "conspiratorObjective": "Zabraň tomu, aby závěrečný seznam odhalil dost členů tvého týmu. Znáš své spolupracovníky, ale původní otisky zůstávají ve světě. Můžeš ovlivňovat doručení a výpovědi podle pravidel; ověřenou minulost přepsat nemůžeš.",
+      "publicFacts": [
+        "Bystrozorský úkryt má zapečetěný krb s neveřejnou letaxovou trasou. Před začátkem hry někdo změnil její ochranné otisky a spojení je uzavřené.",
+        "Za původním zásahem stojí skrytá skupina Smrtijedů. Ostatní mají v tomto případu roli bystrozorů. Tým je scénářová role, nezávislá na pověsti a schopnostech zvolené postavy.",
+        "Zásah zanechal stopy v ochranných záznamech, evidenci příchodů a v pečeti krbu. Jedna stopa vymezuje okruh možných původců; rozhoduje propojení dostupných důkazů.",
+        "Úkryt, trasa i tento zásah jsou původní fikcí hry. Souhlas se scénářovou minulostí nemění uložený profil postavy a hůlky se neničí."
+      ],
+      "locations": {
+        "VESTIBUL": "Vstupní hala úkrytu",
+        "SALON": "Poradní místnost",
+        "ARCHIV": "Archiv ochranných záznamů",
+        "POKOJE": "Pokoje úkrytu",
+        "KOMORA": "Zapečetěná krbovna"
+      },
+      "clueLabels": {
+        "A": "Otisk v ochranném záznamu",
+        "B": "Záznam přístupu k trase",
+        "C": "Zbytek zásahu v pečeti krbu"
+      },
+      "clueDescription": "Doložená stopa původní změny ochrany. Uvedená jména tvoří okruh možných původců, nikoli seznam usvědčených Smrtijedů. Porovnej ji s dalšími částmi stejného řetězce.",
+      "itemName": "Zapečetěná průvodka",
+      "acceptedPast": "Přijímáš původní zápletku zamčeného letaxu: ochrana trasy byla změněna ještě před tvými tahy. Svou přidělenou stranu a její cíl máš soukromě; nezískáváš tím nové schopnosti ani znalost cizích rolí.",
+      "echoLabel": "Ozvěna úkrytu",
+      "echoExplanation": "Tvoje tělesná účast v případu skončila. Do konce partie zůstáváš ozvěnou: nemůžeš provádět tělesné akce ani předávat předměty. Můžeš dál pracovat s dostupnými stopami, předávat známé informace a hlasovat ve finále. Tvoje strana se nemění.",
+      "extremeActionLabel": "Smrtící čin",
+      "extremeConsequence": "Tento čin může usmrtit postavu a do konce partie ji změnit v ozvěnu. Tím skončí její tělesné akce a práce s předměty; dostupné stopy, předávání známých informací a závěrečný hlas jí zůstanou. Platný dosažený pokus spotřebuje tvůj jediný krajní žeton i při obraně cíle. Akce je dobrovolná a je dostupná nejdříve od druhé kapitoly.",
+      "chapterTitles": [
+        "Krb nepřijímá návštěvy",
+        "Všichni mají pověření",
+        "Kdo prošel halou",
+        "Důvěra z ruky do ruky",
+        "Popel si pamatuje",
+        "Poslední příkazy"
+      ],
+      "chapterMessages": [
+        "Letax zůstává uzavřený. Pátrání začíná u ochranných záznamů v archivu. Úkryt měl znemožnit vstup nepřátelům; jejich odchod zatím zvládá lépe.",
+        "Další kapitola je otevřená. Můžeš porovnávat získané stopy, vyjednávat nebo chránit dostupné zdroje. Prohlášení o nevině je výpověď, ne ověřená stopa.",
+        "Pátrání se rozšiřuje na záznamy přístupu k trase ve vstupní hale. Získané stopy propojuj s archivem. Záznam rozlišuje příchod a odchod bez ohledu na to, který se teď lépe hodí do výpovědi.",
+        "Zbývá čas ověřovat známé souvislosti a předávat důkazy. To, že ti někdo svěřil informaci, ještě nepotvrzuje její pravdivost. U výpovědi sleduj, kdo ji skutečně pronesl; u stopy její původ.",
+        "Pátrání se rozšiřuje na závěrečné otisky v zapečetěné krbovně. Získané části propojuj v rámci stejného řetězce. Popel svou tehdejší přítomnost nezkouší formulovat jinak.",
+        "Otevřela se poslední kapitola. Potvrď poslední akci a rozhodni, které získané důkazy předáš ostatním. Akce se vyhodnotí před závěrečným hlasováním; pověst už další tah nedostane."
+      ],
+      "finaleGuardian": "Vítězí bystrozorové. Závěrečný seznam odhalil dost členů skryté sítě. Rekonstrukce ukáže, které zásluhy obstojí vedle skutečně provedených příkazů.",
+      "finaleConspirator": "Vítězí Smrtijedi. Závěrečný seznam neodhalil dost členů jejich sítě. Utajení vydrželo do hlasování; před rekonstrukcí už se na ně spoléhat nedá."
+    },
+    {
+      "id": "HP_SPOLECENSTVI_KRBU_V1",
+      "version": "1.0.0",
+      "title": "Společenství vlastníků krbu",
+      "summary": "Jeden dům v Příčné ulici, jeden společný krb a příliš mnoho lidí, kteří potřebují odjet první. Někdo si očaroval přednost v pořadníku. Krb problém vyřešil tím, že nepouští nikoho.",
+      "universe": "Harry Potter",
+      "tone": "Sousedská komedie",
+      "guardianLabel": "Sousedé",
+      "conspiratorLabel": "Přednostní cestující",
+      "guardianObjective": "Zjisti, kdo si před začátkem schůze přičaroval přednost, a v závěrečném hlasování odhal dost členů jejich spolku. Přesný počet míst a potřebných správných označení ukazují pravidla této partie. Hlasitá starost o společný krb sama o sobě nic nedokazuje.",
+      "conspiratorObjective": "Udrž původce přednostních výjimek dostatečně skryté, aby je závěrečný seznam neodhalil v potřebném počtu. Znáš členy svého spolku. Hraj si s výpověďmi a dovoleným doručením stop; skutečné změny pořadníku zůstávají zaznamenané.",
+      "publicFacts": [
+        "Dům v Příčné ulici má jeden společný letaxový krb. Před začátkem schůze někdo upravil pořadník tak, aby úzký okruh sousedů vždy odjížděl před ostatními.",
+        "Krb zjistil rozpor mezi pořadníkem a svou ochrannou pečetí a uzavřel spojení. Zaručuje tak všem stejnou možnost odjet: zatím žádnou.",
+        "Přednostní cestující znají své spolupracovníky. Ostatní sousedé hledají původce změn v domovní knize, záznamech příchodů a v pečeti krbu. Jednotlivá stopa ukazuje okruh možností, nikoli hotového viníka.",
+        "Krajní zásah v této původní zápletce mění postavu do konce partie v domovní ozvěnu, neusmrcuje ji. Ozvěna už nejedná tělesně, ale zachovává si práci se stopami, předávání známých informací a závěrečný hlas. Hůlky se neničí.",
+        "Dům, jeho pravidla i přednostní výjimky jsou původní fikcí této hry. Scénářová strana nemění uloženou identitu postavy ani její schopnosti."
+      ],
+      "locations": {
+        "VESTIBUL": "Domovní předsíň",
+        "SALON": "Místnost schůze",
+        "ARCHIV": "Kumbál s domovní knihou",
+        "POKOJE": "Sousedské pokoje",
+        "KOMORA": "Společná krbovna"
+      },
+      "clueLabels": {
+        "A": "Změna v domovní knize",
+        "B": "Stopa příchodu ke krbu",
+        "C": "Otisk přednostní výjimky"
+      },
+      "clueDescription": "Doložená stopa původní úpravy pořadníku. Uvedená jména jsou možní původci této části změny. Samotná přítomnost na seznamu nedokazuje členství mezi Přednostními cestujícími; porovnej další části stejného řetězce.",
+      "itemName": "Domovní štítek",
+      "acceptedPast": "Přijímáš sousedskou zápletku: pořadník společného krbu byl změněn ještě před tvými tahy a kvůli uzavřenému spojení probíhá schůze. Svou přidělenou stranu znáš soukromě; držení domovního štítku samo nepřidává přednost ani zvláštní pravomoc.",
+      "echoLabel": "Domovní ozvěna",
+      "echoExplanation": "Do konce partie zůstáváš domovní ozvěnou. Nejde o smrt postavy; nemůžeš však provádět tělesné akce ani předávat předměty. Dál můžeš pracovat s dostupnými stopami, předávat známé informace a hlasovat ve finále. Tvoje strana se nemění a dřívější návrat k tělesným akcím není možný.",
+      "extremeActionLabel": "Proměnit v domovní ozvěnu",
+      "extremeConsequence": "Tento čin může postavu do konce partie proměnit v domovní ozvěnu. Neusmrtí ji, ale ukončí její tělesné akce a práci s předměty. Dostupné stopy, předávání známých informací a závěrečný hlas jí zůstanou. Platný dosažený pokus spotřebuje tvůj jediný krajní žeton i při obraně cíle. Akce je dobrovolná a je dostupná nejdříve od druhé kapitoly.",
+      "chapterTitles": [
+        "Mimořádně běžný provoz",
+        "V zájmu všech sousedů",
+        "Jen jsem šel kolem",
+        "Malá sousedská výpomoc",
+        "Výjimka pro všechny vybrané",
+        "Ještě jeden bod programu"
+      ],
+      "chapterMessages": [
+        "Mimořádná schůze k běžnému provozu začíná. Pátrání začíná u změn domovní knihy v kumbálu. Krb nyní předbíhání znemožňuje důsledně: celá fronta stojí.",
+        "Další kapitola je otevřená. Můžeš ověřovat známé stopy, vyjednávat nebo je svěřit někomu dalšímu. Spravedlivé pořadí má jednu nepříjemnou vlastnost: někoho postaví dozadu.",
+        "Pátrání se rozšiřuje na stopy příchodů ke krbu v předsíni. Porovnávej získané části s domovní knihou. Záznam zachycuje přítomnost; zda tam člověk šel jenom náhodou, ponechává výpovědi.",
+        "Zbývá čas předávat známé důkazy a ověřovat jejich souvislosti. Pomoc může být užitečná i bez slibu rychlejšího odjezdu. Pořadník ostatně ukazuje, kam takové sliby mohou vést.",
+        "Pátrání se rozšiřuje na otisky přednostních výjimek v krbovně. Propoj získané části stejných řetězců. Výjimka mívá velice obecné zdůvodnění a velice konkrétního příjemce.",
+        "Poslední kapitola je otevřená. Potvrď poslední akci a předej získané důkazy, které považuješ za důležité; výsledky přijdou před hlasováním. Schůze má konečně závěr, který nelze přesunout do různého."
+      ],
+      "finaleGuardian": "Vítězí sousedé. Závěrečný seznam odhalil dost původců přednostních výjimek. Společný krb tak zůstal společným i v té části pravidel, kterou si člověk čte až ve frontě.",
+      "finaleConspirator": "Vítězí Přednostní cestující. Závěrečný seznam neodhalil dost členů jejich spolku. Přednost se opět osvědčila jako opatření v zájmu všech, kterých se týká."
+    }
+  ]
+}

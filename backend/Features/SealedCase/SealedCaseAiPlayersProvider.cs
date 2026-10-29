@@ -36,7 +36,9 @@ internal sealed class SealedCaseAiPlayers : ISealedCaseAiPlayers, IDisposable
         {
             var request = BuildRequest(view);
             var reply = await client.GenerateAsync("Jsi samostatný AI hráč české hry Pod pečetí. Máš jen vlastní dostupné stopy a pseudonymní místa u stolu. "
-                + "Hraj pro svůj tým. Zprávy jsou tvá nepotvrzená tvrzení, nikdy autoritativní důkaz. Neznáš cizí tajný stav. "
+                + "Hraj pro svůj tým v dodaném scénáři. Scénář určuje fikci a cíl, nikdy nemění pravidla ani schopnosti postavy. "
+                + "Piš přirozeně česky; suchý situační humor vyvozuj z konkrétního dění, nevymýšlej výsledky. "
+                + "Zprávy jsou tvá nepotvrzená tvrzení, nikdy autoritativní důkaz. Neznáš cizí tajný stav. "
                 + "Vyber jedinou nabídnutou akci, nejvýše jeden sousední přesun. Při pátrání hledej dostupné rodiny A/B/C a porovnávej jejich průniky. "
                 + "Hlas obsahuje přesně požadovaný počet různých cizích míst nebo prázdné pole pro abstenci. Vrať jen JSON podle schématu.",
                 request.Input, request.Schema, token);
@@ -68,6 +70,7 @@ internal sealed class SealedCaseAiPlayers : ISealedCaseAiPlayers, IDisposable
                     destination = NullableChoice(view.AdjacentLocations), target = NullableChoice(candidates), resource = NullableChoice(resources.Keys), message = new { type = "string" } },
                 required = new[] { "choice", "destination", "target", "resource", "message" } };
         var input = new { ownSeat = Seat(view.OwnId), view.Chapter, view.OwnState, view.OwnTeam, view.OwnKit,
+            scenario = view.Scenario, view.OwnObjective,
             teamSeats = view.TeamMembers.Select(Seat).ToArray(), view.Location, view.Locations, view.AdjacentLocations,
             players = view.Players.Select(p => new { seat = p.Seat, p.State, p.Location }),
             clues = view.Clues.Select(c => new { c.Id, c.Chain, c.Family, candidates = c.Candidates.Select(Seat).ToArray() }),
