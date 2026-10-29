@@ -15,5 +15,6 @@ import AdminNavigation from '../identity/AdminNavigation.vue';
 </template>
 
 <style scoped>
-.launch-management-page { max-width: 74rem; margin: 0 auto; }
+.launch-management-page { max-width: 74rem; margin-inline: auto; }
+.launch-management-page > header { max-width: 68ch; }
 </style>

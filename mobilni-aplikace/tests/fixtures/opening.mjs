@@ -43,6 +43,10 @@ export async function createOpeningFixtureServer(port = 0) {
       if (state === 'offline') return json({ code: 'unavailable' }, 503);
       return json({ allowed: state === 'F', audience: state === 'revoked' ? 'revoked' : state === 'paused' ? 'paused' : 'production', launchAt: state === 'paused' ? Date.now() - 1000 : launchAt, serverNow: Date.now() });
     }
+    if (url.pathname === '/app/v1/customer/character') return json({ profile: {
+      profileId, revision: 1, userInput: { name: 'Mira Nocturne', world: 'Za zrcadlem' }, status: 'ready',
+    } });
+    if (url.pathname === '/app/v1/account') return json({ sessions: [], grants: [], associations: [], passkeys: [], passkeyCount: 0 });
     if (url.pathname === '/app/v1/prelaunch/character/portrait') {
       if (state === 'portrait-error') return json({}, 503);
       response.writeHead(200, { 'Content-Type': 'image/webp', 'Cache-Control': 'no-store' });

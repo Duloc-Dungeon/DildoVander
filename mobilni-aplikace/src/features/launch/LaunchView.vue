@@ -3,6 +3,7 @@ import PushNotifications from '../identity/PushNotifications.vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
+import WnsWordmark from '../../components/WnsWordmark.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from '../identity/AccountDeletion.vue';
@@ -545,7 +546,7 @@ onBeforeUnmount(() => {
   </SceneShell>
   <SceneShell v-else-if="!rickrollActive" class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
     <header v-show="!workshopOpen" class="launch-masthead">
-      <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><span>Wand<br />Night Stand</span></RouterLink>
+      <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><WnsWordmark /></RouterLink>
       <AwButton v-if="account" class="launch-signout" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton>
     </header>
     <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">

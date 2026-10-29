@@ -6,6 +6,7 @@ import { launchCopy } from '../launch/launchCopy';
 import { usePrivateCharacterPortrait } from './privateCharacterPortrait';
 import curtain from '../../assets/brand/invitation-curtain-small.webp';
 import AwButton from '../../components/AwButton.vue';
+import PortraitMirror from '../../components/scene/PortraitMirror.vue';
 import type { PrelaunchWelcome } from '../launch/generatedPrelaunchCharacter';
 import { characterWelcomeText } from '../launch/characterWelcomeText';
 
@@ -29,6 +30,9 @@ const portrait = usePrivateCharacterPortrait(() => stateKey.value === identity()
 const english = computed(() => customerCopy.language.value === 'en');
 const welcome = computed(() => stateKey.value === identity() ? state.value?.artwork?.welcome : null);
 const failed = computed(() => portrait.failed.value || state.value?.artwork?.status === 'failed');
+const pageHidden = ref(document.hidden);
+// The private portrait loader publishes a URL only after decoding the image.
+const portraitReady = computed(() => !!portrait.url.value);
 
 function cancel(): void {
   epoch++;
@@ -75,6 +79,7 @@ async function retry(): Promise<void> {
   } finally { if (identity() === expected) retrying.value = false; }
 }
 function visibility(): void {
+  pageHidden.value = document.hidden;
   if (document.hidden) cancel();
   else void refresh();
 }
@@ -92,8 +97,10 @@ onBeforeUnmount(() => {
 
 <template>
   <figure v-if="state?.character || readFailed" class="private-character-avatar">
-    <img v-if="portrait.url.value" :src="portrait.url.value" :alt="`${launchCopy.portraitAlt}: ${name}`" width="480" height="640" @error="portrait.fail()" />
-    <img v-else-if="state?.artwork" :src="curtain" alt="" width="480" height="640" />
+    <PortraitMirror class="private-character-avatar__mirror" :open="portraitReady" :animate-reveal="false" :replayable="portraitReady" :active="!pageHidden">
+      <img v-if="portrait.url.value" :src="portrait.url.value" :alt="`${launchCopy.portraitAlt}: ${name}`" width="480" height="640" @error="portrait.fail()" />
+      <img v-else-if="state?.artwork" :src="curtain" alt="" width="480" height="640" />
+    </PortraitMirror>
     <figcaption>
       <h2>{{ english ? 'Your portrait' : 'Tvůj portrét' }}</h2>
       <div v-if="welcome" class="private-character-avatar__welcome">
@@ -113,10 +120,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.private-character-avatar { display: grid; grid-template-columns: minmax(7rem, .55fr) minmax(0, 1fr); gap: clamp(1.25rem, 3vw, 2.5rem); margin: 0 0 1rem; align-items: center; }
-.private-character-avatar > img { display: block; width: 100%; height: auto; max-height: 25rem; aspect-ratio: 3/4; object-fit: cover; object-position: 50% 30%; border-radius: 12px; }
-.private-character-avatar figcaption { min-width: 0; overflow-wrap: anywhere; line-height: 1.75; }
-.private-character-avatar__joke { font-size: 1.25rem; font-weight: 600; line-height: 1.5; }
-.private-character-avatar__privacy { color: var(--aw-muted); font-size: .8rem; }
-@media (max-width: 480px) { .private-character-avatar { grid-template-columns: 1fr; } .private-character-avatar > img { max-width: 18rem; } }
+.private-character-avatar { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--wns-space-32); margin: var(--wns-space-12) 0 var(--wns-space-24); align-items: center; }
+.private-character-avatar__mirror { width: min(100% - 16px, 300px); margin-inline: auto; }
+.private-character-avatar__mirror > img { display: block; width: 100%; height: 100%; aspect-ratio: 4 / 5; object-fit: cover; object-position: 50% 30%; }
+.private-character-avatar figcaption { min-width: 0; overflow-wrap: anywhere; line-height: var(--wns-leading-body); }
+.private-character-avatar figcaption h2 { margin: 0 0 var(--wns-space-20); color: var(--wns-muted); font-size: 1rem; font-weight: 650; }
+.private-character-avatar figcaption p { margin: 0 0 var(--wns-space-16); max-width: 40ch; }
+.private-character-avatar__welcome .private-character-avatar__joke { max-width: 28ch; margin-bottom: var(--wns-space-24); font-size: clamp(1.4rem, 4vw, 2.1rem); font-weight: 650; line-height: 1.4; letter-spacing: -.02em; text-wrap: pretty; }
+.private-character-avatar__privacy { color: var(--wns-muted); font-size: .875rem; }
+@media (min-width: 760px) {
+  .private-character-avatar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(32px, 5vw, 64px); }
+  .private-character-avatar__mirror { width: calc(100% - 16px); max-width: 380px; }
+}
 </style>

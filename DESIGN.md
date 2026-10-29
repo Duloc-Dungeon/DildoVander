@@ -247,7 +247,8 @@ Obsah rezervuje její skutečně změřenou
 výšku včetně bezpečných okrajů, nikoli pevnou výšku podle obrázku.
 
 Zákaznický shell používá okraj `clamp(16px, 4vw, 32px)` a společný kontejner
-64 rem; postava a účet mají užší čtecí oblast nejvýše 48 rem.
+64 rem; účet má užší čtecí oblast nejvýše 48 rem. Postava má 62 rem,
+aby portrét a osobní text pokračovaly ve stejné kompozici jako na `/launch`.
 Základní mobilní okraj ostatních stránek adaptéru je 24 px, do šířky 360 px klesá na 16 px.
 Existující shell používá hranice 720 a 1100 px; stránka představení přechází
 na dvě oblasti od 760 px. Konkrétní stránka může mít vlastní kontejner:
@@ -413,6 +414,15 @@ hlavní následující akci: do dílny, nebo ke hrám, pokud už má uloženou h
 Během přípravy vysvětluje čekání a průběžně obnovuje stav. Dílnu nevkládá
 do přehledu jako druhou celou obrazovku. Portrét následuje za přehledem;
 hůlka, rozlišovací označení a technická revize jsou v rozbalovacích podrobnostech.
+
+`/me/character` používá stejný `PortraitMirror` jako příprava a vstup.
+Uložený portrét se zobrazí po dekódování soukromým loaderem, bez opakovaného
+automatického nástupu při každém návratu. Ruční přehrání zůstává místní;
+nenačítá ani nevyrábí nový obrázek. Při omezeném pohybu se nenabízí a v pozadí
+se pozastaví. Bez hotového obrázku zůstává zavřené sklo a pravdivý stav s obnovou.
+Na telefonu má zrcadlo nejvýše 300 px a text následuje pod ním; od 760 px
+stojí vedle textu, nejvýše 380 px široké. Osobní věta má nejvýše 28 ch,
+váhu 650 a sazbu `clamp(1.4rem, 4vw, 2.1rem)`.
 
 Památky vedou příběhem a otevřením první položky v pořadí serveru. Popisek
 „Naposledy uložená památka“ neprohlašuje datum posledního uskutečněného večera.

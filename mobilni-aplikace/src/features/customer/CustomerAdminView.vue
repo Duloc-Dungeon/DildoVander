@@ -143,10 +143,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.customer-admin { max-width: 58rem; }
+.customer-admin { max-width: 68rem; margin-inline: auto; }
+.customer-admin > header { max-width: 68ch; }
 .admin-toolbar { display: flex; justify-content: end; }
 .device-list { list-style: none; padding: 0; }
 .device-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 1rem; border-top: 1px solid var(--aw-border-subtle); }
+.device-list li > div { min-width: 0; }
+.device-list li > div > strong,
+.device-list li > div > p,
+.device-list li > span { overflow-wrap: anywhere; }
 .device-list p { margin: .35rem 0 0; color: var(--aw-muted); }
-@media (max-width: 560px) { .device-list li { align-items: stretch; flex-direction: column; } }
+.device-list small { display: block; margin-top: .35rem; color: var(--aw-muted); }
+@media (max-width: 560px) { .device-list li { align-items: stretch; flex-direction: column; } .device-list .aw-button { align-self: flex-start; min-height: 44px; } }
 </style>
