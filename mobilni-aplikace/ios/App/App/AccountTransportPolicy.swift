@@ -1,5 +1,44 @@
 import Foundation
 
+enum NativePasskeyOptionsResponse {
+    static let maxBytes = 131072
+    static let failureMessage = "Passkey verification failed. Try again or use another sign-in method."
+
+    struct Rejected: LocalizedError {
+        let status: Int
+        let code: String
+        var errorDescription: String? { NativePasskeyOptionsResponse.failureMessage }
+    }
+
+    enum InvalidResponse: LocalizedError {
+        case invalid
+        var errorDescription: String? { NativePasskeyOptionsResponse.failureMessage }
+    }
+
+    static func parse(status: Int, body: String) throws -> [String: Any] {
+        let data = Data(body.utf8)
+        let bounded = data.count <= maxBytes
+        if status != 200 {
+            var code = "passkey_rejected"
+            if (400...599).contains(status), bounded,
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let candidate = object["code"] as? String {
+                let bytes = Array(candidate.utf8)
+                // Forward machine codes only; response text and credentials stay out of bridge errors.
+                if (1...64).contains(bytes.count), let first = bytes.first, (97...122).contains(first),
+                   bytes.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 95 }) {
+                    code = candidate
+                }
+            }
+            throw Rejected(status: status, code: code)
+        }
+        guard bounded, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw InvalidResponse.invalid
+        }
+        return object
+    }
+}
+
 // Shared by the live native bridge and standalone macOS regression tests.
 enum AccountTransportPolicy {
     private static let accountArchiveUUIDPattern = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"

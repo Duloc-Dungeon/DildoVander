@@ -51,6 +51,7 @@ try {
       }
       if(url.pathname==='/app/v1/prelaunch/character/portrait')return route.fulfill({contentType:'image/webp',body:media});
       if(url.pathname==='/app/v1/customer/wand')return json({hasCharacter:true,wand:null,tier:0});
+      if(url.pathname==='/app/v1/game')return json({player:{id:'fixture-owner',displayName:'Host',xp:0,matchesPlayed:0,tacticalUnlocked:false,yoloUnlocked:false},opponents:[],incoming:[],active:[],history:[]});
       if(url.pathname==='/app/v1/customer/sessions')return json({items:[]});
       if(url.pathname==='/app/v1/customer/completion-updates')return json({items:[]});
       return json({});
@@ -77,8 +78,8 @@ try {
     await page.locator('.private-character-avatar > img[src^="blob:"]').waitFor();
     assert.equal(retryCount,2);
     await page.goto(origin+'/play');
-    await page.getByRole('heading',{name:'Vyrobit hůlku s Olivanderem',exact:true}).waitFor();
-    assert.equal(await page.getByRole('button',{name:'Mluvit s Olivanderem',exact:true}).count(),1);
+    await page.getByRole('heading',{name:'Nejdřív vlastní hůlku.',exact:true}).waitFor();
+    await page.getByRole('link',{name:'Vstoupit do kufrovy dílny',exact:true}).waitFor();
     assert.equal(await page.getByRole('button',{name:'Potvrdit tah',exact:true}).count(),0);
     await fits('first-wand-required');
     consent=false; await page.reload();
@@ -86,7 +87,7 @@ try {
     assert.equal(await page.getByRole('button',{name:'Potvrdit a pokračovat',exact:true}).isDisabled(),true);
     await page.getByRole('checkbox').check();
     await page.getByRole('button',{name:'Potvrdit a pokračovat',exact:true}).click();
-    await page.getByRole('heading',{name:'Vyrobit hůlku s Olivanderem',exact:true}).waitFor();
+    await page.getByRole('heading',{name:'Nejdřív vlastní hůlku.',exact:true}).waitFor();
     assert.equal(await page.locator('body').innerText().then(text=>text.includes('OpenAI')),false);
     if(width===390){await page.evaluate(()=>document.documentElement.style.fontSize='200%');await fits('first-wand-text200');}
     await context.close();

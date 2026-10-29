@@ -31,10 +31,17 @@ internal static partial class MobileWandWorkshopEndpoints
             {
                 // An uncertain previous provider call is never blindly repeated by an HTTP retry.
                 var messages = wands.ReadWorkshopMessages(owner, id);
+                var text = string.IsNullOrWhiteSpace(request.Text)
+                    ? "Zahaj rozhovor s připravenou postavou." : request.Text.Trim();
+                var previous = messages.FirstOrDefault(message => message.MessageId == request.MessageId);
+                if (previous is not null && (previous.Role != "user" || previous.Text != text || previous.SourceMode != "text"))
+                {
+                    throw new WandGenerationException("wand_message_id_conflict", 409);
+                }
                 if (messages.Any(message => message.MessageId == request.MessageId || message.MessageId == MobileWorkshopLiveRuntime.MessageId("reply-" + request.MessageId)))
                     return Results.Ok(new { session = State(http, wands, id, owner) });
                 wands.AppendWorkshopMessage(owner, id, request.MessageId, "user",
-                    string.IsNullOrWhiteSpace(request.Text) ? "Zahaj rozhovor s připravenou postavou." : request.Text, "text");
+                    text, "text");
                 var observed = wands.ReadWorkshopMessages(owner, id);
                 var reply = await dialogue.ReplyAsync(wands.ReadWorkshopProfile(owner, id), observed, http.RequestAborted);
                 try { await RequireConversationAsync(http, state, profiles, wands, games); }
@@ -106,11 +113,11 @@ internal static partial class MobileWandWorkshopEndpoints
     }
 
     private static async Task RequireConversationAsync(HttpContext http, MobileWandWorkshopState state,
-        CharacterProfileStore profiles, WandGenerationStore wands, GameStore games, bool allowFinished = false)
+        CharacterProfileStore profiles, WandGenerationStore wands, GameStore games, bool allowFinished = false, bool allowHistoricalComplete = false)
     {
         var owner = Owner(http);
         await RequireAvailableAsync(http, games, owner, state.Tier == 2, allowCompleted: allowFinished && state.Status == "complete", operationId: state.Id);
-        await RequireProfileRevisionAsync(profiles, owner, state, http.RequestAborted);
+        await RequireProfileRevisionAsync(profiles, wands, owner, state, http.RequestAborted, allowCompleted: allowHistoricalComplete);
         await RequireWorkshopLaunchSnapshotAsync(http, wands, owner, state.Id);
         if (!allowFinished && state.Status != "asking") throw new WandGenerationException("wand_conversation_closed", 409);
     }

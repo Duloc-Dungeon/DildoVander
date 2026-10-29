@@ -53,7 +53,13 @@ try {
     const page = await context.newPage();
     const posts = [];
     page.on('pageerror', error => errors.push(error.message));
-    page.on('request', request => { if (request.method() === 'POST') posts.push({ path: new URL(request.url()).pathname, body: request.postDataJSON() }); });
+    page.on('request', request => {
+      const path = new URL(request.url()).pathname;
+      // SignalR's connection handshake is a read subscription, not a game move.
+      if (request.method() === 'POST' && path !== '/app/v1/game/live/negotiate') {
+        posts.push({ path, body: request.postDataJSON() });
+      }
+    });
     page.on('requestfailed', request => { if (request.failure()?.errorText !== 'net::ERR_ABORTED') failedRequests.push(request.url()); });
     let patch = { revision: 10, completedRounds: 0, rounds: [], teamScore: 0, opponentScore: 0, ownChoiceLocked: false, allFourLocked: [false, false, false, false] };
     await page.route('**/app/v1/game/teams/**', async route => {
@@ -145,11 +151,11 @@ try {
     await practiceWand.evaluate(async image => { await image.decode(); if (!image.naturalWidth) throw new Error('Practice wand is not decoded'); });
     assert.ok((await practiceWand.getAttribute('src')).includes('wand-violet'), 'practice uses the generic violet wand');
     await page.getByText('Trénink · bez XP', { exact: true }).first().waitFor();
-    for (let round = 1; round <= 4; round++) {
+    for (let round = 1; round <= 3; round++) {
       const shield = page.getByRole('radio', { name: /^Štít / });
       await shield.focus(); await shield.press('Space');
       await page.getByRole('button', { name: 'Potvrdit tah', exact: true }).click();
-      await page.locator('.game-clash-stage[data-winner="player"]').waitFor();
+      await page.locator(`.game-clash-stage[data-winner="${round === 2 ? 'draw' : 'player'}"]`).waitFor();
       if (reducedMotion === 'no-preference') await page.locator('.game-clash-stage[data-motion="playing"]').waitFor();
       await page.locator('.game-clash-stage[data-motion="still"]').waitFor();
       await checkLayout(page, `practice round ${round}, ${width}`);
@@ -158,11 +164,12 @@ try {
         await page.screenshot({ path: path.join(output, `practice-${width}.png`), fullPage: true });
       }
     }
-    await page.getByRole('button', { name: 'Ještě jeden trénink', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Znovu otevřít trénink', exact: true }).waitFor();
     assert.equal(await page.locator('.game-practice-scene').getAttribute('data-duel-result'), 'win');
     assert.doesNotMatch(await page.locator('.game-content').textContent(), /\+\d+\s*XP/);
-    assert.equal(posts.length, postsBeforePractice, 'practice does not send game mutations');
-    await page.getByRole('button', { name: 'Ještě jeden trénink', exact: true }).click();
+    assert.equal(posts.length, postsBeforePractice,
+      `practice does not send game mutations: ${JSON.stringify(posts.slice(postsBeforePractice))}`);
+    await page.getByRole('button', { name: 'Znovu otevřít trénink', exact: true }).click();
     assert.deepEqual(await page.locator('.game-score strong').allTextContents(), ['0', '0']);
     assert.equal(await page.locator('.game-clash-stage').getAttribute('data-winner'), null);
     if (width === 320) {
