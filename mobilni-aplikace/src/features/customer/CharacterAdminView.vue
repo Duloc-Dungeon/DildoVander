@@ -4,6 +4,9 @@ import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AdminReauthentication from '../identity/AdminReauthentication.vue';
+import AdminNavigation from '../identity/AdminNavigation.vue';
+import AdminConfirmation from '../identity/AdminConfirmation.vue';
+import characterIcon from '../../assets/wns-v2/icons/regular/identification-card.svg';
 import { account, accountRequest, accountTransport } from '../identity/session';
 import {
   adminCharacterPath, characterAdminError, characterImageTypes, maxCharacterImageBytes,
@@ -213,10 +216,10 @@ onBeforeUnmount(reset);
 
 <template>
   <section class="page-stack character-admin" aria-labelledby="character-admin-title">
-    <RouterLink to="/settings/admin">← Zpět ke správě</RouterLink>
-    <header><p class="eyebrow">Správa</p><h1 id="character-admin-title">Postavy a portréty</h1><p>Upravte údaje postavy nebo nahrajte náhradní obrázek. Uložení nespouští generování AI; portréty zůstávají soukromé.</p></header>
+    <header><h1 id="character-admin-title">Postavy a portréty</h1><p>Upravte údaje postavy nebo nahrajte náhradní obrázek. Uložení nespouští generování AI; portréty zůstávají soukromé.</p></header>
     <AwNotice v-if="!allowed" tone="warning">Správa postav je dostupná vlastníkovi a správci.</AwNotice>
     <template v-else>
+      <AdminNavigation current="characters" />
       <div class="character-admin__toolbar">
         <AwField id="character-search" label="Hledat podle jména nebo světa" hint="Hledání prochází načtené postavy. Další postavy načtete tlačítkem pod seznamem."><input id="character-search" v-model="search" type="search" class="aw-input" aria-describedby="character-search-hint" /></AwField>
         <AwButton :busy="loading" :disabled="saving" @click="loadList()">Obnovit seznam</AwButton>
@@ -224,14 +227,17 @@ onBeforeUnmount(reset);
       <AwNotice v-if="listError" tone="warning" role="alert">{{ listError }}</AwNotice>
       <AwNotice v-if="error" tone="warning" role="alert">{{ error }}</AwNotice>
       <AdminReauthentication v-if="needsReauthentication" @verified="needsReauthentication = false; error = ''" />
-      <p v-if="message" role="status">{{ message }}</p>
+      <AdminConfirmation v-if="message">{{ message }}</AdminConfirmation>
       <p v-if="loading" role="status">Načítám postavy…</p>
       <p v-if="reading" role="status">Načítám detail postavy…</p>
       <div class="character-admin__layout">
         <section class="aw-card character-admin__list" aria-label="Seznam postav">
           <h2>Postavy <small>({{ filtered.length }})</small></h2>
           <p v-if="!loading && !characters.length && !listError">Zatím tu nejsou žádné postavy.</p>
-          <p v-else-if="!filtered.length && characters.length">Hledání neodpovídá žádná postava.</p>
+          <div v-else-if="!filtered.length && characters.length" class="character-admin__empty">
+            <p>Hledání neodpovídá žádná postava.</p>
+            <AwButton @click="search = ''">Zrušit hledání</AwButton>
+          </div>
           <ul>
             <li v-for="character in filtered" :key="character.profileId">
               <button type="button" :aria-pressed="selected?.profileId === character.profileId" :disabled="saving || reading" @click="selectCharacter(character.profileId)">
@@ -243,7 +249,11 @@ onBeforeUnmount(reset);
         </section>
         <section class="aw-card character-admin__editor" aria-labelledby="character-detail-title" :aria-busy="reading || saving">
           <h2 id="character-detail-title" ref="editorHeading" tabindex="-1">{{ selected ? selected.userInput.name : 'Detail postavy' }}</h2>
-          <p v-if="!selected">Vyberte postavu ze seznamu.</p>
+          <div v-if="!selected" class="character-admin__empty character-admin__casting">
+            <img :src="characterIcon" alt="" width="48" height="48" />
+            <p>Vyberte postavu ze seznamu.</p>
+            <p class="character-admin__aside">I největší hrdina je tu vedený pod svým jménem.</p>
+          </div>
           <template v-else>
             <p class="character-admin__meta">{{ statusLabel(selected.status) }} · revize {{ selected.revision }} · {{ new Date(selected.updatedAt * 1000).toLocaleString('cs') }}</p>
             <AwButton :disabled="saving || reading" @click="selectCharacter(selected.profileId)">Načíst aktuální verzi</AwButton>
@@ -301,5 +311,10 @@ onBeforeUnmount(reset);
 .character-admin__portrait img { display: block; max-width: min(100%, 20rem); max-height: 25rem; object-fit: contain; border-radius: .5rem; }
 .character-admin__portrait input { max-width: 100%; }
 .character-admin__actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.character-admin__empty { padding-block: 1rem; }
+.character-admin__empty p { margin-top: 0; }
+.character-admin__casting { display: grid; justify-items: center; text-align: center; padding: 2rem 1rem; }
+.character-admin__casting > img { filter: invert(1); opacity: .65; margin-bottom: 1rem; }
+.character-admin__aside { color: var(--wns-violet); max-width: 32ch; font-size: .9rem; }
 @media (max-width: 720px) { .character-admin__layout { grid-template-columns: 1fr; } .character-admin__list ul { max-height: 20rem; overflow-y: auto; } }
 </style>
