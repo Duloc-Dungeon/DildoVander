@@ -25,7 +25,6 @@ interface LaunchConfig {
 interface ArtworkJob { profileId: string; revision: number; status: string; attempt: number; errorCode?: string | null; updatedAt: number }
 interface AuditEntry { actorId: string; changedAt: number; revision: number; changeSummary: string }
 const config = ref<LaunchConfig | null>(null);
-const betaDate = ref('');
 const productionDate = ref('');
 const jobs = ref<ArtworkJob[]>([]);
 const audit = ref<AuditEntry[]>([]);
@@ -35,7 +34,6 @@ const auxiliaryWarning = ref('');
 const reauthenticationRequired = ref(false);
 const message = ref('');
 const previewStage = ref('pending');
-const previewAudience = ref<'beta' | 'production'>('production');
 const previewNow = ref(Date.now());
 const previewResult = ref('');
 const previewBusy = ref(false);
@@ -50,10 +48,9 @@ async function openProductionSchedule(): Promise<void> {
   scheduleDisclosure.value.querySelector<HTMLInputElement>('#production-launch')?.focus();
 }
 const timezone = computed(() => config.value?.timeZone || 'Europe/Prague');
-const upcomingPreview = computed(() => previewAudience.value === 'beta' ? betaDate.value : productionDate.value);
 const displayedCountdown = computed(() => {
-  if (!upcomingPreview.value) return 'Datum není nastaveno';
-  const at = parsePrague(upcomingPreview.value);
+  if (!productionDate.value) return 'Datum není nastaveno';
+  const at = parsePrague(productionDate.value);
   if (at == null) return 'Datum nebo čas je neplatný';
   const minutes = Math.max(0, Math.floor((at - previewNow.value) / 60_000));
   return `${Math.floor(minutes / 1440)} dní · ${Math.floor(minutes / 60) % 24} hodin · ${minutes % 60} minut`;
@@ -94,12 +91,10 @@ function parsePrague(value: string): number | null {
 }
 function hydrate(value: LaunchConfig): void {
   config.value = value;
-  betaDate.value = toPragueDate(value.betaLaunchAt);
   productionDate.value = toPragueDate(value.productionLaunchAt);
 }
 watch(() => config.value?.timeZone, () => {
   if (!config.value) return;
-  betaDate.value = toPragueDate(config.value.betaLaunchAt);
   productionDate.value = toPragueDate(config.value.productionLaunchAt);
 });
 async function load(): Promise<void> {
@@ -122,9 +117,8 @@ function showError(cause: unknown, fallback: string): void {
 async function save(section: 'schedule' | 'messages'): Promise<void> {
   if (!config.value || busy.value) return;
   lastActionSection.value = section;
-  const betaLaunchAt = betaDate.value ? parsePrague(betaDate.value) : null;
   const productionLaunchAt = productionDate.value ? parsePrague(productionDate.value) : null;
-  if ((betaDate.value && betaLaunchAt == null) || (productionDate.value && productionLaunchAt == null)) {
+  if (productionDate.value && productionLaunchAt == null) {
     lastActionSection.value = 'schedule';
     error.value = `Zadaný místní čas v pásmu ${timezone.value} neexistuje kvůli změně letního času. Vyberte jiný čas.`;
     return;
@@ -135,7 +129,7 @@ async function save(section: 'schedule' | 'messages'): Promise<void> {
     const saved = await accountRequest<LaunchConfig>('/app/v1/admin/launch', 'PUT', {
       expectedRevision: config.value.revision,
       betaEnabled: config.value.betaEnabled,
-      betaLaunchAt,
+      betaLaunchAt: config.value.betaLaunchAt,
       betaUnlocked: config.value.betaUnlocked,
       productionEnabled: config.value.productionEnabled,
       productionLaunchAt,
@@ -192,12 +186,11 @@ onBeforeUnmount(() => { if (previewTimer) clearInterval(previewTimer); });
     <p v-if="!config && !error" role="status">Načítání nastavení…</p>
     <template v-if="config">
       <details ref="scheduleDisclosure" class="launch-admin__disclosure">
-        <summary>Datum a čas otevření výchozí skupiny</summary>
-        <section class="aw-card launch-admin__schedule"><h3>Čas otevření</h3><p>Brány pro beta a produkční publikum platí společně pro web i iOS. Vydání jednotlivých distribucí se provádí samostatně. Časy se zadávají a zobrazují v pásmu <strong>{{ config.timeZone }}</strong>, včetně změn letního času.</p>
+        <summary>Společný termín otevření všech skupin</summary>
+        <section class="aw-card launch-admin__schedule"><h3>Společný termín otevření</h3><p>Všechny skupiny, včetně beta pozvaných, sdílejí jeden termín a odpočet. Změna se projeví u všech skupin. Čas zadáváte a zobrazujete v pásmu <strong>{{ config.timeZone }}</strong>, včetně změn letního času.</p>
           <label for="launch-time-zone">Časové pásmo</label><select id="launch-time-zone" v-model="config.timeZone" class="aw-select"><option value="Europe/Prague">Europe/Prague · Praha</option><option value="UTC">UTC</option><option value="America/New_York">America/New_York · New York</option><option value="America/Los_Angeles">America/Los_Angeles · Los Angeles</option></select>
-          <fieldset><legend>Beta pozvaní</legend><label><input v-model="config.betaEnabled" type="checkbox" /> Použít beta odpočítávání</label><AwField id="beta-launch" label="Otevření beta účastníkům"><input id="beta-launch" v-model="betaDate" class="aw-input" type="datetime-local" /></AwField><label><input v-model="config.betaUnlocked" type="checkbox" /> Ručně otevřít beta přístup</label><p class="launch-admin__effect">{{ config.betaUnlocked ? 'Beta účty získají plný přístup ihned po uložení.' : config.betaEnabled ? (betaDate ? 'Aktivní bude přístup od zvoleného času.' : 'Beta plán čeká na datum.') : 'Beta plán je vypnutý; beta účty zachovávají dosavadní chráněný přístup.' }}</p></fieldset>
-          <fieldset><legend>Produkce a výchozí skupina</legend><label><input v-model="config.productionEnabled" type="checkbox" /> Použít produkční odpočítávání</label><AwField id="production-launch" label="Otevření večera výchozí skupině"><input id="production-launch" v-model="productionDate" class="aw-input" type="datetime-local" /></AwField><label><input v-model="config.productionUnlocked" type="checkbox" /> Ručně otevřít produkční přístup</label><p class="launch-admin__effect">{{ config.productionUnlocked ? 'Výchozí skupina i produkční účty bez skupiny získají plný přístup ihned po uložení.' : config.productionEnabled ? (productionDate ? 'Hosté výchozí skupiny počkají do zvoleného data a času. Večer se potom otevře automaticky.' : 'Hosté výchozí skupiny čekají na nastavení data a času.') : 'Odpočítávání je vypnuté. Výchozí skupina i produkční účty bez skupiny mají plný přístup.' }}</p><p>Změna budoucího termínu vrátí výchozí skupinu do čekárny i po dřívějším otevření. Přijímání nových účastníků se nastavuje samostatně.</p></fieldset>
-          <div class="launch-admin__preview"><p class="eyebrow">Živý náhled · {{ previewAudience === 'beta' ? 'beta' : 'produkce' }}</p><label for="launch-audience">Publikum</label><select id="launch-audience" v-model="previewAudience" class="aw-select"><option value="beta">Beta pozvaní</option><option value="production">Produkce</option></select><strong>{{ displayedCountdown }}</strong></div>
+          <fieldset><legend>Otevření večera pro všechny skupiny</legend><label><input v-model="config.productionEnabled" type="checkbox" /> Použít společné odpočítávání</label><AwField id="production-launch" label="Společné datum a čas otevření"><input id="production-launch" v-model="productionDate" class="aw-input" type="datetime-local" /></AwField><label><input v-model="config.productionUnlocked" type="checkbox" /> Ručně otevřít přístup všem skupinám</label><p class="launch-admin__effect">{{ config.productionUnlocked ? 'Všechny skupiny včetně beta získají plný přístup ihned po uložení.' : config.productionEnabled ? (productionDate ? 'Všechny skupiny včetně beta čekají do zvoleného data a času. Večer se potom otevře automaticky.' : 'Všechny skupiny čekají na nastavení společného data a času.') : 'Společné odpočítávání je vypnuté; všechny skupiny včetně beta mají plný přístup.' }}</p><p>Změna budoucího termínu vrátí skupiny do čekárny i po dřívějším otevření. Přijímání nových účastníků se nastavuje samostatně.</p></fieldset>
+          <div class="launch-admin__preview"><p class="eyebrow">Živý náhled · všechny skupiny</p><strong>{{ displayedCountdown }}</strong></div>
           <AwNotice tone="warning">Zapnutí plánu s časem v minulosti nebo ručním odemčením změní přístup hned po uložení.</AwNotice>
           <AwButton :busy="busy" @click="save('schedule')">Uložit plán</AwButton>
         </section>

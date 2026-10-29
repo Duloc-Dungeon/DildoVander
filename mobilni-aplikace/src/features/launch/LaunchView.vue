@@ -58,10 +58,11 @@ const canPrepareWand = computed(() => isCustomerAccount(account.value)
   && customerMembershipState.value === 'active' && !!state.value?.character
   && (revealed.value && hasPortrait.value || phase.value === 'failed'));
 const groupOpening = ref(false);
+const receptionEntered = ref(false);
 const rickrollActive = ref(false);
 const rickrollSource = ref<string>();
 const countdownRickroll = new CountdownRickroll(() => { rickrollActive.value = true; });
-const countdownVisible = computed(() => !rickrollActive.value && !groupOpening.value && !requiresBetaAdmission.value && !workshopOpen.value
+const countdownVisible = computed(() => receptionEntered.value && !rickrollActive.value && !groupOpening.value && !requiresBetaAdmission.value && !workshopOpen.value
   && (!!state.value?.character || !!account.value && !!policy.value && !policy.value.allowed && !characterVerified.value));
 const groupPresenting = ref(false);
 const groupBusy = ref(false);
@@ -162,6 +163,7 @@ watch(() => account.value?.id, id => {
   if (pollTimer) clearTimeout(pollTimer);
   pollTimer = undefined;
   groupOpening.value = false;
+  receptionEntered.value = false;
   groupPresenting.value = false;
   groupBusy.value = false;
   entranceRetryAttempted.value = false;
@@ -216,6 +218,9 @@ async function refreshPolicy(): Promise<void> {
     || value.launchAt != null && !Number.isFinite(value.launchAt)) throw new Error(copy.value.readFailed);
   serverTimeAnchor = value.serverNow;
   monotonicAnchor = performance.now();
+  // Observe zero while the waiting scene is still visible. Updating permission
+  // first can hide it and reset the surprise before its final tick is observed.
+  updateCountdown(value);
   policy.value = value;
   if (value.audience === 'revoked') {
     groupOpening.value = false;
@@ -234,7 +239,6 @@ async function refreshPolicy(): Promise<void> {
       catch { if (owner === account.value?.id) readError.value = copy.value.readFailed; }
     }
   }
-  updateCountdown();
   if (rickrollActive.value) return;
   // Server permission always wins over local presentation, including staff/testers.
   if (value.allowed && account.value && !isCustomerAccount(account.value)) {
@@ -250,6 +254,10 @@ async function refreshPolicy(): Promise<void> {
     if (alreadySeen) await router.replace(defaultSignedInDestination(account.value));
     else groupOpening.value = true;
   }
+}
+function enterReception(): void {
+  receptionEntered.value = true;
+  if (policy.value?.allowed) void enterGroup(false);
 }
 async function enterGroup(continueToApp = false): Promise<void> {
   const owner = account.value;
@@ -320,18 +328,19 @@ async function refreshCharacter(signal?: AbortSignal): Promise<void> {
   name.value = value.character.name;
   universe.value = value.character.universe;
 }
-function updateCountdown(): void {
+function updateCountdown(currentPolicy: LaunchPolicy | null = policy.value): void {
   const now = performance.now();
-  remaining.value = policy.value?.launchAt == null ? 0 : Math.max(0, policy.value.launchAt - (serverTimeAnchor + now - monotonicAnchor));
+  remaining.value = currentPolicy?.launchAt == null ? 0 : Math.max(0, currentPolicy.launchAt - (serverTimeAnchor + now - monotonicAnchor));
   countdownRickroll.observe({
-    launchAt: policy.value?.launchAt ?? null,
+    launchAt: currentPolicy?.launchAt ?? null,
     remaining: remaining.value,
     now,
-    watching: !!rickrollSource.value && countdownVisible.value && presentationForeground.value && !document.hidden,
-    waiting: !!account.value && policy.value?.allowed === false && policy.value.audience !== 'revoked',
+    watching: !!rickrollSource.value && countdownVisible.value && presentationForeground.value && !document.hidden
+      && currentPolicy?.audience !== 'revoked',
+    waiting: !!account.value && currentPolicy?.allowed === false && currentPolicy.audience !== 'revoked',
   });
   if (rickrollActive.value) return;
-  if (remaining.value === 0 && policy.value?.launchAt != null && now - lastLaunchCheck > 15_000) {
+  if (remaining.value === 0 && currentPolicy?.launchAt != null && now - lastLaunchCheck > 15_000) {
     lastLaunchCheck = now; void refreshPolicy().catch(() => {});
   }
 }
@@ -515,7 +524,7 @@ onBeforeUnmount(() => {
 
 <template>
   <RickrollVideo v-if="rickrollSource" :src="rickrollSource" :active="rickrollActive" @dismiss="dismissRickroll" />
-  <SceneShell v-if="!rickrollActive && groupOpening" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
+  <SceneShell v-if="!rickrollActive && (!receptionEntered || groupOpening)" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
     <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!displayedError" :active="presentationForeground" :busy="groupBusy" :retrying="entranceRetrying" :retry-attempted="entranceRetryAttempted" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
       <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }}</AwNotice>
       <p v-if="portraitSource && hasPortrait" class="launch-attribution">Obrázek z internetu: <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> · {{ portraitSource.author }} · <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
@@ -523,9 +532,9 @@ onBeforeUnmount(() => {
     <template v-else>
       <div class="group-opening-art" data-scene-enter aria-hidden="true"><span>W</span></div>
       <section class="group-opening-copy">
-      <h1 id="group-opening-title">{{ language === 'en' ? 'The evening begins.' : 'Večer začíná.' }}</h1>
-      <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup(false)">{{ copy.retry }}</button></AwNotice>
-      <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup(false)">Vstoupit</AwButton>
+      <h1 id="group-opening-title">{{ policy?.allowed ? 'Večer začíná.' : 'Wand Night Stand' }}</h1>
+      <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="groupBusy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
+      <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterReception">Vstoupit</AwButton>
     </section>
     </template>
     <footer class="launch-footer"><AwButton v-if="account" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>

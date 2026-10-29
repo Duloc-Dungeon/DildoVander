@@ -30,7 +30,11 @@ let artworkSource: { url: string; title: string; author: string; license: string
 let memberState: 'active' | 'unassigned' | 'revoked' = 'active';
 let memberUniverse: string | null = null;
 const character = { profileId: 'profile', revision: 1, name: 'Raven', universe: 'Fiction', status: 'queued' };
-function entry() { return mount(LaunchView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); }
+function entry(enterReception = true) {
+  const view = mount(LaunchView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } });
+  if (enterReception) void view.get('.group-opening-copy button').trigger('click');
+  return view;
+}
 function savedCreation(status: 'saving' | 'uncertain' | 'confirmed' = 'confirmed') {
   const draft = setInvitationDraft('guest', 'Raven', 'Fiction');
   invitationRegistration.value = { ...draft, status, writeStarted: true, ...(status === 'confirmed' ? { profileId: 'profile', revision: 1 } : {}) };
@@ -57,6 +61,61 @@ beforeEach(() => {
     return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL', ...(artworkSource ? { source: artworkSource } : {}) } : null };
   });
 });
+it('opens the preparation and waiting layout only through the big W entrance', async () => {
+  persisted = true;
+  const view = entry(false);
+  try {
+    await flushPromises();
+    expect(view.get('.group-opening-art').text()).toBe('W');
+    expect(view.find('.reception-steps').exists()).toBe(false);
+    expect(view.find('.character-countdown-grid').exists()).toBe(false);
+    await view.get('.group-opening-copy button').trigger('click');
+    await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(false);
+    expect(view.find('.character-countdown-grid').exists()).toBe(true);
+    expect(view.text()).toContain('Postava');
+    expect(view.text()).toContain('Portrét');
+    expect(view.text()).toContain('Hůlka');
+    expect(view.text()).toContain('Čekárna');
+  } finally { view.unmount(); }
+});
+
+it('does not rickroll a visitor who has not entered the waiting layout', async () => {
+  persisted = true;
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: Date.now() >= deadline, audience: 'production', launchAt: deadline, serverNow: Date.now() } : original(path, method));
+  const view = entry(false);
+  try {
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+    expect(view.find('.group-opening').exists()).toBe(true);
+  } finally { view.unmount(); }
+});
+
+it('observes zero before an opening policy hides an unverified waiting scene', async () => {
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/launch') return { allowed: Date.now() >= deadline, audience: 'production', launchAt: deadline, serverNow: Date.now() };
+    if (path === '/app/v1/prelaunch/character') throw new Error('Temporary read failure');
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(view.find('.character-countdown-grid').exists()).toBe(true);
+    vi.setSystemTime(deadline);
+    window.dispatchEvent(new Event('online'));
+    await flushPromises();
+    expect(view.find('.rickroll-video').exists()).toBe(true);
+    expect(view.find('.group-opening').exists()).toBe(false);
+  } finally { view.unmount(); }
+});
+
 it('offers wand creation only after revealing the saved character', async () => {
   persisted = true; artworkStatus = 'ready';
   const view = entry();
@@ -326,6 +385,9 @@ it('shows the loading joke before the portrait and preserves the welcome in the 
     expect(view.get('.launch-joke').text()).toBe('Osobní uvítací věta.');
     api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'], openAiConsent: true });
     await flushPromises();
+    expect(view.find('.group-opening-art').exists()).toBe(true);
+    await view.get('.group-opening-copy button').trigger('click');
+    await flushPromises();
     expect(view.get('[aria-current="step"]').text()).not.toBe('Čekárna');
   } finally { view.unmount(); }
 });
@@ -352,6 +414,8 @@ it('preserves an unfinished same-account draft and clears it from another accoun
     await flushPromises(); await view.get('#character-name').setValue('Noční archivář'); await view.get('#character-universe').setValue('Město');
     expect(getInvitationRegistration('guest')?.name).toBe('Noční archivář');
     api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'], openAiConsent: true }); await flushPromises();
+    expect(view.find('#character-name').exists()).toBe(false);
+    await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
     expect(view.get<HTMLInputElement>('#character-name').element.value).toBe(''); expect(view.text()).not.toContain('Noční archivář');
   } finally { view.unmount(); }
 });

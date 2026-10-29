@@ -130,6 +130,10 @@ try {
     'ordinary invitation without an active operation has no hardware control');
   releasePolicy();
   await page.waitForLoadState('networkidle');
+  await page.locator('.group-opening-art').waitFor();
+  assert.equal(await page.locator('.character-countdown-grid').count(), 0);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-w-entrance.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByRole('heading', { name: /Vstup na vlastní pověst/ }).waitFor();
   assert.equal(await page.getByRole('link', { name: 'Wand Night Stand, úvod' }).count(), 1);
   assert.equal(await page.getByText(/DildoVander|tester|operátor|administrace/i).count(), 0);
@@ -146,6 +150,7 @@ try {
   assert.equal(await page.locator('.application-sidebar').count(), 0);
   assert.equal(await page.getByText(/konverzac|kufr|památk|příběh/i).count(), 0);
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByRole('heading', { name: /Vstup na vlastní pověst/ }).waitFor();
   await page.getByLabel('Jméno postavy').fill('Matylda');
   await page.getByLabel('Univerzum').fill('Město za zrcadlem');
@@ -184,6 +189,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => localStorage.setItem('dildovander.interface-language.v1.account.launch-guest', 'en'));
   await page.reload();
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByRole('heading', { name: /Matylda/ }).waitFor();
   await page.setViewportSize({ width: 320, height: 740 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Czech narrow mobile must not overflow after loading a legacy English preference');
@@ -194,6 +200,7 @@ try {
   character.status = 'ready';
   artwork = { status: 'running', loadingMessage: 'null', welcome: { joke: ' null ', identity: '', teaser: '' }, finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByText('Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.').waitFor();
   const fallbackLoading = await page.locator('.launch-status').innerText();
   assert.match(fallbackLoading, /Chvíli strpení|Postava je uložená/);
@@ -202,11 +209,13 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-loading-fallback.png'), fullPage: true });
   artwork.loadingMessage = 'Matyldo, město za zrcadlem nám poslalo tvůj spis. Zrcadla požádala o přestávku.';
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByText(artwork.loadingMessage, { exact: true }).waitFor();
   assert.equal(await page.getByText('NEVER SHOW BEFORE READY').count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-loading.png'), fullPage: true });
   artwork = { status: 'ready', loadingMessage: null, finalMessage: 'Matyldo, tvůj portrét. Zrcadla z tvého města si oddychla. Čekala jsi snad víc? Olivander dnes nezvládá ani vlastní odraz.', url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByAltText('Portrét tvé postavy').waitFor({ state: 'visible' });
   await page.getByRole('heading', { name: /Matylda/ }).waitFor();
   await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
@@ -231,6 +240,7 @@ try {
   await page.goto(`${origin}/signin?return=/me/account`, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Přihlásit přístupovým klíčem', exact: true }).click();
   await page.waitForURL(`${origin}/launch`);
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
   assert.equal(await page.getByRole('heading', { name: 'Ron Weasley', exact: true }).count(), 1);
   await page.screenshot({ path: path.join(screenshots, 'returning-guest-wand-preparation.png'), fullPage: true });
@@ -246,6 +256,7 @@ try {
   await page.goto(`${origin}/launch`, { waitUntil: 'networkidle' });
   artwork = null;
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByText('Postava je uložená. Ještě jí připravíme portrét.').waitFor();
   assert.equal(await page.getByRole('checkbox').count(), 0);
   await page.getByRole('button', { name: 'Připravit překvapení' }).click();
@@ -265,12 +276,12 @@ try {
   await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();
   await page.getByRole('heading', { name: 'Příprava večera' }).waitFor();
-  await page.getByText('Datum a čas otevření výchozí skupiny', { exact: true }).click();
-  await page.getByLabel('Použít beta odpočítávání').check();
+  await page.getByText('Společný termín otevření všech skupin', { exact: true }).click();
+  assert.equal(await page.locator('#beta-launch, #launch-audience, #countdown-minutes').count(), 0);
   await page.getByLabel('Časové pásmo').selectOption('Europe/Prague');
-  await page.getByLabel('Otevření beta účastníkům').fill('2026-03-30T10:00');
+  await page.locator('#production-launch').fill('2026-03-30T10:00');
   await page.getByRole('button', { name: 'Uložit plán' }).click();
-  assert(writes.some(write => write.expectedRevision === 4 && write.betaLaunchAt === Date.UTC(2026, 2, 30, 8)));
+  assert(writes.some(write => write.expectedRevision === 4 && write.productionLaunchAt === Date.UTC(2026, 2, 30, 8)));
   const beforePreview = writes.length;
   assert.equal(beforePreview, 3);
   await page.getByText('Zprávy a osobní věta', { exact: true }).click();
@@ -287,10 +298,11 @@ try {
     countdownDeadline = Date.now() + 5_000;
     await page.setViewportSize({ width, height });
     await page.goto(`${origin}/launch`, { waitUntil: 'networkidle' });
+    assert.equal(await page.locator('.character-countdown-grid').count(), 0);
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
     await page.locator('.character-countdown-grid').waitFor();
     assert.equal(await page.locator('.rickroll-video').isVisible(), false);
-    // A normal earlier app tap may grant autoplay; no play/entry button is pressed at zero.
-    await page.locator('.launch-wordmark').click();
+    // Only the W entrance is tapped; playback at zero requires no second tap.
     await page.locator('.rickroll-video').waitFor();
     await page.waitForFunction(() => {
       const video = document.querySelector('.rickroll-video video');

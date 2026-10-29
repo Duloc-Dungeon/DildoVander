@@ -50,6 +50,7 @@ try {
     } }));
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     await page.goto(`${origin}/__workshop/prelaunch`);
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
     await page.getByText(loadingJoke, { exact: true }).waitFor();
     assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Portrét');
     assert.equal(await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).count(), 0, 'wait for the portrait before offering the workshop');
@@ -63,11 +64,17 @@ try {
     await page.getByText(welcome.joke, { exact: true }).waitFor();
     assert.equal(await overflow(), false, `${width}: missing portrait fits`);
     await page.screenshot({ path: path.join(output, `portrait-failed-${width}.png`), fullPage: true }); captures++;
+    if (width === 390) await page.emulateMedia({ reducedMotion: 'no-preference' });
     portraitStatus = 'ready';
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
     await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
+    if (width === 390) {
+      await page.locator('.portrait-mirror[data-mirror="revealing"]').waitFor();
+      await page.screenshot({ path: path.join(output, 'portrait-animation-after-w-390.png'), fullPage: true }); captures++;
+    }
     assert.equal(await page.locator('.viewport-curtain').count(), 0, 'portrait and wand reveal without a curtain overlay');
     await page.locator('.portrait-stage[data-curtain="open"]').waitFor();
+    if (width === 390) await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
     await page.evaluate(() => window.scrollTo(0, 0));
     const prepareButton = page.getByRole('button', { name: 'Vytvořit hůlku', exact: true });
@@ -78,6 +85,8 @@ try {
     assert.equal(requests.filter(request => request.method !== 'GET').length, 0, 'reveal and entry only read state');
     assert.equal(await overflow(), false, `${width}: reveal fits`);
     await page.screenshot({ path: path.join(output, `reveal-${width}.png`), fullPage: true }); captures++;
+    // The W entrance was clicked; restore keyboard modality before checking its ring.
+    await page.keyboard.press('Tab');
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).focus();
     const focus = await prepareButton.evaluate(button => ({
       color: getComputedStyle(button).outlineColor,
@@ -124,6 +133,7 @@ try {
     await page.getByRole('button', { name: 'Zpět k odpočtu', exact: true }).click();
     await page.getByRole('button', { name: 'Pokračovat v tvorbě hůlky', exact: true }).waitFor();
     await page.reload();
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
     await page.getByRole('button', { name: 'Pokračovat v tvorbě hůlky', exact: true }).click();
     await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
     await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).click();
@@ -160,6 +170,7 @@ try {
     await page.locator('.prelaunch-wand-keepsake').getByText('Referenční hůlka', { exact: false }).waitFor();
     assert.equal(new URL(page.url()).pathname, '/launch');
     await page.reload();
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
     await page.getByRole('button', { name: 'Prohlédnout hůlku', exact: true }).waitFor();
     assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Čekárna', 'server restores the completed preparation after reload');
     assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1, 'reload/resume does not duplicate manufacture');

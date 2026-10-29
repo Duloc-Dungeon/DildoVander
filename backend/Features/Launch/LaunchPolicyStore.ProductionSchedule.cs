@@ -4,25 +4,39 @@ namespace Kufr.Backend.Features.Launch;
 
 internal sealed partial class LaunchPolicyStore
 {
-    internal void ReconcileDefaultGroup(long now)
+    internal void ReconcileProductionGroups(long now)
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
-        SynchronizeDefaultGroup(connection, transaction, ReadInside(connection, transaction), "system", now);
+        SynchronizeProductionGroups(connection, transaction, ReadInside(connection, transaction), "system", now);
         transaction.Commit();
     }
 
-    private static void SynchronizeDefaultGroup(SqliteConnection connection, SqliteTransaction transaction,
+    private static void SynchronizeProductionGroups(SqliteConnection connection, SqliteTransaction transaction,
         LaunchConfiguration configuration, string actorId, long now)
     {
-        // Recruitment controls admission only. Existing members follow production
-        // even when recruitment is closed, regardless of their Beta role.
-        var admission = ReadBetaAdmission(connection, transaction);
-        if (admission.GroupId is not { } id || ReadGroup(connection, transaction, id) is not { } group)
+        var ids = new List<string>();
+        using (var command = connection.CreateCommand())
         {
-            return;
+            command.Transaction = transaction;
+            command.CommandText = "SELECT id FROM launch_groups";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                ids.Add(reader.GetString(0));
+            }
         }
+        foreach (var id in ids)
+        {
+            SynchronizeProductionGroup(connection, transaction, configuration,
+                ReadGroup(connection, transaction, id)!, actorId, now);
+        }
+    }
 
+    private static void SynchronizeProductionGroup(SqliteConnection connection, SqliteTransaction transaction,
+        LaunchConfiguration configuration, LaunchGroup group, string actorId, long now)
+    {
+        // Membership and recruitment select the audience; production alone controls opening.
         var launchAt = configuration.ProductionEnabled ? configuration.ProductionLaunchAt : null;
         var open = !configuration.ProductionEnabled || configuration.ProductionUnlocked
             || launchAt is not null && launchAt <= now;
@@ -50,29 +64,21 @@ internal sealed partial class LaunchPolicyStore
         AddNullable(command, "$confirmed", confirmedAt);
         command.Parameters.AddWithValue("$force", forceStart);
         command.Parameters.AddWithValue("$now", now);
-        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$id", group.Id);
         command.ExecuteNonQuery();
         InsertGroupAudit(connection, transaction, actorId, now, group.Revision + 1,
             "launch_group_production_schedule_synchronized");
     }
-
-    private static void EnsureIndependentCountdown(SqliteConnection connection, SqliteTransaction transaction, string id)
-    {
-        if (ReadBetaAdmission(connection, transaction).GroupId == id)
-        {
-            throw new LaunchConfigurationException("launch_group_uses_production_schedule", 409);
-        }
-    }
 }
 
-// Runs once before serving requests; repairs existing selected groups without
+// Runs once before serving requests; repairs every existing group without
 // requiring an administrator to save the already configured production term.
 internal sealed class LaunchScheduleStartup(LaunchPolicyStore store, TimeProvider clock) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        store.ReconcileDefaultGroup(clock.GetUtcNow().ToUnixTimeMilliseconds());
+        store.ReconcileProductionGroups(clock.GetUtcNow().ToUnixTimeMilliseconds());
         return Task.CompletedTask;
     }
 
