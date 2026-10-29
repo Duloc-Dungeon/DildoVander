@@ -330,13 +330,13 @@ describe('sign-in destinations', () => {
     wrapper.unmount();
   });
   it.each([
-    ['invitation_expired_or_used', 'Pozvánka už není platná.', 'This invitation has expired or was already used.'],
+    ['invitation_expired_or_used', 'Pozvánka už neplatí.', 'This invitation has expired or was already used.'],
     ['ceremony_expired_or_used', 'Ověření vypršelo.', 'Verification expired.'],
     ['csrf_required', 'Platnost stránky vypršela.', 'This page has expired.'],
     ['account_origin_required', 'Tato adresa není povolená', 'This address is not allowed'],
     ['passkey_not_verified', 'Přístupový klíč se nepodařilo ověřit.', 'The passkey could not be verified.'],
-    ['recent_passkey_required', 'Nejprve znovu ověřte', 'Verify your identity with a passkey again.'],
-    ['same_account_passkey_required', 'Vyberte přístupový klíč', 'Choose a passkey for the currently signed-in account.'],
+    ['recent_passkey_required', 'Znovu ověř svou totožnost', 'Verify your identity with a passkey again.'],
+    ['same_account_passkey_required', 'Vyber přístupový klíč', 'Choose a passkey for the currently signed-in account.'],
     ['accounts_not_configured', 'Přihlášení je dostupné až po konfiguraci', 'Sign-in is available after an administrator configures'],
   ])('preserves safe Czech guidance for %s without displaying server details after a legacy English choice', async (code, czech) => {
     api.authenticate.mockRejectedValueOnce(Object.assign(new Error('private-server-detail-token'), { code }));

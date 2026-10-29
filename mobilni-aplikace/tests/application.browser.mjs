@@ -260,9 +260,9 @@ try {
   assert.equal(await keyArt.evaluate(image => image.getBoundingClientRect().height), artHeightBeforeFocus,
     'button focus cannot move the action by resizing artwork between pointerdown and click');
   await customerEnrollmentAction.click();
-  await page.getByLabel('Jak vám máme říkat?').waitFor();
+  await page.getByLabel('Jak ti máme říkat?').waitFor();
   assert.equal(await page.locator('.lost-access-help').count(), 0, 'enrollment keeps its own recovery guidance');
-  assert(await page.getByLabel('Jak vám máme říkat?').isVisible());
+  assert(await page.getByLabel('Jak ti máme říkat?').isVisible());
   assert.equal(await page.locator('#account-invite').count(), 0, 'customer registration does not ask for an invite');
   const registrationConsent = page.locator('.consent-fieldset input[type="checkbox"]');
   assert.equal(await registrationConsent.isChecked(), false, 'registration consent is explicit and initially unchecked');
@@ -527,7 +527,7 @@ try {
   for (const [legacy, destination] of [['/companion/', '/suitcase'], ['/app/', '/suitcase'], ['/keepsake/evening/', '/archive'], ['/workshop/index.html', '/workshop'], ['/simulator/', '/workshop?mode=simulation']]) {
     await page.goto(origin + legacy); await page.waitForURL(origin + destination);
   }
-  await page.goto(origin + '/unavailable-page'); await hasHeading('Stránka nebyla nalezena');
+  await page.goto(origin + '/unavailable-page'); await hasHeading('Tahle stránka tu není.');
 
   // Explicit local demo only. A view mount must not silently select a target.
   await page.goto(origin + '/suitcase'); await page.getByRole('heading', { name: 'Kufr není připojený' }).waitFor();

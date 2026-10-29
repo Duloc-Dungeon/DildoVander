@@ -19,12 +19,12 @@ import {
 defineProps<{ locale?: 'cs' | 'en' }>();
 
 const copy = computed(() => ({
-  signIn: 'Přihlas se a otevři svoje uložené památky.', offline: 'Tvoje památky nejsou offline dostupné.',
+  signIn: 'Přihlas se a otevři svoje uložené památky.', offline: 'Bez připojení k internetu tvoje památky nezobrazíme.',
   unavailableAccount: 'Památky nejsou dostupné, dokud se mění přihlášení.',
   loading: 'Načítám tvoje památky…', refresh: 'Obnovit památky', searchLabel: 'Hledat v památkách',
   accessLabel: 'Přístup', allAccess: 'Všechny památky', ownedAccess: 'Tvoje památky', linkedAccess: 'Propojené pouze ke čtení',
   submitSearch: 'Hledat', loadMore: 'Načíst další', loadingMore: 'Načítám další…', refreshing: 'Obnovuji…',
-  empty: 'Zatím tu nemáš žádné uložené památky.', filteredEmpty: 'Těmto filtrům žádné památky neodpovídají.',
+  empty: 'Zatím tu nemáš žádné dostupné památky. Archiv považuje prázdnou polici za důkaz, že má ve všem pořádek.', filteredEmpty: 'Těmto filtrům nic neodpovídá. Zkus hledat jinak nebo vyber Všechny památky.',
   failure: 'Památky se nepodařilo načíst. Přístup se mohl změnit nebo je služba dočasně nedostupná. Zkus ji obnovit.',
   moreFailure: 'Další památky se nepodařilo načíst. Zkus to znovu.', noMore: 'Další památky tu zatím nejsou.',
   morePaused: 'Při prohlížení starších památek se automatické obnovování pozastaví. Obnovením památek ověříš aktuální stav.',
@@ -41,9 +41,9 @@ const copy = computed(() => ({
   reasons: {
     awaiting_result: 'Čeká se na výsledek.', awaiting_capacity: 'Čeká se na volnou kapacitu.',
     paused_preparing: 'Příprava je pozastavená.', reconciliation_required: 'Výsledek se ověřuje.',
-    generation_failed: 'Generování selhalo. Dostupný obsah ověříš otevřením památky.', result_unavailable: 'Tato památka už není dostupná.',
+    generation_failed: 'Příprava se nepovedla. Otevři památku a zkontroluj dostupné části.', result_unavailable: 'Tato památka už není dostupná.',
   } as Record<string, string>,
-  story: 'Příběh je k dispozici', artwork: 'Ilustrace je k dispozici', completedParts: 'Dostupné části',
+  story: 'Příběh je dostupný', artwork: 'Ilustrace je dostupná', completedParts: 'Dostupné části',
 }));
 
 const items = ref<AccountCollectionItem[]>([]);
