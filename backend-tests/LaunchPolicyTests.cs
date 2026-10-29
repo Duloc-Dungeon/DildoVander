@@ -27,6 +27,7 @@ internal static class LaunchPolicyTests
         {
             await VerifyConsumerDefaultsAsync(Path.Combine(root, "consumer-defaults"));
             VerifyBetaAdmission(Path.Combine(root, "beta-admission"));
+            await VerifyDefaultProductionScheduleAsync(Path.Combine(root, "default-production"));
             VerifyLegacyGroupMigration(Path.Combine(root, "legacy-group-migration"));
             await VerifyWaitingRoomMoveReservationAsync(Path.Combine(root, "waiting-room-reservation"));
             await VerifyAccessSnapshotRevalidationAsync(Path.Combine(root, "access-snapshot-race"));
@@ -159,6 +160,132 @@ internal static class LaunchPolicyTests
         Console.WriteLine("PASS launch policy: audience schedules, manual unlock, internal tester exception, optimistic concurrency, audit and persistence");
     }
 
+    private static async Task VerifyDefaultProductionScheduleAsync(string root)
+    {
+        var store = new LaunchPolicyStore(root);
+        var clock = new TestClock(DateTimeOffset.FromUnixTimeMilliseconds(1000));
+        var policy = new LaunchAccessService(store, clock);
+        var independent = store.CreateGroup("owner", new("Independent", null), 1000);
+        var draft = store.SaveCountdown("owner", independent.Id, new(independent.Revision, 1, true), 1000);
+        independent = store.ConfirmCountdown("owner", independent.Id, new(draft.Revision), 1000);
+        SaveProduction(true, 3000, false, 1000);
+        var selected = store.CreateOrSelectBetaGroup("owner", new(store.ReadBetaAdmission().Revision), 1000);
+        var group = selected.Group;
+        Check(group.LaunchAt == 3000 && group.OpenedAt is null && group.ForceStartAtEnd
+            && group.CountdownConfirmedAt is not null && group.CountdownDurationSeconds is null
+            && !selected.Admission.RecruitmentOpen, "default group inherits the existing production term without opening recruitment");
+        foreach (var role in new[] { AccountRoles.Beta, AccountRoles.Customer })
+        {
+            var access = policy.Evaluate(Principal(role), group.Id, group);
+            Check(!access.Allowed && access.LaunchAt == 3000, "default uses production even for Beta members");
+        }
+        Check(policy.Evaluate(Principal(AccountRoles.Tester), group.Id, group).Allowed,
+            "tester bypass remains independent of the inherited production gate");
+        ExpectInherited(() => store.SaveCountdown("owner", group.Id, new(group.Revision, 10, false), 1000));
+        ExpectInherited(() => store.ConfirmCountdown("owner", group.Id, new(group.Revision), 1000));
+        ExpectInherited(() => store.StartGroup("owner", group.Id, new(group.Revision), 3000));
+        ExpectInherited(() => store.UpdateGroup("owner", group.Id, new(group.Revision, group.Name, 9000), 1000));
+        group = store.UpdateGroup("owner", group.Id, new(group.Revision, "Public default", null, false, true), 1001);
+        Check(group.Name == "Public default" && !group.AdultContentEnabled && group.FlirtEnabled && group.LaunchAt == 3000,
+            "default name and content remain editable without changing the inherited schedule");
+        var stable = group;
+        var auditCount = store.ReadAudit().Count;
+        store.ReconcileDefaultGroup(1500);
+        Check(store.ReadGroup(group.Id) == stable && store.ReadAudit().Count == auditCount,
+            "reconciliation before the term preserves revision, marker and audit");
+        Check(store.ReadGroup(independent.Id) == independent, "default reconciliation leaves independent countdowns untouched");
+
+        clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(3000));
+        Check(policy.Evaluate(Principal(AccountRoles.Beta), group.Id, group).Allowed,
+            "default opens automatically at the exact production term while recruitment is closed");
+        group = store.ReadGroup(group.Id)!;
+        Check(group.OpenedAt == 3000, "automatic opening is persisted for raw domain readers");
+        SaveProduction(true, 9000, false, 3001);
+        group = store.ReadGroup(group.Id)!;
+        Check(group.OpenedAt is null && group.LaunchAt == 9000 && group.ForceStartAtEnd
+            && !policy.Evaluate(Principal(AccountRoles.Customer), group.Id, group).Allowed,
+            "moving production into the future recloses a previously opened default");
+        using (var reservation = store.ReserveWaitingRoomMove(group.Id, independent.Id))
+        {
+            Check(reservation is not null && !reservation.SourceStarted(3001),
+                "waiting-room transfer observes the same reclosed persisted state");
+        }
+        SaveProduction(true, null, false, 3002);
+        group = store.ReadGroup(group.Id)!;
+        Check(group.OpenedAt is null && group.LaunchAt is null && !group.ForceStartAtEnd,
+            "enabled production without a date stays unscheduled and closed");
+        SaveProduction(true, 9000, true, 3003);
+        group = store.ReadGroup(group.Id)!;
+        Check(group.OpenedAt == 3003 && !group.ForceStartAtEnd,
+            "manual global unlock opens default before its term");
+        SaveProduction(false, 9000, false, 3004);
+        group = store.ReadGroup(group.Id)!;
+        Check(group.OpenedAt == 3003 && group.LaunchAt is null,
+            "disabled global gate remains open and preserves original opening time");
+        SaveProduction(true, 2000, false, 3005);
+        group = store.ReadGroup(group.Id)!;
+        Check(group.OpenedAt == 3003 && group.LaunchAt == 2000,
+            "already passed production term stays open without rewriting its opening time");
+
+        var priorDefault = group;
+        var admission = store.UpdateBetaAdmission("owner",
+            new(store.ReadBetaAdmission().Revision, independent.Id, false, null), 3006);
+        var replacement = store.ReadGroup(independent.Id)!;
+        Check(replacement.LaunchAt == 2000 && replacement.OpenedAt == 3006
+            && replacement.CountdownDurationSeconds is null, "selecting an existing group replaces its countdown with production atomically");
+        SaveProduction(true, 10_000, false, 3007);
+        Check(store.ReadGroup(group.Id) == priorDefault && store.ReadGroup(independent.Id)!.OpenedAt is null,
+            "only the current default follows later production changes");
+        var closedReplacement = store.ReadGroup(independent.Id)!;
+        admission = store.UpdateBetaAdmission("owner", new(admission.Revision, independent.Id, true, "Fiction"), 3008);
+        Check(store.ReadGroup(independent.Id) == closedReplacement && admission.RecruitmentOpen,
+            "opening recruitment does not alter production scheduling or group revision");
+        var reselected = store.CreateOrSelectBetaGroup("owner", new(admission.Revision, group.Id), 3009);
+        Check(reselected.Group.LaunchAt == 10_000 && reselected.Group.OpenedAt is null
+            && !reselected.Admission.RecruitmentOpen, "create-or-select also synchronizes an existing group");
+
+        // Simulate an existing installation whose stored default still has its
+        // old manual schedule despite a previously saved global production term.
+        using (var connection = new SqliteConnection("Data Source=" + Path.Combine(root, "launch.sqlite")))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE launch_groups SET opened_at=2000,launch_at=2500,force_start_at_end=0 WHERE id=$id";
+            command.Parameters.AddWithValue("$id", group.Id);
+            command.ExecuteNonQuery();
+        }
+        store = new LaunchPolicyStore(root);
+        var startup = new LaunchScheduleStartup(store, clock);
+        await startup.StartAsync(CancellationToken.None);
+        var reconciled = store.ReadGroup(group.Id)!;
+        Check(reconciled.LaunchAt == 10_000 && reconciled.OpenedAt is null && reconciled.ForceStartAtEnd,
+            "startup applies already saved production configuration without an administrator resave");
+        auditCount = store.ReadAudit().Count;
+        await startup.StartAsync(CancellationToken.None);
+        Check(store.ReadGroup(group.Id) == reconciled && store.ReadAudit().Count == auditCount,
+            "repeated startup reconciliation is idempotent");
+        clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(10_000));
+        await startup.StartAsync(CancellationToken.None);
+        Check(store.ReadGroup(group.Id)!.OpenedAt == 10_000,
+            "startup opens an already due production term using the injected clock");
+
+        void SaveProduction(bool enabled, long? term, bool unlocked, long now)
+        {
+            var configuration = store.Read();
+            store.Update("owner", new(configuration.Revision, true, 50_000, false, enabled, term, unlocked,
+                configuration.TimeZone, configuration.Teaser, configuration.InitialLoadingMessage,
+                configuration.PersonalizedLoadingEnabled, configuration.PersonalizedLoadingPrompt), now);
+        }
+
+        static void ExpectInherited(Action action)
+        {
+            try { action(); }
+            catch (LaunchConfigurationException error) when (error.Code == "launch_group_uses_production_schedule" && error.Status == 409)
+            { return; }
+            throw new InvalidOperationException("Default group manual countdown bypassed the production schedule.");
+        }
+    }
+
     private static void VerifyBetaAdmission(string root)
     {
         var store = new LaunchPolicyStore(root);
@@ -169,8 +296,9 @@ internal static class LaunchPolicyTests
         Check(selected.Group.Name == "Interní beta" && selected.Admission.GroupId == selected.Group.Id
             && !selected.Admission.RecruitmentOpen,
             "admin can create and select the one internal beta group while keeping enrollment closed");
-        var draft = store.UpdateGroup("owner", selected.Group.Id,
-            new(selected.Group.Revision, selected.Group.Name, 3_601_000), 1000);
+        var independent = store.CreateGroup("owner", new("Independent countdown", null), 1000);
+        var draft = store.UpdateGroup("owner", independent.Id,
+            new(independent.Revision, independent.Name, 3_601_000), 1000);
         Check(draft.LaunchAt is null && draft.CountdownDurationSeconds == 3600
             && draft.CountdownConfirmedAt is null,
             "legacy absolute group schedule becomes an unconfirmed countdown draft");

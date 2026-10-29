@@ -8,7 +8,7 @@ import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from '../identity/AccountDeletion.vue';
 import CharacterLabelEditor from '../customer/CharacterLabelEditor.vue';
 import { characterDisplayName } from '../customer/characterLabel';
-import { account, accountDeletionRequested, accountRequest } from '../identity/session';
+import { account, accountDeletionRequested, accountRequest, signOut, signingOut } from '../identity/session';
 import { clearInvitationRegistration, getInvitationRegistration, invitationRegistration, reconcileInvitationCharacter, saveInvitationCharacter, setInvitationDraft } from '../identity/invitationRegistration';
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
@@ -41,6 +41,8 @@ const membershipRequestMessage = ref('');
 const draftProvided = ref(false);
 const busy = ref(false);
 const error = ref('');
+const readError = ref('');
+const displayedError = computed(() => error.value || readError.value);
 const remaining = ref(0);
 const revealed = ref(false);
 const workshopOpen = ref(false);
@@ -53,8 +55,11 @@ const canPrepareWand = computed(() => isCustomerAccount(account.value)
 const groupOpening = ref(false);
 const groupPresenting = ref(false);
 const groupBusy = ref(false);
+const entranceRetryAttempted = ref(false);
+const entranceRetrying = ref(false);
 const formFocused = ref(false);
 let characterRead = 0;
+let policyRead = 0;
 let accountEpoch = 0;
 let controller: AbortController | undefined;
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -84,7 +89,7 @@ const phase = computed(() => {
 });
 const actualPreparation = computed(() => writing.value || ['queued', 'pending', 'running'].includes(state.value?.artwork?.status ?? ''));
 const statusMessage = computed(() => {
-  if (error.value || phase.value === 'failed') return '';
+  if (displayedError.value || phase.value === 'failed') return '';
   if (registration.value?.status === 'error') return registration.value.error === 'existing_character' ? copy.value.conflict : copy.value.saveFailed;
   if (uncertain.value) return copy.value.verifying;
   if (writing.value) return copy.value.saving;
@@ -104,7 +109,7 @@ const receptionJoke = computed(() => {
     || 'Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.';
 });
 const receptionStatus = computed(() => {
-  if (error.value || phase.value === 'failed') return '';
+  if (displayedError.value || phase.value === 'failed') return '';
   if (writing.value || uncertain.value || !state.value?.character) return statusMessage.value;
   if (statusMessage.value === copy.value.waiting) return statusMessage.value;
   if (wandComplete.value) return 'Postava i hůlka jsou připravené. Tady počkáš na otevření večera.';
@@ -142,9 +147,17 @@ const launchTimeLabel = computed(() => {
 });
 watch(() => account.value?.id, id => {
   accountEpoch++;
+  policyRead++;
+  policy.value = null;
+  remaining.value = 0;
+  lastLaunchCheck = Number.NEGATIVE_INFINITY;
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = undefined;
   groupOpening.value = false;
   groupPresenting.value = false;
   groupBusy.value = false;
+  entranceRetryAttempted.value = false;
+  entranceRetrying.value = false;
   characterRead++;
   portrait.clear();
   state.value = null;
@@ -158,7 +171,8 @@ watch(() => account.value?.id, id => {
   universe.value = draft?.universe ?? '';
   draftProvided.value = !!draft?.name && !!draft?.universe;
   selectInvitationPresentation(id, draft?.writeStarted ? draft.creationId : undefined);
-  if (controller && id) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
+  readError.value = '';
+  if (controller && id) void retryRead();
 }, { immediate: true, flush: 'sync' });
 watch(customerFixedUniverse, fixed => {
   if (!fixed || state.value?.character) return;
@@ -187,9 +201,11 @@ function formFocusOut(event: FocusEvent): void {
 }
 async function refreshPolicy(): Promise<void> {
   const owner = account.value?.id;
+  const currentRead = ++policyRead;
   const value = await accountRequest<LaunchPolicy>('/app/v1/launch');
-  if (owner !== account.value?.id || controller?.signal.aborted) return;
-  if (typeof value.serverNow !== 'number' || typeof value.allowed !== 'boolean') throw new Error(copy.value.readFailed);
+  if (owner !== account.value?.id || currentRead !== policyRead || controller?.signal.aborted) return;
+  if (!Number.isFinite(value.serverNow) || typeof value.allowed !== 'boolean'
+    || value.launchAt != null && !Number.isFinite(value.launchAt)) throw new Error(copy.value.readFailed);
   serverTimeAnchor = value.serverNow;
   monotonicAnchor = performance.now();
   policy.value = value;
@@ -207,7 +223,7 @@ async function refreshPolicy(): Promise<void> {
     // Reconcile the waiting scene with reads, never a second enrollment/save.
     if (wasOpening && account.value && customerMembershipState.value === 'active') {
       try { await refreshCharacter(controller?.signal); beginPolling(); }
-      catch { error.value = copy.value.readFailed; }
+      catch { if (owner === account.value?.id) readError.value = copy.value.readFailed; }
     }
   }
   updateCountdown();
@@ -236,9 +252,10 @@ async function enterGroup(continueToApp = false): Promise<void> {
     await refreshPolicy();
     if (epoch !== accountEpoch || !policy.value?.allowed || account.value?.id !== owner.id || customerMembershipState.value !== 'active') return;
     if (!continueToApp) {
+      entranceRetryAttempted.value = false;
       groupPresenting.value = true;
       void refreshCharacter(controller?.signal)
-        .catch(() => { if (epoch === accountEpoch) error.value = copy.value.readFailed; })
+        .catch(() => { if (epoch === accountEpoch) readError.value = copy.value.readFailed; })
         .then(() => { if (epoch === accountEpoch) beginPolling(); });
       return;
     }
@@ -253,9 +270,18 @@ async function enterGroup(continueToApp = false): Promise<void> {
   finally { if (epoch === accountEpoch) groupBusy.value = false; }
 }
 async function retryEntrance(): Promise<void> {
+  if (entranceRetryAttempted.value || entranceRetrying.value) return;
   const epoch = accountEpoch;
-  await retryRead();
-  if (epoch === accountEpoch && state.value?.artwork?.status === 'ready' && portrait.failed.value) await portrait.retry();
+  entranceRetryAttempted.value = true;
+  entranceRetrying.value = true;
+  try {
+    await retryRead();
+    if (epoch !== accountEpoch || controller?.signal.aborted || readError.value) return;
+    if (state.value?.artwork?.status === 'failed' && consent.value) await retryPortrait();
+    else if (state.value?.artwork?.status === 'ready' && portrait.failed.value) await portrait.retry();
+  } catch {
+    if (epoch === accountEpoch) readError.value = copy.value.readFailed;
+  } finally { if (epoch === accountEpoch) entranceRetrying.value = false; }
 }
 async function refreshBetaEnrollment(): Promise<void> {
   try {
@@ -272,6 +298,7 @@ async function refreshCharacter(signal?: AbortSignal): Promise<void> {
   const previous = state.value?.character;
   state.value = value;
   characterVerified.value = true;
+  readError.value = '';
   if (!value.character) {
     if (previous || registration.value?.status === 'confirmed') {
       clearInvitationRegistration(owner);
@@ -336,10 +363,31 @@ async function retryPortrait(): Promise<void> {
 async function retryRead(): Promise<void> {
   if (busy.value) return;
   const epoch = accountEpoch;
-  busy.value = true; error.value = '';
-  try { await refreshPolicy(); await refreshCharacter(controller?.signal); beginPolling(); }
-  catch { if (epoch === accountEpoch) error.value = copy.value.readFailed; }
+  busy.value = true; error.value = ''; readError.value = '';
+  try {
+    if (isCustomerAccount(account.value)) await refreshCustomerMembership();
+    if (epoch !== accountEpoch || controller?.signal.aborted) return;
+    await refreshPolicy();
+    if (epoch !== accountEpoch || controller?.signal.aborted) return;
+    if (isCustomerAccount(account.value) && customerMembershipState.value !== 'active') {
+      if (customerMembershipState.value === 'unassigned') await refreshBetaEnrollment();
+      else if (customerMembershipState.value === null) readError.value = copy.value.readFailed;
+      return;
+    }
+    if (!policy.value?.allowed || groupPresenting.value) await refreshCharacter(controller?.signal);
+    beginPolling();
+  }
+  catch { if (epoch === accountEpoch && !controller?.signal.aborted) readError.value = copy.value.readFailed; }
   finally { if (epoch === accountEpoch) busy.value = false; }
+}
+async function leaveAccount(): Promise<void> {
+  if (signingOut.value) return;
+  try {
+    await signOut();
+    await router.replace('/signin');
+  } catch {
+    await router.replace({ path: '/signin', query: { logout: 'unconfirmed' } });
+  }
 }
 async function requestBetaAdmission(): Promise<void> {
   if (busy.value || !requiresBetaAdmission.value || betaEnrollmentAvailable.value !== true) return;
@@ -387,28 +435,21 @@ function beginPolling(): void {
   if (!actualPreparation.value && !uncertain.value && !entranceWaiting) return;
   pollTimer = setTimeout(async () => {
     pollTimer = undefined;
+    const epoch = accountEpoch;
     try { await refreshCharacter(controller?.signal); }
-    catch { error.value = copy.value.readFailed; }
+    catch { if (epoch === accountEpoch && !controller?.signal.aborted) readError.value = copy.value.readFailed; }
     beginPolling();
   }, 5000);
 }
 function onOffline(): void {
-  error.value = copy.value.readFailed;
+  readError.value = copy.value.readFailed;
   if (pollTimer) clearTimeout(pollTimer);
   pollTimer = undefined;
 }
 function onOnline(): void { void retryRead(); }
 function onVisibility(): void {
   if (presentationForeground.value) {
-    void refreshPolicy().catch(() => {});
-    if (isCustomerAccount(account.value)) {
-      void refreshCustomerMembership().then(async membership => {
-        if (membership === 'active') await refreshCharacter(controller?.signal).then(beginPolling);
-        else if (membership === 'unassigned') await refreshBetaEnrollment();
-      }).catch(() => {});
-    } else {
-      void refreshCharacter(controller?.signal).then(beginPolling).catch(() => {});
-    }
+    void retryRead();
     startPolicyPolling();
   } else {
     if (pollTimer) clearTimeout(pollTimer); pollTimer = undefined;
@@ -416,30 +457,18 @@ function onVisibility(): void {
   }
 }
 function startPolicyPolling(): void {
-  if (!policyTimer && presentationForeground.value) policyTimer = setInterval(() => { void refreshPolicy().catch(() => {}); }, 15_000);
+  if (!policyTimer && presentationForeground.value) policyTimer = setInterval(() => {
+    if (readError.value) void retryRead();
+    else void refreshPolicy().catch(() => {});
+  }, 15_000);
 }
 watch(presentationForeground, onVisibility);
 onMounted(async () => {
   controller = new AbortController();
   window.addEventListener('offline', onOffline);
   window.addEventListener('online', onOnline);
-  try {
-    if (isCustomerAccount(account.value) && customerMembershipState.value === null) {
-      await refreshCustomerMembership();
-    }
-    await refreshPolicy();
-    if (controller.signal.aborted) return;
-    if (isCustomerAccount(account.value) && customerMembershipState.value !== 'active') {
-      if (customerMembershipState.value === 'unassigned') await refreshBetaEnrollment();
-      else if (customerMembershipState.value === null) error.value = copy.value.readFailed;
-    } else if (policy.value?.allowed) {
-      startPolicyPolling();
-    } else {
-      await refreshCharacter(controller.signal);
-      beginPolling();
-    }
-  }
-  catch { error.value = copy.value.readFailed; }
+  await retryRead();
+  if (controller.signal.aborted) return;
   timer = setInterval(updateCountdown, 1000);
   startPolicyPolling();
 });
@@ -457,24 +486,24 @@ onBeforeUnmount(() => {
 
 <template>
   <SceneShell v-if="groupOpening" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
-    <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!error" :active="presentationForeground" :busy="groupBusy" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
-      <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
+    <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!displayedError" :active="presentationForeground" :busy="groupBusy" :retrying="entranceRetrying" :retry-attempted="entranceRetryAttempted" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
+      <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }}</AwNotice>
       <p v-if="portraitSource && hasPortrait" class="launch-attribution">Obrázek z internetu: <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> · {{ portraitSource.author }} · <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
     </CharacterEntrance>
     <template v-else>
       <div class="group-opening-art" data-scene-enter aria-hidden="true"><span>W</span></div>
       <section class="group-opening-copy">
       <h1 id="group-opening-title">{{ language === 'en' ? 'The evening begins.' : 'Večer začíná.' }}</h1>
-      <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup(false)">{{ copy.retry }}</button></AwNotice>
+      <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup(false)">{{ copy.retry }}</button></AwNotice>
       <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup(false)">Vstoupit</AwButton>
     </section>
     </template>
-    <footer class="launch-footer"><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
+    <footer class="launch-footer"><AwButton v-if="account" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
   <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
     <header class="launch-masthead">
       <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><span>Wand<br />Night Stand</span></RouterLink>
-      <span class="launch-language" aria-label="Jazyk rozhraní">Čeština</span>
+      <AwButton v-if="account" class="launch-signout" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton>
     </header>
     <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">
       <PaperSurface class="launch-copy">
@@ -482,7 +511,7 @@ onBeforeUnmount(() => {
         <p>{{ language === 'en' ? 'Your account is ready. You can join the current beta group while it is accepting participants.' : 'Tvůj účet je připravený. Do současné beta skupiny můžeš vstoupit, dokud přijímá účastníky.' }}</p>
         <AwNotice v-if="betaEnrollmentAvailable === false" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
         <p v-else-if="betaEnrollmentAvailable === null" role="status">{{ language === 'en' ? 'We could not check the current beta access rules.' : 'Aktuální pravidla vstupu do bety se nepodařilo ověřit.' }}</p>
-        <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
+        <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <p v-if="membershipRequestMessage" role="status">{{ membershipRequestMessage }}</p>
         <AwButton v-if="betaEnrollmentAvailable === true" variant="primary" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>
       </PaperSurface>
@@ -498,8 +527,8 @@ onBeforeUnmount(() => {
     <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" @complete-change="wandComplete = $event" />
     <section v-show="!workshopOpen" class="launch-card" :class="{ 'launch-card--reception': writing || state?.character }">
       <PaperSurface class="launch-copy">
-        <h1 v-if="!state?.character" id="launch-title">{{ writing ? 'Tvoje postava se připravuje.' : draftProvided ? name : copy.title }}</h1>
-        <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
+        <h1 v-if="!state?.character" id="launch-title">{{ readError && account ? copy.waitingTitle : writing ? 'Tvoje postava se připravuje.' : draftProvided ? name : copy.title }}</h1>
+        <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <AwNotice v-if="phase === 'failed'" tone="warning" role="alert">{{ copy.failed }} <button class="launch-retry" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
         <template v-if="!account"><RouterLink class="aw-button aw-button--primary" to="/signin">{{ copy.invitation }}</RouterLink></template>
         <form v-else-if="characterVerified && !state?.character && !writing" class="launch-form" @submit.prevent="saveCharacter" @focusin="formFocused = true" @focusout="formFocusOut">
@@ -529,16 +558,16 @@ onBeforeUnmount(() => {
           <p v-if="portraitSource && revealed && hasPortrait" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
         </div>
       </PaperSurface>
-      <PortraitCurtain class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" :unavailable="phase === 'failed'" @revealed="revealed = $event" @failed="portrait.fail()" />
+      <PortraitCurtain v-if="!readError || state?.character || writing" class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" :unavailable="phase === 'failed'" @revealed="revealed = $event" @failed="portrait.fail()" />
       <p v-if="!writing && !state?.character" class="launch-text launch-status" role="status">{{ statusMessage }}</p>
     </section>
-    <section v-if="state?.character" v-show="!workshopOpen" class="reception-waiting" aria-label="Čekání na večer">
+    <section v-if="state?.character || account && policy && !policy.allowed && !characterVerified" v-show="!workshopOpen" class="reception-waiting" aria-label="Čekání na večer">
       <CharacterCountdown class="countdown" heading-as="h2" :name="wandComplete ? 'Vítej v čekárně.' : 'Večer se chystá.'" :universe="''" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
       <div class="reception-options">
         <p v-if="launchTimeLabel" class="launch-time">Večer se otevře {{ launchTimeLabel }}.</p>
         <p v-if="wandComplete" class="reception-seat">Čekárna uznává tvoji pověst. Na pořadí to vliv nemá.</p>
         <details v-if="account && !accountDeletionRequested" class="launch-notifications"><summary>Nastavit oznámení pro toto zařízení</summary><PushNotifications /></details>
-        <details class="launch-label-options"><summary>Rozlišovací označení (nepovinné)</summary><CharacterLabelEditor :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" /></details>
+        <details v-if="state?.character" class="launch-label-options"><summary>Rozlišovací označení (nepovinné)</summary><CharacterLabelEditor :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" /></details>
       </div>
     </section>
     </template>
@@ -556,6 +585,7 @@ onBeforeUnmount(() => {
 .launch-card { width: min(100%, 42rem); margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
 .launch-art { order: 2; width: 100%; }
 .launch-copy { order: 1; min-width: 0; }
+.launch-copy > .aw-notice { margin-block-start: 1rem; }
 .launch-copy :deep(h1) { font-family: var(--aw-font-display); font-size: clamp(2rem, 8vw, 3.5rem); font-weight: 500; line-height: 1.05; letter-spacing: -.025em; margin: 0; overflow-wrap: anywhere; color: var(--aw-game-ink, #2a2019); }
 .launch-status { color: var(--aw-game-muted-ink, #625340); line-height: 1.5; min-height: 1.5em; margin-block: .5rem; font-size: .875rem; }
 .launch-text { order: 3; min-width: 0; padding-top: .25rem; align-self: stretch; text-align: center; }
@@ -581,7 +611,7 @@ onBeforeUnmount(() => {
 .launch-data-details summary { min-height: 44px; padding-block: .6rem; cursor: pointer; }
 .launch-data-details a { display: inline-flex; min-height: 44px; align-items: center; }
 .countdown { margin-block: 0; color: var(--wns-text, #f5f5f0); }
-.launch-retry { color: inherit; text-decoration: underline; text-underline-offset: .2em; background: none; border: 0; cursor: pointer; min-height: 44px; padding: .5rem; font: inherit; }
+.launch-retry { display: block; margin-block-start: .5rem; color: inherit; text-decoration: underline; text-underline-offset: .2em; background: none; border: 0; cursor: pointer; min-height: 44px; padding: .5rem; font: inherit; }
 .aw-button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: .85rem 1.25rem; border-radius: 8px; text-decoration: none; }
 .aw-button--primary { color: var(--aw-on-accent); background: var(--aw-accent); }
 .launch-footer { margin-top: 1.5rem; display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 1rem; color: var(--aw-muted); font-size: .875rem; }

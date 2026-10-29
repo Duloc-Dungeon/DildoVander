@@ -18,9 +18,10 @@ import { setInvitationDraft, saveInvitationCharacter } from './invitationRegistr
 import { account, accountRequest, accountsEnabled, initialized, loading, signingOut, refreshIdentity, authenticatePasskey, signOut } from './session';
 const router = useRouter();
 const route = useRoute();
+const logoutUnconfirmed = computed(() => route.query.logout === 'unconfirmed');
 const protectedReturn = !!route.query.return && route.query.return !== '/';
-const enrollment = ref(!protectedReturn && !signingOut.value);
-const arrival = ref(!protectedReturn && !signingOut.value);
+const enrollment = ref(!protectedReturn && !signingOut.value && !logoutUnconfirmed.value);
+const arrival = ref(!protectedReturn && !signingOut.value && !logoutUnconfirmed.value);
 const linkedInvitation = ref(false);
 const linkedEnrollment = ref<{ kind: 'invite' | 'recovery'; token: string } | null>(null);
 const betaEntry = ref(enrollment.value);
@@ -43,6 +44,8 @@ const pendingBetaDraft = ref<{ name: string; universe: string } | null>(null);
 const aiConsent = ref(false);
 const busy = ref(false);
 const error = ref<CustomerCopyKey | ''>('');
+const sessionUnavailable = ref(false);
+const sessionRefreshing = ref(false);
 const stepHeading = ref<HTMLHeadingElement | null>(null);
 const language = computed(() => interfaceLanguagePreference.language.value);
 watch(() => account.value?.id, id => interfaceLanguagePreference.setScope(id), { immediate: true });
@@ -70,18 +73,44 @@ function errorKey(value: unknown): CustomerCopyKey {
   return 'signin.error-generic';
 }
 onMounted(async () => {
+  if (logoutUnconfirmed.value) return;
   const suppliedCode = consumeEnrollment();
   linkedEnrollment.value = suppliedCode;
   if (suppliedCode) { arrival.value = false; linkedInvitation.value = true; enrollment.value = true; betaEntry.value = false; enrollmentKind.value = suppliedCode.kind; token.value = suppliedCode.token; }
+  await retryIdentity();
+});
+async function retryIdentity(): Promise<void> {
+  if (sessionRefreshing.value || busy.value) return;
+  sessionRefreshing.value = true;
+  error.value = '';
   try {
     await refreshIdentity();
-    if (account.value && !suppliedCode && !protectedReturn) {
+    sessionUnavailable.value = false;
+    if (account.value && !linkedEnrollment.value && !protectedReturn && !logoutUnconfirmed.value) {
       await router.replace(defaultSignedInDestination(account.value));
       return;
     }
-    if (!suppliedCode && betaEntry.value) await refreshDefaultEnrollment();
-  } catch (cause) { error.value = errorKey(cause); }
-});
+    if (!linkedEnrollment.value && betaEntry.value) await refreshDefaultEnrollment();
+  } catch (cause) {
+    sessionUnavailable.value = true;
+    error.value = errorKey(cause);
+  } finally { sessionRefreshing.value = false; }
+}
+async function leaveAccount(continueInvitation = false): Promise<void> {
+  if (busy.value || signingOut.value) return;
+  busy.value = true;
+  error.value = '';
+  try {
+    await signOut();
+    sessionUnavailable.value = false;
+    if (continueInvitation) return;
+    arrival.value = false;
+    enrollment.value = false;
+    await router.replace('/signin');
+  } catch {
+    await router.replace({ path: '/signin', query: { logout: 'unconfirmed' } });
+  } finally { busy.value = false; }
+}
 async function refreshDefaultEnrollment(): Promise<void> {
   if (account.value) return;
   enrollmentLoading.value = true;
@@ -231,7 +260,7 @@ async function submit(): Promise<void> {
       <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><span>Wand<br />Night Stand</span></RouterLink>
       <AwButton v-if="arrival && !account" class="signin-code-entry" @click="setEnrollmentMode('invite')">{{ customerCopy.text('signin.have-invite') }}</AwButton>
     </header>
-    <div v-if="arrival && !account" class="arrival-content">
+    <div v-if="arrival && !account && !logoutUnconfirmed && !sessionUnavailable" class="arrival-content">
       <div class="signin-art signin-art--amber" aria-hidden="true"><img :src="amberWand" alt="" width="1254" height="1254" fetchpriority="high" /></div>
       <h1 id="sign-in-title" ref="stepHeading" tabindex="-1">{{ language === 'en' ? 'Enter on your own reputation.' : 'Vstup na vlastní pověst.' }}</h1>
       <div class="arrival-copy">
@@ -253,12 +282,15 @@ async function submit(): Promise<void> {
         <AwButton v-if="!enrollment || enrollmentKind !== 'recovery'" :disabled="busy || signingOut" @click="setEnrollmentMode('recovery')">{{ customerCopy.text('signin.use-recovery') }}</AwButton>
         <AwButton v-if="enrollment" :disabled="busy || signingOut" @click="showPasskeySignIn">{{ customerCopy.text('signin.have-passkey') }}</AwButton>
       </nav>
-      <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
+      <AwNotice v-if="error && !sessionUnavailable" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice>
+      <AwNotice v-if="sessionUnavailable" tone="danger" role="alert">{{ customerCopy.text('signin.session-unavailable') }} <AwButton :busy="sessionRefreshing" :disabled="busy || signingOut || sessionRefreshing" @click="retryIdentity">{{ customerCopy.text('signin.retry-session') }}</AwButton></AwNotice>
+      <AwNotice v-if="logoutUnconfirmed" tone="danger" role="alert">{{ customerCopy.text('signin.logout-unconfirmed') }}</AwNotice>
+      <AwButton v-if="account || logoutUnconfirmed" :busy="busy || signingOut" :disabled="busy || signingOut" @click="leaveAccount()">{{ customerCopy.text('signin.sign-out') }}</AwButton>
       <AwNotice v-if="recoveryHint" tone="warning" role="status">{{ language === 'en' ? 'We could not confirm whether account creation finished. Sign in with your existing passkey to continue; your name and universe are kept on this screen.' : 'Nepodařilo se ověřit, zda se vytvoření účtu dokončilo. Pokračuj přihlášením svým přístupovým klíčem; jméno a univerzum zůstávají na této obrazovce.' }}</AwNotice>
       <p v-if="loading" role="status">{{ customerCopy.text('signin.loading') }}</p>
       <p v-if="signingOut" role="status">{{ customerCopy.text('signin.signing-out') }}</p>
       <AwNotice v-if="initialized && !accountsEnabled" tone="info">{{ customerCopy.text('signin.accounts-disabled') }}</AwNotice>
-      <section v-if="account" class="signed-in-actions"><p>{{ customerCopy.text('signin.signed-in-as', { name: account.displayName }) }}</p><AwButton variant="primary" :busy="busy" @click="submit">{{ customerCopy.text('signin.reauthenticate') }}</AwButton><AwButton v-if="enrollment" :disabled="busy || signingOut" @click="signOut">{{ customerCopy.text('signin.invite-other-account') }}</AwButton><p><RouterLink to="/settings">{{ customerCopy.text('signin.open-settings') }}</RouterLink></p></section>
+      <section v-if="account" class="signed-in-actions"><p>{{ customerCopy.text('signin.signed-in-as', { name: account.displayName }) }}</p><AwButton variant="primary" :busy="busy" @click="submit">{{ customerCopy.text('signin.reauthenticate') }}</AwButton><AwButton v-if="enrollment" :disabled="busy || signingOut" @click="leaveAccount(true)">{{ customerCopy.text('signin.invite-other-account') }}</AwButton><p><RouterLink to="/settings">{{ customerCopy.text('signin.open-settings') }}</RouterLink></p></section>
       <form v-else class="identity-form" @submit.prevent="submit">
         <div v-if="customerEnrollment && launchAllowed !== true" class="identity-hint">{{ customerCopy.text('signin.customer-closed') }} <AwButton @click="customerEnrollment = false">{{ customerCopy.text('signin.back-to-signin') }}</AwButton></div>
         <template v-else-if="customerEnrollment">

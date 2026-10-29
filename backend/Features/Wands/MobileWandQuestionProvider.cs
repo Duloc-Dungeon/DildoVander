@@ -61,6 +61,7 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
             var response = await client.CreateResponseAsync(body, new RequestOptions { CancellationToken = token });
             using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
             telemetry.ReadUsage(document.RootElement);
+            OpenAiServiceTierPolicy.ValidateResponse(document.RootElement, OpenAiOperation.WandWorkshop);
             return ParseReply(document.RootElement);
         }
         catch (ClientResultException error) when (error.Status is >= 400 and < 500)
@@ -84,7 +85,7 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
         var facts = profile.Enrichment!.Facts;
         var payload = JsonSerializer.Serialize(new
         {
-            model, store = false, max_output_tokens = 420,
+            model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.WandWorkshop), max_output_tokens = 420,
             reasoning = new { effort = "none" },
             instructions = "Mluv přirozeně česky s diakritikou a tykej. Jsi hlas a osobnost magického kufru, "
                 + "talentovaný výrazný řemeslník, profesně ješitný, zvídavý a hostovou údajnou výjimečností nepřehnaně ohromený. "

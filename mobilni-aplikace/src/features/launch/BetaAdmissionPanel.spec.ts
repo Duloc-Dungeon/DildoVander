@@ -32,6 +32,17 @@ beforeEach(() => {
   });
 });
 
+async function independentGroupPanel() {
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation((path: string, ...args: unknown[]) => path === '/app/v1/admin/launch/beta-admission'
+    ? Promise.resolve({ revision: 3, groupId: secondGroupId, groupName: 'Sobota', recruitmentOpen: true, fixedUniverse: null })
+    : original(path, ...args));
+  const view = mount(BetaAdmissionPanel);
+  await flushPromises();
+  await view.get('#management-group').setValue(groupId);
+  return view;
+}
+
 describe('owner waiting room and group countdown', () => {
   it('marks previous readiness unverified after a failed refresh instead of presenting stale counts', async () => {
     const view = mount(BetaAdmissionPanel);
@@ -62,9 +73,11 @@ describe('owner waiting room and group countdown', () => {
       expect(readiness.text()).toContain('1');
       expect(readiness.text()).toContain('Přijímání hostů');
       expect(readiness.text()).toContain('Otevřené');
-      expect(readiness.text()).toContain('Odpočet není potvrzený');
+      expect(readiness.text()).toContain('Produkční termín není nastavený');
       expect(view.find('#waiting-room').exists()).toBe(true);
-      expect(view.find('#countdown-minutes').exists()).toBe(true);
+      expect(view.find('#countdown-minutes').exists()).toBe(false);
+      await view.get('.waiting-room__production-schedule button').trigger('click');
+      expect(view.emitted('edit-production-schedule')).toHaveLength(1);
       expect(view.find<HTMLDetailsElement>('details[aria-labelledby="waiting-room-title"]').element.open).toBe(false);
       expect(view.find<HTMLDetailsElement>('details[aria-labelledby="beta-admission-settings-title"]').element.open).toBe(false);
       expect(view.get('#beta-admission-group').element.closest('details')?.getAttribute('aria-labelledby')).toBe('beta-admission-settings-title');
@@ -73,7 +86,7 @@ describe('owner waiting room and group countdown', () => {
 
   it('requires saving an initial countdown draft before confirming a new group', async () => {
     effectiveGroups[0] = group(groupId, 'Interní beta', { countdownDurationSeconds: null });
-    const view = mount(BetaAdmissionPanel);
+    const view = await independentGroupPanel();
     try {
       await flushPromises();
       const confirm = () => view.findAll('button').find(button => button.text() === 'Potvrdit a spustit odpočet')!;
@@ -94,7 +107,7 @@ describe('owner waiting room and group countdown', () => {
       if (method === 'PUT') throw Object.assign(new Error('Nejprve ověřte svou totožnost.'), { code: 'recent_passkey_required' });
       return defaultRequest(path, method, ...args);
     });
-    const view = mount(BetaAdmissionPanel);
+    const view = await independentGroupPanel();
     try {
       await flushPromises();
       await view.get('#countdown-minutes').setValue(25);
@@ -216,7 +229,7 @@ describe('owner waiting room and group countdown', () => {
   });
 
   it('saves a duration draft without starting the countdown and requires a separate confirmation', async () => {
-    const view = mount(BetaAdmissionPanel);
+    const view = await independentGroupPanel();
     await flushPromises();
     await view.get('#countdown-minutes').setValue('25');
     await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
@@ -234,7 +247,7 @@ describe('owner waiting room and group countdown', () => {
   });
 
   it('makes Force an after-expiry action and exposes manual start only after a non-force expiry', async () => {
-    const view = mount(BetaAdmissionPanel);
+    const view = await independentGroupPanel();
     await flushPromises();
     await view.get('.waiting-room__force input').setValue(true);
     await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
@@ -246,7 +259,7 @@ describe('owner waiting room and group countdown', () => {
     view.unmount();
 
     effectiveGroups = [group(groupId, 'Interní beta', { launchAt: Date.now() - 1000, countdownConfirmedAt: Date.now() - 601000 })];
-    const expired = mount(BetaAdmissionPanel);
+    const expired = await independentGroupPanel();
     await flushPromises();
     await expired.findAll('button').find(button => button.text() === 'Spustit noc')!.trigger('click');
     await flushPromises();

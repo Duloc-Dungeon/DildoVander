@@ -1,3 +1,4 @@
+using Kufr.Backend.Features.OpenAi;
 using System.Text;
 using System.Text.Json;
 
@@ -49,7 +50,7 @@ internal sealed partial class OpenAiGameYoloProvider
         };
         var request = JsonSerializer.Serialize(new
         {
-            model = Model, store = false, service_tier = "default", max_output_tokens = 1400,
+            model = Model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary), max_output_tokens = 1400,
             reasoning = new { effort = "low" },
             instructions = "Jsi Bohumil Křivopísk. Česky vyhodnoť Souboj špatných nápadů podle scénáře ve vstupu. "
                 + "Použij POUZE šest uložených rozhodnutí, jejich přínosy, ceny a již vyřešené následky. Každý beat odpovídá jednomu dějství. "

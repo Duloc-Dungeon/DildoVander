@@ -113,7 +113,7 @@ internal sealed class SealedCaseAiClient(HttpClient http, string apiKey, string 
         var watch = Stopwatch.StartNew();
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(http.BaseAddress ?? new Uri("https://api.openai.com/v1/"), "responses"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = JsonContent.Create(new { model, store = false, reasoning = new { effort = "low" }, max_output_tokens = 1200,
+        request.Content = JsonContent.Create(new { model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary), reasoning = new { effort = "low" }, max_output_tokens = 1200,
             instructions, input = JsonSerializer.Serialize(input), text = new { format = new { type = "json_schema", name = "sealed_test_output", strict = true, schema } } });
         using var bounded = BoundedSdkTransport.Create(http, 128 * 1024, ["application/json"]);
         using var response = await bounded.SendAsync(request, deadline.Token);

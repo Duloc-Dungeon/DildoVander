@@ -19,6 +19,18 @@ beforeEach(() => {
 });
 
 describe('Příprava večera', () => {
+  it('opens the production calendar from the default group without changing its configured time', async () => {
+    const view = wrapper();
+    try {
+      await flushPromises();
+      const value = (view.get('#production-launch').element as HTMLInputElement).value;
+      view.findComponent({ name: 'BetaAdmissionPanel' }).vm.$emit('edit-production-schedule');
+      await flushPromises();
+      expect(view.findAll<HTMLDetailsElement>('details.launch-admin__disclosure')[0].element.open).toBe(true);
+      expect((view.get('#production-launch').element as HTMLInputElement).value).toBe(value);
+      expect(api.request.mock.calls.some(([, method]) => method === 'PUT')).toBe(false);
+    } finally { view.unmount(); }
+  });
   it.each([false, true])('saves from messages and exposes its own failure without opening unrelated settings (failure=%s)', async failure => {
     api.request.mockImplementation(async (path: string, method?: string, body?: Record<string, unknown>) => {
       if (path === '/app/v1/admin/launch' && method === 'PUT') {

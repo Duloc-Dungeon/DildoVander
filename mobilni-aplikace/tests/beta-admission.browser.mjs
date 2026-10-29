@@ -55,14 +55,14 @@ async function installFixtures(context) {
       roomGroupId = request.postDataJSON().targetGroupId;
       return json({});
     }
-    if (url.pathname === `/app/v1/admin/launch/groups/${groupId}/countdown` && request.method() === 'PUT') {
+    if (url.pathname === `/app/v1/admin/launch/groups/${secondGroupId}/countdown` && request.method() === 'PUT') {
       const input = request.postDataJSON();
-      adminGroups = adminGroups.map(group => group.id === groupId ? { ...group, countdownDurationSeconds: input.durationSeconds, forceStartAtEnd: input.forceStartAtEnd, revision: group.revision + 1 } : group);
+      adminGroups = adminGroups.map(group => group.id === secondGroupId ? { ...group, countdownDurationSeconds: input.durationSeconds, forceStartAtEnd: input.forceStartAtEnd, revision: group.revision + 1 } : group);
       return json({});
     }
-    if (url.pathname === `/app/v1/admin/launch/groups/${groupId}/countdown/confirm` && request.method() === 'POST') {
-      adminGroups = adminGroups.map(group => group.id === groupId ? { ...group, launchAt: Date.now() + group.countdownDurationSeconds * 1000, countdownConfirmedAt: Date.now(), revision: group.revision + 1 } : group);
-      guestLaunchAt = adminGroups.find(group => group.id === groupId).launchAt;
+    if (url.pathname === `/app/v1/admin/launch/groups/${secondGroupId}/countdown/confirm` && request.method() === 'POST') {
+      adminGroups = adminGroups.map(group => group.id === secondGroupId ? { ...group, launchAt: Date.now() + group.countdownDurationSeconds * 1000, countdownConfirmedAt: Date.now(), revision: group.revision + 1 } : group);
+      guestLaunchAt = adminGroups.find(group => group.id === secondGroupId).launchAt;
       return json({});
     }
     if (url.pathname.match(new RegExp(`/app/v1/admin/launch/groups/[0-9a-f]{32}/members/${userId}$`)) && request.method() === 'PUT') {
@@ -128,24 +128,33 @@ try {
       await installFixtures(adminContext);
       const admin = await adminContext.newPage(); admin.on('pageerror', error => errors.push(error.message));
       await admin.goto(origin + '/settings/admin/launch');
-      await admin.getByText('Ava Longname').waitFor();
+      await admin.getByText('Ava Longname').waitFor({ state: 'attached' });
       await capture(admin, `waiting-room-${width}x${height}-${theme}`, 'owner roster with group assignments and countdown draft', `${width}x${height}`, theme);
       if (width === 390) {
+        assert.equal(await admin.locator('#countdown-minutes').count(), 0);
+        await admin.getByRole('button', { name: 'Nastavit datum a čas otevření', exact: true }).click();
+        await admin.locator('#production-launch').waitFor();
+        assert.equal(await admin.locator('#production-launch').evaluate(input => document.activeElement === input), true);
+        await capture(admin, `default-production-schedule-${theme}`, 'default group uses production date and time', `${width}x${height}`, theme);
+        await admin.locator('#waiting-room-title').click();
         await admin.getByLabel('Skupina pro Ava Longname').selectOption(secondGroupId);
         await capture(admin, `waiting-room-assignment-${theme}`, 'target group selected before confirmed move', `${width}x${height}`, theme);
         await admin.getByRole('button', { name: 'Přesunout' }).click();
-        await admin.getByText('Sobota · Čeká').waitFor();
+        await admin.getByText('Sobota · Čeká').waitFor({ state: 'attached' });
+        await admin.locator('#waiting-room-title').click();
         await capture(admin, `waiting-room-moved-${theme}`, 'waiting guest moved between groups with identity retained', `${width}x${height}`, theme);
+        await admin.getByLabel('Spravovaná skupina', { exact: true }).selectOption(secondGroupId);
         await admin.getByLabel('Délka odpočtu v minutách').fill('15');
         await admin.getByLabel('Spustit večer automaticky po skončení odpočtu').check();
         await admin.getByRole('button', { name: 'Uložit návrh odpočtu' }).click();
         await admin.getByText(/Návrh je uložený/).waitFor();
         await capture(admin, `waiting-room-draft-${theme}`, 'saved countdown draft before owner confirmation', `${width}x${height}`, theme);
         await admin.getByRole('button', { name: 'Potvrdit a spustit odpočet' }).click();
-        await admin.getByText(/Odpočet běží:/).waitFor();
+        await admin.locator('section[aria-labelledby="group-countdown-title"]').getByRole('status').filter({ hasText: /Odpočet běží:/ }).waitFor();
         await capture(admin, `waiting-room-countdown-${theme}`, 'confirmed countdown with after-expiry auto-start enabled', `${width}x${height}`, theme);
+        await admin.locator('#waiting-room-title').click();
         await admin.getByRole('button', { name: 'Odebrat přístup' }).click();
-        await admin.getByText('Přístup odebrán').waitFor();
+        await admin.locator('.waiting-room__identity > span').filter({ hasText: 'Přístup odebrán' }).waitFor({ state: 'attached' });
         await capture(admin, `waiting-room-revoked-${theme}`, 'participant access revoked from waiting room', `${width}x${height}`, theme);
       }
       await adminContext.close();

@@ -359,7 +359,7 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
         });
         var request = JsonSerializer.Serialize(new
         {
-            model = WandDecisionBudget.Luna, store = false, max_output_tokens = 160,
+            model = WandDecisionBudget.Luna, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.CharacterWelcome), max_output_tokens = 160,
             reasoning = new { effort = "none" },
             instructions = PortraitContentPolicy.SafetyInstructions
                 + " Reply only with one playful Czech sentence of at most 250 characters. No quotes or formatting.",
@@ -374,6 +374,7 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
             return result;
         }, token);
         using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
+        OpenAiServiceTierPolicy.ValidateResponse(document.RootElement, OpenAiOperation.CharacterWelcome);
         if (!document.RootElement.TryGetProperty("status", out var status) || status.GetString() != "completed") { return null; }
         var text = string.Concat(document.RootElement.GetProperty("output").EnumerateArray()
             .Where(item => item.TryGetProperty("type", out var type) && type.GetString() == "message")
@@ -396,7 +397,7 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
         });
         var request = JsonSerializer.Serialize(new
         {
-            model = WandDecisionBudget.Luna, store = false, max_output_tokens = 240,
+            model = WandDecisionBudget.Luna, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.CharacterWelcome), max_output_tokens = 240,
             reasoning = new { effort = "none" },
             instructions = PortraitContentPolicy.SafetyInstructions + "\n"
                 + PortraitContentPolicy.LoadingMessageInstructions
@@ -423,6 +424,7 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
         var fallback = CharacterWelcomePolicy.Fallback;
         var legacyFallback = CharacterWelcomePolicy.LegacyText(fallback);
         using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
+        OpenAiServiceTierPolicy.ValidateResponse(document.RootElement, OpenAiOperation.CharacterWelcome);
         if (!document.RootElement.TryGetProperty("status", out var status) || status.GetString() != "completed")
         {
             return new(null, legacyFallback, fallback);

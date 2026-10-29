@@ -52,7 +52,7 @@ internal sealed class LaunchConfigurationException(string code, int status) : Ex
     internal int Status { get; } = status;
 }
 
-internal sealed class LaunchPolicyStore
+internal sealed partial class LaunchPolicyStore
 {
     private readonly string _connectionString;
 
@@ -313,6 +313,7 @@ internal sealed class LaunchPolicyStore
         command.Parameters.AddWithValue("$expected", update.ExpectedRevision);
         if (command.ExecuteNonQuery() != 1)
         { throw new LaunchConfigurationException("beta_admission_revision_conflict", 409); }
+        SynchronizeDefaultGroup(connection, transaction, ReadInside(connection, transaction), actorId, now);
         InsertGroupAudit(connection, transaction, actorId, now, update.ExpectedRevision + 1, "beta_admission_updated");
         transaction.Commit();
         return ReadBetaAdmission();
@@ -363,6 +364,8 @@ internal sealed class LaunchPolicyStore
         update.Parameters.AddWithValue("$expected", request.ExpectedRevision);
         if (update.ExecuteNonQuery() != 1)
         { throw new LaunchConfigurationException("beta_admission_revision_conflict", 409); }
+        SynchronizeDefaultGroup(connection, transaction, ReadInside(connection, transaction), actorId, now);
+        group = ReadGroup(connection, transaction, group.Id)!;
         InsertGroupAudit(connection, transaction, actorId, now, request.ExpectedRevision + 1, "beta_admission_group_selected");
         transaction.Commit();
         return (ReadBetaAdmission(), group);
@@ -474,7 +477,10 @@ internal sealed class LaunchPolicyStore
         var scheduleChanged = request.LaunchAt is not null && current.LaunchAt != request.LaunchAt;
         var draftDuration = scheduleChanged ? LegacyDraftDuration(request.LaunchAt, now) : null;
         if (scheduleChanged)
-        { EnsureGroupCountdownEditable(connection, transaction, id, now); }
+        {
+            EnsureIndependentCountdown(connection, transaction, id);
+            EnsureGroupCountdownEditable(connection, transaction, id, now);
+        }
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         var adultContentEnabled = request.AdultContentEnabled ?? current.AdultContentEnabled;
@@ -507,6 +513,7 @@ internal sealed class LaunchPolicyStore
         { throw new LaunchConfigurationException("invalid_launch_countdown", 400); }
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
+        EnsureIndependentCountdown(connection, transaction, id);
         EnsureGroupCountdownEditable(connection, transaction, id, now);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -527,6 +534,7 @@ internal sealed class LaunchPolicyStore
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
+        EnsureIndependentCountdown(connection, transaction, id);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "UPDATE launch_groups SET launch_at=$deadline,countdown_confirmed_at=$now,opened_at=NULL,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected AND countdown_duration_seconds IS NOT NULL AND launch_at IS NULL";
@@ -545,6 +553,7 @@ internal sealed class LaunchPolicyStore
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
+        EnsureIndependentCountdown(connection, transaction, id);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "UPDATE launch_groups SET opened_at=$now,revision=revision+1,updated_at=$now WHERE id=$id AND revision=$expected AND launch_at IS NOT NULL AND launch_at<=$now AND force_start_at_end=0 AND opened_at IS NULL";
@@ -712,6 +721,7 @@ internal sealed class LaunchPolicyStore
             throw new LaunchConfigurationException("launch_revision_conflict", 409);
         }
 
+        SynchronizeDefaultGroup(connection, transaction, ReadInside(connection, transaction), actorId, now);
         using var audit = connection.CreateCommand();
         audit.Transaction = transaction;
         audit.CommandText = "INSERT INTO launch_audit(actor_id,changed_at,revision,change_summary) VALUES($actor,$now,$revision,$summary)";

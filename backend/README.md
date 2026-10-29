@@ -273,7 +273,21 @@ jen registrovaný iPhone v Safari; serverový test to nenahrazuje a neprokazuje
 dostupnost z jiné sítě. Soubory
 pod `/ios/` jsou veřejně čitelné, proto IPA nesmí obsahovat tajemství.
 
-Responses požadavky explicitně používají `service_tier: default`. Jiný nebo chybějící vrácený tarif se odmítne a drží rezervaci (včetně rezervy pro 2× sazbu Fast), bez automatického opakování. Potvrzený Standard se vypořádá konzervativně podle tokenů; tato interní částka není účetní údaj z OpenAI. Ochrana tarifu byla přidána po živém eval, který vracel Fast při neuvedeném tarifu.
+Tarif Responses řídí `OpenAiServiceTierPolicy` podle operace a každý požadavek ho uvádí explicitně, aby nepřebíral placené nastavení projektu:
+
+| Operace / veřejný vstup | Tarif Responses |
+| --- | --- |
+| Výzkum postavy po `PUT /app/v1/customer/character` nebo `PUT /app/v1/prelaunch/character`, opravě přes `/correction` a povoleném opakování | `fast` |
+| Přivítání a volitelný průběžný text při přípravě portrétu (také přes `POST /app/v1/prelaunch/character/retry` a oprávněný `POST /app/v1/admin/launch/personalization-preview`) | `fast` |
+| Rozhovor dílny: `POST /app/v1/customer/wand/workshop/sessions` a `/{id}/messages` | `fast` |
+| Návrh hůlky po `POST /app/v1/customer/wand/workshop/sessions/{id}/finish` a povoleném opakování | `fast` |
+| Příběh památky (`OpenAiKeepsakeProvider`), běžná hra, komentáře souboje, analýza kostýmu, Live rozhodnutí a syntetický adaptér zapečetěného případu | `default` (Standard) |
+
+Fast požadavky přijímají vrácené `fast`, dokumentovaný starší alias `priority` nebo legitimní snížení na `default`. Chybějící či neznámý tarif se odmítne. Standard požadavky v rozpočtovaných operacích a příběhu památky nadále odmítají jiný tarif. Nevzniká automatické placené opakování. Modely, souhlasy a pravidla vlastnictví se nemění.
+
+Sdílená kalkulace rozpočtu pro Terra/Sol oceňuje skutečný vrácený tarif: Fast používá 2× Standard sazby, snížení na Standard používá Standard sazby, zaokrouhlení proběhne jednou. Stávající rezervace v rozpočtovaných operacích pokrývají i Fast při jejich limitech vstupu a výstupu; neočekávaný tarif ponechává jejich rezervaci nevypořádanou. Příprava postavy a hůlky zachovává své dosavadní tokenové audity a limity; tento přepínač jim nezavádí nový peněžní rozpočet. Interní částky jsou konzervativní odhad ceníku, nikoliv fakturace OpenAI.
+
+Samostatné Images API pro portréty a ilustrace hůlek nemá v dokumentovaném schématu parametr `service_tier`; změna proto zrychluje textovou přípravu a neslibuje rychlejší generování obrázků. Realtime, hlas a embeddingy se tímto tarifem neřídí. Podklady ověřené 2026-10-29: [Fast a snížení tarifu](https://developers.openai.com/api/docs/guides/priority-processing), [ceník podporovaných modelů](https://developers.openai.com/api/docs/pricing), [parametry Images](https://developers.openai.com/api/reference/resources/images/methods/generate). Živé placené ověření nebylo součástí změny.
 
 Úplný postup a omezení opakovaného použití artefaktů jsou v [CI/CD návodu](../docs/ci-cd.md).
 
@@ -299,13 +313,21 @@ Instalační pozvánka TestFlight/Firebase stačí pro vstup do aplikace. Neprok
 identitu účastníka: po dobu otevřeného náboru je beta samoobslužná. Nový účet
 získá pouze roli `Customer`. Pro malou známou skupinu po přijetí všech nábor zavřete.
 
-Majitel v existující správě vybere nebo vytvoří skupinu, nastaví její čas otevření,
-označí ji jako výchozí pro betu a výslovně povolí přijímání. Poté pošle pouze
-instalaci. Uzavření náboru neblokuje aktivní členy. V přehledu účastníků lze
+Majitel v existující správě vybere nebo vytvoří výchozí náborovou skupinu a výslovně
+povolí přijímání. Tato skupina automaticky přebírá globální produkční termín a stav
+odemčení; členství s rolí Beta na tom nic nemění. Poté pošle pouze instalaci.
+Uzavření náboru neblokuje aktivní členy. V přehledu účastníků lze
 jednomu účtu odebrat nebo obnovit přístup; obnova vrátí stejná data i při zavřeném
 náboru a sama nespustí zrušenou práci. Shodná jména rozlišuje ID účtu.
 
 Konfigurace náboru začíná zavřená a migrace ani restart ji neotevřou.
+Výchozí skupina se při dosažení produkčního termínu otevře automaticky. Posunutí
+produkčního termínu do budoucnosti ji vrátí do čekání i po předchozím otevření.
+Zapnutá produkční brána bez termínu zůstává uzavřená; vypnutá brána nebo výslovné
+produkční odemčení ji otevře ihned. Nábor je nezávislý a změna plánu jej nezapíná.
+Konfigurace i výchozí skupina se mění v jedné transakci. Start serveru jednorázově
+srovná i dříve uložený termín bez nutnosti nového uložení správcem; opakování beze
+změny neposouvá revizi skupiny ani nepřidává audit. Ostatní skupiny mají vlastní odpočty.
 Změna výchozí skupiny nepřesouvá přijaté účty. Passkey registrace váže skupinu
 a revizi pravidel při zahájení a znovu je ověřuje před založením účtu a členství.
 Pevné univerzum se ukládá s přijetím a server je vynucuje i při pozdějších zápisech.
@@ -341,7 +363,7 @@ jsou samostatné správcovské kroky; lokální testy je v produkci neprovedou.
 `PUT /app/v1/admin/launch/groups/{id}` spravují samostatné skupiny
 `{id,name,launchAt,revision,countdownDurationSeconds,forceStartAtEnd,countdownConfirmedAt,openedAt}`.
 Zápis termínu používá očekávanou revizi;
-`launchAt=null` drží skupinu uzavřenou. API pro pozvánky přijímá volitelné
+u nezávislé skupiny `launchAt=null` drží vstup uzavřený. API pro pozvánky přijímá volitelné
 `launchGroupId`. Členství se uloží pouze při skutečném založení nového účtu
 z dané pozvánky; obnova účtu jej nepřepisuje. Správa je chráněna stávajícími
 administrátorskými/operačními kontrolami.
@@ -356,7 +378,12 @@ revokaci. Výchozí náborová skupina se tím nemění. Již otevřená zdrojov
 nepatří do této čekárny. Přesun do otevřené cílové skupiny umožní aktivnímu členovi
 vstup ihned; odebranému členovi přístup neobnovuje.
 
-Každá skupina má vlastní návrh délky odpočtu a volbu `forceStartAtEnd`:
+Ostatní skupiny mají vlastní návrh délky odpočtu a volbu `forceStartAtEnd`.
+Výchozí náborové skupině nelze návrh uložit, potvrdit ani ručně zahájit: server vrací
+`409 launch_group_uses_production_schedule`; změna názvu a obsahu zůstává povolená.
+Její termín upravuje globální produkční kalendář přes `PUT /app/v1/admin/launch`.
+
+Pro nezávislé skupiny platí:
 
 1. Uložení návrhu odpočet nespouští; host vidí „Brzy“.
 2. Potvrzení spustí celou nastavenou délku od serverového času potvrzení.
@@ -365,9 +392,9 @@ Každá skupina má vlastní návrh délky odpočtu a volbu `forceStartAtEnd`:
    správce výslovně nepotvrdí zahájení večera.
 
 Force nikdy neznamená okamžité otevření při uložení návrhu nebo přeskočení
-potvrzení odpočtu. Globální odemčení nepotlačuje skupinové potvrzení ani revokaci.
-Změna názvu skupiny běžící odpočet nemění. Migrace ani restart nic automaticky
-nepotvrzují; starší uložený termín se převádí na nepotvrzený návrh délky od
+potvrzení odpočtu. Globální odemčení nepotlačuje potvrzení nezávislých skupin ani revokaci.
+Změna názvu skupiny běžící odpočet nemění. U nezávislých skupin migrace ani restart
+nic automaticky nepotvrzují; starší uložený termín se převádí na nepotvrzený návrh délky od
 poslední změny plánu (nejméně jedna sekunda), nikoli na povolení otevřít skupinu.
 
 `GET /app/v1/admin/launch/waiting-room` vrací soukromý přehled pro správu

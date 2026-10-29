@@ -472,7 +472,7 @@ internal static class WandArtworkTests
             if (Fail) return new(FailStatus) { Content = new StringContent("{\"error\":{\"message\":\"synthetic failure\"}}") };
             object body = path.EndsWith("/responses") ? new
             {
-                id = "resp_synthetic", status = "completed", model = "synthetic-story-model", output = new[] { new
+                id = "resp_synthetic", status = "completed", service_tier = "default", model = "synthetic-story-model", output = new[] { new
                 {
                     type = "message", id = "msg_synthetic", role = "assistant", status = "completed", content = new[] { new
                     {

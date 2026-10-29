@@ -201,6 +201,7 @@ internal static class WandGenerationTests
             ["Answer 1: leaves quietly", "Answer 2: asks for a map", "Answer 3: wand sneezes at lies"]);
         var body = OpenAiWandGenerationProvider.BuildRequest(request, "fake-model");
         using var document = JsonDocument.Parse(body);
+        Check(document.RootElement.GetProperty("service_tier").GetString() == "fast", "wand generation explicitly requests Fast");
         var root = document.RootElement;
         Check(!root.GetProperty("store").GetBoolean() && root.GetProperty("text").GetProperty("format").GetProperty("strict").GetBoolean(),
             "strict structured outputs and store=false");
@@ -227,6 +228,8 @@ internal static class WandGenerationTests
             new MobileWandWorkshopMessage("message-3", 2, "user", "The brass compass points toward the bridge.", "voice", 3)
         };
         var dialogueRequest = OpenAiMobileWandQuestionProvider.BuildReplyRequest(completeProfile with { Enrichment = completeProfile.Enrichment! with { NeedsClarification = false } }, messages, "fake-model");
+        using var dialogueTier = JsonDocument.Parse(dialogueRequest);
+        Check(dialogueTier.RootElement.GetProperty("service_tier").GetString() == "fast", "workshop replies explicitly request Fast");
         Check(dialogueRequest.Contains(laterFact) && dialogueRequest.Contains("I ask the stars")
             && dialogueRequest.Contains("brass compass") && dialogueRequest.Contains("uncertain canon")
             && dialogueRequest.Contains("readyToFinish")

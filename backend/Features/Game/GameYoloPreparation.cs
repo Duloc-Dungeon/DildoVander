@@ -87,7 +87,7 @@ internal sealed partial class OpenAiGameYoloProvider
         };
         var request = JsonSerializer.Serialize(new
         {
-            model = Model, store = false, service_tier = "default", max_output_tokens = 5000,
+            model = Model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary), max_output_tokens = 5000,
             reasoning = new { effort = "low" },
             instructions = "Vytvoř celý nový český scénář Souboje špatných nápadů ze OBOU fikčních postav a jejich skutečných hůlek ve vstupu. "
                 + "Nevybírej z katalogu: vymysli společný konkrétní problém, situaci, předmět, cíl i jednotlivé akce a protiakce obou hráčů. "
