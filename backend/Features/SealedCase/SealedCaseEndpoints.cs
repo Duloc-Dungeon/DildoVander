@@ -11,13 +11,14 @@ using Microsoft.AspNetCore.Identity;
 
 namespace Kufr.Backend.Features.SealedCase;
 
-internal sealed record SealedCaseCreateRequest(string? OperationId, int ExpectedPlayers, string? Variant = "first");
+internal sealed record SealedCaseCreateRequest(string? OperationId, int ExpectedPlayers, string? Variant = "first", string? ScenarioId = null);
 internal sealed record SealedCaseLobbyRequest(string? OperationId, long ExpectedRevision, bool Ready, bool Consent, bool ScenarioConsent = false);
 internal sealed record SealedCaseStartRequest(string? OperationId, long ExpectedRevision);
 internal sealed record SealedCaseLobbyEntry(string PlayerId, bool Ready, bool Consent, string? SnapshotRef = null, bool ScenarioConsent = false);
 internal sealed record SealedCaseLobbyView(string Id, string PlayerId, string Status, long Revision,
     string Variant, int ExpectedPlayers, int ReadyPlayers, bool OwnReady, bool CanManage,
-    bool CanStart, string StartBlocker, long ServerNow, int Chapters, int PlanningSeconds, int QuietSeconds);
+    bool CanStart, string StartBlocker, long ServerNow, int Chapters, int PlanningSeconds, int QuietSeconds,
+    SealedScenarioSummary? Scenario = null);
 
 // Session-bound lobby and playable scenario routes share frozen membership,
 // privacy reservations and the authoritative durable case journal.
@@ -90,11 +91,13 @@ internal static partial class SealedCaseEndpoints
             catch (SealedCasePersistenceException e) { return ApiProblem.Create(h, e.Status, e.Code); }
             catch (CustomerDataAccessException e) { return ApiProblem.Create(h, e.Status, e.Code); }
         });
+        routes.MapGet("/scenarios", () => Results.Ok(new { defaultScenarioId = SealedScenarioCatalog.DefaultId,
+            scenarios = SealedScenarioCatalog.Summaries() })).WithMetadata(new SealedCaseOwnerControl());
         routes.MapPost("", async (SealedCaseCreateRequest request, HttpContext h, SealedCaseStore store, AccountDatabase db, TimeProvider clock) =>
         {
             ValidateOperation(request.OperationId);
             var userId = h.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var created = store.Create((string)h.Items[GroupItem]!, userId, clock.GetUtcNow().ToUnixTimeSeconds(), request.ExpectedPlayers, request.Variant ?? "first", request.OperationId, () => AuthorizeWrite(h, db, clock));
+            var created = store.Create((string)h.Items[GroupItem]!, userId, clock.GetUtcNow().ToUnixTimeSeconds(), request.ExpectedPlayers, request.Variant ?? "first", request.OperationId, () => AuthorizeWrite(h, db, clock), request.ScenarioId);
             return Results.Created($"/app/v1/sealed-cases/{created.Id}", await ViewAsync(store.Read(created.Id), userId, db, h.RequestServices.GetRequiredService<CharacterProfileStore>(), clock, h.RequestAborted));
         }).WithMetadata(new SealedCaseOwnerControl());
         routes.MapGet("/{id}", async (string id, HttpContext h, SealedCaseStore store, AccountDatabase db, TimeProvider clock) =>
@@ -205,7 +208,8 @@ internal static partial class SealedCaseEndpoints
             latest.Values.Count(x => x.Ready && x.Consent && x.SnapshotRef is not null),
             latest.TryGetValue(userId, out var own) && own.Ready && own.Consent && own.SnapshotRef is not null,
             setup.RootElement.GetProperty("createdBy").GetString() == userId, false, requiresReselection ? "sealed_case_selection_required" : "sealed_case_scenario_unavailable",
-            clock.GetUtcNow().ToUnixTimeSeconds(), schedule.Chapters, schedule.PlanningSeconds, schedule.QuietSeconds);
+            clock.GetUtcNow().ToUnixTimeSeconds(), schedule.Chapters, schedule.PlanningSeconds, schedule.QuietSeconds,
+            SealedScenarioCatalog.FromSetup(setup.RootElement).Describe());
     }
 
     private static HashSet<string> EligibleMembers(string groupId, AccountDatabase db, CharacterProfileStore profiles) =>

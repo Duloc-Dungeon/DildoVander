@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 
 namespace Kufr.Backend.Features.SealedCase;
@@ -19,6 +20,16 @@ internal sealed partial class SealedCaseStore
             ?? throw new InvalidOperationException("Missing sealed case content version.");
         using var document = JsonDocument.Parse(stream);
         return JsonSerializer.Serialize(document.RootElement, Json);
+    }
+
+    private static string ContentVersionFor(SealedScenarioState? scene)
+    {
+        if (scene is null) { return ContentVersionJson; }
+        var presentation = SealedScenarioCatalog.ForState(scene);
+        var version = JsonNode.Parse(ContentVersionJson)!.AsObject();
+        version["scenarioId"] = scene.ScenarioId;
+        version["scenarioVersion"] = presentation.Version;
+        return version.ToJsonString(Json);
     }
 
     private static void InitializeWorldSchema(SqliteConnection c)
@@ -94,13 +105,14 @@ internal sealed partial class SealedCaseStore
         if (revision != expectedRevision) throw new SealedCasePersistenceException("revision_conflict", 409);
         using var insert = c.CreateCommand(); insert.Transaction = tx;
         insert.CommandText = "INSERT INTO sealed_case_world VALUES($id,$version,$checkpoint,$revision,$now)";
-        insert.Parameters.AddWithValue("$id", caseId); insert.Parameters.AddWithValue("$version", ContentVersionJson);
+        var contentVersion = ContentVersionFor(checkpoint.Scenario);
+        insert.Parameters.AddWithValue("$id", caseId); insert.Parameters.AddWithValue("$version", contentVersion);
         insert.Parameters.AddWithValue("$checkpoint", JsonSerializer.Serialize(checkpoint, Json));
         insert.Parameters.AddWithValue("$revision", checked(revision + 1)); insert.Parameters.AddWithValue("$now", now);
         insert.ExecuteNonQuery();
         AdvanceWorldRevision(c, tx, caseId, revision);
         tx.Commit();
-        return new(revision + 1, 0, ContentVersionJson, checkpoint);
+        return new(revision + 1, 0, contentVersion, checkpoint);
     }
 
     internal SealedStoredWorld ReadWorld(string caseId, string groupId)
@@ -190,7 +202,7 @@ internal sealed partial class SealedCaseStore
         }
         var world = ReadWorld(c, tx, caseId, revision);
         if (chapter != world.LastChapter + 1) throw new SealedCasePersistenceException("wrong_chapter", 409);
-        if (world.ContentVersionJson != ContentVersionJson) throw new SealedCasePersistenceException("unsupported_content_version", 409);
+        if (world.ContentVersionJson != ContentVersionFor(world.Checkpoint.Scenario)) throw new SealedCasePersistenceException("unsupported_content_version", 409);
         var game = SealedGame.Restore(world.Checkpoint);
         var results = game.Resolve(chapter, canonical).ToArray();
         if (useConfirmedPlans) { ElectOversight(c, tx, caseId, chapter, SealedCaseRules.Schedule(game.Scenario?.Variant ?? "full", game.Players.Count).Chapters, game); }

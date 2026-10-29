@@ -178,6 +178,16 @@ describe('native account archive transport limits', () => {
     expect(bridge.accountTransport).not.toHaveBeenCalled();
   });
 
+  it('bounds opponent PNG downloads to the exact revision route', async () => {
+    const identity = await import('./session');
+    const path = `/app/v1/game/matches/${'a'.repeat(32)}/opponent/wand-artwork?revision=${'b'.repeat(64)}`;
+    expect(identity.accountTransportResponseLimit(path, 'GET')).toBe(32 * 1024 * 1024);
+    expect(identity.accountTransportResponseAllowed(path, 'GET', 32 * 1024 * 1024 + 1)).toBe(false);
+    for (const invalid of [path + '&x=1', path + '\n', path.replace('revision=', 'asset='), path.replace('b'.repeat(64), 'b'.repeat(63)), path + '/extra']) {
+      expect(identity.accountTransportResponseLimit(invalid, 'GET')).toBe(1024 * 1024);
+    }
+    expect(identity.accountTransportResponseLimit(path, 'POST')).toBe(1024 * 1024);
+  });
   it('admits workshop artwork binaries only for the exact GET route and archive size cap', async () => {
     bridge.native = true;
     const identity = await import('./session');

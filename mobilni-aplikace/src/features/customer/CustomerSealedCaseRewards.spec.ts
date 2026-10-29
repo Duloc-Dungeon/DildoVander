@@ -50,7 +50,7 @@ describe('CustomerSealedCaseRewards', () => {
     const wrapper = setup();
     await flushPromises();
 
-    expect(request).toHaveBeenCalledWith('/app/v1/sealed-cases/rewards', 'GET', undefined, expect.any(AbortSignal));
+    expect(request).toHaveBeenCalledWith('/app/v1/sealed-cases/rewards?scenarioMetadata=true', 'GET', undefined, expect.any(AbortSignal));
     const rows = wrapper.findAll('.case-rewards__item');
     expect(rows).toHaveLength(2);
     expect(rows[0].text()).toContain('Strážce');
@@ -58,6 +58,38 @@ describe('CustomerSealedCaseRewards', () => {
     expect(rows[1].text()).toContain('Spiklenec');
     expect(rows[0].text()).toContain('Případ posledního zvonu');
     expect(wrapper.text()).not.toContain(ownerCase);
+  });
+
+  it('uses the saved scenario title and team for each different case', async () => {
+    request.mockResolvedValueOnce(page([
+      { caseId: ownerCase, releasedAt: '2026-10-29T12:00:00Z', team: 'Guardian', confirmedPlans: 3, successfulPlans: 2,
+        scenario: { id: 'HP_SMRTIJEDI_BYSTROZOROVE_V1', title: 'Smrtijedi a bystrozorové: Případ zamčeného letaxu', teamLabel: 'Bystrozorové' } },
+      { caseId: anotherCase, releasedAt: '2026-10-29T11:00:00Z', team: 'Conspirator', confirmedPlans: 2, successfulPlans: 1,
+        scenario: { id: 'HP_SPOLECENSTVI_KRBU_V1', title: 'Společenství vlastníků krbu', teamLabel: 'Přednostní cestující' } },
+    ]));
+    const wrapper = setup();
+    await flushPromises();
+    const rows = wrapper.findAll('.case-rewards__item');
+    expect(rows[0].find('h3').text()).toBe('Smrtijedi a bystrozorové: Případ zamčeného letaxu');
+    expect(rows[0].find('.case-rewards__badge').text()).toBe('Bystrozorové');
+    expect(rows[1].find('h3').text()).toBe('Společenství vlastníků krbu');
+    expect(rows[1].find('.case-rewards__badge').text()).toBe('Přednostní cestující');
+    expect(wrapper.text()).not.toContain('Případ posledního zvonu');
+  });
+
+  it.each([
+    { id: 'HP_SPOLECENSTVI_KRBU_V1', title: 'Společenství vlastníků krbu', teamLabel: 'Sousedé', privateNotes: 'PRIVATE_CANARY' },
+    { id: 'HP_SPOLECENSTVI_KRBU_V1', title: ' ', teamLabel: 'Sousedé' },
+    null,
+  ])('rejects malformed or expanded scenario metadata', async scenario => {
+    request.mockResolvedValueOnce(page([
+      { caseId: ownerCase, releasedAt: '2026-10-29T12:00:00Z', team: 'Guardian', confirmedPlans: 1, successfulPlans: 1, scenario },
+    ]));
+    const wrapper = setup();
+    await flushPromises();
+    expect(wrapper.findAll('.case-rewards__item')).toHaveLength(0);
+    expect(wrapper.text()).toContain('Tvoje stopy v případech jsou dočasně nedostupné.');
+    expect(wrapper.text()).not.toContain('PRIVATE_CANARY');
   });
 
   it('rejects contradictory reward counts and keeps Czech copy with the legacy locale prop', async () => {
