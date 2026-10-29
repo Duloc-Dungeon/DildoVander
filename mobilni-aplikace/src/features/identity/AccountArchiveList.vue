@@ -349,7 +349,7 @@ onBeforeUnmount(() => {
         <img v-if="!filterIsActive" :src="keepsakeArtwork" alt="" width="960" height="640" loading="lazy" />
         <p>{{ filterIsActive ? copy.filteredEmpty : copy.empty }}</p>
         <nav v-if="!filterIsActive" class="collection-empty__actions" aria-label="Další kroky">
-          <RouterLink to="/play">Zkusit hru</RouterLink>
+          <RouterLink class="aw-button aw-button--primary" to="/play">Zkusit hru</RouterLink>
           <RouterLink to="/play/ranking">Otevřít žebříček</RouterLink>
         </nav>
       </div>

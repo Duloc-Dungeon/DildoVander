@@ -312,7 +312,6 @@ onBeforeUnmount(resetPrivateState);
 .customer-page :deep(.aw-input) { color: var(--wns-text, #f5f5f0); background: var(--wns-surface-raised, #222626); border-color: var(--wns-line, #343939); border-radius: 14px; }
 .customer-page :deep(a) { color: var(--wns-text, #f5f5f0); }
 .customer-page :deep(.aw-muted), .customer-page :deep(small) { color: var(--wns-muted, #b2b9b6); }
-.customer-page :deep(.aw-button--primary) { min-height: 54px; color: #111513; background: var(--wns-mint, #b8f3d4); border-radius: 999px; font-weight: 750; }
 .customer-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
 .customer-form { max-width: 42rem; display: grid; gap: 1rem; }
 .character-overview { display: grid; gap: var(--wns-space-20); padding-block-end: var(--wns-space-24); border-bottom: 1px solid var(--wns-line); }

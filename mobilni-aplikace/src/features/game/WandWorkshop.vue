@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue';
 import { RouterLink } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
+import AwNotice from '../../components/AwNotice.vue';
 import { account, accountOrigin, accountRequest, accountTransport } from '../identity/session';
 import { secureUuid } from '../../application/identifiers.mjs';
 import { projectMobileGeneratedWand } from '../archive/generatedWand';
@@ -23,6 +24,7 @@ const partial = ref(''); let partialRole = ''; const artworkUrl = ref(''); const
 const answerField = ref<HTMLTextAreaElement>(); const correction = ref<WorkshopMessage | null>(null); const correctionText = ref('');
 const title = ref<HTMLElement>();
 const artworkDecoded = ref(false);
+const newlyCompleted = ref(false);
 let controller = new AbortController(); let poll: ReturnType<typeof setTimeout> | undefined;
 let refreshInFlight: Promise<void> | null = null; let syncFailures = 0;
 let operation = ''; let artworkKey = ''; let retryId = ''; let messageId = '';
@@ -115,6 +117,9 @@ function schedule() {
   poll = setTimeout(() => { void refresh(); }, interval);
 }
 function applySession(value: WorkshopSession | null) {
+  // A restored result stays quiet; acknowledge only a completion observed here.
+  if (value?.id !== session.value?.id) newlyCompleted.value = false;
+  else if (value?.status === 'complete' && session.value?.status !== 'complete') newlyCompleted.value = !document.hidden;
   if (value?.id !== session.value?.id) { releaseArtwork(); retryId = ''; }
   session.value = value; if (value) { operation = value.id; void updateArtwork(value); }
   if (['generating', 'complete'].includes(value?.status ?? '') && active.value) { live.setMuted(true); muted.value = true; }
@@ -257,6 +262,7 @@ function resetWorkshopContext() {
   controller.abort(); controller = new AbortController(); refreshInFlight = null;
   syncFailures = 0; syncError.value = ''; error.value = ''; artworkError.value = '';
   stopMedia(); releaseArtwork(); session.value = null; entry.value = undefined;
+  newlyCompleted.value = false;
   operation = ''; messageId = ''; retryId = ''; draft.value = ''; partial.value = ''; partialRole = '';
   correction.value = null; correctionText.value = ''; mode.value = 'voice'; busy.value = false;
 }
@@ -269,7 +275,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 </script>
 
 <template>
-  <section class="trunk-workshop" :data-result="!!wand" :data-mode="mode" :data-stage="stage" aria-labelledby="workshop-title">
+  <section class="trunk-workshop" :data-result="!!wand" :data-new-wand="newlyCompleted" :data-mode="mode" :data-stage="stage" aria-labelledby="workshop-title">
     <header class="trunk-workshop__header"><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton><RouterLink v-else to="/play" @click="stopMedia">← Zpět do hry</RouterLink><RouterLink v-if="!prelaunch" to="/me/character" @click="stopMedia">Moje postava</RouterLink><span>Ollivander Industries™</span></header>
     <div class="trunk-workshop__identity">
       <h1 id="workshop-title" ref="title" tabindex="-1">{{ wand ? wand.name : upgrade ? 'Nová kapitola tvé hůlky' : 'Kufrova dílna' }}</h1>
@@ -287,9 +293,9 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
         </div>
         <p class="trunk-workshop__announcement" aria-live="polite" aria-atomic="true">{{ mode === 'text' && session?.status === 'asking' ? confirmedReply : '' }}</p>
         <p v-if="loading" role="status">Ověřujeme tvoji postavu a dílnu…</p>
-        <template v-else-if="unavailable"><p role="status">{{ unavailable }}</p><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k postavě</AwButton><RouterLink v-else to="/me/character">Upravit nebo dokončit přípravu postavy</RouterLink><RouterLink v-if="!prelaunch && entry?.reason?.includes('boss')" to="/play">Pomoci osvobodit dílnu</RouterLink></template>
+        <template v-else-if="unavailable"><p role="status">{{ unavailable }}</p><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k postavě</AwButton><RouterLink v-else class="aw-button aw-button--primary" to="/me/character">Upravit nebo dokončit přípravu postavy</RouterLink><RouterLink v-if="!prelaunch && entry?.reason?.includes('boss')" to="/play">Pomoci osvobodit dílnu</RouterLink></template>
         <template v-else-if="wand">
-          <p class="trunk-workshop__saved" role="status">{{ prelaunch ? 'Hůlka je uložená. Tvoje příprava je hotová.' : 'Hůlka je uložená a připravená ke hře.' }}</p>
+          <AwNotice class="trunk-workshop__saved" tone="success">{{ prelaunch ? 'Hůlka je uložená. Tvoje příprava je hotová.' : 'Hůlka je uložená a připravená ke hře.' }}</AwNotice>
           <p>{{ wand.material }} · {{ wand.core }}</p>
           <AwButton v-if="prelaunch" variant="primary" @click="stopMedia(); emit('exit')">Počkat na začátek večera</AwButton>
           <RouterLink v-else class="aw-button aw-button--primary" to="/play" @click="stopMedia">Pokračovat s hůlkou</RouterLink>
@@ -342,7 +348,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__header span { color: var(--wns-muted); font-size: .75rem; }
 .trunk-workshop__identity h1 { margin: 0 0 .4rem; letter-spacing: -.03em; }
 .trunk-workshop__identity p { margin: 0; }
-.trunk-workshop__saved { color: var(--wns-mint); }
+.trunk-workshop .trunk-workshop__saved { margin: 0; padding-block: .5rem; }
 .trunk-workshop__scene { display: grid; gap: 1rem; min-width: 0; margin-top: 1.25rem; }
 .trunk-workshop__conversation { display: grid; align-content: start; gap: 1rem; min-width: 0; }
 .trunk-workshop__hint { color: var(--wns-muted); font-size: .9rem; line-height: 1.5; }
@@ -380,6 +386,15 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__journey li { flex: 1; min-width: 0; padding-top: .65rem; border-top: 2px solid var(--wns-line); color: var(--wns-muted); font-size: .8rem; }
 .trunk-workshop__journey li[aria-current] { border-color: var(--wns-mint); color: var(--wns-mint); font-weight: 760; }
 .trunk-workshop__journey li[data-complete='true'] { border-color: var(--wns-mint); }
+@media (prefers-reduced-motion: no-preference) {
+  .trunk-workshop[data-new-wand='true'] .trunk-workshop__saved :deep(.aw-notice__icon) {
+    animation: wand-sealed 480ms cubic-bezier(.16, 1, .3, 1);
+  }
+}
+@keyframes wand-sealed {
+  from { clip-path: inset(0 100% 0 0); transform: rotate(-12deg) scale(.85); }
+  to { clip-path: inset(0); transform: none; }
+}
 .trunk-workshop__scene > :deep(.trunk-stage) { padding: .75rem; background: var(--wns-amber); color: var(--wns-on-amber); border-radius: var(--wns-radius-card); overflow: hidden; }
 .trunk-workshop[data-stage='forging'] .trunk-workshop__scene > :deep(.trunk-stage) { background: var(--wns-violet); color: var(--wns-on-violet); }
 .trunk-workshop[data-result='true'] .trunk-workshop__scene > :deep(.trunk-stage) { background: var(--wns-violet); color: var(--wns-on-violet); }

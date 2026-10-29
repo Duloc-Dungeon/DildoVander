@@ -30,6 +30,30 @@ beforeEach(() => {
 });
 afterEach(() => { view?.unmount(); view = undefined; vi.useRealTimers(); });
 describe('customer Live workshop', () => {
+  it('acknowledges completion observed in this workshop and keeps a restored result quiet', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    session = { ...saved(), status: 'generating' };
+    await render();
+    expect(view!.attributes('data-new-wand')).toBe('false');
+    api.observer.workshopSession(completed());
+    await flushPromises();
+    expect(view!.attributes('data-new-wand')).toBe('true');
+    expect(view!.get('.trunk-workshop__saved').attributes('role')).toBe('status');
+    expect(view!.get('.trunk-workshop__saved').text()).toBe('Hůlka je uložená a připravená ke hře.');
+    view!.unmount();
+    session = completed();
+    await render();
+    expect(view!.attributes('data-new-wand')).toBe('false');
+  });
+  it('does not celebrate a completion received while the document is hidden', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    session = { ...saved(), status: 'generating' };
+    await render();
+    api.observer.workshopSession(completed());
+    await flushPromises();
+    expect(view!.attributes('data-new-wand')).toBe('false');
+    expect(view!.text()).toContain('Hůlka je uložená a připravená ke hře.');
+  });
   it('returns prelaunch guests to their countdown and stops media without linking to the game', async () => {
     await render(true);
     expect(view!.find('a').exists()).toBe(false);

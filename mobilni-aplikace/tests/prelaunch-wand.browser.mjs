@@ -61,10 +61,16 @@ try {
       color: getComputedStyle(button).outlineColor,
       width: getComputedStyle(button).outlineWidth,
       panel: getComputedStyle(button.closest('.prelaunch-wand')).backgroundColor,
+      foreground: getComputedStyle(button).color,
+      background: getComputedStyle(button).backgroundColor,
+      minHeight: getComputedStyle(button).minHeight,
     }));
     assert.equal(focus.color, 'rgb(16, 36, 25)', 'handoff focus uses the dark mint foreground');
     assert.notEqual(focus.color, focus.panel, 'keyboard focus remains visible on the mint handoff');
     assert.equal(focus.width, '3px');
+    assert.equal(focus.foreground, 'rgb(184, 243, 212)', 'handoff keeps mint text');
+    assert.equal(focus.background, 'rgb(16, 36, 25)', 'handoff keeps its dark action on the mint panel');
+    assert.equal(focus.minHeight, '52px', 'handoff retains its local control size');
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Kufrova dílna', exact: true }).waitFor();
     assert.equal(await page.locator('.launch-card').isVisible(), false, 'portrait yields to workshop');
