@@ -273,6 +273,46 @@ generaci kvůli přehrání efektu. Pravidlo deseti sekund v popředí před zob
 „Pokračovat“ je výslovná místní výjimka vlastníka v `PRODUCT.md`, ne obecný
 časovač pro všechna tlačítka. Omezený pohyb zachovává obsah bez přesunů a škálování.
 
+### Živý kufr
+
+Dílna používá stejný design v2: jeden výrazný objekt, plochou jantarovou scénu
+rozhovoru a fialovou scénu výroby i hotové ilustrace. Nejde o nové společné
+barvy stavů. Nedostupná dílna a chyba výroby mají zvýšenou tmavou plochu.
+Původní autorizovaná ilustrace kufru nebo hůlky zůstává hlavním obrazem;
+prázdný prostor nenahrazuje ukázková hůlka. Pokud ilustrace ještě vzniká nebo
+selže, výsledná scéna se skryje a uložený výsledek s další akcí zůstává čitelný.
+
+Průběh má tři pojmenované fáze **Rozhovor / Výroba / Tvoje hůlka**. Aktivní
+fázi vyznačuje mintová horní linka a tučný popisek, dokončenou mintová linka.
+Aktuální krok má také `aria-current="step"`. Fáze vychází z uloženého stavu;
+počet odpovědí ani čas nejsou odhadem procent výroby.
+
+Na široké obrazovce je objekt vedle rozhovoru, od 850 px ve dvou sloupcích;
+scéna zůstává při posunu nahoře. Na telefonu předchází ovládání, při hovoru
+nebo psaní se zmenší. Stop a ukončení hovoru jsou před obsahem rozhovoru;
+Stop se neskrývá za přepis ani animaci. Uložený stav a materiál předcházejí
+hlavní akci, verdikt následuje za ní. V ověřeném předstartovním průchodu je
+akce návratu dostupná v první obrazovce také na 320 px při běžné velikosti textu.
+Při 200% textu zůstává průchod bez vodorovného přetékání, bez slibu všeho nad přehybem.
+
+**Pohyb následuje skutečnost.** Kufr a sedm segmentů reagují jen na měřený
+výstup právě přehrávané řeči, s lineární odezvou (100 ms). Mimo stav řeči je
+vstupní úroveň nulová; scéna nesimuluje hlas náhodou ani nesnímá nový mikrofon.
+Indikátor výroby se pohybuje pouze při potvrzené výrobě, bez odhadu zbývajícího
+času. Předání scény používá příchod (650 ms) a odchod (200 ms); dekódovaná
+ilustrace má vlastní příchod (850 ms). Jde o místní hodnoty `TrunkStage`,
+nikoli novou společnou délku animací. Omezený pohyb zachovává plnohodnotnou
+statickou scénu, obsah i okamžitě dostupné akce.
+
+Potvrzené textové odpovědi oznamuje samostatná zdvořilá živá oblast;
+streamované útržky se průběžně nepředčítají. Vlastnosti, kouzla a uložený
+přepis jsou rozbalovací podrobnosti. Ilustrace má samostatné načítání, chybu
+a obnovu; její nedostupnost nesmí znovu vyrábět hůlku.
+
+Zdroje: `WandWorkshop.vue`, `TrunkStage.vue` a
+[průchod dílnou](docs/magicky-kufr-workshop.md), sloučeno v `e938775`.
+Browserové kontroly používají syntetická data; nedokládají živou AI ani nativní telefon.
+
 ### Souboje v Hrách
 
 Scéna staví dvě celé hůlky proti sobě. Osobní ilustrace mají svislou kompozici
