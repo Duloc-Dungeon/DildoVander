@@ -90,6 +90,11 @@ import InformationBackLink from './InformationBackLink.vue';
       <p><RouterLink to="/support">{{ customerCopy.text('privacy.support-link') }}</RouterLink></p>
     </section>
     </template>
+    <section aria-labelledby="privacy-elevenlabs">
+      <h2 id="privacy-elevenlabs">Hlas a záložní ilustrace ElevenLabs</h2>
+      <p>Jednotný souhlas s AI při registraci nebo jeho jednorázovém obnovení pokrývá OpenAI i ElevenLabs. ElevenLabs dostává zvuk mikrofonu pro přepis a text odpovědí pro vytvoření hlasu. Přepis a přípravu hůlky zpracovává OpenAI. Před každým dalším hovorem se souhlas nevyžaduje znovu. Můžeš pokračovat psaním bez hlasového přenosu do ElevenLabs.</p>
+      <p>Pokud se ilustrace hůlky u OpenAI nepodaří, může následovat jeden pokus přes ElevenLabs. Předává se jen vizuální popis uložené hůlky, nikoli fotografie, jméno hosta nebo celý rozhovor. Podrobnosti uvádějí <a href="https://elevenlabs.io/privacy-policy" target="_blank" rel="noopener noreferrer">zásady soukromí ElevenLabs</a>.</p>
+    </section>
     <section aria-labelledby="privacy-push">
       <h2 id="privacy-push">Oznámení</h2>
       <p>Oznámení jsou dobrovolná a zapínají se zvlášť na každém zařízení. Pro doručení uložíme identifikátor zařízení nebo přihlášení prohlížeče a propojíme ho s aktuálním přihlášením k účtu. Stručné zprávy o výzvách do hry, pozvánkách a večeru doručují služby Apple, Google nebo poskytovatel prohlížeče. Obsah postavy ani rozhovorů do oznámení neposíláme.</p>

@@ -1,6 +1,9 @@
 import type { LabSession, SocketTicket, Turn } from './contracts';
 import { mediaController } from '../workshop/media.mjs';
 import { classifyLabFailure } from './errors';
+import { SpeechLevel } from './speechLevel';
+import type { WorkshopTranscriptSnapshot } from '../game/workshopTranscript';
+import { SpeechEngineVoice } from './speechEngineVoice';
 
 export type VoicePhase = 'idle' | 'connecting' | 'waiting' | 'listening' | 'speaking' | 'ended' | 'error';
 export interface VoiceObserver {
@@ -14,6 +17,8 @@ export interface VoiceObserver {
   wand?(value: unknown): void;
   outputLevel?(value: number): void;
   workshopSession?(value: unknown): void;
+  workshopTranscript?(value: WorkshopTranscriptSnapshot): void;
+  userPartial?(text: string): void;
   providerReady?(providerSessionId: string | null): void;
 }
 
@@ -58,6 +63,7 @@ interface AcknowledgedPlayback { id: string; received: number; ended: boolean }
 
 /** One owned browser/WebView audio pipeline; it never acquires a device session. */
 export class LabVoice {
+  private speechEngine: SpeechEngineVoice | null = null;
   private phase: VoicePhase = 'idle';
   private generation = 0;
   private socket: WebSocket | null = null;
@@ -70,6 +76,9 @@ export class LabVoice {
   private meterFrame = 0;
   private outputGain: GainNode | null = null;
   private outputEnabled = true;
+  private outputVolume = 1;
+  private normalizeSpeech = false;
+  private speechLevel = new SpeechLevel();
   private playback = new Map<AudioBufferSourceNode, ScheduledAudio>();
   private pcm: Int16Array | null = null;
   private pcmRead = 0;
@@ -92,6 +101,7 @@ export class LabVoice {
   private finishingWand = false;
   private awaitingInterrupt = false;
   private connectionTimeout: ReturnType<typeof setTimeout> | null = null;
+  private ticketAbort: AbortController | null = null;
   constructor(private observer: VoiceObserver) {}
   private transition(next: VoicePhase, generation = this.generation): void {
     if (generation !== this.generation || next === this.phase) return;
@@ -105,8 +115,10 @@ export class LabVoice {
     this.phase = next; this.observer.phase(next);
   }
 
-  async connect(ticket: () => Promise<SocketTicket>, sessionId: string | (() => string), origin: string, options: { capture?: boolean; purpose?: 'lab' | 'wand' | 'workshop' } = {}): Promise<void> {
+  async connect(ticket: (signal?: AbortSignal) => Promise<SocketTicket>, sessionId: string | (() => string), origin: string, options: { capture?: boolean; purpose?: 'lab' | 'wand' | 'workshop' } = {}): Promise<void> {
     this.dispose();
+    const ticketAbort = new AbortController(); this.ticketAbort = ticketAbort;
+    this.normalizeSpeech = options.purpose === 'workshop';
     const generation = this.generation;
     const capture = options.capture !== false;
     this.terminal = false; this.transition('connecting', generation);
@@ -123,7 +135,18 @@ export class LabVoice {
       };
       // Check the exact prepared revision before requesting the microphone.
       let credentials: SocketTicket | null = null;
-      if (options.purpose === 'workshop') { credentials = await ticket(); if (!current()) return; }
+      if (options.purpose === 'workshop') { credentials = await ticket(ticketAbort.signal); if (!current()) return; }
+      if (credentials?.speechEngine != null) {
+        context.onstatechange = null;
+        this.context = null;
+        await context.close();
+        if (!current()) return;
+        const engine = new SpeechEngineVoice(this.observer);
+        this.speechEngine = engine;
+        engine.setOutputEnabled(this.outputEnabled); engine.setOutputVolume(this.outputVolume);
+        await engine.connect(credentials, typeof sessionId === 'function' ? sessionId() : sessionId, origin);
+        return;
+      }
       let stream: MediaStream | null = null;
       if (capture) {
         stream = await navigator.mediaDevices.getUserMedia({ audio: {
@@ -142,7 +165,7 @@ export class LabVoice {
       if (!current()) return;
       }
       const outputGain = context.createGain(); this.outputGain = outputGain;
-      outputGain.gain.value = this.outputEnabled ? 1 : 0;
+      outputGain.gain.value = this.outputEnabled ? this.outputVolume : 0;
       if (this.observer.outputLevel) {
       const analyser = context.createAnalyser(); analyser.fftSize = 256; this.analyser = analyser;
       outputGain.connect(analyser); analyser.connect(context.destination);
@@ -156,7 +179,7 @@ export class LabVoice {
       };
       measure();
       } else outputGain.connect(context.destination);
-      credentials ??= await ticket(); if (!current()) return;
+      credentials ??= await ticket(ticketAbort.signal); if (!current()) return;
       const address = new URL(socketUrl(credentials, typeof sessionId === 'function' ? sessionId() : sessionId, origin, options.purpose));
       address.searchParams.set('playback', '1');
       const socket = new WebSocket(address.href);
@@ -171,7 +194,8 @@ export class LabVoice {
       source.connect(processor); processor.connect(silentGain); silentGain.connect(context.destination);
       let pendingPcm = new Int16Array(0);
       processor.port.onmessage = event => {
-        if (!current() || !this.ready || this.awaitingInterrupt || this.muted || socket.readyState !== WebSocket.OPEN) return;
+        if (!current() || !this.ready || this.awaitingInterrupt && options.purpose !== 'workshop'
+          || this.muted || socket.readyState !== WebSocket.OPEN) return;
         const samples = event.data as Float32Array;
         const energy = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
         // GPT Live owns full-duplex turn taking. A level threshold cannot tell
@@ -226,6 +250,16 @@ export class LabVoice {
           }
           else if (value.type === 'speech' && value.state === 'speech_stopped' && this.playbackMode === 'acknowledged') {
             if (!this.activePlayback) this.transition('waiting', generation);
+          }
+          else if (value.type === 'workshop_transcript' && options.purpose === 'workshop') {
+            if (!this.ready || !['user', 'assistant'].includes(value.role)
+              || !Number.isSafeInteger(value.sequence) || value.sequence < 1
+              || typeof value.text !== 'string' || value.text.length > 1800 || typeof value.final !== 'boolean') {
+              this.fail('invalid_server_event', false); return;
+            }
+            this.observer.workshopTranscript?.({
+              role: value.role, sequence: value.sequence, text: value.text, final: value.final,
+            });
           }
           else if (value.type === 'transcript' && ['user', 'assistant'].includes(value.role) && typeof value.delta === 'string') {
             if (!(this.awaitingInterrupt && value.role === 'assistant')) this.observer.transcript(value.role, value.delta);
@@ -367,6 +401,7 @@ export class LabVoice {
           this.pcm[this.pcmRead] = 0;
           this.pcmRead = (this.pcmRead + 1) % this.pcm.length;
         }
+        if (this.normalizeSpeech) this.speechLevel.process(channel);
         this.queuedSamples -= length;
         const node = context.createBufferSource(); node.buffer = buffer; node.connect(this.outputGain ?? context.destination);
         const start = Math.max(context.currentTime, this.nextAudioTime);
@@ -403,6 +438,7 @@ export class LabVoice {
     }
   }
   private stopPlayback(): void {
+    this.speechLevel.reset();
     if (this.playbackTimer) clearInterval(this.playbackTimer);
     this.playbackTimer = null;
     for (const [node, scheduled] of this.playback) {
@@ -411,9 +447,16 @@ export class LabVoice {
     this.playback.clear(); this.nextAudioTime = 0;
     this.pcm?.fill(0); this.pcm = null; this.pcmRead = 0; this.queuedSamples = 0; this.completedSamples = 0;
   }
-  setOutputEnabled(value: boolean): void { this.outputEnabled = value; if (this.outputGain) this.outputGain.gain.value = value ? 1 : 0; }
-  setMuted(value: boolean): void { this.muted = value; this.stream?.getAudioTracks().forEach(track => { track.enabled = !value; }); }
+  setOutputEnabled(value: boolean): void { this.outputEnabled = value; this.speechEngine?.setOutputEnabled(value); if (this.outputGain) this.outputGain.gain.value = value ? this.outputVolume : 0; }
+  setOutputVolume(value: number): void {
+    if (!Number.isFinite(value) || value < 0 || value > 1) throw new RangeError('Invalid speech volume.');
+    this.outputVolume = value;
+    this.speechEngine?.setOutputVolume(value);
+    if (this.outputGain) this.outputGain.gain.value = this.outputEnabled ? value : 0;
+  }
+  setMuted(value: boolean): void { this.muted = value; this.speechEngine?.setMuted(value); this.stream?.getAudioTracks().forEach(track => { track.enabled = !value; }); }
   interrupt(): void {
+    if (this.speechEngine) { this.speechEngine.interrupt(); return; }
     if (!this.ready || this.awaitingInterrupt || this.socket?.readyState !== WebSocket.OPEN) return;
     const active = this.activePlayback;
     if (this.playbackMode === 'acknowledged' && !active) return;
@@ -428,16 +471,20 @@ export class LabVoice {
     this.transition('waiting');
   }
   sendText(text: string): boolean {
+    if (this.speechEngine) return this.speechEngine.sendText(text);
     if (!this.ready || this.socket?.readyState !== WebSocket.OPEN) return false;
     this.socket.send(JSON.stringify({ type: 'text', text }));
     if(this.typedInput) { this.streamComplete = false; this.transition('waiting'); }
     return true;
   }
   end(): void {
+    if (this.speechEngine) { this.speechEngine.end(); this.speechEngine = null; return; }
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'end' }));
     this.terminal = true; this.dispose(); this.transition('ended');
   }
   dispose(): void {
+    this.ticketAbort?.abort(); this.ticketAbort = null;
+    this.speechEngine?.dispose(); this.speechEngine = null;
     cancelAnimationFrame(this.meterFrame); this.analyser?.disconnect(); this.analyser = null; this.observer.outputLevel?.(0);
     ++this.generation; this.clearTimeout(); this.ready = false; this.muted = false; this.finishingWand = false;
     const socket = this.socket; this.socket = null;

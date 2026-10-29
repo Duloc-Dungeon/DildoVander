@@ -64,6 +64,17 @@ jobs:
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-progress
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --chronicle
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --chronicle-http
+      - name: Workshop speech, settings and image contracts (offline providers)
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
+        run: |
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --elevenlabs-workshop
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --speech-engine
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --workshop-settings
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --actor-voices
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --image-prompts
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --local-try-hub
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --generated-wands
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --character-portraits
       - name: Sealed case privacy, plans and timing (offline providers)
         if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |

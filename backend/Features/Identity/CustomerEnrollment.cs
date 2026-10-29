@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Identity;
 
-internal sealed record CustomerEnrollmentRequest(string DisplayName, bool OpenAiConsent = false);
+internal sealed record CustomerEnrollmentRequest(string DisplayName, bool OpenAiConsent = false, int ConsentVersion = 1);
 
 internal static partial class AccountEndpoints
 {
@@ -33,7 +33,8 @@ internal static partial class AccountEndpoints
         {
             return ApiProblem.Create(context, 503, "customer_registration_unavailable");
         }
-        if (!request.OpenAiConsent) { return ApiProblem.Create(context, 409, "ai_consent_required"); }
+        if (!request.OpenAiConsent || request.ConsentVersion != AccountAiConsent.CurrentVersion)
+        { return ApiProblem.Create(context, 409, "ai_consent_required"); }
         var launchStore = context.RequestServices.GetService<LaunchPolicyStore>();
         if (launchStore is null || !launchStore.TryReadOpenBetaAdmission(out var admission, out _))
         {

@@ -6,6 +6,7 @@ using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
+using Kufr.Backend.Features.Launch;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,6 +21,10 @@ internal static partial class AccountIdentityTests
         using var device = fixture.Client();
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Owner");
         await CsrfAsync(owner);
+        // These session APIs run after opening; the shared fixture deliberately starts before launch.
+        var launch = fixture.App.Services.GetRequiredService<LaunchPolicyStore>();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        LaunchTestSchedule.Set(launch, launch.ReadBetaAdmission().GroupId!, now - 1000, now);
         var firstProfile = await CustomerAsync(first, firstKey);
         var secondProfile = await CustomerAsync(second, secondKey);
         const string labelRoute = "/app/v1/customer/character/label";
@@ -78,7 +83,7 @@ internal static partial class AccountIdentityTests
         Check(denied.StatusCode == HttpStatusCode.Conflict
             && (await denied.Content.ReadAsStringAsync()).Contains("ai_consent_required"),
             "client boolean cannot bypass missing persisted registration consent");
-        Check((await first.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true })).StatusCode
+        Check((await first.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode
             == HttpStatusCode.NoContent, "legacy account explicitly confirms processing consent before issuing a ticket");
         var issuedFirst = await TicketAsync(first, firstProfile, firstOp);
         await SavePreferencesAsync(first, firstProfile, 1, "cs-CZ", "gentle");
@@ -185,7 +190,7 @@ internal static partial class AccountIdentityTests
     private static async Task<JsonElement> CustomerAsync(HttpClient client, VirtualPasskey key)
     {
         await CsrfAsync(client);
-        var options = await JsonAsync(await client.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Same character", openAiConsent = true }));
+        var options = await JsonAsync(await client.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Same character", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         var credential = key.Create(options);
         Check((await client.PostAsJsonAsync("/app/v1/customer/enrollment/complete", new { credential })).IsSuccessStatusCode, "customer enrolls");
         await CsrfAsync(client);

@@ -44,7 +44,7 @@ internal static partial class AccountIdentityTests
         }
         Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = false })).StatusCode == HttpStatusCode.Conflict,
             "legacy account must affirm processing consent even while launch is pending");
-        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true })).StatusCode == HttpStatusCode.NoContent,
+        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.NoContent,
             "legacy account can record explicit processing consent before launch");
         var consentedSession = await JsonAsync(await customer.GetAsync("/app/v1/session"));
         Check(consentedSession.GetProperty("account").GetProperty("openAiConsent").GetBoolean(),

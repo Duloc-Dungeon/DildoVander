@@ -19,6 +19,8 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" PrivateAssets="all" />
     <EmbeddedResource Include="../ai-eval/voice-persona.txt" LogicalName="Kufr.Backend.VoicePersona" />
+    <EmbeddedResource Include="Features/Wands/Prompts/dialogue.cs-CZ.txt" LogicalName="Kufr.Backend.WorkshopDialogue" WithCulture="false" />
+    <EmbeddedResource Include="Features/Wands/Prompts/speech.cs-CZ.txt" LogicalName="Kufr.Backend.WorkshopSpeechDirections" WithCulture="false" />
     <EmbeddedResource Include="../ai-eval/ollivander-trunk-persona.txt" LogicalName="Kufr.Backend.OllivanderPersona" />
     <EmbeddedResource Include="../ai-eval/ollivander-trunk-live-persona.txt" LogicalName="Kufr.Backend.OllivanderLivePersona" />
     <EmbeddedResource Include="../ai-eval/prompt.txt" LogicalName="Kufr.Backend.PartyPrompt" />

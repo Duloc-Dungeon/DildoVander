@@ -32,14 +32,14 @@ internal static partial class AccountIdentityTests
             && !(await JsonAsync(closedStatus)).GetProperty("available").GetBoolean(),
             "default enrollment reports closed until owner explicitly opens it");
         Check((int)(await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
-            new { displayName = "Guest", openAiConsent = true })).StatusCode == 423,
+            new { displayName = "Guest", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == 423,
             "closed recruitment rejects public customer enrollment");
 
         var group = launch.ReadGroup(selected.Group.Id)!;
         var opened = launch.UpdateBetaAdmission("fixture-owner",
             new(launch.ReadBetaAdmission().Revision, group.Id, true, "The Shire", launch.ReadGroup(group.Id)!.Revision, now + 3_600_000), now);
         var optionsResponse = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
-            new { displayName = "Guest", openAiConsent = true });
+            new { displayName = "Guest", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion });
         var options = await JsonAsync(optionsResponse);
         var closedBeforeFinish = launch.UpdateBetaAdmission("fixture-owner",
             new(launch.ReadBetaAdmission().Revision, group.Id, false, "The Shire", launch.ReadGroup(group.Id)!.Revision, now + 3_600_000), now + 1);
@@ -53,7 +53,7 @@ internal static partial class AccountIdentityTests
         var reopened = launch.UpdateBetaAdmission("fixture-owner",
             new(launch.ReadBetaAdmission().Revision, group.Id, true, "The Shire", launch.ReadGroup(group.Id)!.Revision, now + 3_600_000), now + 3);
         var changedOptions = await JsonAsync(await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
-            new { displayName = "Changed target", openAiConsent = true }));
+            new { displayName = "Changed target", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         var retargeted = launch.UpdateBetaAdmission("fixture-owner",
             new(launch.ReadBetaAdmission().Revision, other.Id, true, null, launch.ReadGroup(other.Id)!.Revision, now + 3_600_000), now + 4);
         using var rejectedAfterRetarget = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/complete",
@@ -64,7 +64,7 @@ internal static partial class AccountIdentityTests
         var finalConfig = launch.UpdateBetaAdmission("fixture-owner",
             new(launch.ReadBetaAdmission().Revision, group.Id, true, "The Shire", launch.ReadGroup(group.Id)!.Revision, now + 3_600_000), now + 5);
         var finalOptions = await JsonAsync(await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
-            new { displayName = "Guest", openAiConsent = true }));
+            new { displayName = "Guest", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         using var completed = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/complete",
             new { credential = guestKey.Create(finalOptions) });
         Check(completed.IsSuccessStatusCode, "open recruitment accepts new customer through the selected group");
@@ -110,7 +110,7 @@ internal static partial class AccountIdentityTests
             new { expectedRevision = 0, name = "Guest", universe = "The Shire" });
         Check(missingConsent.StatusCode == HttpStatusCode.Conflict,
             "membership does not imply account AI consent for a legacy account");
-        Check((await guest.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true })).StatusCode
+        Check((await guest.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode
             == HttpStatusCode.NoContent, "legacy member explicitly grants AI consent before character preparation");
         Check((await guest.PutAsJsonAsync("/app/v1/prelaunch/character",
             new { expectedRevision = 0, name = "Guest", universe = "Forged", openAiConsent = true })).StatusCode == HttpStatusCode.Conflict,

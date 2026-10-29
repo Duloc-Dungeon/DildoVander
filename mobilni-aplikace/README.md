@@ -549,6 +549,10 @@ npm ci --prefix ../contracts
 npm run dev
 ```
 
+Pro místní zkoušení zákaznické Kufrovy dílny bez nasazení použijte
+[místní rozcestník rozhovorů](../docs/local-try-hub.md). Spustí backend i
+frontend na localhost a zachová skutečné přihlášení a hlasový transport.
+
 Kontrola sestavení:
 
 ```text

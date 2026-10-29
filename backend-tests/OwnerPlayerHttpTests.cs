@@ -106,7 +106,7 @@ internal static partial class MobileGameTests
                 "owner can complete a normal workshop dialogue before launch");
         }
         using var liveTicketResponse = await owner.PostAsJsonAsync(workshop + "/" + operation + "/ticket",
-            new { socketOrigin = "https://localhost" });
+            new { socketOrigin = "https://localhost", elevenLabsConsent = true });
         Check(liveTicketResponse.StatusCode == HttpStatusCode.OK, "owner obtains protected workshop Live admission before launch");
         var liveTicket = await liveTicketResponse.Content.ReadFromJsonAsync<JsonElement>();
         Check((await owner.PostAsJsonAsync(workshop + "/" + operation + "/finish", new { })).StatusCode == HttpStatusCode.OK,

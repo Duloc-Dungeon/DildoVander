@@ -19,6 +19,7 @@ internal static class ChronicleSourceTests
             ConversationMoments(root);
             EveningFreeze(root);
             CardAndBadge(root);
+            ProseImagePrivacy();
             Console.WriteLine("Chronicle source/renderer checks passed; synthetic local data only.");
         }
         finally
@@ -78,6 +79,8 @@ internal static class ChronicleSourceTests
     {
         var launch = new LaunchPolicyStore(root);
         var group = launch.CreateGroup("admin", new("Testovací večer", null), 1000);
+        LaunchTestSchedule.Set(launch, group.Id, 1000, 1000);
+        group = launch.ReadGroup(group.Id)!;
         var input = new ChronicleEventInput("evening", group.Id + ":guest", group.Id, 1234,
             "Závěr večera", "Potvrzené vzpomínky", [new("guest", "Host", "owner")], Story: ["Doložená událost"], Visibility: "public");
         ChronicleOutboxEnvelope envelope = new(input, ["guest"], new Dictionary<string, IReadOnlyList<ChronicleAward>>());
@@ -129,7 +132,10 @@ internal static class ChronicleSourceTests
             "Obě postavy skončily v sazích.", [new("a", "Kazimír", "participant"), new("b", "Berta", "participant")],
             Result: "fiasco", Story: ["Plán", "Komplikace", "Následek"], ShareText: "Konvice zůstala doma.");
         var prompt = ChronicleIllustrator.BuildPrompt(input);
-        Check(prompt.Contains("fiasco") && prompt.Contains("Konvice") && !prompt.Contains("OPENAI_API_KEY"), "Image facts preserve the confirmed fiasco.");
+        Check(prompt.Contains("fiasko") && prompt.Contains("Konvice") && !prompt.Contains("OPENAI_API_KEY"), "Image prose preserves the confirmed fiasco.");
+        var fiascoWithParticipant = ChronicleIllustrator.BuildPrompt(input with { WinnerId = "a" });
+        Check(fiascoWithParticipant.Contains("společné fiasko") && !fiascoWithParticipant.Contains("Potvrzený vítěz"),
+            "a supplied participant identifier cannot turn the confirmed fiasco into a victory");
         var bytes = ChronicleIllustrator.RenderCard(input, null, true);
         using var card = SKBitmap.Decode(bytes);
         Check(card.Width == 1024 && card.Height == 1408, "Shareable card is an actual decoded PNG.");
@@ -137,6 +143,37 @@ internal static class ChronicleSourceTests
         using var decoded = SKBitmap.Decode(badge);
         Check(decoded.Width == 384 && decoded.Height == 432 && decoded.GetPixel(0, 0).Alpha == 0,
             "Personal badge renders its scene in a transparent shared frame.");
+    }
+
+    private static void ProseImagePrivacy()
+    {
+        var visual = """
+            {"name":"Raven","universe":"Original fiction","traits":["Stříbrný plášť"],
+             "profileId":"private-profile-id","portraitReferenceBase64":"private-base64-bytes",
+             "portraitSha256":"private-portrait-hash","sourceUrl":"https://private.example/source",
+             "hiddenOutcome":"private-hidden-outcome","privatePlan":"private-plan",
+             "wand":{"wandId":"private-wand-id","name":"Jiskra","material":"Jasan","core":"Uhlík",
+                     "designDescription":"Štíhlá hůlka s měděnou rukojetí","accountId":"private-nested-account"}}
+            """;
+        var person = new ChronicleParticipant("private-account-id", "Kazimír", "team-b", "Raven", "Jiskra", visual,
+            "private-visual-provenance");
+        var input = new ChronicleEventInput("team", "private-source-id", "private-group-id", 1, "Útěk konvice",
+            "Postava zastavila rozběhnutou konvici.", [person], Result: "b", WinnerId: person.AccountId,
+            Story: ["Konvice převrátila stolek."], Decisions: [new(person.AccountId, "Zachytit konvici", "Měděná rukojeť zazářila", "private-decision-proof")],
+            DecisiveChoice: "Zachytit konvici", VisualMotifs: ["Konvice a měděná rukojeť"]);
+        var prompt = ChronicleIllustrator.BuildPrompt(input);
+        Check(prompt.Contains("Vítězný tým: Kazimír", StringComparison.Ordinal)
+            && prompt.Contains("Stříbrný plášť", StringComparison.Ordinal)
+            && prompt.Contains("Štíhlá hůlka s měděnou rukojetí", StringComparison.Ordinal)
+            && prompt.Contains("Měděná rukojeť zazářila", StringComparison.Ordinal)
+            && !prompt.Contains('{') && !prompt.Contains('}') && !prompt.Contains("\"participants\"", StringComparison.Ordinal),
+            "chronicle image prompt describes the confirmed scene, named winner and frozen visual facts as prose");
+        foreach (var excluded in new[] { "private-account-id", "private-profile-id", "private-base64-bytes", "private-portrait-hash",
+            "private-hidden-outcome", "private-plan", "private-wand-id", "private-nested-account", "private-visual-provenance",
+            "private-source-id", "private-group-id", "private-decision-proof", "private.example" })
+        {
+            Check(!prompt.Contains(excluded, StringComparison.Ordinal), "chronicle prompt excludes identifiers, media bytes, source URLs and private hidden fields");
+        }
     }
 
     private static CharacterConversationSnapshot Profile() => new("profile", 1, new("Kazimír", "Vlastní svět"),

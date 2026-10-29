@@ -12,7 +12,7 @@ internal static partial class AccountIdentityTests
         using var ownerKey = new VirtualPasskey();
         await CsrfAsync(owner);
         var options = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/enrollment/options",
-            new { token = Fixture.Bootstrap, displayName = "Vojta", openAiConsent = true }));
+            new { token = Fixture.Bootstrap, displayName = "Vojta", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         Check(options.GetProperty("user").GetProperty("name").GetString() == "Wand Night Stand Owner · Olivander",
             "web and native registration receive a readable account and role instead of a UUID");
         Check(options.GetProperty("user").GetProperty("displayName").GetString() == "Wand Night Stand Owner · Olivander", "both provider labels identify the account");
@@ -43,7 +43,7 @@ internal static partial class AccountIdentityTests
         using var customer = fixture.Client();
         using var customerKey = new VirtualPasskey();
         await CsrfAsync(customer);
-        var customerOptions = await JsonAsync(await customer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Alena", openAiConsent = true }));
+        var customerOptions = await JsonAsync(await customer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Alena", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         Check(customerOptions.GetProperty("user").GetProperty("name").GetString() == "Wand Night Stand Customer · Alena", "public customer signup also has recognizable provider labels");
         Check((await customer.PostAsJsonAsync("/app/v1/customer/enrollment/complete", new { credential = customerKey.Create(customerOptions) })).IsSuccessStatusCode, "customer label preserves normal signup");
         Console.WriteLine("PASS readable passkey provider/app labels, stable handles, real attestation/add/sign-in, custom names, and recovery role binding");

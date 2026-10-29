@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { classifyLabFailure, describeLabFailure } from './errors';
 
 describe('closed Persona Lab failure categories', () => {
+  it('distinguishes ElevenLabs setup and consent from provider transport without echoing provider text', () => {
+    expect(classifyLabFailure('elevenlabs_not_configured')).toMatchObject({ category: 'Infrastructure', recoverable: false });
+    expect(classifyLabFailure('elevenlabs_consent_required')).toMatchObject({ category: 'Auth', recoverable: false });
+    for (const code of ['elevenlabs_connection_failed', 'elevenlabs_transcription_failed', 'elevenlabs_speech_failed']) {
+      expect(classifyLabFailure(code)).toMatchObject({ category: 'AudioVideo', recoverable: false });
+    }
+    expect(classifyLabFailure('elevenlabs_untrusted_provider_text').message).not.toContain('untrusted_provider_text');
+  });
   it('matches actual account and configuration codes with actionable Czech text', () => {
     const reauth = classifyLabFailure('recent_passkey_required', 403);
     expect(reauth).toMatchObject({ category: 'Auth', recoverable: false });

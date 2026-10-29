@@ -15,6 +15,7 @@ internal static class GameBossNarrationTests
         await AccessAndClaimsAsync();
         await DeliveryAsync();
         await SpeechTransportAsync();
+        await CapturedVoiceCacheAsync();
         Console.WriteLine("Baron narration, context, leases and ElevenLabs transport passed.");
     }
 
@@ -237,6 +238,55 @@ internal static class GameBossNarrationTests
         await FaultAsync(() => unavailable.SpeakAsync("Text", default), "boss_voice_unavailable");
     }
 
+    private static async Task CapturedVoiceCacheAsync()
+    {
+        using var fixture = new Fixture();
+        var speech = new ChangingSpeech();
+        var narrator = new Narrator();
+        var service = fixture.Service(narrator, speech);
+        await fixture.TextAsync(service);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var audio = service.AudioAsync("g", "player", fixture.Id, 1, fixture.InputAsync, timeout.Token);
+        await speech.Started.Task.WaitAsync(timeout.Token);
+        speech.Voice = "VoiceTwo";
+        speech.Release.TrySetResult();
+        Check((await audio).SequenceEqual(new byte[] { 1 }), "in-flight Baron audio retains its captured voice");
+        var input = await fixture.InputAsync(default);
+        var cached = fixture.Store.ReadBossNarration("g", "player", fixture.Id, 1, input.Key);
+        Check(cached?.AudioKey == "VoiceOne:eleven_v4:delivery-v1", "audio is published under the same captured key used for synthesis");
+        var refreshed = await service.AudioAsync("g", "player", fixture.Id, 1, fixture.InputAsync, timeout.Token);
+        Check(refreshed.SequenceEqual(new byte[] { 2 }) && speech.Calls == 2 && narrator.Calls == 1,
+            "the next Baron request refreshes only audio for the new voice");
+        await service.AudioAsync("g", "player", fixture.Id, 1, fixture.InputAsync, timeout.Token);
+        Check(speech.Calls == 2, "subsequent requests reuse the correctly labeled new-voice cache");
+    }
+
+    private sealed class ChangingSpeech : IGameBossSpeech
+    {
+        internal string Voice = "VoiceOne";
+        internal int Calls;
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Enabled => true;
+        public string CacheKey => Voice + ":eleven_v4:delivery-v1";
+        public IGameBossSpeech Capture() => new Bound(this, Voice);
+        public Task<byte[]> SpeakAsync(string text, CancellationToken token) => throw new InvalidOperationException("Uncaptured Baron voice used");
+        private sealed class Bound(ChangingSpeech parent, string voice) : IGameBossSpeech
+        {
+            public bool Enabled => true;
+            public string CacheKey => voice + ":eleven_v4:delivery-v1";
+            public async Task<byte[]> SpeakAsync(string text, CancellationToken token)
+            {
+                if (Interlocked.Increment(ref parent.Calls) == 1)
+                {
+                    parent.Started.TrySetResult();
+                    await parent.Release.Task.WaitAsync(token);
+                }
+                return voice == "VoiceOne" ? [1] : [2];
+            }
+        }
+    }
+
     private static HttpResponseMessage AudioResponse(byte[] bytes)
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
@@ -303,7 +353,7 @@ internal static class GameBossNarrationTests
         internal Task<GameBossNarrationInput> InputAsync(CancellationToken token) => Task.FromResult(new GameBossNarrationInput(
             Store.ReadBossAttempt("g", "player", Id), new("private-account-id", "Sherlock", "Baker Street", "Hůlka", ["Detektiv"]),
             Store.ReadBoss("g").Rescued));
-        internal GameBossNarration Service(Narrator narrator, Speech speech) => new(Store, narrator, speech, NullLogger<GameBossNarration>.Instance);
+        internal GameBossNarration Service(Narrator narrator, IGameBossSpeech speech) => new(Store, narrator, speech, NullLogger<GameBossNarration>.Instance);
         internal Task<GameBossNarrationView> TextAsync(GameBossNarration service, CancellationToken token = default) =>
             service.NarrateAsync("g", "player", Id, Revision, InputAsync, token);
         internal void Advance() => Store.ChooseBoss("g", "player", Id, new(Guid.NewGuid().ToString(), Revision, "strike"));

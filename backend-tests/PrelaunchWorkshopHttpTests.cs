@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Text.Json;
@@ -32,6 +33,9 @@ internal static partial class AccountIdentityTests
                 services.AddSingleton<IMobileWandQuestionProvider, PrelaunchWorkshopDialogue>();
                 services.AddSingleton<WandGenerationService>();
                 services.AddSingleton<MobileWandRuntime>();
+                services.AddSingleton(new ElevenLabsWorkshopOptions());
+                services.AddSingleton<IWorkshopSpeechProvider, ElevenLabsWorkshopProvider>();
+                services.AddSingleton<ElevenLabsWorkshopRuntime>();
                 services.AddSingleton<MobileWorkshopLiveRuntime>();
                 services.AddSingleton<GptLiveClient>();
                 services.AddSingleton(sp => GptLiveOptions.Read(sp.GetRequiredService<IConfiguration>()));
@@ -89,35 +93,46 @@ internal static partial class AccountIdentityTests
         var admission = await WorkshopAdmissionAsync(guestId, operation, prepared);
         await fixture.App.Services.GetRequiredService<MobileWorkshopLiveRuntime>().RequireAuthorityAsync(admission, default);
         Check((await guest.PostAsJsonAsync(sessionPath + "/ticket", new { socketOrigin = "https://localhost" })).IsSuccessStatusCode,
-            "closed-night guest can obtain the same protected Live admission as text");
-        using (var anonymous = fixture.Client())
-        using (var response = await anonymous.GetAsync(sessionPath + "/live"))
+            "stored unified OpenAI and ElevenLabs consent admits voice without a per-call checkbox");
+        Check((await guest.PostAsJsonAsync(sessionPath + "/ticket", new { socketOrigin = "https://localhost" })).IsSuccessStatusCode,
+            "the next voice admission reuses the same stored consent");
+        using (var anonymous = new HttpClient(new HttpClientHandler
         {
-            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
-            Check(response.StatusCode == HttpStatusCode.Forbidden
-                && problem.GetProperty("code").GetString() == "account_origin_required",
-                "cookie-less Live reaches the mapped workshop endpoint and still requires an HTTPS WebSocket with an allowed origin");
+            UseProxy = false,
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+        }) { BaseAddress = guest.BaseAddress })
+        using (var request = new HttpRequestMessage(HttpMethod.Get,
+            sessionPath + "/live?ticket=invalid-workshop-ticket"))
+        {
+            request.Headers.Add("Origin", "https://localhost");
+            request.Headers.Connection.Add("Upgrade");
+            request.Headers.Upgrade.Add(new ProductHeaderValue("websocket"));
+            request.Headers.Add("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+            request.Headers.Add("Sec-WebSocket-Version", "13");
+            var response = await anonymous.SendAsync(request);
+            using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Check(response.StatusCode == HttpStatusCode.Unauthorized
+                && problem.RootElement.GetProperty("code").GetString() == "invalid_wand_ticket",
+                "cookie-less workshop WebSocket reaches ticket validation instead of being blocked by the launch gate");
         }
-        using (var socket = new ClientWebSocket())
-        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+        using (var anonymous = new HttpClient(new HttpClientHandler
         {
-            socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
-            socket.Options.CollectHttpResponseDetails = true;
-            socket.Options.SetRequestHeader("Origin", "https://localhost");
-            var address = new UriBuilder(guest.BaseAddress!)
-            {
-                Scheme = "wss", Path = sessionPath + "/live", Query = "ticket=invalid-offline-ticket"
-            }.Uri;
-            try
-            {
-                await socket.ConnectAsync(address, timeout.Token);
-                throw new InvalidOperationException("An invalid workshop ticket was admitted.");
-            }
-            catch (WebSocketException)
-            {
-                Check(socket.HttpStatusCode == HttpStatusCode.Unauthorized,
-                    "cookie-less prelaunch Live reaches ticket validation and rejects an invalid ticket without a provider call");
-            }
+            UseProxy = false,
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+        }) { BaseAddress = guest.BaseAddress })
+        using (var request = new HttpRequestMessage(HttpMethod.Get,
+            sessionPath + "/live?ticket=invalid-workshop-ticket"))
+        {
+            request.Headers.Add("Origin", "https://untrusted.example");
+            request.Headers.Connection.Add("Upgrade");
+            request.Headers.Upgrade.Add(new ProductHeaderValue("websocket"));
+            request.Headers.Add("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+            request.Headers.Add("Sec-WebSocket-Version", "13");
+            var response = await anonymous.SendAsync(request);
+            using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Check(response.StatusCode == HttpStatusCode.Forbidden
+                && problem.RootElement.GetProperty("code").GetString() == "account_origin_required",
+                "cookie-less workshop WebSocket still rejects an untrusted Origin before accepting the ticket");
         }
         var messageId = Guid.NewGuid().ToString("N");
         const string messageText = "I find a new route before asking for directions.";

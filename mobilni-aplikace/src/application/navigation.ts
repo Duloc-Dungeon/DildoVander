@@ -2,6 +2,10 @@
 export function safeReturnPath(value: unknown): string {
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u0020]/.test(value)) return '/';
   const pathname = value.split(/[?#]/)[0];
-  const allowed = ['/', '/suitcase', '/connections', '/workshop', '/archive', '/settings', '/persona-lab', '/testing-sessions', '/me', '/admin', '/play'];
+  const allowed = [
+    '/', '/suitcase', '/connections', '/workshop', '/archive', '/settings',
+    '/persona-lab', '/testing-sessions', '/me', '/admin', '/play',
+    ...(import.meta.env.DEV ? ['/local-try-hub'] : []),
+  ];
   return allowed.some(path => pathname === path || (path !== '/' && pathname.startsWith(`${path}/`))) ? value : '/';
 }

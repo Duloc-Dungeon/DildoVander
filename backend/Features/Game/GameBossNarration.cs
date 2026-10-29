@@ -2,6 +2,9 @@ using System.Security.Claims;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Wands;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Kufr.Backend.Features.Game;
 
@@ -58,11 +61,12 @@ internal sealed class GameBossNarration(GameStore store, IGameBossNarrator narra
         Func<CancellationToken, Task<GameBossNarrationInput>> readCurrent, CancellationToken token)
     {
         var input = await readCurrent(token);
+        var rendering = speech.Capture();
         var key = input.Key;
         var cached = store.ReadBossNarration(group, user, id, revision, key);
-        if (cached?.Audio is { } existing && cached.AudioKey == speech.CacheKey) { return existing; }
+        if (cached?.Audio is { } existing && cached.AudioKey == rendering.CacheKey) { return existing; }
         if (cached?.Text is null) { throw new GameFault(409, "boss_narration_not_ready"); }
-        if (!speech.Enabled) { throw new GameFault(503, "boss_voice_unavailable"); }
+        if (!rendering.Enabled) { throw new GameFault(503, "boss_voice_unavailable"); }
         if (!await slots.WaitAsync(0, token)) { throw new GameFault(503, "boss_narration_busy"); }
         string? claim = null;
         try
@@ -70,15 +74,15 @@ internal sealed class GameBossNarration(GameStore store, IGameBossNarrator narra
             claim = store.ClaimBossNarration(group, user, id, revision, key)
                 ?? throw new GameFault(503, "boss_narration_busy");
             cached = store.ReadBossNarration(group, user, id, revision, key);
-            if (cached?.Audio is { } ready && cached.AudioKey == speech.CacheKey) { return ready; }
+            if (cached?.Audio is { } ready && cached.AudioKey == rendering.CacheKey) { return ready; }
             if (cached?.Text is null) { throw new GameFault(409, "boss_narration_not_ready"); }
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
             deadline.CancelAfter(TimeSpan.FromSeconds(20));
-            var audio = await speech.SpeakAsync(GameBossDelivery.For(input.Match).Speak(cached.Text), deadline.Token);
+            var audio = await rendering.SpeakAsync(GameBossDelivery.For(input.Match).Speak(cached.Text), deadline.Token);
             if (audio.Length is < 1 or > ElevenLabsBossSpeech.MaxAudioBytes)
             { throw new InvalidDataException("Invalid Baron audio."); }
             await RequireCurrentAsync(readCurrent, key, deadline.Token);
-            store.PublishBossNarration(group, user, id, revision, key, claim, null, audio, speech.CacheKey);
+            store.PublishBossNarration(group, user, id, revision, key, claim, null, audio, rendering.CacheKey);
             return audio;
         }
         catch (GameFault) { throw; }
@@ -129,6 +133,17 @@ internal static class GameBossNarrationEndpoints
     private static async Task<GameBossNarrationInput> ReadInputAsync(HttpContext http, string group, string user,
         string id, CancellationToken token)
     {
+        var accounts = http.RequestServices.GetRequiredService<AccountDatabase>();
+        var session = http.User.FindFirstValue(AccountIdentity.SessionClaim);
+        var current = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(account => account.Id == user
+            && !account.Disabled && !accounts.DeletionRequests.Any(request => request.UserId == account.Id), token);
+        var stampClaim = http.RequestServices.GetRequiredService<IOptions<IdentityOptions>>().Value.ClaimsIdentity.SecurityStampClaimType;
+        if (current is null || session is null || http.User.FindFirstValue(ClaimTypes.NameIdentifier) != user
+            || current.SecurityStamp != http.User.FindFirstValue(stampClaim)
+            || !await accounts.Sessions.AsNoTracking().AnyAsync(accountSession => accountSession.Id == session
+                && accountSession.UserId == user && accountSession.ExpiresAt > AccountEndpoints.Now(), token))
+        { throw new GameFault(401, "account_required"); }
+        if (!AccountAiConsent.HasConsent(current)) { throw new GameFault(409, "ai_consent_required"); }
         // Recheck membership/launch after provider I/O, including revocation during generation.
         if (await GameBossEndpoints.ParticipantGroupAsync(http, requireWand: false) != group)
         { throw new GameFault(403, "game_group_required"); }
@@ -137,7 +152,7 @@ internal static class GameBossNarrationEndpoints
         var player = await GameYoloWorker.ReadPublicProfile(user, "Soupeř",
             http.RequestServices.GetRequiredService<CharacterProfileStore>(),
             http.RequestServices.GetRequiredService<WandGenerationStore>(),
-            http.RequestServices.GetRequiredService<AccountDatabase>(), token);
+            accounts, token);
         return new(match, player, store.ReadBoss(group).Rescued);
     }
 }

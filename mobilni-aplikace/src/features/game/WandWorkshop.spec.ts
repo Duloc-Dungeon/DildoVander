@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
-const api = vi.hoisted(() => ({ request: vi.fn(), transport: vi.fn(), connect: vi.fn(), dispose: vi.fn(), interrupt: vi.fn(), observer: null as any }));
+const api = vi.hoisted(() => ({ request: vi.fn(), transport: vi.fn(), connect: vi.fn(), dispose: vi.fn(), interrupt: vi.fn(), setMuted: vi.fn(), setVolume: vi.fn(), observer: null as any }));
 vi.mock('../identity/session', async () => { const { ref } = await import('vue'); return { account: ref({ id: 'alice', openAiConsent: true }), accountOrigin: ref('https://example.test'), accountRequest: api.request, accountTransport: api.transport }; });
-vi.mock('../persona-lab/voice', () => ({ LabVoice: class { constructor(observer: unknown) { api.observer = observer; } connect = api.connect; dispose = api.dispose; interrupt = api.interrupt; setMuted = vi.fn(); end() { api.observer.phase('ended'); } } }));
+vi.mock('../persona-lab/voice', () => ({ LabVoice: class { constructor(observer: unknown) { api.observer = observer; } connect = api.connect; dispose = api.dispose; interrupt = api.interrupt; setMuted = api.setMuted; setOutputVolume = api.setVolume; end() { api.observer.phase('ended'); } } }));
 vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div />' } }));
 import WandWorkshop from './WandWorkshop.vue';
 import TrunkStage from './TrunkStage.vue';
@@ -15,7 +15,10 @@ const completed = () => ({
   wand: { wandId: 'f'.repeat(32), name: 'Modrá nit', material: 'Jasan', core: 'Jiskra', temperament: 'Klidná', lore: 'Příběh', designDescription: 'Modrá nit.', affinity: 'Mosty', weakness: 'Spěch', combatArchetype: 'balanced', combatRulesVersion: 'wand-archetypes-v1', spells: ['strike', 'trick', 'shield'].map(action => ({ action, name: action, description: 'Kouzlo' })) },
 });
 const render = async (prelaunch = false) => { view = mount(WandWorkshop, { props: { prelaunch }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); await flushPromises(); return view; };
-const click = async (text: string) => { await view!.findAll('button').find(button => button.text() === text)!.trigger('click'); await flushPromises(); };
+const click = async (text: string) => {
+  await view!.findAll('button').find(button => button.text() === text)!.trigger('click');
+  await flushPromises();
+};
 beforeEach(() => {
   account.value = { ...account.value!, id: 'alice', openAiConsent: true };
   vi.clearAllMocks(); reason = null; session = null; profileRevision = 1;
@@ -32,6 +35,91 @@ beforeEach(() => {
 });
 afterEach(() => { view?.unmount(); view = undefined; vi.useRealTimers(); });
 describe('customer Live workshop', () => {
+  it('displays Speech Engine partial revisions without saving a user message', async () => {
+    session = saved();
+    await render(); await click('Pokračovat hlasem');
+    api.observer.userPartial('Chci chránit'); await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Chci chránit');
+    api.observer.userPartial('Chci chránit most'); await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Chci chránit most');
+    expect(session.messages).toEqual([]);
+    expect(api.request.mock.calls.filter(([path]) => path.endsWith('/messages'))).toEqual([]);
+    api.observer.userPartial('');
+    api.observer.workshopTranscript({ role: 'user', sequence: 1, text: 'Chci chránit mosty.', final: true });
+    await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Chci chránit mosty.');
+    api.observer.userPartial('Další věta');
+    api.observer.workshopTranscript({ role: 'user', sequence: 1, text: 'Chci chránit mosty.', final: true });
+    await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Další věta');
+    api.observer.phase('error'); await flushPromises();
+    expect(view!.text()).not.toContain('Další věta');
+  });
+
+  it('shows revised words immediately and keeps both speakers visible without stale output', async () => {
+    session = saved();
+    await render(); await click('Pokračovat hlasem');
+    api.observer.workshopTranscript({ role: 'user', sequence: 1, text: 'Chci chranit', final: false });
+    await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Chci chranit');
+    api.observer.workshopTranscript({ role: 'user', sequence: 1, text: 'Chci chránit most.', final: true });
+    api.observer.workshopTranscript({ role: 'assistant', sequence: 2, text: 'Takže', final: false });
+    await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Chci chránit most.');
+    expect(view!.get('[data-speaker="user"]').text()).not.toContain('Chci chranit');
+    expect(view!.get('[data-speaker="assistant"]').text()).toContain('Takže');
+    api.observer.workshopTranscript({ role: 'user', sequence: 3, text: 'Počkej', final: false });
+    api.observer.workshopTranscript({ role: 'assistant', sequence: 2, text: 'Tohle už je staré', final: true });
+    await flushPromises();
+    expect(view!.text()).not.toContain('Tohle už je staré');
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Počkej');
+  });
+  it('starts the selected GPT-Live provider without asking for unused ElevenLabs consent', async () => {
+    api.request.mockResolvedValueOnce({ eligible: true, reason: null, tier: 0, voiceProvider: 'gpt-live',
+      profile: { profileId: 'profile', revision: 1, name: 'Sever', world: 'Přístav', status: 'ready' }, session: null });
+    await render();
+    expect(view!.find('#workshop-elevenlabs-consent').exists()).toBe(false);
+    await click('Promluvit s kufrem');
+    expect(api.connect).toHaveBeenCalledOnce();
+    expect(api.request.mock.calls.find(call => call[0].endsWith('/ticket'))?.[2]).not.toHaveProperty('elevenLabsConsent');
+  });
+  it('keeps duplex input active through manufacture and exposes normal output volume', async () => {
+    await render(); await click('Promluvit s kufrem');
+    expect((view!.get('#workshop-volume').element as HTMLInputElement).value).toBe('100');
+    await view!.get('#workshop-volume').setValue('60');
+    expect(api.setVolume).toHaveBeenLastCalledWith(.6);
+    api.observer.workshopSession({ ...saved(), status: 'generating' }); await flushPromises();
+    expect(api.setMuted).not.toHaveBeenCalled();
+    api.observer.workshopSession(completed()); await flushPromises();
+    expect(api.setMuted).not.toHaveBeenCalled();
+  });
+  it('uses saved unified AI consent without another checkbox on each connection', async () => {
+    await render();
+    const start = () => view!.findAll('button').find(button => button.text() === 'Promluvit s kufrem')!;
+    expect(start().attributes('disabled')).toBeUndefined();
+    expect(view!.find('#workshop-elevenlabs-consent').exists()).toBe(false);
+    await click('Promluvit s kufrem');
+    expect(api.request).toHaveBeenCalledWith(expect.stringContaining('/ticket'), 'POST',
+      { socketOrigin: window.location.origin }, expect.any(AbortSignal));
+  });
+
+  it('shows a missing ElevenLabs configuration as a server setup error and keeps text available', async () => {
+    await render(); await click('Promluvit s kufrem');
+    api.observer.error('elevenlabs_not_configured'); await flushPromises();
+    expect(view!.text()).toContain('Hlas ElevenLabs není na serveru nastavený.');
+    expect(view!.attributes('data-mode')).toBe('voice');
+    expect(view!.text()).toContain('Raději psát');
+    await click('Raději psát');
+    expect(view!.find('#trunk-answer').exists()).toBe(true);
+  });
+
+  it('keeps the voice controls after a failed handshake until the guest chooses text', async () => {
+    await render(); await click('Promluvit s kufrem');
+    api.observer.phase('error'); api.observer.error('connection_failed'); await flushPromises();
+    expect(view!.attributes('data-mode')).toBe('voice');
+    expect(view!.findAll('button').find(button => button.text() === 'Pokračovat hlasem')?.attributes('disabled')).toBeUndefined();
+    expect(view!.text()).toContain('Živé spojení se přerušilo');
+  });
   it('saves only the selected completed assistant reply as a private chronicle moment', async () => {
     session = { ...completed(), messages: [{ messageId: 'reply-a', revision: 3, role: 'assistant', text: 'Tahle věta zůstane uložená.', sourceMode: 'text', createdAt: 1790000000 }] };
     await render();

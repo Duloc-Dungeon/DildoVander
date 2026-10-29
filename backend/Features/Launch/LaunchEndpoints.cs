@@ -540,6 +540,7 @@ internal static class LaunchEndpoints
 
     private static bool IsAuthenticationSurface(PathString path) =>
         path.Equals("/app/v1/session", StringComparison.OrdinalIgnoreCase)
+        || System.Text.RegularExpressions.Regex.IsMatch(path.Value ?? "", "\\A/app/v1/customer/wand/speech-engine/[0-9a-f]{64}\\z")
         || System.Text.RegularExpressions.Regex.IsMatch(path.Value ?? "", "\\A/app/v1/customer/wand/(?:workshop/)?sessions/[0-9a-f]{32}/live\\z")
         || path.StartsWithSegments("/app/v1/customer/enrollment", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/app/v1/passkeys", StringComparison.OrdinalIgnoreCase)

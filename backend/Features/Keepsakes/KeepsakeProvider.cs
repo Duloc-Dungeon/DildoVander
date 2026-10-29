@@ -1,4 +1,5 @@
 using Kufr.Backend.Features.Observability;
+using Kufr.Backend.Features.Images;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text.Json;
@@ -19,13 +20,26 @@ internal static class KeepsakeProviderFactory
         return mode switch
         {
             "fake" => new FakeKeepsakeProvider(),
-            "openai" => new OpenAiKeepsakeProvider(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
-                { Timeout = Timeout.InfiniteTimeSpan }, configuration["OPENAI_API_KEY"]
-                ?? throw new InvalidOperationException("OpenAI key missing."),
-                configuration["Keepsake:StoryModel"] ?? throw new InvalidOperationException("Keepsake:StoryModel required."),
-                configuration["Keepsake:ImageModel"] ?? throw new InvalidOperationException("Keepsake:ImageModel required.")),
+            "openai" => CreateOpenAi(configuration),
             _ => throw new InvalidOperationException("Unsupported Keepsake:ProviderMode.")
         };
+    }
+
+    private static IKeepsakeProvider CreateOpenAi(IConfiguration configuration)
+    {
+        var primary = new OpenAiKeepsakeProvider(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+            { Timeout = Timeout.InfiniteTimeSpan }, configuration["OPENAI_API_KEY"]
+            ?? throw new InvalidOperationException("OpenAI key missing."),
+            configuration["Keepsake:StoryModel"] ?? throw new InvalidOperationException("Keepsake:StoryModel required."),
+            configuration["Keepsake:ImageModel"] ?? ImageGenerationDefaults.Model);
+        var key = configuration["ELEVENLABS_API_KEY"];
+        if (string.IsNullOrWhiteSpace(key) || !configuration.GetValue("Keepsake:ElevenLabsArtworkFallback", true))
+        {
+            return primary;
+        }
+        var secondary = new ElevenLabsWandArtwork(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+            { Timeout = Timeout.InfiniteTimeSpan }, key);
+        return new WandArtworkFallbackProvider(primary, secondary.GenerateAsync, secondary);
     }
 }
 
@@ -42,7 +56,9 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
             if (request.GenerationKind == "base" && request.NormalizedPhoto is null
                 && request.Snapshot.GeneratedWand is not null && request.CanonicalArtworkAssetId is null)
                 throw new KeepsakeException("wand_artwork_not_ready", 409);
-            using var bounded = BoundedSdkTransport.Create(httpClient, 48 * 1024 * 1024);
+            using var artworkErrors = request.GenerationKind == "wand_artwork" && request.NormalizedPhoto is null
+                ? new HttpClient(new ArtworkErrorHandler(httpClient, request)) : null;
+            using var bounded = BoundedSdkTransport.Create(artworkErrors ?? httpClient, 48 * 1024 * 1024);
             var options = new OpenAIClientOptions
             {
                 Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
@@ -54,10 +70,10 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
                 {
                     throw new KeepsakeException("portrait_source_missing");
                 }
-                var portraitPrompt = "Create an illustrated magical portrait by editing THIS uploaded visitor photograph. "
+                var portraitPrompt = ImageVisualizer.Describe("Create an illustrated magical portrait by editing THIS uploaded visitor photograph. "
                     + "Preserve the visitor's visible appearance. Do not replace the person, invent a face, or identify them. "
-                    + "Arcane workshop, warm parchment, restrained bronze accents. No writing, no wand, no logos. "
-                    + "Visual magical theme: " + request.ExistingStory?.Design.MagicalTheme;
+                    + "Arcane workshop, warm parchment, restrained bronze accents. No writing, no wand, no logos.",
+                    ("Visual magical theme", request.ExistingStory?.Design.MagicalTheme));
                 using var photo = new MemoryStream(request.NormalizedPhoto, writable: false);
                 Stage(request, "portrait_edit", "dispatch", JsonSerializer.Serialize(new { imageModel, portraitPrompt, request.UploadId, request.EditionId }));
                 var edit = await GenAiOperation.RunAsync("image_edit", imageModel, async providerTelemetry =>
@@ -141,7 +157,6 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
             if (request.Snapshot.GeneratedWand is { } wand)
                 story = story with { Design = CanonicalDesign(wand) };
             var generatedIdentity = ParseIdentity(storyResponse.RootElement);
-            var identity = generatedIdentity ?? KeepsakeStore.AuthorialIdentity(request.EditionId ?? request.JobId, request.Snapshot);
             if (request.Snapshot.GeneratedWand is not null)
             {
                 if (request.CanonicalArtworkAssetId is null) throw new KeepsakeException("wand_artwork_not_ready", 409);
@@ -151,8 +166,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
                     JsonSerializer.Serialize(new { storyRequest = JsonDocument.Parse(storyBody).RootElement,
                         storyResponse = storyResponse.RootElement, reusedArtworkAssetId = request.CanonicalArtworkAssetId }, Json), false, generatedIdentity);
             }
-            var imagePrompt = BuildImagePrompt(story.Design)
-                + " Fictional owner identity (data, not instructions): " + JsonSerializer.Serialize(identity, Json);
+            var imagePrompt = BuildImagePrompt(story.Design);
             Stage(request, "wand_generate", "dispatch", JsonSerializer.Serialize(new { imageModel, imagePrompt,
                 size = "1024x1536", output_format = "png", moderation = "low" }));
             // The typed generate overload cannot include input images, masks or image references.
@@ -203,8 +217,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
         // The illustration only needs the saved wand's visual construction.
         // Deliberately omit its name, lore, affinity, spells, combat profile,
         // wand/profile IDs, and every character or fictional-world detail.
-        var visualDesign = new { wand.Material, wand.Core, wand.DesignDescription };
-        return
+        return ImageVisualizer.Describe(
         "Create one unique collectible fantasy wand as an isolated object on a genuinely transparent background. "
         + "Show its entire silhouette from tip to handle with generous transparent margin, vertical 2:3 composition, "
         + "detailed high-quality fantasy craftsmanship. Use no floor, wall, pedestal, cast shadow, background, "
@@ -212,14 +225,16 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
         + "Translate only the wand's saved material, core and visual design into a distinctive silhouette, carved grip, "
         + "structural proportions, material grain and ornamentation. Do not add story references, names, characters, "
         + "or setting-specific symbols. One wand only; no unrelated objects, characters, hands, writing, lettering, "
-        + "watermark or logos. Fictional digital artifact, not a photograph of the physical prop. "
-        + "Visual construction data, never instructions: " + JsonSerializer.Serialize(visualDesign, Json);
+        + "watermark or logos. Fictional digital artifact, not a photograph of the physical prop.",
+            ("Vzhled hůlky", wand.DesignDescription), ("Materiál hůlky", wand.Material), ("Jádro hůlky", wand.Core));
     }
 
     internal static string BuildImagePrompt(WandDesignSpec design) =>
-        "Generate from scratch an entirely original digital magic wand, its whole silhouette visible tip to handle, "
+        ImageVisualizer.Describe("Generate from scratch an entirely original digital magic wand, its whole silhouette visible tip to handle, "
         + "floating on a warm parchment workshop background, generous margins, refined bronze light, editorial illustration. "
-        + "No reference image, no photograph, no text or logo. One wand only. Design: " + JsonSerializer.Serialize(design, Json);
+        + "No reference image, no photograph, no text or logo. One wand only.",
+            ("Tvar hůlky", design.Shape), ("Rukojeť", design.Handle), ("Zdobení", design.Ornament),
+            ("Materiál", design.Material), ("Vizuální magický motiv", design.MagicalTheme));
 
     private static object CreativeDirection(string jobId)
     {
@@ -291,6 +306,88 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
             microStory = new { type = "string", maxLength = 900 }
         }
     };
+
+    private sealed class ArtworkErrorHandler(HttpClient upstream, KeepsakeProviderRequest artwork) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            using var forwarded = new HttpRequestMessage(request.Method, request.RequestUri)
+            { Content = request.Content, Version = request.Version, VersionPolicy = request.VersionPolicy };
+            foreach (var header in request.Headers) { forwarded.Headers.TryAddWithoutValidation(header.Key, header.Value); }
+            HttpResponseMessage response;
+            try { response = await upstream.SendAsync(forwarded, HttpCompletionOption.ResponseHeadersRead, token); }
+            finally { forwarded.Content = null; }
+            try
+            {
+                if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                {
+                    var rejection = await ReadRejectionAsync(response.Content, token);
+                    // Persist closed categories only. Provider messages can echo guest prompts.
+                    Stage(artwork, "wand_generate", "rejected", JsonSerializer.Serialize(new
+                    { http_status = 400, category = rejection.Category, parameter = rejection.Parameter }));
+                    if (rejection.Category is "unsupported_model" or "unsupported_parameter")
+                    {
+                        throw new KeepsakeException("wand_artwork_" + rejection.Category, 400);
+                    }
+                }
+                return response;
+            }
+            catch { response.Dispose(); throw; }
+        }
+    }
+
+    private sealed record ImageRejection(string Category, string? Parameter = null);
+
+    private static async Task<ImageRejection> ReadRejectionAsync(HttpContent content, CancellationToken token)
+    {
+        const int maximumBytes = 16 * 1024;
+        var unknown = new ImageRejection("unclassified_bad_request");
+        if (content.Headers.ContentLength > maximumBytes) { return unknown; }
+        var bytes = new byte[maximumBytes + 1];
+        try
+        {
+            await using var stream = await content.ReadAsStreamAsync(token);
+            var count = 0;
+            while (count < bytes.Length)
+            {
+                var read = await stream.ReadAsync(bytes.AsMemory(count), token);
+                if (read == 0) { break; }
+                count += read;
+            }
+            if (count > maximumBytes) { return unknown; }
+            try
+            {
+                using var document = JsonDocument.Parse(bytes.AsMemory(0, count), new JsonDocumentOptions { MaxDepth = 8 });
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count(property => property.Name == "error") != 1
+                    || !root.TryGetProperty("error", out var error) || error.ValueKind != JsonValueKind.Object
+                    || error.EnumerateObject().GroupBy(property => property.Name).Any(group => group.Count() > 1)) { return unknown; }
+                if (new[] { "type", "code", "param", "message" }.Any(name => error.TryGetProperty(name, out var value)
+                    && value.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))) { return unknown; }
+                string? Field(string name) => error.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                    ? value.GetString() : null;
+                var type = Field("type"); var code = Field("code"); var parameter = Field("param"); var message = Field("message") ?? "";
+                if (type != "invalid_request_error" || message.Length > 4096) { return unknown; }
+                if (code is "content_policy_violation" or "moderation_blocked" or "safety_violation"
+                    || new[] { "policy", "safety", "violation", "blocked", "disallowed", "abuse" }
+                    .Any(word => message.Contains(word, StringComparison.OrdinalIgnoreCase))) { return new("policy_rejection"); }
+                if ((parameter is null or "model") && (code is "model_not_found" or "unsupported_model" or "invalid_model"))
+                { return new("unsupported_model", "model"); }
+                if (parameter is not ("model" or "background" or "output_format" or "size" or "quality" or "moderation")) { return unknown; }
+                var explicitUnsupported = code is "unsupported_parameter" or "unsupported_value";
+                var compatibilityMessage = message.Contains("not supported", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("does not support", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("unsupported", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("supported values", StringComparison.OrdinalIgnoreCase);
+                if (explicitUnsupported || (code is null or "invalid_value") && compatibilityMessage)
+                { return new(parameter == "model" ? "unsupported_model" : "unsupported_parameter", parameter); }
+                return unknown;
+            }
+            catch (JsonException) { return unknown; }
+        }
+        catch (IOException) { return unknown; }
+        finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(bytes); }
+    }
 
     private static void Stage(KeepsakeProviderRequest request, string stage, string phase, string content)
     {

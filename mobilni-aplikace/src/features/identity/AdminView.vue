@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import InvitationGroupFields from './InvitationGroupFields.vue';
 import OperationsPanel from './OperationsPanel.vue';
 import ModelReleasesPanel from './ModelReleasesPanel.vue';
+import ActorVoicesPanel from './ActorVoicesPanel.vue';
+import WorkshopSettingsPanel from './WorkshopSettingsPanel.vue';
 import AdminNavigation from './AdminNavigation.vue';
 import AdminConfirmation from './AdminConfirmation.vue';
 import AwButton from '../../components/AwButton.vue';
@@ -87,6 +89,8 @@ async function reauthenticate() {
       <p><RouterLink :to="{path:'/signin',query:{return:'/settings/admin'}}">Znovu ověřit účet přístupovým klíčem</RouterLink></p>
       <OperationsPanel />
       <ModelReleasesPanel />
+      <ActorVoicesPanel />
+      <WorkshopSettingsPanel />
       <section class="aw-card"><h2>Postavy a portréty</h2><p>Seznam postav, úpravy jejich údajů a nahrání náhradního obrázku.</p><RouterLink class="aw-button" to="/settings/admin/characters">Spravovat postavy</RouterLink></section>
       <section class="aw-card"><h2>Řízení spuštění</h2><p>Náborová skupina, spuštění aplikace, čekárna a příprava portrétů.</p><RouterLink class="aw-button aw-button--primary" to="/settings/admin/launch">Otevřít správu spuštění</RouterLink></section>
       <section v-if="hasRole('Owner')" id="invitations" class="aw-card"><h2>Pozvánka</h2><p>Pozvánka přidá účastníka do vybrané skupiny. <RouterLink to="/settings/admin/launch#waiting-room">Nastavit skupinu a spuštění aplikace</RouterLink></p><form class="identity-form" @submit.prevent="invite"><label for="invite-role">Role nového účtu</label><select id="invite-role" v-model="inviteRole" class="aw-select"><option v-for="role in roles" :key="role" :value="role">{{ roleLabels[role] }}</option></select><InvitationGroupFields v-model="launchGroupId" :disabled="busy" /><AwButton type="submit" :busy="busy">Vytvořit pozvánku</AwButton></form><div v-if="token" class="invite-output"><p>Kód platí jednu hodinu a lze ho použít jednou. Předávejte ho soukromě. Znovu ho nelze zobrazit.</p><label v-if="invitationLink" for="invitation-link">Soukromý odkaz pro přijetí</label><input v-if="invitationLink" id="invitation-link" :value="invitationLink" readonly class="aw-input" autocomplete="off" /><label for="invitation-token">Jednorázový kód</label><input id="invitation-token" :value="token" readonly class="aw-input" autocomplete="off" /><AwButton @click="token = ''">Skrýt kód</AwButton></div></section>
