@@ -204,6 +204,12 @@ internal static class WandGenerationTests
         var root = document.RootElement;
         Check(!root.GetProperty("store").GetBoolean() && root.GetProperty("text").GetProperty("format").GetProperty("strict").GetBoolean(),
             "strict structured outputs and store=false");
+        var instructions = root.GetProperty("instructions").GetString()!;
+        Check(instructions.Contains("separate illustrator without the character profile", StringComparison.Ordinal)
+            && instructions.Contains("purely visual construction details", StringComparison.Ordinal)
+            && instructions.Contains("Never put the character name, fictional universe or world name", StringComparison.Ordinal)
+            && instructions.Contains("Keep source-specific personalization in the wand name, temperament, lore and spells", StringComparison.Ordinal),
+            "only saved visual construction fields sent to illustration are required to exclude character and universe names");
         Check(!body.Contains("private-account") && !body.Contains("private-operation") && !body.Contains(profile.ProfileId),
             "provider receives fictional context without authorization or ownership ids");
         Check(body.Contains(laterFact) && body.Contains("leaves quietly") && body.Contains("asks for a map")

@@ -490,6 +490,10 @@ internal sealed class KeepsakeWorker(KeepsakeStore store, IKeepsakeProvider prov
         System.ClientModel.ClientResultException { Status: >= 400 and <= 599 } response =>
             "provider_http_" + response.Status.ToString(System.Globalization.CultureInfo.InvariantCulture),
         OperationCanceledException => "provider_timeout",
+        // Keep stable application validation codes so image failures can be
+        // diagnosed without recording provider response bodies or prompts.
+        KeepsakeException { Code: var code } when code.Length is > 0 and <= 80
+            && code.All(character => char.IsAsciiLetterLower(character) || char.IsAsciiDigit(character) || character == '_') => code,
         _ => "provider_attempt_unknown"
     };
 }

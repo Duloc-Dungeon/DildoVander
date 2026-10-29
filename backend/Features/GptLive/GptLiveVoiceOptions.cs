@@ -7,12 +7,16 @@ namespace Kufr.Backend.Features.GptLive;
 internal sealed record GptLiveVoiceOptions(string? CustomVoiceId = null, string FallbackVoice = "vesper",
     string ConfigurationStatus = "built_in")
 {
+    internal string? Description { get; init; }
     internal static readonly string[] BuiltInVoices = ["vesper", "cedar", "marin", "coral", "quartz", "ripple",
         "willow", "stone", "gleam", "meridian", "bossa", "tempo", "beacon", "delta", "cinder", "nuri",
         "juni", "flitz", "brise", "sillage", "nira", "harema", "shida", "noeul"];
 
     internal object SessionVoice => CustomVoiceId is { } id ? new { id } : FallbackVoice;
-    internal GptLiveVoiceOptions UseFallback() => this with { CustomVoiceId = null, ConfigurationStatus = "custom_unavailable" };
+    internal GptLiveVoiceOptions UseFallback() => this with
+    {
+        CustomVoiceId = null, Description = null, ConfigurationStatus = "custom_unavailable"
+    };
     internal static bool ValidId(string? id) => id is { Length: >= 7 and <= 128 }
         && Regex.IsMatch(id, "\\Avoice_[A-Za-z0-9_-]+\\z", RegexOptions.CultureInvariant);
 
@@ -24,6 +28,7 @@ internal sealed record GptLiveVoiceOptions(string? CustomVoiceId = null, string 
             throw new InvalidOperationException("Unsupported GPT-Live fallback voice.");
         }
         var id = section["CustomVoiceId"];
+        var description = section["Description"];
         var status = "built_in";
         if (string.IsNullOrWhiteSpace(id) && section["ConfigurationPath"] is { Length: > 0 } path)
         {
@@ -35,6 +40,10 @@ internal sealed record GptLiveVoiceOptions(string? CustomVoiceId = null, string 
                 }
                 using var document = JsonDocument.Parse(File.ReadAllText(path));
                 id = document.RootElement.GetProperty("customVoiceId").GetString();
+                if (document.RootElement.TryGetProperty("prompt", out var prompt))
+                {
+                    description = prompt.GetString();
+                }
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException
                 or InvalidOperationException or KeyNotFoundException or ArgumentException)
@@ -46,7 +55,12 @@ internal sealed record GptLiveVoiceOptions(string? CustomVoiceId = null, string 
         {
             status = ValidId(id) ? "custom" : "invalid_custom_voice";
         }
-        return new(ValidId(id) ? id : null, fallback, status);
+        return new(ValidId(id) ? id : null, fallback, status)
+        {
+            Description = ValidId(id) && !string.IsNullOrWhiteSpace(description) && description.Length <= 4096
+                && !description.Any(character => char.IsControl(character) && character is not ('\r' or '\n' or '\t'))
+                ? description : null
+        };
     }
 
     // Only an explicit voice rejection before session.started permits a new Live
