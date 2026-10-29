@@ -24,7 +24,8 @@ uveď původní licenci a zachovej jejich oznámení.
    nebo Apple identita nebrání příspěvku do nezávislého softwaru.
    Ještě před založením nebo aktualizací PR spusť
    `python scripts/ci/preflight.py --profile quick --scope local`. Výchozí režim
-   spouští rychlé backendové kontroly, npm testy a typecheck; podle změny přidej
+   spouští npm testy a typecheck; backend sestaví a otestuje jen při změně jeho
+   zdrojů nebo sdílených vstupů vůči `origin/development`. Podle změny přidej
    cílené ověření. Android/iOS buildy, balení a dlouhé integrace jsou v plném
    release CI nebo ve volitelném režimu `--profile full`. Návod
    [lokálních kontrol](docs/local-preflight.md) popisuje reporty, instalaci

@@ -1,11 +1,144 @@
 import contextlib
 import io
+import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+import xml.etree.ElementTree as ET
 
 import preflight
+
+
+class BackendSelectionTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name) / "repo"
+        self.root.mkdir()
+        self.git("init", "--quiet")
+        for name, content in {
+            "backend/core.cs": "original", "mobilni-aplikace/view.vue": "original",
+            "global.json": '{"sdk":{"version":"10.0.303","rollForward":"latestPatch"}}',
+            "contracts/.nvmrc": "24.21.0",
+        }.items():
+            self.write(name, content)
+        self.commit()
+        self.git("update-ref", "refs/remotes/origin/development", "HEAD")
+
+    def git(self, *args):
+        return subprocess.check_output(["git", *args], cwd=self.root, text=True, stderr=subprocess.PIPE).strip()
+
+    def write(self, name, content="changed"):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    def commit(self):
+        self.git("add", ".")
+        self.git("-c", "user.name=Preflight Test", "-c", "user.email=test@example.invalid",
+                 "commit", "--quiet", "-m", "fixture")
+
+    def select(self):
+        return preflight.backend_change_selection(self.root, "origin/development")
+
+    def test_frontend_and_docs_skip_every_dotnet_and_backend_command(self):
+        self.write("mobilni-aplikace/view.vue")
+        self.commit()
+        self.write("docs/staged.md")
+        self.git("add", "docs/staged.md")
+        self.write("mobilni-aplikace/view.vue", "unstaged")
+        self.write("mobilni-aplikace/new.ts")
+        selection = self.select()
+        self.assertFalse(selection["required"])
+        self.assertEqual([], selection["matching_paths"])
+        with patch.object(preflight, "ROOT", self.root), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(0, preflight.main(["--dry-run"]))
+        plan = json.loads(output.getvalue())
+        self.assertFalse(plan["backend_selection"]["required"])
+        self.assertFalse(any(check["group"] == "backend" or "dotnet" in check["tools"]
+                             for check in plan["checks"]))
+
+    def test_backend_commit_before_latest_frontend_commit_still_requires_tests(self):
+        self.write("backend/core.cs")
+        self.commit()
+        self.write("mobilni-aplikace/view.vue")
+        self.commit()
+        self.assertEqual(["backend/core.cs"], self.select()["matching_paths"])
+        self.write("backend/core.cs", "original")
+        self.assertTrue(self.select()["required"])
+
+    def test_staged_unstaged_untracked_deleted_and_renamed_backend_inputs(self):
+        self.write("backend/core.cs", "unstaged")
+        self.assertTrue(self.select()["required"])
+        self.git("add", "backend/core.cs")
+        self.assertTrue(self.select()["required"])
+        self.write("backend/core.cs", "original")
+        self.assertTrue(self.select()["required"])
+        self.write("backend/core.cs", "changed")
+        self.commit()
+        self.git("update-ref", "refs/remotes/origin/development", "HEAD")
+        self.write("backend-tests/new.cs")
+        self.assertEqual(["backend-tests/new.cs"], self.select()["matching_paths"])
+        (self.root / "backend-tests/new.cs").unlink()
+        self.git("mv", "backend/core.cs", "mobilni-aplikace/moved.cs")
+        self.assertIn("backend/core.cs", self.select()["matching_paths"])
+        (self.root / "mobilni-aplikace/moved.cs").unlink()
+        self.assertIn("backend/core.cs", self.select()["matching_paths"])
+
+    def test_consumed_shared_inputs_require_backend_but_unrelated_tools_do_not(self):
+        for path in (*preflight.BACKEND_SHARED_INPUTS, "contracts/control.schema.json",
+                     "Directory.Build.props", "Directory.Packages.props", "NuGet.Config",
+                     "backend/Features/SealedCase/Content/scene.md"):
+            with self.subTest(path=path):
+                self.assertTrue(preflight.affects_backend(path))
+        for path in ("docs/backend.md", "backend/README.md", "backend-tests/README.md",
+                     "mobilni-aplikace/backend.ts", "scripts/ci/preflight.py",
+                     "ai-eval/test_eval.py", ".github/workflows/ci.yml", "firmware/src/main.cpp"):
+            with self.subTest(path=path):
+                self.assertFalse(preflight.affects_backend(path))
+        self.assertTrue(preflight.backend_change_selection(self.root, "origin/development", forced=True)["required"])
+        with self.assertRaises(subprocess.CalledProcessError):
+            preflight.backend_change_selection(self.root, "missing-base")
+
+    def test_backend_external_build_resources_are_covered_and_full_mode_stays_full(self):
+        project = preflight.ROOT / "backend/backend.csproj"
+        for element in ET.parse(project).iter():
+            include = element.get("Include", "")
+            if element.tag in ("EmbeddedResource", "Content") and include.startswith("../"):
+                path = (project.parent / include).resolve().relative_to(preflight.ROOT).as_posix()
+                with self.subTest(path=path):
+                    self.assertTrue(preflight.affects_backend(path))
+        full = preflight.build_plan("local", "windows", profile="full", backend_required=False)
+        self.assertTrue(any(check.name == "Backend harness: default" for check in full))
+
+    def test_report_rejected_when_comparison_base_changes(self):
+        self.write("mobilni-aplikace/view.vue")
+        self.commit()
+        selection = self.select()
+        identity = {"head": "head", "tree": "tree", "worktree_status_sha256": "clean"}
+        report = {**identity, "profile": "quick", "scope": "local", "selection": "scope",
+                  "complete": True, "backend_selection": selection, "missing_platform_coverage": []}
+        self.assertTrue(preflight.report_is_current_and_complete(report, identity, backend_selection=selection))
+        self.git("update-ref", "refs/remotes/origin/development", "HEAD")
+        self.assertFalse(preflight.report_is_current_and_complete(report, identity, backend_selection=self.select()))
+
+    def test_base_change_during_checks_invalidates_report(self):
+        self.write("mobilni-aplikace/view.vue")
+        self.commit()
+        report_path = Path(self.temporary.name) / "report.json"
+
+        def execute(*args, **kwargs):
+            self.git("update-ref", "refs/remotes/origin/development", "HEAD")
+            return [], [], False
+
+        with patch.object(preflight, "ROOT", self.root), patch.object(preflight, "build_plan", return_value=[]), \
+                patch.object(preflight, "execute_plan", side_effect=execute), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(1, preflight.main(["--report", str(report_path)]))
+        report = json.loads(report_path.read_text())
+        self.assertFalse(report["complete"])
+        self.assertTrue(report["source_changed_during_checks"])
 
 
 class PreflightPlanTests(unittest.TestCase):

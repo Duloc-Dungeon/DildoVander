@@ -41,6 +41,13 @@ QUICK_CHECKS = {
     "Restore backend executable harness", "Build backend executable harness",
     "Backend lifecycle and SQLite diagnostics tests",
 }
+BACKEND_SHARED_INPUTS = {
+    "global.json", ".editorconfig", "design-system/tokens.json",
+    "design-system/fonts/inter.ttf", "design-system/fonts/inter-OFL.txt",
+    "ai-eval/voice-persona.txt", "ai-eval/ollivander-trunk-persona.txt",
+    "ai-eval/ollivander-trunk-live-persona.txt", "ai-eval/prompt.txt",
+    "ai-eval/wand-catalog.json", "ai-eval/wand-identities.json",
+}
 GROUPS = ("repository", "design", "contracts", "frontend", "backend", "browser",
           "android", "ios", "site", "coverage", "setup")
 
@@ -101,12 +108,47 @@ def version_matches(expectation: str, reported: str) -> bool:
     return False
 
 
+def affects_backend(path: str) -> bool:
+    # SealedCase Markdown is embedded runtime content; other Markdown is guidance.
+    if path.lower().endswith(".md") and not path.startswith("backend/Features/SealedCase/Content/"):
+        return False
+    if path.startswith(("backend/", "backend-tests/", "contracts/")) or path in BACKEND_SHARED_INPUTS:
+        return True
+    return "/" not in path and (path.lower() == "nuget.config"
+        or (path.startswith("Directory.") and path.endswith((".props", ".targets")))
+        or path.endswith((".sln", ".slnx", ".globalconfig")))
+
+
+def backend_change_selection(root: Path, base_ref: str, forced: bool = False) -> dict[str, object]:
+    def git(*args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=root, encoding="utf-8",
+                                       errors="surrogateescape", stderr=subprocess.PIPE)
+
+    base_sha = git("rev-parse", "--verify", "--end-of-options", f"{base_ref}^{{commit}}").strip()
+    merge_base = git("merge-base", "HEAD", base_sha).strip()
+    # Union branch, working-tree and index changes so cancelling staged/unstaged
+    # edits cannot hide a backend input. Disabling renames preserves both paths.
+    paths = sorted(set(filter(None, (
+        git("diff", "--name-only", "--no-renames", "-z", merge_base, "HEAD", "--")
+        + git("diff", "--name-only", "--no-renames", "-z", "HEAD", "--")
+        + git("diff", "--cached", "--name-only", "--no-renames", "-z", "HEAD", "--")
+        + git("ls-files", "--others", "--exclude-standard", "-z")
+    ).split("\0"))))
+    matching = [path for path in paths if affects_backend(path)]
+    return {"base_ref": base_ref, "base_sha": base_sha, "merge_base": merge_base,
+            "changed_paths": paths, "matching_paths": matching, "forced": forced,
+            "required": forced or bool(matching)}
+
+
 def report_is_current_and_complete(report: dict[str, object], identity: dict[str, str],
-                                   profile: str = "quick", scope: str = "local") -> bool:
+                                   profile: str = "quick", scope: str = "local",
+                                   backend_selection: dict[str, object] | None = None) -> bool:
     return (all(report.get(key) == value for key, value in identity.items())
             and report.get("complete") is True
             and report.get("scope") in ("local", "all")
             and report.get("profile") in ("quick", "full")
+            and (backend_selection is None or report.get("profile") == "full"
+                 or report.get("backend_selection") == backend_selection)
             and (profile != "full" or report.get("profile") == "full")
             and (scope != "all" or report.get("scope") == "all")
             and report.get("selection") == "scope"
@@ -121,7 +163,7 @@ def identity_changed(start: dict[str, str], end: dict[str, str]) -> bool:
 
 def build_plan(scope: str, host: str, install_dependencies: bool = False,
                groups: Sequence[str] | None = None, architecture: str | None = None,
-               profile: str = "quick") -> list[Check]:
+               profile: str = "quick", backend_required: bool = True) -> list[Check]:
     """Return a command plan without probing or changing the machine."""
     if profile not in ("quick", "full"):
         raise ValueError(f"unsupported validation profile: {profile}")
@@ -356,6 +398,9 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
         if install_dependencies:
             selected_groups.add("setup")
         checks = [check for check in checks if check.group in selected_groups]
+    if profile == "quick" and not backend_required:
+        checks = [check for check in checks if check.group != "backend"
+                  and check.name != "global.json .NET SDK version"]
     return checks
 
 
@@ -467,6 +512,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=("quick", "full"), default="quick",
                         help="quick is the default local PR loop; full restores all local validation checks")
+    parser.add_argument("--base", default="origin/development",
+                        help="quick backend impact comparison ref (default: origin/development)")
     parser.add_argument("--scope", choices=("local", "all"), default="local",
                         help="local runs portable checks and this host's native checks; all requires every platform group")
     parser.add_argument("--list", action="store_true", help="print planned commands without executing them")
@@ -498,6 +545,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
     try:
         identity = tree_fingerprint(ROOT)
+        backend_selection = (backend_change_selection(ROOT, args.base, "backend" in (args.group or []))
+                             if args.profile == "quick" else None)
     except (OSError, subprocess.CalledProcessError) as error:
         print(f"Cannot identify Git checkout: {error}", file=sys.stderr)
         return 2
@@ -507,32 +556,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, json.JSONDecodeError) as error:
             print(f"Cannot read report: {error}", file=sys.stderr)
             return 2
-        current_and_complete = report_is_current_and_complete(report, identity, args.profile, args.scope)
+        current_and_complete = report_is_current_and_complete(
+            report, identity, args.profile, args.scope, backend_selection)
         description = f"current and complete {report.get('profile')} {report.get('scope')} validation"
         print(description if current_and_complete else "stale, partial, or incomplete")
         return 0 if current_and_complete else 1
 
-    checks = build_plan(args.scope, args.host, args.install_dependencies, args.group, profile=args.profile)
+    checks = build_plan(args.scope, args.host, args.install_dependencies, args.group, profile=args.profile,
+                        backend_required=backend_selection is None or backend_selection["required"])
     if args.list or args.dry_run:
         print(json.dumps({"profile": args.profile, "scope": args.scope, "host": args.host,
+                          "backend_selection": backend_selection,
                           "groups": sorted({check.group for check in checks}),
                           "checks": [{**asdict(check), "command": list(check.command)} for check in checks]}, indent=2))
         return 0
 
+    if backend_selection is not None:
+        decision = "required" if backend_selection["required"] else "skipped"
+        print(f"Backend checks: {decision} (comparison: {args.base})")
     results, missing, failed = execute_plan(checks, ROOT, subprocess.run, host=args.host)
     try:
         final_identity = tree_fingerprint(ROOT)
+        final_backend_selection = (backend_change_selection(ROOT, args.base, "backend" in (args.group or []))
+                                   if args.profile == "quick" else None)
     except (OSError, subprocess.CalledProcessError) as error:
         print(f"Cannot identify final Git checkout state: {error}", file=sys.stderr)
         return 2
-    source_changed = identity_changed(identity, final_identity)
+    source_changed = identity_changed(identity, final_identity) or backend_selection != final_backend_selection
     if source_changed:
         failed = True
         results.append({"name": "Source tree remained unchanged during checks", "group": "integrity",
                         "platform": "portable", "command": [], "status": "failed",
-                        "reason": "Git HEAD, tree, or worktree contents changed while checks were running"})
+                        "reason": "Git source state or comparison base changed while checks were running"})
     report = {**final_identity, "starting_identity": identity, "ending_identity": final_identity,
               "profile": args.profile, "scope": args.scope, "host": args.host, "architecture": platform.machine(),
+              "backend_selection": backend_selection,
               "groups": sorted({check.group for check in checks}),
               "selection": "group-filtered" if args.group else "scope",
               "report_path": str(args.report) if args.report else None,
