@@ -253,7 +253,7 @@ try {
   await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();
   await page.getByRole('heading', { name: 'Příprava večera' }).waitFor();
-  await page.getByText('Pokročilé: globální beta a produkční plán', { exact: true }).click();
+  await page.getByText('Datum a čas otevření výchozí skupiny', { exact: true }).click();
   await page.getByLabel('Použít beta odpočítávání').check();
   await page.getByLabel('Časové pásmo').selectOption('Europe/Prague');
   await page.getByLabel('Otevření beta účastníkům').fill('2026-03-30T10:00');

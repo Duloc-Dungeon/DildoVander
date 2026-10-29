@@ -1,5 +1,42 @@
 import Foundation
 
+// Exercise the production options parser before the bridge can create a credential request.
+func requirePasskeyOptionsRejection(status: Int, body: String, code: String) {
+    do {
+        _ = try NativePasskeyOptionsResponse.parse(status: status, body: body)
+        fatalError("Rejected passkey options reached credential launch")
+    } catch let rejection as NativePasskeyOptionsResponse.Rejected {
+        require(rejection.status == status && rejection.code == code, "passkey options lost rejection status/code")
+        require(rejection.localizedDescription == NativePasskeyOptionsResponse.failureMessage,
+                "passkey rejection exposed server response text")
+    } catch { fatalError("Passkey options lost structured rejection: \(error)") }
+}
+
+for code in ["beta_enrollment_closed", "beta_enrollment_unavailable", "beta_enrollment_closed_or_changed",
+             "invitation_expired_or_used", "reauthentication_required", "csrf_required"] {
+    requirePasskeyOptionsRejection(status: 403, body: "{\"code\":\"\(code)\",\"message\":\"private response text\"}", code: code)
+}
+requirePasskeyOptionsRejection(status: 503, body: "{\"code\":\"beta_enrollment_unavailable\"}", code: "beta_enrollment_unavailable")
+for body in ["", "<html>private response text</html>", "[]", "{}", "{", "{\"code\":42}", "{\"code\":true}",
+             "{\"code\":null}", "{\"code\":\"\"}", "{\"code\":\"private response text\"}",
+             "{\"code\":\"beta_enrollment_closed\\n\"}", "{\"code\":\"Beta_enrollment_closed\"}",
+             "{\"code\":\"\(String(repeating: "a", count: 65))\"}",
+             "{\"code\":\"beta_enrollment_closed\",\"detail\":\"\(String(repeating: "x", count: NativePasskeyOptionsResponse.maxBytes))\"}"] {
+    requirePasskeyOptionsRejection(status: 403, body: body, code: "passkey_rejected")
+}
+requirePasskeyOptionsRejection(status: 302, body: "{\"code\":\"beta_enrollment_closed\"}", code: "passkey_rejected")
+do {
+    let options = try NativePasskeyOptionsResponse.parse(status: 200, body: "{\"challenge\":\"test-challenge\",\"rpId\":\"dildovander.de\"}")
+    require(options["challenge"] as? String == "test-challenge", "valid passkey options stopped parsing")
+} catch { fatalError("Valid passkey options failed: \(error)") }
+for body in ["", "[]", "{", String(repeating: "x", count: NativePasskeyOptionsResponse.maxBytes + 1)] {
+    do {
+        _ = try NativePasskeyOptionsResponse.parse(status: 200, body: body)
+        fatalError("Invalid successful passkey options reached credential launch")
+    } catch is NativePasskeyOptionsResponse.InvalidResponse { }
+    catch { fatalError("Invalid passkey options produced an unexpected failure: \(error)") }
+}
+
 let opponentArtwork = "/app/v1/game/matches/" + String(repeating: "a", count: 32) + "/opponent/wand-artwork?revision=" + String(repeating: "b", count: 64)
 require(AccountTransportPolicy.account(path: opponentArtwork, method: "GET"), "approved opponent art route unavailable")
 require(AccountTransportPolicy.accountResponseLimit(path: opponentArtwork, method: "GET") == 32 * 1024 * 1024, "opponent PNG size cap changed")
