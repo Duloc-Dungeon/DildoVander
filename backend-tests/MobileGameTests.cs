@@ -3,6 +3,7 @@ using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Wands;
 using Kufr.Backend.Features.GptLive;
 using Kufr.Backend.Features.Identity;
+using Kufr.Backend.Features.Keepsakes;
 using Kufr.Backend.Features.Launch;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
@@ -818,16 +819,16 @@ internal static partial class MobileGameTests
 
     internal static async Task RunHttpAsync()
     {
-        await using var fixture = await HttpFixture.StartAsync();
+        await using var fixture = await HttpFixture.StartAsync(withKeepsakes: true);
         using var alice = fixture.Client();
         using var bob = fixture.Client();
         using var foreign = fixture.Client();
         using var paused = fixture.Client();
+        using var anonymous = fixture.Client();
         await fixture.LoginAsync(alice, fixture.AliceId);
         await fixture.LoginAsync(bob, fixture.BobId);
         await fixture.LoginAsync(foreign, fixture.ForeignId);
         await fixture.LoginAsync(paused, fixture.PausedId);
-
         Check((await alice.GetAsync("/app/v1/game")).StatusCode == HttpStatusCode.OK, "active launch group reads game lobby");
         Check((await alice.GetAsync("/app/v1/game/progress")).StatusCode == HttpStatusCode.OK,
             "active participant can read saved game progress without a wand");
@@ -994,6 +995,8 @@ internal static partial class MobileGameTests
             "legacy mobile upgrade endpoint cannot bypass workshop eligibility");
         alice.DefaultRequestHeaders.Remove("X-DV-CSRF");
 
+        var approvedBobArtwork = await fixture.PublishCurrentWandArtworkAsync(fixture.BobId);
+
         var challengeBody = new
         {
             opponentId = fixture.BobId, mode = "quick", operationId = "http-challenge-0001",
@@ -1020,6 +1023,43 @@ internal static partial class MobileGameTests
         Check((await bob.GetAsync("/app/v1/game")).StatusCode == HttpStatusCode.OK, "authenticated participant sees lobby");
         var incoming = await bob.GetAsync($"/app/v1/game/matches/{matchId}");
         Check(incoming.StatusCode == HttpStatusCode.OK, "opponent can read incoming match");
+        var wandArtworkPath = $"/app/v1/game/matches/{matchId}/opponent/wand-artwork";
+        Check((await anonymous.GetAsync(wandArtworkPath)).StatusCode == HttpStatusCode.Unauthorized,
+            "opponent wand media requires an authenticated account");
+        Check((await foreign.GetAsync(wandArtworkPath + "?revision=stale")).StatusCode == HttpStatusCode.NotFound,
+            "a different launch group cannot request match artwork");
+        var aliceMatch = await alice.GetFromJsonAsync<JsonElement>($"/app/v1/game/matches/{matchId}");
+        var sharedArtworkUrl = aliceMatch.GetProperty("opponent").GetProperty("wandArtworkUrl").GetString()
+            ?? throw new InvalidOperationException("Published opponent artwork URL is missing.");
+        using var sharedArtworkResponse = await alice.GetAsync(sharedArtworkUrl);
+        var sharedArtworkBytes = await sharedArtworkResponse.Content.ReadAsByteArrayAsync();
+        Check(sharedArtworkResponse.StatusCode == HttpStatusCode.OK
+            && sharedArtworkResponse.Content.Headers.ContentType?.MediaType == "image/png"
+            && sharedArtworkResponse.Headers.CacheControl?.NoStore == true
+            && sharedArtworkResponse.Headers.TryGetValues("X-Content-Type-Options", out var contentOptions)
+            && contentOptions.Contains("nosniff")
+            && sharedArtworkBytes.SequenceEqual(approvedBobArtwork.Bytes),
+            "participant receives the owner's explicitly approved canonical PNG with no-store and nosniff headers");
+        Check((await alice.GetAsync(wandArtworkPath)).StatusCode == HttpStatusCode.NotFound
+            && (await alice.GetAsync(wandArtworkPath + "?revision=stale")).StatusCode == HttpStatusCode.NotFound,
+            "an authorized participant cannot read artwork without the current SHA revision");
+        var ownerActor = await fixture.KeepsakeOwnerActorAsync(fixture.BobId);
+        fixture.Keepsakes.SetWandPublication(approvedBobArtwork.KeepsakeId, ownerActor,
+            approved: false, approvedBobArtwork.EditionId, approvedBobArtwork.Revision);
+        var withdrawnMatch = await alice.GetFromJsonAsync<JsonElement>($"/app/v1/game/matches/{matchId}");
+        Check(withdrawnMatch.GetProperty("opponent").GetProperty("wandArtworkUrl").ValueKind == JsonValueKind.Null
+            && (await alice.GetAsync(sharedArtworkUrl)).StatusCode == HttpStatusCode.NotFound,
+            "withdrawing approval clears match metadata and immediately revokes the prior image URL");
+        Check((await alice.GetAsync(wandArtworkPath)).StatusCode == HttpStatusCode.NotFound,
+            "a participant receives 404 when the opponent has no currently approved art");
+        foreach (var method in new[] { HttpMethod.Post, HttpMethod.Put, HttpMethod.Delete })
+        {
+            using var mutation = new HttpRequestMessage(method, wandArtworkPath)
+            { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            using var mutationResponse = await bob.SendAsync(mutation);
+            Check(mutationResponse.StatusCode == HttpStatusCode.MethodNotAllowed,
+                $"opponent wand media rejects {method.Method} requests");
+        }
         var serialized = await incoming.Content.ReadAsStringAsync();
         Check(!serialized.Contains("challengerChoice", StringComparison.OrdinalIgnoreCase), "secret choices are absent from the response");
         var incomingSnapshot = JsonDocument.Parse(serialized).RootElement;
@@ -1111,6 +1151,7 @@ internal static partial class MobileGameTests
         internal string BaseAddress => baseAddress;
         internal ScriptedLiveSocketFactory? LiveSocketFactory { get; private set; }
         internal WandGenerationStore Wands => app.Services.GetRequiredService<WandGenerationStore>();
+        internal KeepsakeStore Keepsakes => app.Services.GetRequiredService<KeepsakeStore>();
         internal MobileWorkshopLiveRuntime LiveRuntime => app.Services.GetRequiredService<MobileWorkshopLiveRuntime>();
         internal CharacterProfileStore Profiles => app.Services.GetRequiredService<CharacterProfileStore>();
         internal int TextDialogueCalls => textWorkshopProvider.ReplyCount;
@@ -1135,7 +1176,7 @@ internal static partial class MobileGameTests
 
         internal static async Task<HttpFixture> StartAsync(bool withLiveTransport = false, GptLiveClient? liveClient = null,
             TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true,
-            bool includeLiveDelegations = true)
+            bool includeLiveDelegations = true, bool withKeepsakes = false)
         {
             var root = Path.Combine(Path.GetTempPath(), "mobile-game-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
             using var rsa = RSA.Create(2048);
@@ -1158,6 +1199,10 @@ internal static partial class MobileGameTests
                 ["ApplicationIdentity:Bootstrap:TokenSha256"] = AccountEndpoints.Hash(Bootstrap),
                 ["ApplicationIdentity:RequestsPerMinute"] = withLiveTransport ? "10" : "120",
                 ["Backend:DatabasePath"] = Path.Combine(root, "journal.sqlite"),
+                ["Keepsake:Enabled"] = withKeepsakes ? "true" : "false",
+                ["Keepsake:GenerationEnabled"] = withKeepsakes ? "true" : "false",
+                ["Keepsake:DataRoot"] = Path.Combine(root, "archives"),
+                ["Keepsake:DataProtectionRoot"] = Path.Combine(root, "keys"),
                 ["OPENAI_API_KEY"] = withLiveTransport && liveClient is null ? "synthetic-fixture-key" : null
             });
             var textWorkshopProvider = workshopProvider ?? new TextWorkshopProvider();
@@ -1168,6 +1213,8 @@ internal static partial class MobileGameTests
             builder.Services.AddAccountIdentity(builder.Configuration);
             builder.Services.AddLaunchManagement(builder.Configuration);
             builder.Services.AddMobileGame(builder.Configuration);
+            if (withKeepsakes)
+                builder.Services.AddSingleton(new KeepsakeStore(builder.Configuration, TimeProvider.System));
             builder.Services.AddSingleton(new CharacterProfileStore(Path.Combine(root, "profiles")));
             builder.Services.AddSingleton<WandGenerationStore>();
             builder.Services.AddSingleton<Kufr.Backend.Features.Show.ShowSpeechProvider>();
@@ -1241,6 +1288,53 @@ internal static partial class MobileGameTests
             var client = new HttpClient(handler) { BaseAddress = new Uri(baseAddress) };
             clientCookies.Add(client, cookies);
             return client;
+        }
+
+        internal async Task<(string WandId, string KeepsakeId, string EditionId, int Revision,
+            string Sha256, byte[] Bytes)> PublishCurrentWandArtworkAsync(string accountId)
+        {
+            var profile = await Profiles.ReadAsync(accountId)
+                ?? throw new InvalidOperationException("Current character profile is missing.");
+            var wand = MobileWandSessions.Current(Wands, accountId, profile.ProfileId, profile.Revision)
+                ?? throw new InvalidOperationException("Current generated wand is missing.");
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var session = await db.Sessions.FirstAsync(item => item.UserId == accountId);
+            var keepsakes = Keepsakes;
+            var issued = keepsakes.Issue(MobileWandWorkshopWorker.ArtworkSnapshot(wand), new(accountId, session.Id));
+
+            var artworkJob = keepsakes.LeaseNext()
+                ?? throw new InvalidOperationException("Expected generated wand artwork job.");
+            if (artworkJob.Kind != "wand_artwork")
+                throw new InvalidOperationException("Expected canonical wand artwork before the keepsake edition.");
+            var artworkRequest = keepsakes.Dispatch(artworkJob)!;
+            if (!keepsakes.Complete(artworkJob,
+                await new FakeKeepsakeProvider().GenerateAsync(artworkRequest, default)))
+                throw new InvalidOperationException("Synthetic wand artwork was not accepted.");
+
+            var editionJob = keepsakes.LeaseNext()
+                ?? throw new InvalidOperationException("Expected keepsake edition job.");
+            var editionRequest = keepsakes.Dispatch(editionJob)!;
+            if (!keepsakes.Complete(editionJob,
+                await new FakeKeepsakeProvider().GenerateAsync(editionRequest, default)))
+                throw new InvalidOperationException("Synthetic keepsake edition was not accepted.");
+
+            var actor = KeepsakeActor.ForAccount(accountId, session.Id, () => true);
+            var view = keepsakes.Read(issued.Id, actor);
+            var edition = view.Editions.Single();
+            var approved = keepsakes.SetWandPublication(issued.Id, actor, true, edition.Id, view.Revision);
+            var artwork = keepsakes.ReadGameSharedWandArtwork(accountId, wand.WandId, includeBytes: true)
+                ?? throw new InvalidOperationException("Approved synthetic wand artwork is unavailable.");
+            return (wand.WandId, issued.Id, edition.Id, approved.Revision, artwork.Sha256,
+                artwork.Bytes ?? throw new InvalidOperationException("Approved synthetic PNG bytes are missing."));
+        }
+
+        internal async Task<KeepsakeActor> KeepsakeOwnerActorAsync(string accountId)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var session = await db.Sessions.FirstAsync(item => item.UserId == accountId);
+            return KeepsakeActor.ForAccount(accountId, session.Id, () => true);
         }
 
         internal async Task MakeOwnerAsync(string id)

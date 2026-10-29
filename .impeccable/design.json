@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T00:36:20.057Z",
+  "generatedAt": "2026-10-29T02:17:21.596Z",
   "title": "Wand Night Stand — schválený design v2",
   "extensions": {
     "colorMeta": {
@@ -325,6 +325,11 @@
         "name": "reduced-motion",
         "value": "0s",
         "purpose": "Aplikační adaptér v2 vypne přesuny a přechody při omezeném pohybu."
+      },
+      {
+        "name": "duel-impact",
+        "value": "2000ms",
+        "purpose": "Místní jednorázový střet zveřejněné výměny. Celé průhledné osobní hůlky, odlišná stopa úderu/lsti/štítu, statický omezený pohyb a zrušení mimo viditelnou scénu. Ovládání ani výsledek nečekají na animaci."
       }
     ],
     "breakpoints": [
