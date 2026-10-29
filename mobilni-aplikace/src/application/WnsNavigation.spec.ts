@@ -17,4 +17,14 @@ describe('WNS customer navigation', () => {
     expect(wrapper.text()).not.toContain('kufr');
     wrapper.unmount();
   });
+  it('keeps archived duel details in the keepsakes section', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/archive/duel', component: { template: '<div />' } },
+    ] });
+    await router.push('/archive/duel?id=synthetic');
+    const wrapper = mount(WnsNavigation, { global: { plugins: [router] } });
+    expect(wrapper.findAll('[aria-current="page"]')).toHaveLength(1);
+    expect(wrapper.get('[aria-current="page"]').text()).toBe('Památky');
+    wrapper.unmount();
+  });
 });

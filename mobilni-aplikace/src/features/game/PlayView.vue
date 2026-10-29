@@ -294,7 +294,7 @@ onBeforeUnmount(() => {
       <header class="game-header">
         <SoundToggle />
         <RouterLink :to="route.path === '/play' ? '/me/character' : { path: '/play', query: { browse: '1' } }">← {{ route.path === '/play' ? 'Moje postava' : 'Ke hře' }}</RouterLink>
-        <span class="game-eyebrow">{{ tableDuel ? practice ? 'Trénink · bez XP' : modeName(match!.mode) : 'Wand Night Stand' }}</span>
+        <span v-if="tableDuel" class="game-eyebrow">{{ practice ? 'Trénink · bez XP' : modeName(match!.mode) }}</span>
         <GameRules v-if="tableDuel" :practice="practice" :tactical="match?.mode === 'tactical'" />
       </header>
       <div v-if="error" class="game-feedback"><AwNotice tone="danger">{{ error }}</AwNotice><AwButton :busy="loading" @click="refresh">Obnovit stav</AwButton></div>
@@ -307,7 +307,23 @@ onBeforeUnmount(() => {
       <template v-else-if="!wandStatus.wand && !canReviewTask && !bossSetup && !bossAttempt && !readOnly">
         <h1 id="game-title">Nejdřív vlastní hůlku.</h1>
         <AwButton v-if="match && ['incoming', 'active', 'generating'].includes(match.status)" :busy="busy" @click="mutate(match.canAccept ? 'decline' : 'cancel')">Zrušit rozehranou hru</AwButton>
-        <PaperSurface class="game-paper"><template v-if="lobby?.boss?.revealed && !lobby.boss.rescued"><p>Dílna je v zajetí Barona. Můžeš ho vyzvat i bez první hůlky; pro záchranu dostaneš exhibiční kouzla.</p><RouterLink class="aw-button aw-button--primary" to="/play/boss">Osvobodit dílnu</RouterLink></template><template v-else-if="wandStatus.hasCharacter"><p>Magický kufr už zná tvoji postavu. Tři otázky a jedna osobní hůlka. Můžeš mluvit nebo psát.</p><RouterLink class="aw-button aw-button--primary" to="/play/wand">Vstoupit do kufrovy dílny</RouterLink></template><template v-else><p>Pro výrobu hůlky nejdřív ulož svoji postavu.</p><RouterLink class="aw-button aw-button--primary" to="/me/character">Připravit postavu</RouterLink></template></PaperSurface>
+        <section class="game-workshop-invite" aria-label="Příprava ke hře">
+          <div class="game-workshop-invite__art"><img :src="amberWand" alt="" width="240" height="240" /></div>
+          <div class="game-workshop-invite__content">
+            <template v-if="lobby?.boss?.revealed && !lobby.boss.rescued">
+              <p>Dílna je v zajetí Barona. Můžeš ho vyzvat i bez první hůlky; pro záchranu dostaneš exhibiční kouzla.</p>
+              <RouterLink class="aw-button aw-button--primary" to="/play/boss">Osvobodit dílnu</RouterLink>
+            </template>
+            <template v-else-if="wandStatus.hasCharacter">
+              <p>Magický kufr už zná tvoji postavu. Teď spolu vymyslíte její hůlku. Můžeš mluvit nebo psát.</p>
+              <RouterLink class="aw-button aw-button--primary" to="/play/wand">Vstoupit do kufrovy dílny</RouterLink>
+            </template>
+            <template v-else>
+              <p>Pro výrobu hůlky nejdřív ulož svoji postavu.</p>
+              <RouterLink class="aw-button aw-button--primary" to="/me/character">Připravit postavu</RouterLink>
+            </template>
+          </div>
+        </section>
         <section v-if="pendingTasks.length" class="game-open-matches"><h2>Úkoly k potvrzení</h2><RouterLink v-for="item in pendingTasks" :key="item.id" class="game-match-link" :to="`/play/match/${item.id}`"><span>{{ item.partyTask!.title }}<small>Po duelu s {{ item.opponent.displayName }}</small></span><span>Potvrdit výsledek →</span></RouterLink></section>
         <nav class="game-side-links" aria-label="Další hry a výsledky"><RouterLink to="/play/pod-peceti">Pod pečetí</RouterLink><RouterLink to="/play/ranking">Žebříček</RouterLink><RouterLink to="/play/chronicle">Moje kronika</RouterLink></nav>
       </template>

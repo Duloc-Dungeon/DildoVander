@@ -80,9 +80,17 @@ try {
       assert(await navigation.locator('a').evaluateAll(links => links.every(link => link.getBoundingClientRect().height >= 44)));
       assert(await navigation.locator('span').evaluateAll(labels => labels.every(label => label.scrollWidth <= label.clientWidth + 1)), 'navigation labels remain inside their own tab');
     }
+    async function checkPrimaryAction(link) {
+      const style = await link.evaluate(element => {
+        const value = getComputedStyle(element);
+        return { radius: value.borderRadius, shadow: value.boxShadow, height: value.minHeight };
+      });
+      assert.deepEqual(style, { radius: '16px', shadow: 'none', height: '56px' }, 'primary links use the same v2 treatment as buttons');
+    }
     await page.goto(`${origin}/__game/first-wand`);
     await page.getByRole('heading', { name: 'Nejdřív vlastní hůlku.' }).waitFor();
     await checkNavigation('Hry');
+    await checkPrimaryAction(page.getByRole('link', { name: 'Vstoupit do kufrovy dílny', exact: true }));
     await page.screenshot({ path: path.join(output, `play-${width}.png`) });
     await page.getByRole('link', { name: 'Pod pečetí', exact: true }).click();
     await page.waitForURL(`**/play/pod-peceti/${caseId}`);
@@ -102,6 +110,7 @@ try {
     await page.waitForURL('**/play/wand');
     await page.getByRole('heading', { name: 'Kufrova dílna', exact: true }).waitFor();
     await checkNavigation('Dílna');
+    await checkPrimaryAction(page.getByRole('link', { name: 'Upravit nebo dokončit přípravu postavy', exact: true }));
     await page.screenshot({ path: path.join(output, `workshop-${width}.png`) });
     await page.goto(`${origin}/me/conversation`);
     await page.waitForURL('**/play/wand');
@@ -116,6 +125,7 @@ try {
     await checkNavigation('Památky');
     await page.getByRole('region', { name: 'Uložené památky', exact: true }).waitFor();
     assert.equal(await page.getByRole('searchbox', { name: 'Hledat v památkách', exact: true }).count(), 0);
+    await checkPrimaryAction(page.getByRole('link', { name: 'Zkusit hru', exact: true }));
     await page.screenshot({ path: path.join(output, `keepsakes-${width}.png`), fullPage: true });
     await page.locator('summary').getByText('Herní tituly', { exact: true }).click();
     await page.locator('.game-titles__badge').getByText('Soupeř s pamětí', { exact: true }).waitFor();
@@ -127,6 +137,15 @@ try {
     assert.equal(await page.locator('.case-rewards__badge').count(), 0, 'secondary sections start collapsed after reload');
     await page.locator('summary').getByText('Památky z uzavřených případů', { exact: true }).click();
     await page.locator('.case-rewards__badge').getByText('Strážce', { exact: true }).waitFor();
+    await page.goto(`${origin}/archive/duel`);
+    await page.locator('.archive-duel-view > p.aw-notice').waitFor();
+    await checkNavigation('Památky');
+    assert(await page.locator('.archive-duel-view > p.aw-notice').evaluate(element => {
+      const style = getComputedStyle(element);
+      const available = element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      return parseFloat(style.gridTemplateColumns) >= available - 1 && element.scrollWidth <= element.clientWidth;
+    }), 'text-only archive notices keep the full text column');
+    await page.screenshot({ path: path.join(output, `archive-notice-${width}.png`) });
     await navigation.getByRole('link', { name: 'Já', exact: true }).click();
     await page.waitForURL('**/me/account');
     await page.locator('.application-footer').getByRole('link', { name: 'Podpora', exact: true }).click();
