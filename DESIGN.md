@@ -280,6 +280,9 @@ celé sdělení. Chyba používá `alert`, ostatní živé zprávy `status`; `li
 Dvousloupcové rozložení patří pouze do `AwNotice` s ikonou. Starší textové
 elementy s třídou `aw-notice` zachovávají celou šířku textu bez prázdného
 sloupce pro ikonu. Zpráva má 16px odsazení, 14px poloměr a 1px linku.
+Potvrzení uložené hůlky má v dílně kompaktní svislé odsazení 8 px bez dalších
+vnějších okrajů; na úzkém telefonu tak zachová hlavní pokračovací akci v první
+obrazovce. Rozestupy mezi prvky zde vlastní mřížka rozhovoru.
 
 ### Dokončení hůlky a další krok
 

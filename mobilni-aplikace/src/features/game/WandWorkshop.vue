@@ -348,7 +348,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__header span { color: var(--wns-muted); font-size: .75rem; }
 .trunk-workshop__identity h1 { margin: 0 0 .4rem; letter-spacing: -.03em; }
 .trunk-workshop__identity p { margin: 0; }
-.trunk-workshop__saved { margin-block: 1rem; }
+.trunk-workshop .trunk-workshop__saved { margin: 0; padding-block: .5rem; }
 .trunk-workshop__scene { display: grid; gap: 1rem; min-width: 0; margin-top: 1.25rem; }
 .trunk-workshop__conversation { display: grid; align-content: start; gap: 1rem; min-width: 0; }
 .trunk-workshop__hint { color: var(--wns-muted); font-size: .9rem; line-height: 1.5; }
