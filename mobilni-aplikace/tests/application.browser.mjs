@@ -248,7 +248,12 @@ try {
   await page.keyboard.press('Enter');
   assert.notEqual(await lostAccess.getAttribute('open'), null);
   assert(await lostAccess.getByRole('link', { name: 'kontaktuj podporu' }).isVisible());
-  assert.match(await lostAccess.innerText(), /pouze vlastník služby/);
+  assert.equal(await lostAccess.getByRole('link', { name: 'kontaktuj podporu' }).getAttribute('href'), '/support');
+  const recoveryGuidance = await lostAccess.innerText();
+  assert.match(recoveryGuidance, /Podpora ti pomůže zjistit další možnosti přístupu/);
+  assert.match(recoveryGuidance, /Zobrazované jméno ani odkaz na památku vlastnictví účtu neprokazují/);
+  assert.match(recoveryGuidance, /Nikomu neposílej přístupové klíče/);
+  assert.equal(await lostAccess.locator('form, input, button').count(), 0, 'recovery guidance does not introduce an account-claim or secret-entry flow');
   assert.equal(await page.locator('.shell-preferences').count(), 0, 'sign-in keeps the prelaunch shell free of feature navigation and preferences');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(origin + '/signin');
