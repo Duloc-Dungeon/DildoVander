@@ -218,6 +218,7 @@ internal sealed partial class WandGenerationStore
         long profileRevision, int physicalSlot, int currentReadyMask = 63)
     {
         using var connection = Open();
+        EnsureWorkshop(connection);
         using var transaction = connection.BeginTransaction();
         RequireNotRevoked(connection, transaction, accountId, profileId);
         var session = Read(connection, transaction, accountId, operationId)
@@ -238,6 +239,7 @@ internal sealed partial class WandGenerationStore
         Execute(connection, transaction,
             "UPDATE wand_generation_sessions SET state='selected',selected_json=$wand WHERE id=$id AND state='ready'",
             ("$wand", Serialize(candidate)), ("$id", session.SessionId));
+        CaptureSelectedWandChronicle(connection, transaction, accountId, operationId, session.SessionId, candidate);
         transaction.Commit();
         return candidate;
     }
@@ -288,6 +290,14 @@ internal sealed partial class WandGenerationStore
         EnsureMobile(connection);
         EnsureWorkshop(connection);
         using var transaction = connection.BeginTransaction();
+        if (profileId == "*")
+        {
+            Kufr.Backend.Features.Keepsakes.ChronicleSourceOutbox.EraseAccount(connection, transaction, accountId);
+        }
+        else
+        {
+            Kufr.Backend.Features.Keepsakes.ChronicleSourceOutbox.EraseProfile(connection, transaction, accountId, profileId);
+        }
         Execute(connection, transaction,
             "INSERT OR IGNORE INTO wand_generation_revocations VALUES($account,$profile)",
             ("$account", accountId), ("$profile", profileId));

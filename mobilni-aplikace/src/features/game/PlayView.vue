@@ -17,6 +17,7 @@ import GameRules from './GameRules.vue';
 import GameSpellToken from './GameSpellToken.vue';
 import GameClash from './GameClash.vue';
 import GameYoloStage from './GameYoloStage.vue';
+import ChronicleMatchReveal from '../customer/ChronicleMatchReveal.vue';
 import { explainRound, duelHighlight } from './duelExplanation';
 import { useGameWandArtwork } from './useGameWandArtwork';
 import { useGameLiveUpdates } from './useGameLiveUpdates';
@@ -403,6 +404,7 @@ onBeforeUnmount(() => {
 
         <PaperSurface v-else-if="match?.needsLoadout" class="game-paper"><p v-if="match.completedRounds === 4" role="status">Čtyři výměny za námi. Pro druhý blok vyber novou zásobu kouzel.</p><GameLoadouts :key="match.block" :busy="busy" :uncertain="uncertain" :locked="match.ownLoadoutLocked" @confirm="loadout => mutate('loadout', { loadout })" /></PaperSurface>
         <template v-else-if="practice || match?.status === 'active' || completed || match?.mode === 'yolo'">
+          <ChronicleMatchReveal v-if="match?.status === 'complete' && !practice" :match-id="match.id" :mode="match.mode" :status="match.status" :verdict-visible="match.mode !== 'yolo' || yoloRevealed" />
           <GameYoloStage v-if="match?.mode === 'yolo'" :key="match.id" :match="match" :player-name="playerName"
             :wand-url="playerWand.url.value" :wand-name="playerWand.name.value" :synthetic="playerWand.synthetic.value"
             :opponent-wand-url="opponentWand.url.value" :busy="busy" :uncertain="uncertain"

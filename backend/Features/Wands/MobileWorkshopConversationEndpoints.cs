@@ -12,11 +12,25 @@ namespace Kufr.Backend.Features.Wands;
 internal sealed record WorkshopMessageRequest(string MessageId, string Text);
 internal sealed record WorkshopMessageCorrection(int ExpectedRevision, string Text);
 internal sealed record WorkshopRepairRequest(int ExpectedVersion, string SourceAssetId, string SourceSha256);
+internal sealed record WorkshopMomentRequest(string MessageId, int ExpectedRevision);
 
 internal static partial class MobileWandWorkshopEndpoints
 {
     private static void MapWorkshopConversation(this RouteGroupBuilder group)
     {
+        group.MapPost("/workshop/sessions/{id}/moments", async (string id, WorkshopMomentRequest request,
+            HttpContext http, WandGenerationStore wands, CharacterProfileStore profiles, GameStore games,
+            [FromServices] Kufr.Backend.Features.Chronicle.ChronicleStore chronicle) =>
+        {
+            var owner = Owner(http);
+            var state = State(http, wands, id, owner);
+            await RequireConversationAsync(http, state, profiles, wands, games, allowFinished: true);
+            if (request.MessageId is not { Length: > 0 and <= 120 } || request.ExpectedRevision < 1)
+            { throw new WandGenerationException("invalid_workshop_message", 400); }
+            var sourceId = wands.SaveWorkshopMoment(owner, id, request.MessageId, request.ExpectedRevision);
+            wands.DrainWandChronicle(chronicle);
+            return Results.Ok(new { sourceId });
+        });
         group.MapPost("/workshop/sessions/{id}/messages", async (string id, WorkshopMessageRequest request,
             HttpContext http, WandGenerationStore wands, CharacterProfileStore profiles, GameStore games,
             [FromServices] MobileWorkshopLiveRuntime runtime, [FromServices] IMobileWandQuestionProvider dialogue) =>

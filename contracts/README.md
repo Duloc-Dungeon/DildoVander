@@ -1,5 +1,12 @@
 # Sdílené kontrakty kufru
 
+## Osobní kronika
+
+[Chronicle API](chronicle-openapi-v1.json) popisuje potvrzené události, původ
+odznaků, osobní odhalení a autorizované obrázky pro mobilní sdílení. Vizuální
+snapshoty zůstávají na serveru. Podrobnosti o outboxu a poskytovateli jsou
+v [provozním popisu kroniky](../docs/keepsakes-chronicle.md).
+
 ## Show Pack
 
 [HTTP rozšíření](show-openapi-v1.json) popisuje autorizované Director, duel,

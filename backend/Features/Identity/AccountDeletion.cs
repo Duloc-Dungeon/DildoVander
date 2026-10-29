@@ -80,6 +80,15 @@ internal sealed class AccountDeletionService(AccountDatabase db, IServiceProvide
                 request.Attempts++;
                 await db.SaveChangesAsync(token);
                 var stores = Stores();
+                // Fence new chronicle deliveries before erasing source outboxes.
+                var chronicle = services.GetService<Kufr.Backend.Features.Chronicle.ChronicleStore>();
+                if (chronicle is null && services.GetService<AccountConfiguration>() is { } accountConfiguration
+                    && File.Exists(Path.Combine(accountConfiguration.DataRoot, "chronicle.sqlite")))
+                {
+                    chronicle = new(accountConfiguration.DataRoot);
+                }
+                chronicle?.DeleteAccount(request.UserId);
+                services.GetService<Kufr.Backend.Features.Launch.LaunchPolicyStore>()?.EraseChronicleAccount(request.UserId);
                 services.GetService<Kufr.Backend.Features.Game.GameStore>()?.DeleteAccount(request.UserId);
                 services.GetService<Kufr.Backend.Features.Push.PushStore>()?.RemoveAccount(request.UserId);
                 if (services.GetService<Kufr.Backend.Features.TestingSessions.TestingSessionService>() is { } testing)

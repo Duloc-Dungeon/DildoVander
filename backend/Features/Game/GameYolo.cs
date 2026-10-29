@@ -3,6 +3,7 @@ using System.ClientModel.Primitives;
 using System.Text;
 using System.Text.Json;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Threading.Channels;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Conversations;
@@ -22,6 +23,13 @@ namespace Kufr.Backend.Features.Game;
 internal sealed record GameYoloSpell(string Action, string Name, string Description);
 internal sealed record GameYoloProfile(string Id, string Name, string Universe, string WandName, string[] Traits, GameYoloDecision[]? Decisions = null, string WandAffinity = "", string WandWeakness = "", string[]? SpellNames = null, GameYoloSetting? Setting = null, string WandTemperament = "", GameYoloSpell[]? Spells = null)
 {
+    public string? ProfileId { get; init; }
+    public long? ProfileRevision { get; init; }
+    public string? WandId { get; init; }
+    public GeneratedWandPublicSnapshot? Wand { get; init; }
+    public string? PortraitReferenceBase64 { get; init; }
+    public string? PortraitSha256 { get; init; }
+    public string? PortraitMediaType { get; init; }
     internal string[] AllowedReferences => new[] { "name", "universe", "wandName", "wandAffinity", "wandWeakness" }
         .Concat(Traits.Select((_, index) => $"trait{index + 1}"))
         .Where(key => !string.IsNullOrWhiteSpace(ValueFor(key))).ToArray();
@@ -375,6 +383,9 @@ internal sealed class GameYoloWorker(IServiceScopeFactory scopes, GameStore stor
         var name = isOwner ? AccountRoles.OwnerDisplayName : Bound(profile?.UserInput.Name, fallbackName);
         if (profile is null) return new(id, name, "", "", []);
         var wand = wands.LatestBonded(id, profile.ProfileId, profile.Revision);
+        var portrait = profiles.ReadPortraitImage(id, profile.ProfileId, profile.Revision);
+        var portraitBytes = portrait is null ? null
+            : Kufr.Backend.Features.Keepsakes.ChronicleReferenceImage.CopyBounded(portrait);
         var traits = profile.Enrichment is { NeedsClarification: false } enrichment && enrichment.InputRevision == profile.Revision
             ? enrichment.Facts.Take(3).Select(fact => Bound(fact.Text, "")).Where(text => text.Length > 0).ToArray()
             : [];
@@ -382,7 +393,16 @@ internal sealed class GameYoloWorker(IServiceScopeFactory scopes, GameStore stor
             WandAffinity: Bound(wand?.Affinity, ""), WandWeakness: Bound(wand?.Weakness, ""),
             SpellNames: wand?.Spells?.Take(3).Select(spell => Bound(spell.Name, "")).ToArray(),
             WandTemperament: Bound(wand?.Temperament, ""),
-            Spells: wand?.Spells?.Take(3).Select(spell => new GameYoloSpell(Bound(spell.Action, ""), Bound(spell.Name, ""), Bound(spell.Description, ""))).ToArray());
+            Spells: wand?.Spells?.Take(3).Select(spell => new GameYoloSpell(Bound(spell.Action, ""), Bound(spell.Name, ""), Bound(spell.Description, ""))).ToArray())
+        {
+            ProfileId = profile.ProfileId,
+            ProfileRevision = profile.Revision,
+            WandId = wand?.WandId,
+            Wand = wand?.ToPublic(),
+            PortraitReferenceBase64 = portraitBytes is null ? null : Convert.ToBase64String(portraitBytes),
+            PortraitSha256 = portraitBytes is null ? null : Convert.ToHexString(SHA256.HashData(portraitBytes)),
+            PortraitMediaType = portraitBytes is null ? null : "image/png"
+        };
     }
 
     private static string Bound(string? value, string fallback) => string.IsNullOrWhiteSpace(value)
@@ -506,6 +526,7 @@ internal sealed partial class GameStore
             state.YoloWinnerId = result.WinnerId; state.YoloVerdict = result.Verdict; state.YoloBeats = result.Beats.ToList();
             ValidateYoloResult(state, result);
             state.YoloOutcome = result.Outcome;
+            state.YoloDecisiveChoice = result.DecisiveChoice;
             state.Result = result.Outcome == "winner" ? result.WinnerId == state.ChallengerId ? "challenger" : "opponent" : result.Outcome;
             AssignLoserTask(state);
         });
@@ -557,6 +578,7 @@ internal sealed partial class GameStore
             command.Parameters.AddWithValue("$state", JsonSerializer.Serialize(state, Json));
             command.Parameters.AddWithValue("$id", matchId);
             command.ExecuteNonQuery();
+            if (state.Status == "complete") { EnqueueChronicleOutbox(connection, transaction, matchId, state); }
             using var job = connection.CreateCommand();
             job.Transaction = transaction;
             job.CommandText = "UPDATE game_yolo_jobs SET status=$status,lease_until=0 WHERE match_id=$id AND revision=$revision";

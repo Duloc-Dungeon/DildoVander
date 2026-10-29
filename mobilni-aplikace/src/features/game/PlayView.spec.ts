@@ -21,7 +21,7 @@ const snapshot = (patch: Partial<Match> = {}): Match => ({ id, mode: 'quick', st
 let wrapper: VueWrapper | undefined;
 async function render(path = `/play/match/${id}`) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/play/match/:id', component: PlayView }, { path: '/:pathMatch(.*)*', component: PlayView }] });
-  await router.push(path); wrapper = mount(PlayView, { global: { plugins: [router] } }); await flushPromises(); return wrapper;
+  await router.push(path); wrapper = mount(PlayView, { global: { plugins: [router], stubs: { ChronicleMatchReveal: true } } }); await flushPromises(); return wrapper;
 }
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });

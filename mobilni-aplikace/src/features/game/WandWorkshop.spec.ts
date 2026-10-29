@@ -21,6 +21,7 @@ beforeEach(() => {
   api.request.mockImplementation(async (path: string, method = 'GET', body?: any) => {
     if (path === base) return { eligible: !reason, reason, tier: 0, profile: { profileId: 'profile', revision: profileRevision, name: 'Sever', world: 'Přístav', status: reason ? 'running' : 'ready' }, session: structuredClone(session) };
     if (path === `${base}/sessions`) { session ??= { ...saved(), id: body.operationId }; return { session: structuredClone(session) }; }
+    if (path.endsWith('/moments')) return { sourceId: 'c'.repeat(64) };
     if (path.endsWith('/ticket')) return { url: 'wss://example.test/live', path: '/live', expiresAt: '' };
     if (path.endsWith('/messages')) { session.messages.push({ messageId: body.messageId, revision: 1, role: 'user', text: body.text }); session.messages.push({ messageId: `reply${session.messages.length}`, revision: 1, role: 'assistant', text: 'Co má hůlka zachránit?' }); }
     if (path.endsWith('/finish')) session.status = 'generating';
@@ -30,6 +31,16 @@ beforeEach(() => {
 });
 afterEach(() => { view?.unmount(); view = undefined; vi.useRealTimers(); });
 describe('customer Live workshop', () => {
+  it('saves only the selected completed assistant reply as a private chronicle moment', async () => {
+    session = { ...completed(), messages: [{ messageId: 'reply-a', revision: 3, role: 'assistant', text: 'Tahle věta zůstane uložená.', sourceMode: 'text', createdAt: 1790000000 }] };
+    await render();
+    await click('Uložit vzpomínku');
+    expect(api.request).toHaveBeenCalledWith(`${base}/sessions/${id}/moments`, 'POST', { messageId: 'reply-a', expectedRevision: 3 }, undefined,
+      'Uložit vybranou odpověď do osobní kroniky? Uloží se jen tato replika, celý rozhovor zůstane soukromý.');
+    expect(view!.text()).toContain('Otevřít v osobní kronice');
+    expect(view!.text()).toContain('tato vzpomínka nepůjde sdílet');
+  });
+
   it('acknowledges completion observed in this workshop and keeps a restored result quiet', async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
     session = { ...saved(), status: 'generating' };

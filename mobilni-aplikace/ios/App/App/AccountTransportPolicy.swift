@@ -48,6 +48,7 @@ enum AccountTransportPolicy {
     }
 
     static func accountResponseLimit(path: String, method: String) -> Int {
+        if chronicleImage(path: path, method: method) { return 8 * 1024 * 1024 }
         if gameOpponentWandArtwork(path: path, method: method) { return 32 * 1024 * 1024 }
         if (method == "GET" && (adminCharacterList(path) || adminCharacterProfilePath(path))) ||
             (method == "PUT" && (adminCharacterProfilePath(path) || adminCharacterPortrait(path: path, method: method, read: false))) {
@@ -84,6 +85,11 @@ enum AccountTransportPolicy {
 
     static func accountResponseContentTypeAllowed(path: String, method: String, contentType: String?, status: Int = 200) -> Bool {
         if !(200..<300).contains(status) { return true }
+        if chronicleImage(path: path, method: method) {
+            guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+            return ["image/png", "image/jpeg", "image/webp"].contains(value)
+        }
         if gameOpponentWandArtwork(path: path, method: method) {
             return contentType?.split(separator: ";", maxSplits: 1).first?
                 .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "image/png"
@@ -103,6 +109,19 @@ enum AccountTransportPolicy {
         guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
         return ["image/png", "image/jpeg", "image/webp"].contains(value)
+    }
+
+    private static func chronicleImage(path: String, method: String) -> Bool {
+        guard method == "GET", path.hasPrefix("/"), !path.contains("?"), !path.contains("#"),
+              !path.contains("%"), !path.contains("//"), !path.contains("\\"), !path.hasSuffix("/") else { return false }
+        let parts = path.split(separator: "/").map(String.init)
+        let route = parts.map { $0.lowercased() }
+        if parts.count == 5 && Array(route.prefix(3)) == ["app", "v1", "chronicle"]
+            && validArchiveUUID(parts[3]) && ["image", "share"].contains(route[4]) { return true }
+        return parts.count == 7 && Array(route.prefix(3)) == ["app", "v1", "chronicle"]
+            && validArchiveUUID(parts[3]) && route[4] == "badges"
+            && parts[5].count <= 100 && parts[5].range(of: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$", options: .regularExpression) != nil
+            && route[6] == "image"
     }
 
     static func accountHeaderAllowed(path: String, method: String, name: String, value: String) -> Bool {
@@ -621,6 +640,7 @@ enum AccountTransportPolicy {
     }
 
     static func account(path: String, method: String) -> Bool {
+        if chronicleImage(path: path, method: method) { return true }
         if path == "/app/v1/game/live/negotiate?negotiateVersion=1" { return method == "POST" }
         if ["GET", "POST", "DELETE"].contains(method) {
             let timestamp = method == "GET" ? "(&_=[0-9]{1,20})?" : ""
@@ -648,6 +668,32 @@ enum AccountTransportPolicy {
         if customerCompletionPage(path: path, method: method) || accountCollectionPage(path: path, method: method) { return true }
         if let parts = URLComponents(string: path), parts.scheme == nil, parts.host == nil, parts.fragment == nil,
            !parts.percentEncodedPath.contains("%"), !path.contains("\\"), path.count <= 4096 {
+            if parts.path == "/app/v1/chronicle", method == "GET" {
+                let allowed = Set(["kind", "participant", "badge", "before", "limit"])
+                let query = parts.queryItems ?? []
+                guard query.count <= allowed.count, Set(query.map(\.name)).count == query.count else { return false }
+                return query.allSatisfy { item in
+                    guard allowed.contains(item.name), let value = item.value, value.count <= 2048 else { return false }
+                    switch item.name {
+                    case "kind": return ["yolo", "duel", "team", "boss", "case", "wand", "evening", "conversation"].contains(value)
+                    case "participant": return value.range(of: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$", options: .regularExpression) != nil
+                    case "badge": return value.range(of: "^[A-Za-z0-9._:-]{1,120}$", options: .regularExpression) != nil
+                    case "before": return value.range(of: "^[A-Za-z0-9_-]{1,2048}$", options: .regularExpression) != nil
+                    case "limit": return value == "50"
+                    default: return false
+                    }
+                }
+            }
+            if parts.query == nil, parts.path.range(of: "^/app/v1/chronicle/[0-9a-fA-F-]{36}\\z", options: .regularExpression) != nil,
+               let id = parts.path.split(separator: "/").last, UUID(uuidString: String(id)) != nil { return method == "GET" }
+            if parts.query == nil, parts.path.range(of: "^/app/v1/chronicle/[0-9a-fA-F-]{36}/(reveal|illustration)\\z", options: .regularExpression) != nil,
+               UUID(uuidString: String(parts.path.split(separator: "/")[3])) != nil { return method == "POST" }
+            if parts.query == nil, parts.path.range(of: "^/app/v1/chronicle/[0-9a-fA-F-]{36}/badges/[A-Za-z0-9][A-Za-z0-9._:-]{0,99}/image\\z", options: .regularExpression) != nil,
+               UUID(uuidString: String(parts.path.split(separator: "/")[3])) != nil { return method == "GET" }
+            if parts.query == nil, parts.path.range(of: "^/app/v1/chronicle/[0-9a-fA-F-]{36}/badges/[A-Za-z0-9._:-]{1,100}/image\\z", options: .regularExpression) != nil,
+               UUID(uuidString: String(parts.path.split(separator: "/")[3])) != nil { return method == "GET" }
+            if parts.query == nil, parts.path.range(of: "^/app/v1/chronicle/source/(yolo|duel|team|boss|case|wand|evening|conversation)/[A-Za-z0-9][A-Za-z0-9._:-]{0,99}\\z", options: .regularExpression) != nil,
+               let id = parts.path.split(separator: "/").last, UUID(uuidString: String(id)) != nil { return method == "GET" }
             if adminCharacters(path: path, method: method) { return true }
             if prelaunchAccount(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }
             if show(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }
@@ -817,13 +863,20 @@ enum AccountTransportPolicy {
         if path == "/app/v1/admin/launch/beta-admission" { return query.isEmpty && ["GET", "PUT"].contains(method) }
         if path == "/app/v1/admin/launch/beta-admission/group" { return query.isEmpty && method == "POST" }
         if path == "/app/v1/admin/launch/groups" { return query.isEmpty && ["GET", "POST"].contains(method) }
+        let groupParts = path.split(separator: "/").map(String.init)
+        if groupParts.count == 7 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "groups"]
+            && groupParts[6] == "chronicle-close" && query.isEmpty {
+            let groupId = groupParts[5]
+            return !groupId.isEmpty && groupId.count <= 100
+                && groupId.allSatisfy { $0.isASCII && ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-".contains($0)) }
+                && method == "POST"
+        }
         if path == "/app/v1/admin/launch/waiting-room" {
             guard method == "GET" else { return false }
             if query.isEmpty { return true }
             guard query.count == 1, query[0].name == "after", let cursor = query[0].value else { return false }
             return cursor.count == 32 && cursor.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) }
         }
-        let groupParts = path.split(separator: "/").map(String.init)
         if groupParts.count == 7 && Array(groupParts.prefix(5)) == ["app", "v1", "admin", "launch", "waiting-room"]
             && groupParts[6] == "group" && query.isEmpty {
             let userId = groupParts[5]
@@ -926,7 +979,7 @@ enum AccountTransportPolicy {
         if route.range(of: session + "/messages/[A-Za-z0-9_-]{1,160}$", options: .regularExpression) != nil {
             return method == "PUT"
         }
-        if route.range(of: session + "/(messages|finish|ticket|artwork/repair)$", options: .regularExpression) != nil {
+        if route.range(of: session + "/(messages|finish|ticket|artwork/repair|moments)$", options: .regularExpression) != nil {
             return method == "POST"
         }
         if route.range(of: session + "/(answers|skip|audio|transcribe|artwork/retry)$", options: .regularExpression) != nil {
@@ -979,6 +1032,42 @@ struct AccountDataTemporaryFile: Sendable {
             try? file.cleanup()
             throw error
         }
+    }
+
+    static func prepareChronicleImage(filename: String, mediaType: String, bodyBase64: String,
+                                      baseDirectory: URL = FileManager.default.temporaryDirectory) throws -> Self {
+        let maximumImageBytes = 8 * 1024 * 1024
+        guard filename.range(of: "^vzpominka-[0-9a-fA-F-]{36}\\.(png|jpg|webp)$", options: .regularExpression) != nil,
+              ["image/png", "image/jpeg", "image/webp"].contains(mediaType),
+              bodyBase64.utf8.count <= ((maximumImageBytes + 2) / 3) * 4,
+              let data = Data(base64Encoded: bodyBase64), !data.isEmpty, data.count <= maximumImageBytes,
+              Self.validChronicleImage(data, mediaType: mediaType) else { throw AccountDataFileFailure.invalidFile }
+        let owned = baseDirectory.appendingPathComponent(ownedDirectoryName, isDirectory: true)
+        let directory = owned.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let file = Self(directory: directory, url: directory.appendingPathComponent(filename))
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            #if os(iOS)
+            try data.write(to: file.url, options: [.atomic, .completeFileProtection])
+            #else
+            try data.write(to: file.url, options: [.atomic])
+            #endif
+            return file
+        } catch {
+            try? file.cleanup()
+            throw error
+        }
+    }
+
+    private static func validChronicleImage(_ data: Data, mediaType: String) -> Bool {
+        let bytes = [UInt8](data.prefix(12))
+        if mediaType == "image/png" {
+            return bytes.count >= 8 && Array(bytes[0..<8]) == [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+        }
+        if mediaType == "image/jpeg" { return bytes.count >= 3 && bytes[0...2].elementsEqual([0xff, 0xd8, 0xff]) }
+        return mediaType == "image/webp" && bytes.count >= 12
+            && String(bytes: bytes[0..<4], encoding: .ascii) == "RIFF"
+            && String(bytes: bytes[8..<12], encoding: .ascii) == "WEBP"
     }
 
     func cleanup() throws {
