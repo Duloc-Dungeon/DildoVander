@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T07:41:27.907Z",
+  "generatedAt": "2026-10-29T08:38:41.174Z",
   "title": "Wand Night Stand — schválený design v2",
   "extensions": {
     "colorMeta": {
@@ -622,6 +622,13 @@
       "css": ".ds-workshop-journey{display:flex;list-style:none;gap:.75rem;margin:0;padding:0;background:var(--wns-bg,#080909);font:400 1rem/1.55 'Manrope Variable',sans-serif}.ds-workshop-journey li{flex:1;min-width:0;padding-top:.65rem;border-top:2px solid var(--wns-line,#343939);color:var(--wns-muted,#b2b9b6);font-size:.8rem;overflow-wrap:anywhere}.ds-workshop-journey li[aria-current]{border-color:var(--wns-mint,#b8f3d4);color:var(--wns-mint,#b8f3d4);font-weight:760}.ds-workshop-journey li[data-complete=\"true\"]{border-color:var(--wns-mint,#b8f3d4)}"
     },
     {
+      "name": "Plynulý přepis a ovládání kufru",
+      "kind": "custom",
+      "description": "Statický výřez skutečné dílny při naslouchání. Přepis má vlastní posuvnou oblast 8 rem; Stop, mikrofon a stav zůstávají ve stálé skupině. Náhled nespouští mikrofon ani audio. Samostatné přehrávání verdiktu se nenabízí.",
+      "html": "<section class=\"ds-workshop-dialogue\"><div class=\"ds-workshop-caption\" role=\"region\" aria-label=\"Průběžný přepis\" tabindex=\"0\"><h2>Zachovám klid a přidám důraz.</h2></div><div class=\"ds-workshop-controls\"><button class=\"ds-workshop-button\" disabled>Stop řeč</button><button class=\"ds-workshop-button\">Ztlumit mikrofon</button><button class=\"ds-workshop-link\">Ukončit rozhovor</button><button class=\"ds-workshop-link\">Raději psát</button><p role=\"status\">Mikrofon je zapnutý. Mluv přirozeně, kufr můžeš přerušit.</p></div></section>",
+      "css": ".ds-workshop-dialogue{max-width:28rem;background:var(--wns-bg,#080909);color:var(--wns-text,#f5f5f0);font:400 1rem/1.5 \"Manrope Variable\",sans-serif;overflow-wrap:anywhere}.ds-workshop-caption{block-size:8rem;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;border-bottom:1px solid var(--wns-line,#343939);scrollbar-color:var(--wns-line,#343939) var(--wns-bg,#080909)}.ds-workshop-caption h2{margin:0;padding:.5rem 0 1rem;font-size:clamp(1.2rem,2.5vw,1.65rem);font-weight:650;line-height:1.4}.ds-workshop-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem 1rem;padding:.5rem 0;margin-top:1rem;border-top:1px solid var(--wns-line,#343939)}.ds-workshop-button{min-height:3.5rem;border:1px solid var(--wns-line,#343939);border-radius:14px;background:var(--wns-surface-raised,#222626);color:inherit;font:inherit;cursor:pointer}.ds-workshop-button:hover:enabled{background:var(--wns-surface,#191b1b)}.ds-workshop-button:disabled{opacity:.48;cursor:not-allowed}.ds-workshop-link{min-height:3.5rem;padding:.5rem 0;text-align:start;background:transparent;border:0;color:var(--wns-mint,#b8f3d4);font:inherit;text-decoration:underline;text-underline-offset:.2em;cursor:pointer}.ds-workshop-link:hover{text-decoration-thickness:2px}.ds-workshop-controls p{grid-column:1/-1;min-block-size:4.5em;margin:0;color:var(--wns-muted,#b2b9b6);font-size:.9rem}.ds-workshop-dialogue :is(button,[tabindex]):focus-visible{outline:3px solid var(--wns-mint,#b8f3d4);outline-offset:4px}"
+    },
+    {
       "name": "Potvrzení uložené hůlky",
       "kind": "custom",
       "refersTo": "notice",
@@ -727,6 +734,11 @@
         "name": "Pravidlo nabídky před efektem",
         "body": "Při rozhodování ustoupí ilustrace střetu\ni portrét Křivopíska. Hlavním obsahem je společná situace, zvýrazněný cíl,\naktuální dějství a tři vlastní možnosti hráče. Každá karta má konkrétní název,\nviditelnou výhodu a cenu. Výběr zůstává místní do akce „Potvrdit plán“.",
         "section": "components"
+      },
+      {
+        "name": "Stálá dílna během řeči",
+        "body": "Přibývající přepis posouvá pouze vlastní oblast. Scéna, ovládání řeči a plocha ilustrace drží rozměry napříč stavy; dokončení nepřesouvá stránku.",
+        "section": "layout"
       }
     ],
     "dos": [

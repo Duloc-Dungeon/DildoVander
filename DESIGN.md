@@ -226,6 +226,12 @@ Postava s portrétem a dolní čekárna přecházejí na dvě oblasti od 760 px;
 na telefonu se řadí pod sebe. Jméno, stav a osobní věta mají přednost před
 odpočtem a volitelnými nastaveními. Nejde o náhradu zákaznického shellu.
 
+Dílna má od 850 px dva sloupce, na telefonu jednu obsahovou osu. Mobilní
+scéna kufru drží stejný kompaktní rozměr při řeči, naslouchání i psaní;
+nemění se s výškou lišt prohlížeče. Průběžný přepis má vlastní posuvnou
+oblast vysokou 8 rem. Výsledná ilustrace má na telefonu stálou plochu
+nejvýše 14 rem na šířku, a to i při načítání nebo chybě.
+
 Herní obsah zůstává nejvýše 520 px široký. Baronovo představení má minimální
 výšku 360 px, do 360 px šířky 310 px; ve vlastním zápasu je scéna kompaktní
 (210 px, na úzké obrazovce 180 px). Energetické bloky mají sloupce alespoň
@@ -409,7 +415,8 @@ rozhovoru a fialovou scénu výroby i hotové ilustrace. Nejde o nové společn�
 barvy stavů. Nedostupná dílna a chyba výroby mají zvýšenou tmavou plochu.
 Původní autorizovaná ilustrace kufru nebo hůlky zůstává hlavním obrazem;
 prázdný prostor nenahrazuje ukázková hůlka. Pokud ilustrace ještě vzniká nebo
-selže, výsledná scéna se skryje a uložený výsledek s další akcí zůstává čitelný.
+selže, její stálá plocha zobrazí pravdivý stav a dostupnou obnovu. Rozložení
+se při příchodu obrázku nepřeskupí a hlavní akce zůstává nezávislá na ilustraci.
 
 Průběh má tři pojmenované fáze **Rozhovor / Výroba / Tvoje hůlka**. Aktivní
 fázi vyznačuje mintová horní linka a tučný popisek, dokončenou mintová linka.
@@ -417,9 +424,16 @@ Aktuální krok má také `aria-current="step"`. Fáze vychází z uloženého s
 počet odpovědí ani čas nejsou odhadem procent výroby.
 
 Na široké obrazovce je objekt vedle rozhovoru, od 850 px ve dvou sloupcích;
-scéna zůstává při posunu nahoře. Na telefonu předchází ovládání, při hovoru
-nebo psaní se zmenší. Stop a ukončení hovoru jsou před obsahem rozhovoru;
-Stop se neskrývá za přepis ani animaci. Uložený stav a materiál předcházejí
+scéna zůstává při posunu nahoře. Na telefonu je objekt vedle krátkého stavu
+ve stejně velké kompaktní scéně při naslouchání, řeči i psaní. Průběžný přepis
+má vlastní posuvnou oblast a s přibývajícími slovy nezvětšuje stránku. Pokud
+host čte starší část přepisu, automatický posun mu ji nevezme.
+
+Stop řeči, mikrofon, ukončení hovoru a stav řeči tvoří společnou skupinu pod
+přepisem. Mají stálá místa i při střídání naslouchání a řeči; Stop je během
+naslouchání neaktivní. Skupina nepřekrývá obsah při posouvání stránky.
+U hotové hůlky není samostatné tlačítko pro přehrání verdiktu.
+Uložený stav a materiál předcházejí
 hlavní akci, verdikt následuje za ní. V ověřeném předstartovním průchodu je
 akce návratu dostupná v první obrazovce také na 320 px při běžné velikosti textu.
 Při 200% textu zůstává průchod bez vodorovného přetékání, bez slibu všeho nad přehybem.
@@ -436,7 +450,8 @@ statickou scénu, obsah i okamžitě dostupné akce.
 Potvrzené textové odpovědi oznamuje samostatná zdvořilá živá oblast;
 streamované útržky se průběžně nepředčítají. Vlastnosti, kouzla a uložený
 přepis jsou rozbalovací podrobnosti. Ilustrace má samostatné načítání, chybu
-a obnovu; její nedostupnost nesmí znovu vyrábět hůlku.
+a obnovu; její nedostupnost nesmí znovu vyrábět hůlku. Dokončení přesune
+fokus na název hůlky bez automatického posunu celé stránky.
 
 Zdroje: `WandWorkshop.vue`, `TrunkStage.vue` a
 [průchod dílnou](docs/magicky-kufr-workshop.md), sloučeno v `e938775`.
