@@ -1170,7 +1170,7 @@ internal static partial class MobileGameTests
             "game polling and commands do not consume the shared account/sign-in allowance");
     }
 
-    private sealed class HttpFixture : IAsyncDisposable
+    private sealed partial class HttpFixture : IAsyncDisposable
     {
         private const string Bootstrap = "mobile-game-http-bootstrap";
         private readonly WebApplication app;

@@ -1705,6 +1705,84 @@
           }
         ]
       }
+    },
+    "/app/v1/game/teams/{id}/opponents/{opponentId}/wand-artwork": {
+      "get": {
+        "summary": "Read current approved artwork for an opponent in an owned team match",
+        "x-source": "Features/Game/GameTeams.cs",
+        "description": "Requires an eligible same-group match participant and a canonical opposing user ID. Revalidates the current character, selected generated wand, publication approval and SHA revision on every read. Returns only the canonical PNG with Cache-Control: no-store and X-Content-Type-Options: nosniff.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "opponentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approved canonical PNG",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "const": "nosniff"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or participant"
+          },
+          "404": {
+            "description": "Match, opposing participant, current publication or revision unavailable"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2914,6 +2992,17 @@
           },
           "rulesVersion": {
             "const": "mobile-game-v0.3"
+          },
+          "opponentWands": {
+            "description": "Current approved artwork for opposing participants only, keyed by canonical opponent user ID. Hydrated on specific match and mutation responses; omitted or null in the lobby.",
+            "type": [
+              "object",
+              "null"
+            ],
+            "maxProperties": 2,
+            "additionalProperties": {
+              "$ref": "#/components/schemas/GameTeamOpponentWand"
+            }
           }
         }
       },
@@ -2978,6 +3067,27 @@
             }
           }
         }
+      },
+      "GameTeamOpponentWand": {
+        "type": "object",
+        "required": [
+          "wandArtworkUrl",
+          "wandName",
+          "wandSynthetic"
+        ],
+        "properties": {
+          "wandArtworkUrl": {
+            "type": "string",
+            "pattern": "^/app/v1/game/teams/[0-9a-f]{32}/opponents/[^/?]+/wand-artwork\\?revision=[0-9a-fA-F]{64}$"
+          },
+          "wandName": {
+            "type": "string"
+          },
+          "wandSynthetic": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
       }
     }
   }

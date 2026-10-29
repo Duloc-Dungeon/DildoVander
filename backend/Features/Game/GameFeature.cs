@@ -718,7 +718,7 @@ internal static class GameEndpoints
         };
     }
 
-    private static async Task<GameSharedWandArtwork?> ReadCurrentOpponentWandArtworkAsync(string accountId,
+    internal static async Task<GameSharedWandArtwork?> ReadCurrentOpponentWandArtworkAsync(string accountId,
         HttpContext context, CharacterProfileStore profiles, KeepsakeStore keepsakes, string? revision = null,
         bool includeBytes = false)
     {

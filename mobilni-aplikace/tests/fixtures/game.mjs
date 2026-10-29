@@ -57,6 +57,10 @@ function match(state) {
 function teamMatch(state, halftimeEndsAt) {
   return { id, status: state === 'team-half' ? 'halftime' : 'active', revision: 4,
     teamMembers:['one','two'], opponents:['three','four'], acceptedBy:['one','two','three','four'],
+    opponentWands: Object.fromEntries([['three', 'thorn'], ['four', 'moon']].map(([user, kind]) => [user, {
+      wandArtworkUrl: `/app/v1/game/teams/${id}/opponents/${user}/wand-artwork?revision=${artworkHashes[kind]}`,
+      wandName: wandSnapshot(kind).name, wandSynthetic: true,
+    }])),
     rounds:[], teamScore:3, opponentScore:2, completedRounds:state === 'team-half' ? 4 : 1,
     ownSparks:2, ownInventory:{strike:2,trick:2,shield:2}, ownChoiceLocked:false, allFourLocked:[false,false,false,false],
     halftimeEndsAt, xpAwarded:0, sparkBalances:{one:2,two:1,three:2,four:2}, ownTransferLocked:false, onTeamA:true };
@@ -103,6 +107,13 @@ export async function createGameFixtureServer(port = 0) {
     }
     if (url.pathname === `/app/v1/game/matches/${id}/opponent/wand-artwork`) {
       const kind = wandKind === 'moon' ? 'thorn' : 'moon';
+      if (request.method !== 'GET' || url.search !== `?revision=${artworkHashes[kind]}`) return json({}, 404);
+      response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      response.end(await readFile(new URL(`./generated-wands/${kind}.png`, import.meta.url))); return;
+    }
+    const teamArtwork = url.pathname.match(new RegExp(`^/app/v1/game/teams/${id}/opponents/(three|four)/wand-artwork$`));
+    if (teamArtwork) {
+      const kind = teamArtwork[1] === 'three' ? 'thorn' : 'moon';
       if (request.method !== 'GET' || url.search !== `?revision=${artworkHashes[kind]}`) return json({}, 404);
       response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
       response.end(await readFile(new URL(`./generated-wands/${kind}.png`, import.meta.url))); return;

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import GameSpellToken from './GameSpellToken.vue';
+import practiceWand from '../../assets/wns-v2/art/wand-violet.png';
 import { actionName, type Choice, type Round } from './game';
 
 const props = defineProps<{
   round?: Round;
   locked?: boolean;
+  waitingText?: string;
   theatrical?: boolean;
   wandUrl?: string;
   wandName?: string;
@@ -13,12 +15,14 @@ const props = defineProps<{
   opponentWandUrl?: string;
   opponentWandName?: string;
   opponentSynthetic?: boolean;
+  practiceOpponent?: boolean;
 }>();
 const stage = ref<HTMLElement>();
 const canvas = ref<HTMLCanvasElement>();
 const playerOrigin = ref<HTMLElement>();
 const opponentOrigin = ref<HTMLElement>();
 const artworkFailed = ref([false, false]);
+const opponentArtwork = computed(() => props.practiceOpponent ? practiceWand : props.opponentWandUrl);
 const motion = ref<'still' | 'playing'>('still');
 const revealedActions = computed(() => {
   const choices = [props.round?.playerChoice, props.round?.opponentChoice];
@@ -36,9 +40,9 @@ let resizeObserver: ResizeObserver | undefined;
 let reducedMotion: MediaQueryList | undefined;
 
 watch(() => props.wandUrl, () => { artworkFailed.value[0] = false; tips[0] = { x: .5, y: .05 }; });
-watch(() => props.opponentWandUrl, () => { artworkFailed.value[1] = false; tips[1] = { x: .5, y: .05 }; });
+watch(opponentArtwork, () => { artworkFailed.value[1] = false; tips[1] = { x: .5, y: .05 }; });
 
-// Backend PNGs are upright 2:3 objects with variable transparent margins.
+// Approved PNGs have variable transparent margins; the practice prop is diagonal.
 // Sample the solid tip once per image; preserve the complete original artwork.
 function artworkLoaded(event: Event, side: number) {
   const image = event.target as HTMLImageElement;
@@ -69,8 +73,9 @@ function spellOrigin(side: number, surface: DOMRect) {
   const artifact = origin?.querySelector<HTMLElement>('.game-magic-clash__artifact');
   if (!artifact) return { x: surface.width * (side === 0 ? .3 : .7), y: surface.height * .35 };
   const bounds = artifact.getBoundingClientRect();
-  const imageTip = (side === 0 ? props.wandUrl : props.opponentWandUrl) && !artworkFailed.value[side] ? tips[side]! : { x: .5, y: .05 };
-  const angle = (side === 0 ? 64 : -64) * Math.PI / 180;
+  const hasArtwork = Boolean((side === 0 ? props.wandUrl : opponentArtwork.value) && !artworkFailed.value[side]);
+  const imageTip = hasArtwork ? tips[side]! : { x: .5, y: .05 };
+  const angle = (side === 0 ? 64 : props.practiceOpponent && hasArtwork ? -109 : -64) * Math.PI / 180;
   const size = getComputedStyle(artifact);
   const x = (imageTip.x - .5) * Number.parseFloat(size.width);
   const y = (imageTip.y - .5) * Number.parseFloat(size.height);
@@ -206,14 +211,14 @@ onBeforeUnmount(() => {
       <svg v-else class="game-magic-clash__artifact game-magic-clash__placeholder" viewBox="0 0 100 150" aria-hidden="true" focusable="false"><path d="m50 7-3 97-4 32q7 9 14 0l-4-32ZM44 116h12m-13 9h14" /></svg>
     </div>
     <div ref="opponentOrigin" class="game-magic-clash__origin game-magic-clash__origin--opponent">
-      <img v-if="opponentWandUrl && !artworkFailed[1]" class="game-magic-clash__artifact" :src="opponentWandUrl" alt="" width="1024" height="1536" @load="artworkLoaded($event, 1)" @error="artworkFailed[1] = true" />
+      <img v-if="opponentArtwork && !artworkFailed[1]" class="game-magic-clash__artifact" :class="{ 'game-magic-clash__artifact--practice': practiceOpponent }" :src="opponentArtwork" alt="" width="1024" :height="practiceOpponent ? 1024 : 1536" @load="artworkLoaded($event, 1)" @error="artworkFailed[1] = true" />
       <svg v-else class="game-magic-clash__artifact game-magic-clash__placeholder" viewBox="0 0 100 150" aria-hidden="true" focusable="false"><path d="m50 7-3 97-4 32q7 9 14 0l-4-32ZM44 116h12m-13 9h14" /></svg>
     </div>
     <svg class="game-magic-clash__traces" viewBox="0 0 400 174" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M140 63Q170 52 200 63M260 63Q230 74 200 63" /><circle cx="200" cy="63" r="4" /></svg>
     <canvas ref="canvas" class="game-magic-clash__particles" aria-hidden="true" />
-    <div v-if="locked" class="game-magic-clash__waiting" aria-hidden="true">Tah uzamčený<small>Čekáme na soupeře</small></div>
+    <div v-if="locked" class="game-magic-clash__waiting" aria-hidden="true">Tah uzamčený<small>{{ waitingText ?? 'Čekáme na soupeře' }}</small></div>
     <div v-else-if="revealedActions.length === 2" class="game-magic-clash__spells" aria-hidden="true"><div v-for="(action, index) in revealedActions" :key="index"><GameSpellToken :action="action" /><span>{{ actionName(action) }}</span></div></div>
-    <div class="game-magic-clash__identities"><p class="game-magic-clash__identity">{{ wandName || 'Tvoje hůlka' }}<span v-if="synthetic"> · ukázka</span></p><p class="game-magic-clash__identity">{{ opponentWandName || 'Soupeřova hůlka' }}<span v-if="opponentSynthetic"> · ukázka</span></p></div>
+    <div class="game-magic-clash__identities"><p class="game-magic-clash__identity">{{ wandName || 'Tvoje hůlka' }}<span v-if="synthetic"> · ukázka</span></p><p class="game-magic-clash__identity">{{ practiceOpponent ? 'Cvičná hůlka' : opponentWandName || 'Soupeřova hůlka' }}<span v-if="opponentSynthetic && !practiceOpponent"> · ukázka</span></p></div>
   </div>
 </template>
 
@@ -223,6 +228,7 @@ onBeforeUnmount(() => {
 .game-magic-clash__origin--opponent { left: auto; right: 0; }
 .game-magic-clash__artifact { display: block; width: clamp(90px, 25vw, 120px); height: auto; max-width: none; transform: rotate(64deg); }
 .game-magic-clash__origin--opponent .game-magic-clash__artifact { transform: rotate(-64deg); }
+.game-magic-clash__origin--opponent .game-magic-clash__artifact--practice { transform: rotate(-109deg); }
 .game-magic-clash__placeholder { fill: var(--wns-surface-raised); stroke: var(--wns-muted); stroke-width: 1.1; }
 .game-magic-clash__traces, .game-magic-clash__particles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .game-magic-clash__traces { fill: none; stroke: var(--wns-muted); stroke-width: 1; opacity: .3; }
