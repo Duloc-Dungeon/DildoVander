@@ -3,6 +3,16 @@ import { mount } from '@vue/test-utils';
 import TrunkStage from './TrunkStage.vue';
 
 describe('workshop presentation boundaries', () => {
+  it('keeps restored artwork static when its owner disables the reveal', async () => {
+    const view = mount(TrunkStage, {
+      props: { stage: 'revealed', artworkStatus: 'ready', wandArtworkUrl: '/saved.png', animateReveal: false },
+      global: { stubs: { WandRevealField: true } },
+    });
+    await view.get('.trunk-stage__wand').trigger('load');
+    expect(view.findComponent({ name: 'WandRevealField' }).exists()).toBe(false);
+    expect(view.get('.trunk-stage__artwork').attributes('data-loaded')).toBe('true');
+    view.unmount();
+  });
   it('reacts only to real speaking output and clamps invalid or stale measurements', async () => {
     const view = mount(TrunkStage, { props: { stage: 'speaking', assistantOutputLevel: .75, activityLabel: 'Kufr má slovo' } });
     const level = () => view.get('.trunk-stage__visual').attributes('style');
