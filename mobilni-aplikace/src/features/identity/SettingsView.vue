@@ -49,7 +49,7 @@ function trust(session: AccountSession) {
 }
 </script>
 <template>
-  <section class="page-stack" :aria-label="customerSurface ? customerCopy.text('settings.customer-aria') : undefined" :aria-labelledby="customerSurface ? undefined : 'settings-title'">
+  <section class="page-stack" :class="{ 'customer-settings': customerSurface }" :aria-label="customerSurface ? customerCopy.text('settings.customer-aria') : undefined" :aria-labelledby="customerSurface ? undefined : 'settings-title'">
     <header v-if="!customerSurface"><p class="eyebrow">{{ customerCopy.text('settings.eyebrow') }}</p><h1 id="settings-title">{{ customerCopy.text('settings.title') }}</h1><p>{{ customerCopy.text('settings.intro') }}</p></header>
     <AwNotice v-if="error" tone="danger" role="alert">{{ customerCopy.text(error) }}</AwNotice><AwNotice v-if="message" tone="success" role="status">{{ customerCopy.text(message) }}</AwNotice>
     <section v-if="!account" class="aw-card"><h2>{{ customerCopy.text('settings.signin-heading') }}</h2><p>{{ customerCopy.text('settings.signin-intro') }}</p><RouterLink to="/signin" class="aw-button aw-button--primary">{{ customerCopy.text('settings.signin-link') }}</RouterLink></section>
@@ -107,4 +107,20 @@ function trust(session: AccountSession) {
 </template>
 <style scoped>
 .identity-list { list-style: none; padding: 0; }.identity-list li { padding-block: 1rem; border-top: 1px solid var(--aw-border-subtle); }.button-row { display: flex; flex-wrap: wrap; gap: .75rem; }.key-name-form { display: grid; gap: .5rem; margin-block: 1rem; }.key-name-form button { justify-self: start; }select { display: block; margin-top: .5rem; max-width: 100%; }
+.customer-settings { gap: var(--wns-space-32); }
+.customer-settings.page-stack > :deep(.aw-card) {
+  padding: var(--wns-space-24) 0 0;
+  border: 0;
+  border-top: 1px solid var(--wns-line);
+  border-radius: 0;
+  background: transparent;
+}
+.customer-settings :deep(h2) { margin-bottom: var(--wns-space-12); }
+.customer-settings :deep(p) { max-width: 65ch; }
+.customer-settings .key-name-form { grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--wns-space-8) var(--wns-space-12); }
+.customer-settings .key-name-form label { grid-column: 1 / -1; }
+@media (max-width: 480px) {
+  .customer-settings .key-name-form { grid-template-columns: minmax(0, 1fr); }
+  .customer-settings .key-name-form button { justify-self: stretch; }
+}
 </style>

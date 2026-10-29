@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import GeneratedWand from '../archive/GeneratedWand.vue';
-import WandWorkshop from '../game/WandWorkshop.vue';
 import { AccountArchiveClient } from '../archive/accountArchive';
 import { projectWandArtwork, useWandArtworkRetry, type WandArtwork } from '../archive/wandArtwork';
 import { useArchiveMedia } from '../archive/useArchiveMedia';
@@ -33,10 +32,6 @@ watch(() => account.value?.id, id => interfaceLanguagePreference.setScope(id), {
 const pane = computed(() => route.path.split('/').at(-1) ?? 'character');
 const profile = ref<CharacterProfile | null>(null);
 const selectedWand = ref<GeneratedWandSnapshot | null>(null);
-const crafting = ref(false);
-watch(() => profile.value ? `${profile.value.profileId}:${profile.value.revision}` : '', () => {
-  crafting.value = false;
-}, { flush: 'sync' });
 const profileArtworkClient = new AccountArchiveClient(() => account.value?.id ?? '');
 const profileArtwork = useArchiveMedia(profileArtworkClient);
 const artworkState = ref<WandArtwork | null>(null);
@@ -76,6 +71,13 @@ const profileStatusKeys: Record<string, CustomerCopyKey> = {
   saved: 'customer.status.saved', queued: 'customer.status.queued', running: 'customer.status.running', ready: 'customer.status.ready',
   needs_clarification: 'customer.status.needs_clarification', failed: 'customer.status.failed',
 };
+const characterNextStep = computed(() => {
+  if (!profile.value) return null;
+  if (selectedWand.value) return { to: '/play', label: 'Přejít ke hrám' };
+  if (['saved', 'ready'].includes(profile.value.status)) return { to: '/play/wand', label: 'Otevřít dílnu' };
+  if (['queued', 'running'].includes(profile.value.status)) return null;
+  return { to: '/support', label: 'Pomoc s přípravou' };
+});
 const enrichmentText = computed(() => {
   if (!profile.value?.enrichment) return '';
   if (typeof profile.value.enrichment === 'string') return profile.value.enrichment;
@@ -126,7 +128,6 @@ function resetPrivateState(): void {
   selectedWand.value = null;
   profileLoading.value = Boolean(account.value);
   busy.value = false;
-  crafting.value = false;
   errorFeedback.value = null;
   noticeCopyKey.value = null;
   form.value = { name: '', world: '', version: '', description: '', language: '' };
@@ -230,32 +231,41 @@ onBeforeUnmount(resetPrivateState);
 </script>
 
 <template>
-  <section class="page-stack customer-page" :aria-labelledby="`customer-${pane}-title`">
-    <header><p class="eyebrow">{{ customerCopy.text('customer.space') }}</p><h1 :id="`customer-${pane}-title`">{{ customerCopy.text(paneTitleKeys[pane] ?? 'customer.space') }}</h1><p v-if="pane === 'character'">{{ customerCopy.text('customer.character-header') }}</p></header>
+  <section class="page-stack customer-page" :class="`customer-page--${pane}`" :aria-labelledby="`customer-${pane}-title`">
+    <header><h1 :id="`customer-${pane}-title`">{{ customerCopy.text(paneTitleKeys[pane] ?? 'customer.space') }}</h1><p v-if="pane === 'character' && !profile">{{ customerCopy.text('customer.character-header') }}</p></header>
     <AwNotice v-if="errorFeedback" tone="warning" role="alert">{{ errorFeedback.copyKey ? customerCopy.text(errorFeedback.copyKey) : errorFeedback.message }}<small v-if="errorFeedback.diagnosticCode"> {{ customerCopy.text('customer.diagnostic', { code: errorFeedback.diagnosticCode }) }}</small></AwNotice>
     <AwNotice v-if="noticeCopyKey" tone="info" role="status">{{ customerCopy.text(noticeCopyKey) }}</AwNotice>
 
     <p v-if="pane === 'character' && profileLoading" role="status">{{ customerCopy.text('customer.profile-loading') }}</p>
     <section v-if="pane === 'character' && !profileLoading" class="page-stack">
+      <section v-if="profile" class="character-overview" aria-labelledby="character-confirmation-title">
+        <div class="character-overview__identity">
+          <h2 id="character-confirmation-title">{{ characterDisplayName(profile.userInput.name, profile.label) }}</h2>
+          <p class="aw-muted">{{ profile.userInput.world }}<span v-if="profile.userInput.version"> · {{ profile.userInput.version }}</span></p>
+          <p class="character-overview__status" role="status">{{ customerCopy.text(profileStatusKeys[profile.status] ?? 'customer.status-unknown') }}</p>
+        </div>
+        <p v-if="profile.status === 'saved'">{{ customerCopy.text('customer.saved-guidance') }}</p>
+        <p v-if="['queued', 'running'].includes(profile.status)" class="aw-muted">Postava se připravuje. Stav se tu průběžně obnovuje.</p>
+        <AwNotice v-if="clarificationText" tone="info">{{ customerCopy.text('customer.clarification', { text: clarificationText }) }}</AwNotice>
+        <RouterLink v-if="characterNextStep" class="aw-button aw-button--primary character-next-step" :to="characterNextStep.to">{{ characterNextStep.label }}</RouterLink>
+      </section>
       <PrivateCharacterAvatar v-if="profile" :profile-id="profile.profileId" :revision="profile.revision" :name="profile.userInput.name" />
-      <WandWorkshop v-if="profile && (!selectedWand || crafting)" :key="`${profile.profileId}:${profile.revision}`" @active-change="crafting = $event" @created="loadProfile()" />
-      <GeneratedWand v-if="profile && selectedWand" :wand="selectedWand" show-name
+      <details v-if="profile && selectedWand" class="character-details">
+        <summary>Tvoje hůlka · {{ selectedWand.name }}</summary>
+        <GeneratedWand :wand="selectedWand" show-name
         :image-url="profileArtwork.artworkUrl.value"
         :image-pending="!!profileArtworkPath && !profileArtwork.artworkUrl.value && !profileArtwork.artworkError.value"
         :image-error="profileArtwork.artworkError.value" :image-state="artworkState?.status" :synthetic="artworkState?.synthetic"
         :can-retry="artworkState?.canRetry" :retry-busy="artworkRetry.busy.value" @retry="artworkRetry.retry(artworkState, () => refreshEnrichment())"
         :keepsake-to="artworkState ? `/keepsake/?account=1&k=${artworkState.locator}` : undefined" history-to="/me/keepsakes" />
-      <p v-if="artworkRetry.failed.value" role="alert">{{ customerCopy.language.value === 'en' ? 'The retry could not be confirmed. Refresh the state before trying again.' : 'Opakování se nepodařilo potvrdit. Před dalším pokusem obnov stav.' }}</p>
-      <section v-if="profile" class="aw-card page-stack" aria-labelledby="character-confirmation-title">
-        <h2 id="character-confirmation-title">{{ characterDisplayName(profile.userInput.name, profile.label) }}</h2>
+        <p v-if="artworkRetry.failed.value" role="alert">Opakování se nepodařilo potvrdit. Před dalším pokusem obnov stav.</p>
+      </details>
+      <details v-if="profile" class="character-details">
+        <summary>Označení a podrobnosti postavy</summary>
         <CharacterLabelEditor :profile-id="profile.profileId" :label="profile.label" @saved="profile.label = $event" />
-        <p>{{ profile.userInput.world }}<span v-if="profile.userInput.version"> · {{ profile.userInput.version }}</span></p>
-        <p role="status">{{ customerCopy.text(profileStatusKeys[profile.status] ?? 'customer.status-unknown') }} · {{ customerCopy.text('customer.revision', { revision: profile.revision }) }}</p>
-        <p v-if="profile.status === 'saved'">{{ customerCopy.text('customer.saved-guidance') }}</p>
-        <AwNotice v-if="clarificationText" tone="info">{{ customerCopy.text('customer.clarification', { text: clarificationText }) }}</AwNotice>
-        <RouterLink v-if="['saved', 'ready'].includes(profile.status)" class="aw-button aw-button--primary" to="/play/wand">Otevřít dílnu</RouterLink><RouterLink v-if="selectedWand" to="/play">Přejít ke hrám</RouterLink>
+        <p class="aw-muted">{{ customerCopy.text('customer.revision', { revision: profile.revision }) }}</p>
         <p v-if="!canEditCharacter" class="aw-muted">Na účtu máš jednu postavu. Její úpravy řeší administrátor.</p>
-      </section>
+      </details>
       <details v-if="!profile || canEditCharacter" :open="!profile || profile.status === 'needs_clarification'" class="aw-card">
         <summary>{{ customerCopy.text(profile ? 'customer.edit-character' : 'customer.create-first') }}</summary>
     <form class="customer-form" @submit.prevent="saveCharacter">
@@ -292,10 +302,11 @@ onBeforeUnmount(resetPrivateState);
 </template>
 
 <style scoped>
-.customer-page { --wns-display: var(--wns-font-family); max-width: 54rem; color: var(--wns-text, #f5f5f0); }
-.customer-page > header { margin-bottom: 1.25rem; }
+.customer-page { --wns-display: var(--wns-font-family); container: customer-page / inline-size; width: 100%; margin-inline: auto; gap: var(--wns-space-32); color: var(--wns-text, #f5f5f0); }
+.customer-page--character, .customer-page--account { max-width: 48rem; }
+.customer-page > header { display: grid; gap: var(--wns-space-12); padding: 0; }
 .customer-page > header h1 { max-width: 20ch; margin: 0; font: 800 clamp(1.75rem, 1.2rem + 3vw, 3rem)/1.12 var(--wns-display); letter-spacing: -.035em; text-wrap: balance; overflow-wrap: normal; }
-.customer-page > header p:not(.eyebrow) { max-width: 44rem; color: var(--wns-muted, #b2b9b6); }
+.customer-page > header p { max-width: 65ch; margin: 0; color: var(--wns-muted, #b2b9b6); }
 .customer-page .eyebrow { color: var(--wns-mint, #b8f3d4); font: 700 .75rem/1.3 var(--wns-display); text-transform: uppercase; letter-spacing: .12em; }
 .customer-page :deep(.aw-card) { color: var(--wns-text, #f5f5f0); background: var(--wns-surface, #191b1b); border: 1px solid var(--wns-line, #343939); border-radius: 24px; box-shadow: none; }
 .customer-page :deep(.aw-input) { color: var(--wns-text, #f5f5f0); background: var(--wns-surface-raised, #222626); border-color: var(--wns-line, #343939); border-radius: 14px; }
@@ -304,6 +315,16 @@ onBeforeUnmount(resetPrivateState);
 .customer-page :deep(.aw-button--primary) { min-height: 54px; color: #111513; background: var(--wns-mint, #b8f3d4); border-radius: 999px; font-weight: 750; }
 .customer-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
 .customer-form { max-width: 42rem; display: grid; gap: 1rem; }
+.character-overview { display: grid; gap: var(--wns-space-20); padding-block-end: var(--wns-space-24); border-bottom: 1px solid var(--wns-line); }
+.character-overview__identity { display: grid; gap: var(--wns-space-8); }
+.character-overview h2 { margin: 0; font-size: clamp(1.5rem, 5vw, 2rem); line-height: 1.2; }
+.character-overview p { margin: 0; max-width: 65ch; }
+.character-overview__status { color: var(--wns-mint); }
+.customer-page .character-next-step { justify-self: start; border-color: transparent; box-shadow: none; }
+.character-details { border-top: 1px solid var(--wns-line); }
+.character-details > summary { min-height: 48px; padding-block: var(--wns-space-12); cursor: pointer; font-weight: 700; line-height: 1.5; }
+.character-details[open] > summary { margin-bottom: var(--wns-space-16); }
+.character-details > :deep(.page-stack) { margin-block: var(--wns-space-16); }
 .character-extra > summary { min-height: 44px; padding-block: .65rem; cursor: pointer; }
 .character-extra-fields { display: grid; gap: 1rem; padding-top: .5rem; }
 .customer-actions { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }

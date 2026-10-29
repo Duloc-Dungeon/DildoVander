@@ -23,14 +23,14 @@ function syncExpanded(key: SectionKey, event: Event): void {
 </script>
 
 <template>
-  <section class="customer-keepsakes" aria-labelledby="customer-keepsakes-secondary-title">
+  <section class="customer-keepsakes" aria-label="Památky z večerů a her">
     <AccountArchiveList :locale="locale" />
 
     <div class="customer-keepsakes__secondary">
       <h2 id="customer-keepsakes-secondary-title">Další záznamy</h2>
 
       <details class="customer-keepsakes__disclosure" @toggle="syncExpanded('updates', $event)">
-        <summary>Aktualizace výsledků<img :src="caretDown" alt="" width="20" height="20" /></summary>
+        <summary>Aktualizace památek<img :src="caretDown" alt="" width="20" height="20" /></summary>
         <CustomerCompletionUpdates v-if="expanded.updates" :locale="locale" />
       </details>
 
@@ -53,8 +53,9 @@ function syncExpanded(key: SectionKey, event: Event): void {
 </template>
 
 <style scoped>
-.customer-keepsakes { display: grid; gap: 2rem; min-width: 0; }
-.customer-keepsakes__secondary { display: grid; gap: .25rem; min-width: 0; }
+.customer-keepsakes { display: grid; gap: var(--wns-space-40); min-width: 0; align-items: start; }
+.customer-keepsakes :deep(.account-collection.aw-card) { container: customer-collection / inline-size; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.customer-keepsakes__secondary { display: grid; gap: var(--wns-space-4); min-width: 0; }
 .customer-keepsakes__secondary > h2 { margin: 0 0 .75rem; font: 750 1.2rem/1.3 var(--wns-font-family, sans-serif); }
 .customer-keepsakes__disclosure { border-top: 1px solid var(--wns-line, #343939); }
 .customer-keepsakes__disclosure:last-child { border-bottom: 1px solid var(--wns-line, #343939); }
@@ -64,4 +65,11 @@ function syncExpanded(key: SectionKey, event: Event): void {
 .customer-keepsakes__disclosure > :deep(section) { margin-block: .75rem 1rem; }
 .customer-keepsakes__disclosure :deep(.aw-card) { box-shadow: none; }
 .customer-keepsakes :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
+@container customer-page (min-width: 52rem) {
+  .customer-keepsakes { grid-template-columns: minmax(0, 1.65fr) minmax(16rem, 1fr); }
+  .customer-keepsakes__secondary { padding-inline-start: var(--wns-space-32); border-inline-start: 1px solid var(--wns-line); }
+}
+@container customer-collection (max-width: 36rem) {
+  .customer-keepsakes :deep(.collection-search) { grid-template-columns: minmax(0, 1fr); }
+}
 </style>

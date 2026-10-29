@@ -185,10 +185,12 @@ delší popisek dostane potřebnou šířku, aby se nelámal uvnitř slova.
 Obsah rezervuje její skutečně změřenou
 výšku včetně bezpečných okrajů, nikoli pevnou výšku podle obrázku.
 
-Základní mobilní okraj adaptéru je 24 px, do šířky 360 px klesá na 16 px.
+Zákaznický shell používá okraj `clamp(16px, 4vw, 32px)` a společný kontejner
+64 rem; postava a účet mají užší čtecí oblast nejvýše 48 rem.
+Základní mobilní okraj ostatních stránek adaptéru je 24 px, do šířky 360 px klesá na 16 px.
 Existující shell používá hranice 720 a 1100 px; stránka představení přechází
 na dvě oblasti od 760 px. Konkrétní stránka může mít vlastní kontejner:
-například postava nejvýše 54 rem (formulář 42 rem), představení 70 rem. Nejde o nový společný limit.
+například formulář postavy 42 rem, představení 70 rem. Nejde o nový společný limit.
 Rozestupy v záhlaví jsou používaná část škály tokenů, nikoli inventář všech hodnot.
 
 Při 200% textu zůstávají popisky čitelné a nepřekrývají se. Pole, tlačítka a položky navigace mají
@@ -240,11 +242,28 @@ Fokus mění obrys a okraj. Disabled a `aria-invalid` přebírají sdílený sta
 ### Navigation
 
 Čtyři položky **Dílna / Hry / Památky / Já** mají skutečné ikony Phosphor,
-viditelný text a označení aktivní stránky. Lišta je přes celou šířku u spodního
-okraje, s horní linkou, bez plovoucího zaobleného obalu. Odkazy mají nejméně
+viditelný text a označení aktivní stránky. Na mobilu je lišta přes celou šířku
+u spodního okraje s horní linkou. Od 768 px je vycentrovaná, nejvýše 36 rem
+široká, s odsazením 16 px od spodního okraje a zaobleným obalem. Obsah navíc
+rezervuje 32 px nad její změřenou výšku. Odkazy mají nejméně
 58px výšku; ikony 23 px. Aktivní text je mintový, neaktivní tlumený, ikony
 zůstávají světlé s rozlišením opacity. Odsazení roste o bezpečné okraje telefonu.
 Samostatné herní scény mohou lištu záměrně skrýt.
+
+### Zákaznický přehled postavy a památek
+
+Přehled postavy začíná jménem, světem a pravdivým stavem přípravy. Má jednu
+hlavní následující akci: do dílny, nebo ke hrám, pokud už má uloženou hůlku.
+Během přípravy vysvětluje čekání a průběžně obnovuje stav. Dílnu nevkládá
+do přehledu jako druhou celou obrazovku. Portrét následuje za přehledem;
+hůlka, rozlišovací označení a technická revize jsou v rozbalovacích podrobnostech.
+
+Památky vedou příběhem a otevřením první položky v pořadí serveru. Popisek
+„Naposledy uložená památka“ neprohlašuje datum posledního uskutečněného večera.
+Hledání, filtry a obnovení jsou v následné rozbalovací správě. Stav dostupnosti
+zůstává viditelný; údaje o přístupu, propojení a odpojení patří do podrobností
+konkrétní památky. Na širokém kontejneru jsou další herní záznamy vedle kolekce,
+na mobilu za ní. Původní oprávnění a potvrzení odpojení zůstávají závazná.
 
 ### Představení postavy
 

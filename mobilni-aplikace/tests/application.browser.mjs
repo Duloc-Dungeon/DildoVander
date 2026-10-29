@@ -290,13 +290,19 @@ try {
     assert.equal(await target.locator('#new-character-name').count(), 0, 'no hidden replacement form exists');
     assert.equal(await target.locator('#character-openai-consent').count(), 0, 'recorded consent is not requested again');
     assert(!/OpenAI/.test(await target.locator('main').innerText()), 'the post-registration character view does not repeat the provider name');
+    assert.equal(await target.locator('.trunk-workshop').count(), 0, 'the character overview opens the workshop as its own destination');
   };
   await assertCustomerReadOnly();
+  assert.equal(await page.locator('.character-next-step').count(), 1, 'the ready character has one main next step');
+  assert.equal(await page.locator('.character-next-step').getAttribute('href'), '/play/wand');
   assert.equal(await page.getByText('A prepared character summary.', { exact: true }).count(), 0, 'internal preparation details are absent from the customer view');
   assert.equal(characterWrites.length, 0, 'viewing a saved character cannot mutate it');
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
     await fits(); await assertCustomerReadOnly();
+    const action = await page.locator('.character-next-step').boundingBox();
+    const dock = await customerNavigation.boundingBox();
+    assert(action.y + action.height < dock.y, 'identity and its next step fit above the navigation on first view');
     await page.screenshot({ path: path.join(screenshots, `customer-character-${width}.png`), fullPage: true });
   }
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
@@ -408,6 +414,71 @@ try {
   assert.equal(await page.getByRole('heading', { name: 'Přidělené prostředky' }).count(), 0);
   await page.getByRole('heading', { name: 'Přihlášená zařízení' }).waitFor();
   assert.equal(await page.locator('h1').count(), 1, 'embedded account security view does not add a second page heading');
+
+  // Customer reading frames and navigation must work across the dock breakpoint,
+  // narrow phones and enlarged text, without changing the destinations or APIs.
+  let collectionItems = [{
+    locator: resultLocator, linkedAt: 1_761_200_000, officialName: 'Večer, který se poněkud protáhl',
+    storyTitle: 'Luna a velmi nepraktické vítězství', characterName: 'Luna z NeuvěřitelněDlouhéhoKouzelnickéhoRodu',
+    eveningAt: 1_761_100_000, hasPortrait: false, accessKind: 'originalOwner',
+    canManage: true, canReadPrivate: true, canUnlink: false,
+    readiness: { state: 'ready', reason: null, canRetry: false, shouldPoll: false, hasStory: true, hasArtwork: false },
+  }];
+  const collectionRoute = '**/app/v1/archive/collection?*';
+  await context.route(collectionRoute, route => route.fulfill({ json: { schemaVersion: 1, items: collectionItems, nextCursor: null } }));
+  for (const width of [1440, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: width >= 768 ? 1000 : 844 });
+    for (const [destination, heading] of [['/me/account', 'Můj účet'], ['/me/keepsakes', 'Moje památky']]) {
+      await page.goto(origin + destination); await hasHeading(heading);
+      if (destination === '/me/keepsakes') {
+        await page.locator('.collection-card').waitFor();
+        assert.equal(await page.locator('.collection-tools').getAttribute('open'), null, 'search and management start collapsed');
+        assert.equal(await page.locator('.collection-item-details').getAttribute('open'), null, 'access metadata starts collapsed');
+        assert.equal(await page.getByRole('link', { name: 'Otevřít památku', exact: true }).count(), 1);
+        const opening = await page.locator('.collection-open').boundingBox();
+        const navigation = await customerNav.boundingBox();
+        assert(opening.y + opening.height < navigation.y, 'the latest keepsake can open from the first viewport');
+        if (width === 390) {
+          await page.locator('.collection-tools > summary').focus();
+          await page.keyboard.press('Enter');
+          await page.getByRole('searchbox', { name: 'Hledat v památkách' }).waitFor({ state: 'visible' });
+          await fits();
+          await page.keyboard.press('Enter');
+          await page.getByRole('searchbox', { name: 'Hledat v památkách' }).waitFor({ state: 'hidden' });
+        }
+      }
+      await fits();
+      const frame = await page.locator('.customer-page').boundingBox();
+      assert(Math.abs(frame.x + frame.width / 2 - width / 2) < 12, 'customer content is centered');
+      const dock = await customerNav.boundingBox();
+      assert(dock.width <= (width >= 768 ? 576 : width), 'desktop dock stays compact');
+      assert(await customerNav.getByRole('link').evaluateAll(links => links.every(link => {
+        const rect = link.getBoundingClientRect(); return rect.width >= 44 && rect.height >= 44;
+      })), 'customer navigation retains touch targets');
+      await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+      const footer = await page.locator('.application-footer').boundingBox();
+      assert(footer.y + footer.height <= dock.y + 1, 'the final footer links can scroll above the fixed customer dock');
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await page.screenshot({ path: path.join(screenshots, `customer-${destination.split('/').at(-1)}-${width}.png`), fullPage: true });
+      if (width === 320) {
+        await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+        await fits();
+        await page.screenshot({ path: path.join(screenshots, `customer-${destination.split('/').at(-1)}-320-text-200.png`), fullPage: true });
+        await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+      }
+    }
+  }
+  const savedCollectionItems = collectionItems;
+  collectionItems = [];
+  await page.locator('.collection-tools > summary').click();
+  await page.getByRole('button', { name: 'Obnovit památky', exact: true }).click();
+  await page.locator('.collection-empty').waitFor(); await fits();
+  await page.screenshot({ path: path.join(screenshots, 'customer-keepsakes-empty-320.png'), fullPage: true });
+  collectionItems = savedCollectionItems;
+  await page.getByRole('button', { name: 'Obnovit památky', exact: true }).click();
+  await page.locator('.collection-open').waitFor();
+  await fits();
+  await context.unroute(collectionRoute);
   for (const protectedPath of ['/persona-lab', '/suitcase', '/connections', '/suitcase/diagnostics', '/suitcase/director', '/settings', '/settings/admin', '/admin/customer-sessions']) {
     await page.goto(origin + protectedPath);
     await page.waitForURL(url => url.pathname === '/me/character');

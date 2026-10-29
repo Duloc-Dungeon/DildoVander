@@ -23,12 +23,12 @@ vi.mock('./customerBle', () => ({
 }));
 import CustomerView from './CustomerView.vue';
 vi.mock('../game/WandWorkshop.vue', () => ({ default: { name: 'WandWorkshop', emits: ['created', 'active-change'], template: '<div data-test="wand-workshop" />' } }));
-vi.mock('./PrivateCharacterAvatar.vue', () => ({ default: { template: '<div />' } }));
+vi.mock('./PrivateCharacterAvatar.vue', () => ({ default: { template: '<div data-test="character-portrait" />' } }));
 
 const profile = { profileId: 'profile-1', revision: 1, userInput: { name: 'Luna', world: 'Moon Saga' }, status: 'ready' };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(complete => { resolve = complete; }); return { promise, resolve }; }
 const router = async (path = '/me/character') => {
-  const instance = createRouter({ history: createMemoryHistory(), routes: [{ path: '/me/character', component: CustomerView }, { path: '/play/wand', component: { template: '<div />' } }, { path: '/me/account', component: { template: '<div />' } }] });
+  const instance = createRouter({ history: createMemoryHistory(), routes: [{ path: '/me/character', component: CustomerView }, { path: '/play/wand', component: { template: '<div />' } }, { path: '/me/account', component: { template: '<div />' } }, { path: '/play', component: { template: '<div />' } }, { path: '/support', component: { template: '<div />' } }] });
   await instance.push(path); await instance.isReady(); return instance;
 };
 
@@ -47,55 +47,54 @@ describe('customer character and digital workshop', () => {
     wrapper.unmount(); pending.resolve({ profile });
   });
 
-  it('keeps the same voice workshop mounted while polling finds a wand and a background profile read is pending', async () => {
+  it('leads with identity and one workshop entry without mounting another screen', async () => {
+    api.request.mockImplementation(async (path: string) => path.endsWith('/character') ? { profile } : { items: [] });
+    const wrapper = mount(CustomerView, { global: { plugins: [await router()] } }); await flushPromises();
+    expect(wrapper.get('.character-overview').text()).toContain('Luna');
+    expect(wrapper.get('.character-next-step').attributes('href')).toBe('/play/wand');
+    expect(wrapper.findAll('.character-next-step')).toHaveLength(1);
+    expect(wrapper.findComponent({ name: 'WandWorkshop' }).exists()).toBe(false);
+    expect(wrapper.get('#character-confirmation-title').element.compareDocumentPosition(wrapper.get('[data-test="character-portrait"]').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(wrapper.findAll<HTMLDetailsElement>('details.character-details').every(details => !details.element.open)).toBe(true);
+    expect(api.request.mock.calls.every(call => call[0] === '/app/v1/customer/character')).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('updates the next step when preparation completes and clears it across account changes', async () => {
     vi.useFakeTimers();
     const wand = { wandId: 'wand-voice', physicalSlot: 2, name: 'Hlasová ozvěna', material: 'Tis', core: 'Vlákno', temperament: 'Klidná', lore: 'Příběh.', designDescription: 'Kresba.', affinity: 'Světlo', weakness: 'Hluk',
       spells: ['strike', 'trick', 'shield'].map(action => ({ action, name: action, description: 'Kouzlo.' })) };
     const poll = deferred<{ profile: typeof profile; generatedWand: typeof wand }>();
-    const background = deferred<{ profile: typeof profile; generatedWand: typeof wand }>();
     let reads = 0;
     api.request.mockImplementation(async (path: string) => {
-      if (path.endsWith('/character')) return ++reads === 1 ? { profile: { ...profile, status: 'queued' } }
-        : reads === 2 ? poll.promise : background.promise;
+      if (path.endsWith('/character')) return ++reads === 1 ? { profile: { ...profile, status: 'queued' } } : poll.promise;
       return { items: [] };
     });
-    const wrapper = mount(CustomerView, { global: { plugins: [await router('/me/character')] } }); await flushPromises();
-    const workshop = wrapper.findComponent({ name: 'WandWorkshop' });
-    const instance = workshop.vm;
-    workshop.vm.$emit('active-change', true); await flushPromises();
-    await vi.advanceTimersByTimeAsync(3000); await flushPromises();
-    expect(wrapper.findComponent({ name: 'WandWorkshop' }).vm).toBe(instance);
-    poll.resolve({ profile, generatedWand: wand }); await flushPromises();
-    expect(wrapper.text()).toContain('Hlasová ozvěna');
-    expect(wrapper.findComponent({ name: 'WandWorkshop' }).vm).toBe(instance);
-    workshop.vm.$emit('created'); await flushPromises();
-    expect(reads).toBe(3);
-    expect(wrapper.findComponent({ name: 'WandWorkshop' }).vm).toBe(instance);
-    background.resolve({ profile, generatedWand: wand }); await flushPromises();
-    expect(wrapper.findComponent({ name: 'WandWorkshop' }).vm).toBe(instance);
-    workshop.vm.$emit('active-change', false); await flushPromises();
+    const wrapper = mount(CustomerView, { global: { plugins: [await router()] } }); await flushPromises();
+    expect(wrapper.text()).toContain('Postava se připravuje');
+    expect(wrapper.find('.character-next-step').exists()).toBe(false);
     expect(wrapper.findComponent({ name: 'WandWorkshop' }).exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(3000); await flushPromises();
+    poll.resolve({ profile, generatedWand: wand }); await flushPromises();
+    expect(wrapper.get('.character-next-step').attributes('href')).toBe('/play');
+    expect(wrapper.findAll('.character-next-step')).toHaveLength(1);
+    expect(wrapper.text()).toContain('Hlasová ozvěna');
+    const accountLoad = deferred<{ profile: typeof profile | null }>();
+    api.request.mockImplementation(() => accountLoad.promise);
+    api.setAccount({ id: 'other-customer', displayName: 'Jiný host', roles: ['Customer'], openAiConsent: true }); await flushPromises();
+    expect(wrapper.find('.character-next-step').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Hlasová ozvěna');
+    accountLoad.resolve({ profile: null }); await flushPromises();
+    expect(wrapper.find('#character-name').exists()).toBe(true);
     wrapper.unmount();
   });
-  it('disposes an active workshop when the profile revision changes and clears its pin on account change', async () => {
-    let currentProfile = profile;
-    api.request.mockImplementation(async (path: string) => path.endsWith('/character') ? { profile: currentProfile } : { items: [] });
-    const wrapper = mount(CustomerView, { global: { plugins: [await router('/me/character')] } }); await flushPromises();
-    const originalWorkshop = wrapper.findComponent({ name: 'WandWorkshop' });
-    const first = originalWorkshop.vm;
-    originalWorkshop.vm.$emit('active-change', true); await flushPromises();
-    currentProfile = { ...profile, revision: 2 };
-    originalWorkshop.vm.$emit('created'); await flushPromises();
-    const replacement = wrapper.findComponent({ name: 'WandWorkshop' });
-    expect(replacement.vm).not.toBe(first);
-    replacement.vm.$emit('active-change', true); await flushPromises();
-    const accountLoad = deferred<{ profile: typeof profile | null }>();
-    api.request.mockImplementation(async (path: string) => path.endsWith('/character') ? accountLoad.promise : { items: [] });
-    api.setAccount({ id: 'other-customer', displayName: 'Jiný host', roles: ['Customer'], openAiConsent: true }); await flushPromises();
-    expect(wrapper.findComponent({ name: 'WandWorkshop' }).exists()).toBe(false);
-    accountLoad.resolve({ profile: null }); await flushPromises();
-    expect(wrapper.findComponent({ name: 'WandWorkshop' }).exists()).toBe(false);
-    expect(wrapper.find('#character-name').exists()).toBe(true);
+
+  it('offers preparation help for a failed profile without opening the workshop', async () => {
+    api.request.mockImplementation(async (path: string) => path.endsWith('/character') ? { profile: { ...profile, status: 'failed' } } : { items: [] });
+    const wrapper = mount(CustomerView, { global: { plugins: [await router()] } }); await flushPromises();
+    expect(wrapper.get('.character-next-step').attributes('href')).toBe('/support');
+    expect(wrapper.get('.character-next-step').text()).toBe('Pomoc s přípravou');
+    expect(api.request.mock.calls.every(call => call[1] === undefined || call[1] === 'GET')).toBe(true);
     wrapper.unmount();
   });
 
