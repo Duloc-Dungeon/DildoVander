@@ -15,6 +15,7 @@ internal static partial class AccountIdentityTests
     {
         await using var fixture = await Fixture.StartAsync(customerMemoryFeatures: true,
             accountDataExportFeatures: true, deletionFeatures: true);
+        fixture.OpenSelectedCustomerGroup();
         using var owner = fixture.Client();
         using var ownerKey = new VirtualPasskey();
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Memory export integration owner");
@@ -200,6 +201,7 @@ internal static partial class AccountIdentityTests
     {
         await using var fixture = await Fixture.StartAsync(customerMemoryFeatures: true,
             deletionFeatures: true, accountDataExportFeatures: false);
+        fixture.OpenSelectedCustomerGroup();
         using var owner = fixture.Client();
         using var ownerKey = new VirtualPasskey();
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Unmapped export cleanup owner");

@@ -13,6 +13,7 @@ internal static partial class AccountIdentityTests
         await using var fixture = await Fixture.StartAsync(
             customerFeatures: true,
             configureEndpoints: app => app.MapCustomerConversationPreferences());
+        fixture.OpenSelectedCustomerGroup();
         using var customerA = fixture.Client();
         using var customerB = fixture.Client();
         using var anonymous = fixture.Client();
