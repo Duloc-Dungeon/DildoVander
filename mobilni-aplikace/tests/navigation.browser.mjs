@@ -123,6 +123,7 @@ try {
     await navigation.getByRole('link', { name: 'Památky', exact: true }).click();
     await page.waitForURL('**/me/keepsakes');
     await checkNavigation('Památky');
+    await page.locator('summary').getByText('Uložené památky z dílny', { exact: true }).click();
     await page.getByRole('region', { name: 'Uložené památky', exact: true }).waitFor();
     assert.equal(await page.getByRole('searchbox', { name: 'Hledat v památkách', exact: true }).count(), 0);
     await checkPrimaryAction(page.getByRole('link', { name: 'Zkusit hru', exact: true }));
