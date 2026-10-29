@@ -176,6 +176,7 @@ try {
   assert.equal((await (await viewer.context.request.get(origin.origin + '/app/v1/session')).json()).account, null);
   assert.equal((await viewer.context.request.get(origin.origin + '/app/v1/account')).status(), 401);
   assert.equal((await owner.context.request.get(origin.origin + '/app/v1/account')).status(), 200, 'deleting the Viewer preserves the Owner');
+  await viewer.page.bringToFront();
   await viewer.page.reload();
   await completed.waitFor();
   if (screenshots) {

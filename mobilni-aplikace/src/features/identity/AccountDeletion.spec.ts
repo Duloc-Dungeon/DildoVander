@@ -153,6 +153,46 @@ describe('account deletion confirmation', () => {
     view.unmount();
   });
 
+  it('checks a receipt when a page mounted hidden becomes visible', async () => {
+    account.value = null;
+    api.status.mockResolvedValue('deleted');
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    const view = mount(AccountDeletion, { props: { receiptOnly: true } });
+    try {
+      await flushPromises();
+      expect(api.status).not.toHaveBeenCalled();
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await flushPromises();
+      expect(api.status).toHaveBeenCalledOnce();
+      expect(view.text()).toContain('bylo dokončeno');
+    } finally {
+      view.unmount();
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    }
+  });
+
+  it('retries the first receipt check if the page is hidden while it is in flight', async () => {
+    account.value = null;
+    api.status.mockImplementationOnce(() => new Promise(() => {})).mockResolvedValueOnce('deleted');
+    const view = mount(AccountDeletion, { props: { receiptOnly: true } });
+    try {
+      await flushPromises();
+      const signal = api.status.mock.calls[0]![0] as AbortSignal;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(signal.aborted).toBe(true);
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await flushPromises();
+      expect(api.status).toHaveBeenCalledTimes(2);
+      expect(view.text()).toContain('bylo dokončeno');
+    } finally {
+      view.unmount();
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    }
+  });
+
   it('hides receipt-only status for a signed-in account, including late responses and reload', async () => {
     account.value = null;
     let complete!: (status: string) => void;
