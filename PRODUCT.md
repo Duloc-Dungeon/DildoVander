@@ -4,6 +4,7 @@
 
 Aktuální rozhodnutí vlastníka, 26. října 2026. Tento dokument je zdroj pravdy
 pro zaměření, jazyk, humor a vzhled mobilní aplikace a jejího webového protějšku.
+Výchozí humor upřesněn rozhodnutím vlastníka z 29. října 2026.
 Při rozporu nahrazuje starší produktové a vizuální pokyny. Technické kontrakty,
 oprávnění, souhlasy a pravdivost stavů zůstávají závazné.
 
@@ -126,9 +127,23 @@ neopravňuje placené modelové volání ani fyzickou akci zařízení.
 
 ## Humor celé aplikace
 
+Výchozí směr je **pratchettovská situační logika a původní čeština podle
+Kantůrkova principu**. Platí automaticky pro nové texty, úpravy, ukázky,
+náhradní hlášky i zadání generátorům; uživatel ho nemusí znovu připomínat.
+Před jejich psaním načti [redakční návod a rešerši](docs/humor-style.md).
+Jde o náš vlastní hlas vystavěný na těchto postupech, ne o přebírání vět,
+postav nebo hlášek ze Zeměplochy.
+
+Nevymýšlej anglický vtip k následnému překladu. Nejprve najdi rozpor
+konkrétní situace, pak jeho české vyjádření. Neživá věc nebo instituce může
+mít zcela všední zájem a dovést ho s vážnou tváří do absurdního důsledku.
+Vypravěč ten důsledek sděluje jako samozřejmost. Náhodné razítko, opona
+nebo urážka na konci informační věty samy o sobě tento humor netvoří.
+
 Vypravěč je klidný, lehce obřadný a hostovou výjimečností nepřekvapený.
-Osobní suchý roast míří na hosta v jeho zvolené fikční roli: jeden spolehlivý
-rys, rozpor nebo ambice → zdánlivá pocta → přesné snížení jeho důležitosti.
+Osobní suchý roast je jedním z prostředků, nikoli celou definicí stylu.
+Vychází ze zvolené fikční role: jeden spolehlivý rys, rozpor nebo ambice
+→ zdánlivá pocta → přesné snížení její důležitosti.
 Dobrá postava nemá automaticky mírnější režim; zlá není podmínkou roastu.
 
 Bez spolehlivého osobního podkladu použij původní vypravěčskou absurditu:
@@ -146,7 +161,9 @@ Používej tyto komické postupy, nekopíruj cizí hlášky ani konkrétního au
   údaje o soukromí, zdraví, vzhledu či vztazích. Žádná skupinová nenávist.
 - Olivanderova kocovina je příležitostný motiv, ne povinná pointa každé věty.
   Hosta nechej odmítnout volitelný podklad bez posměchu v souhlasu nebo chybě.
-- Text přečti nahlas, zkrať a posuď obrat. Neotáčej hlášky při každém pollingu
+- Text přečti nahlas, zkrať a posuď obrat. Musí vyrůstat z daného stavu;
+  pokud lze pointu beze změny přilepit na jinou obrazovku, přepiš ji nebo vynech.
+  Neotáčej hlášky při každém pollingu
   a neposílej vtipy nebo tikající sekundy do opakovaných živých oznámení.
 
 Příklady směru, nikoli povinné opakované texty:

@@ -107,7 +107,7 @@ async function addVirtualAuthenticator(context, page) {
 async function registerCustomer(page, name) {
   await page.goto(`${origin.origin}/signin`);
   await page.getByRole('button', { name: 'Vytvořit zákaznický účet', exact: true }).click();
-  await page.getByLabel('Jak vám máme říkat?', { exact: true }).fill(name);
+  await page.getByLabel('Jak ti máme říkat?', { exact: true }).fill(name);
   await page.getByRole('button', { name: 'Vytvořit účet a přístupový klíč', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/me/character', { timeout: 20000 });
 }

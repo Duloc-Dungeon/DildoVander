@@ -380,7 +380,7 @@ async function openAction() {
             <template v-if="tab === 'action' && view.ownState !== 'Operator'">
               <h2>Moje akce</h2>
               <p v-if="view.ownPlan" class="sealed-confirmed">Uložený plán: {{ intentNames[view.ownPlan.intent] }}. Přijetí nepotvrzuje úspěch.</p>
-              <p v-else>Žádný potvrzený plán. Při uzávěrce vyčkáváš na svém místě.</p>
+              <p v-else>Bez potvrzeného plánu při uzávěrce vyčkáváš na svém místě. Hra má pro nerozhodnost pevně stanovený postup.</p>
               <p v-if="view.phase !== 'planning'" class="sealed-muted">Teď se nové tahy nepotvrzují. {{ view.phase === 'quiet' ? 'Telefon může stranou; potvrzený plán zůstává uložený.' : 'Další postup určuje aktuální fáze případu.' }}</p>
 
               <template v-if="view.phase === 'planning'">

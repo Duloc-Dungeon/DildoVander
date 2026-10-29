@@ -101,7 +101,7 @@ describe('customer copy catalog', () => {
     expect(customerCopyCs['signin.contact-support-after']).toContain('pouze vlastník služby');
     expect(customerCopyCs['signin.recovery-effects']).toContain('původní klíče odebrány');
     expect(customerCopyCs['signin.recovery-code-target']).toContain('soukromý kód');
-    expect(customerCopyCs['new-character.intro']).toContain('Historie rozhovorů a památky předchozí postavy zůstanou uložené.');
+    expect(customerCopyCs['new-character.intro']).toContain('rozhovory a památky té předchozí zůstanou uložené.');
     expect(customerCopyCs['new-character.consent']).toContain('službě AI');
     expect(customerCopyCs['new-character.consent']).toContain('Bez zaškrtnutí uložíš profil bez AI přípravy.');
     expect(customerCopyCs['memories.available-only']).toContain('není automaticky časově omezené');

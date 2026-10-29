@@ -3,7 +3,7 @@ import { customerCopy } from '../../application/customerCopy';
 const cs = {
   title: 'Vstup na vlastní pověst.', introduction: 'Stačí jméno postavy a univerzum, ze kterého přichází.',
   teaser: 'Vstup na vlastní pověst.', invitation: 'Přijmout pozvánku', name: 'Jméno postavy', universe: 'Univerzum',
-  nameHint: 'Tohle jméno uvidíš i ve svém účtu.', universeHint: 'Svět tvé fiktivní postavy.',
+  nameHint: 'Tohle jméno uvidíš i ve svém účtu.', universeHint: 'Film, seriál, hra nebo kniha, odkud postava pochází.',
   consent: 'Chci si nechat připravit osobní překvapení.', privacyDetailsTitle: 'Soukromí',
   privacyDetails: 'Postavu, osobní text a ilustraci ukládáme soukromě pod tvým účtem. Nezadávej osobní ani citlivé údaje.',
   portrait: 'Připravit překvapení', missingPortrait: 'Postava je uložená. Ještě jí připravíme portrét.',
