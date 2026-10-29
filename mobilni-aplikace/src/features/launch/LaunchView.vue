@@ -110,6 +110,13 @@ const timeParts = computed(() => {
   const total = Math.max(0, Math.floor(remaining.value / 1000));
   return [Math.floor(total / 86400), Math.floor(total / 3600) % 24, Math.floor(total / 60) % 60, total % 60];
 });
+const launchTimeLabel = computed(() => {
+  if (policy.value?.launchAt == null) return '';
+  return new Intl.DateTimeFormat(language.value === 'en' ? 'en-GB' : 'cs-CZ', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+  }).format(policy.value.launchAt);
+});
 watch(() => account.value?.id, id => {
   accountEpoch++;
   groupOpening.value = false;
@@ -457,7 +464,9 @@ onBeforeUnmount(() => {
         <AwButton v-if="betaEnrollmentAvailable === true" variant="primary" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>
       </PaperSurface>
     </section>
-    <section v-else v-show="!workshopOpen" class="launch-card">
+    <template v-else>
+    <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" />
+    <section v-show="!workshopOpen" class="launch-card">
       <PaperSurface class="launch-copy">
         <h1 v-if="!state?.character" id="launch-title">{{ draftProvided ? name : copy.title }}</h1>
         <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
@@ -477,11 +486,15 @@ onBeforeUnmount(() => {
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
         <CharacterCountdown v-if="state?.character" class="countdown" heading-id="launch-title" :name="characterDisplayName(state.character.name, state.character.label)" :universe="state.character.universe" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
+        <p v-if="launchTimeLabel" class="launch-time">{{ language === 'en' ? `The evening opens ${launchTimeLabel}.` : `Večer se otevře ${launchTimeLabel}.` }}</p>
+        <details v-if="state?.character && account && !accountDeletionRequested" class="launch-notifications">
+          <summary>{{ language === 'en' ? 'Set up notifications for this device' : 'Nastavit oznámení pro toto zařízení' }}</summary>
+          <PushNotifications />
+        </details>
         <details v-if="state?.character" class="launch-label-options">
           <summary>Rozlišovací označení (nepovinné)</summary>
           <CharacterLabelEditor :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" />
         </details>
-        <a v-if="canPrepareWand" class="launch-next-step" href="#prelaunch-wand-title">Pokračovat k hůlce</a>
       </PaperSurface>
       <PortraitCurtain class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" @revealed="revealed = $event" @failed="portrait.fail()" />
       <div class="launch-text">
@@ -494,8 +507,8 @@ onBeforeUnmount(() => {
         <p v-else class="launch-generic">{{ copy.loading }}</p>
       </div>
     </section>
-    <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" />
-    <footer class="launch-footer"><details v-if="account" class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="!accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
+    </template>
+    <footer class="launch-footer"><details v-if="account" class="launch-account-options"><summary>{{ copy.account }}</summary><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
 </template>
 
@@ -546,7 +559,8 @@ onBeforeUnmount(() => {
 .launch-label-options { margin-top: 1rem; }
 .launch-label-options summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
 .launch-label-options[open] :deep(form) { margin-top: .75rem; }
-.launch-next-step { display: inline-flex; align-items: center; min-height: 44px; color: var(--wns-mint); text-underline-offset: .2em; }
+.launch-notifications summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
+.launch-notifications[open] { margin-block: .75rem; }
 .group-opening { display: flex; flex-direction: column; align-items: center; overflow: hidden; }
 .group-opening-art { display: block; width: min(100%, 36rem); max-height: 58dvh; object-fit: contain; margin: 0 auto; }
 .group-opening-copy { position: relative; width: min(100% - 2rem, 30rem); display: grid; justify-items: center; gap: 1rem; padding: 1rem 2rem max(1rem, env(safe-area-inset-bottom)); text-align: center; }

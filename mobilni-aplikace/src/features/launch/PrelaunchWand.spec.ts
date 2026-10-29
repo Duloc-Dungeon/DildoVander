@@ -15,6 +15,7 @@ async function render() { view = mount(PrelaunchWand); await flushPromises(); re
 
 it('only reads until the guest chooses to create a wand', async () => {
   const wrapper = await render();
+  expect(wrapper.text()).toContain('Můžeš odejít a vrátit se později.');
   expect(wrapper.findComponent({ name: 'WandWorkshop' }).exists()).toBe(false);
   expect(api.load).toHaveBeenCalledOnce();
   await wrapper.get('button').trigger('click');
@@ -28,6 +29,7 @@ it('returns from the saved wand to waiting and can show it again', async () => {
   await wrapper.findAll('button')[1]!.trigger('click');
   await flushPromises();
   expect(wrapper.text()).toContain('Hůlka je uložená. Ollivander Industries™ děkuje za důvěru. Považuje ji za odvážnou.');
+  expect(wrapper.text()).toContain('Můžeš odejít a vrátit se později.');
   expect(wrapper.get('button').text()).toBe('Prohlédnout hůlku');
   expect(wrapper.emitted('open-change')).toEqual([[true], [false]]);
 });

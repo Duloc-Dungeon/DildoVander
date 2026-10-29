@@ -11,6 +11,7 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
 vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', props: ['image'], template: '<div class="portrait-stage" />' } }));
 vi.mock('./PrelaunchWand.vue', () => ({ default: { name: 'PrelaunchWand', emits: ['open-change'], template: '<section><button @click="$emit(\'open-change\', true)">Vytvořit hůlku</button><button @click="$emit(\'open-change\', false)">Zpět k odpočtu</button></section>' } }));
+vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', template: '<div class="push-notifications-stub" />' } }));
 vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
@@ -61,7 +62,11 @@ it('offers wand creation only after revealing the saved character', async () => 
     expect(view.find('.launch-next-step').exists()).toBe(false);
     view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
     expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true);
-    expect(view.get('.launch-next-step').attributes('href')).toBe('#prelaunch-wand-title');
+    expect(view.find('.launch-next-step').exists()).toBe(false);
+    expect(view.html().indexOf('Vytvořit hůlku')).toBeLessThan(view.html().indexOf('portrait-stage'));
+    expect(view.text()).toContain('Večer se otevře');
+    expect(view.findAllComponents({ name: 'PushNotifications' })).toHaveLength(1);
+    expect(view.get('.launch-notifications summary').text()).toContain('Nastavit oznámení');
     await view.findComponent({ name: 'PrelaunchWand' }).get('button').trigger('click');
     expect(view.get('.launch-card').attributes('style')).toContain('display: none');
     expect(api.request.mock.calls.some(call => call[1] === 'POST')).toBe(false);

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-28T21:57:45.203Z",
+  "generatedAt": "2026-10-29T00:36:20.057Z",
   "title": "Wand Night Stand — schválený design v2",
   "extensions": {
     "colorMeta": {
@@ -335,6 +335,10 @@
       {
         "name": "mobile",
         "value": "720px"
+      },
+      {
+        "name": "character-entrance",
+        "value": "760px"
       },
       {
         "name": "shell",
