@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
-const api = vi.hoisted(() => ({ request: vi.fn(), transport: vi.fn(), connect: vi.fn(), dispose: vi.fn(), interrupt: vi.fn(), play: vi.fn(), observer: null as any }));
+const api = vi.hoisted(() => ({ request: vi.fn(), transport: vi.fn(), connect: vi.fn(), dispose: vi.fn(), interrupt: vi.fn(), observer: null as any }));
 vi.mock('../identity/session', async () => { const { ref } = await import('vue'); return { account: ref({ id: 'alice', openAiConsent: true }), accountOrigin: ref('https://example.test'), accountRequest: api.request, accountTransport: api.transport }; });
 vi.mock('../persona-lab/voice', () => ({ LabVoice: class { constructor(observer: unknown) { api.observer = observer; } connect = api.connect; dispose = api.dispose; interrupt = api.interrupt; setMuted = vi.fn(); end() { api.observer.phase('ended'); } } }));
-vi.mock('./workshopVoice', () => ({ WorkshopVoice: class { constructor(private observer: { phase(value: string): void }) {} unlock = vi.fn(); async play() { api.play(); this.observer.phase('speaking'); } stop() { this.observer.phase('off'); } } }));
 import WandWorkshop from './WandWorkshop.vue';
 import { account } from '../identity/session';
 const base = '/app/v1/customer/wand/workshop'; const id = 'b'.repeat(32);
@@ -97,6 +96,27 @@ describe('customer Live workshop', () => {
     api.observer.transcript('assistant', 'Nedokončená věta'); await flushPromises();
     expect(view!.get('.trunk-workshop__question').text()).toBe('Nedokončená věta');
     expect(announcement.text()).toBe('Co má hůlka zachránit?');
+  });
+  it('keeps the same speech control and caption region across listening and speaking', async () => {
+    session = saved(); await render(); await click('Pokračovat hlasem');
+    const stop = view!.findAll('button').find(button => button.text() === 'Stop řeč')!;
+    const caption = view!.get('[aria-label="Průběžný přepis"]');
+    expect(stop.attributes('disabled')).toBeDefined();
+    api.observer.phase('speaking');
+    api.observer.transcript('assistant', 'Dlouhá věta. '.repeat(100)); await flushPromises();
+    expect(view!.get('[aria-label="Průběžný přepis"]').element).toBe(caption.element);
+    expect(stop.attributes('disabled')).toBeUndefined();
+    expect(view!.get('.trunk-workshop__media-controls').text()).toContain('Kufr mluví');
+    api.observer.phase('listening'); await flushPromises();
+    expect(view!.findAll('button').find(button => button.text() === 'Stop řeč')!.element).toBe(stop.element);
+    expect(stop.attributes('disabled')).toBeDefined();
+  });
+  it('starts a fresh caption after a completed turn from the same speaker', async () => {
+    session = saved(); await render(); await click('Pokračovat hlasem');
+    api.observer.transcript('assistant', 'První věta.');
+    api.observer.turn({ role: 'assistant', text: 'První věta.' });
+    api.observer.transcript('assistant', 'Další věta.'); await flushPromises();
+    expect(view!.get('.trunk-workshop__question').text()).toBe('Další věta.');
   });
   it('prioritizes confirmed manufacture over speech and keeps failed work recoverable', async () => {
     session = saved(); await render(); await click('Pokračovat hlasem');
@@ -245,14 +265,13 @@ describe('customer Live workshop', () => {
     expect(session.id).not.toBe(previousId); expect(session.profileRevision).toBe(2);
     expect(api.connect).toHaveBeenCalledOnce();
   });
-  it('cancels a pending final verdict and cannot replay its late audio response', async () => {
+  it('keeps the saved verdict readable without offering recorded playback or requesting audio', async () => {
     session = completed();
-    let deliver!: (response: Response) => void;
-    api.transport.mockImplementation(() => new Promise<Response>(resolve => { deliver = resolve; }));
-    await render(); await click('Přehrát verdikt kufru');
+    await render();
     expect(view!.emitted('saved')).toEqual([[]]);
-    expect(view!.findAll('button').find(button => button.text() === 'Přehrát verdikt kufru')!.attributes('disabled')).toBeDefined();
-    await click('Stop řeč'); deliver(new Response(new Blob(['late audio'], { type: 'audio/wav' }))); await flushPromises();
-    expect(api.play).not.toHaveBeenCalled(); expect(view!.text()).toContain('Hůlka je uložená');
+    expect(view!.text()).toContain(session.verdict);
+    expect(view!.text()).not.toContain('Přehrát verdikt kufru');
+    expect(view!.find('.trunk-workshop__media-controls').exists()).toBe(false);
+    expect(api.transport).not.toHaveBeenCalled();
   });
 });

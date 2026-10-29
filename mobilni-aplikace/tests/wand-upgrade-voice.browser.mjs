@@ -21,7 +21,7 @@ async function within(promise, message) {
 }
 try {
   for (const width of [320, 390, 1280]) {
-    const context = await browser.newContext({ viewport: { width, height: 844 }, permissions: ['microphone'], reducedMotion: 'reduce' });
+    const context = await browser.newContext({ viewport: { width, height: 844 }, permissions: ['microphone'], reducedMotion: width === 390 ? 'no-preference' : 'reduce' });
     await context.addInitScript(() => {
       window.__upgradeVoiceTracks = [];
       const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -82,6 +82,35 @@ try {
     await within(resumed, 'Unmuting did not resume audio transmission.');
     assert.equal(await page.evaluate(() => window.__upgradeVoiceTracks.every(track => track.enabled)), true);
     assert(capturedFrames > mutedFrames);
+    const caption = page.getByRole('region', { name: 'Průběžný přepis', exact: true });
+    await caption.scrollIntoViewIfNeeded();
+    const geometry = () => page.evaluate(() => {
+      const top = selector => document.querySelector(selector).getBoundingClientRect().top + scrollY;
+      return {
+        sceneHeight: document.querySelector('.trunk-workshop__presentation').getBoundingClientRect().height,
+        controlsTop: top('.trunk-workshop__media-controls'),
+        captionHeight: document.querySelector('.trunk-workshop__caption').getBoundingClientRect().height,
+        pageHeight: document.documentElement.scrollHeight,
+        scrollY,
+      };
+    });
+    const beforeStreaming = await geometry();
+    for (let index = 0; index < 24; index++) {
+      socket.send(JSON.stringify({ type: 'transcript', role: 'assistant', delta: `Dlouhý přepis zůstává u kufru ${index}. ` }));
+    }
+    await page.getByRole('heading', { name: /Dlouhý přepis zůstává u kufru 23/ }).waitFor();
+    assert.deepEqual(await geometry(), beforeStreaming, `${width}: streaming does not move the page or controls`);
+    assert.equal(await caption.evaluate(element => element.scrollHeight > element.clientHeight && element.scrollTop > 0), true);
+    socket.send(Buffer.alloc(48000));
+    await page.locator('.trunk-stage[data-stage="speaking"]').waitFor();
+    assert.deepEqual(await geometry(), beforeStreaming, `${width}: speaking uses the same scene and control slots`);
+    socket.send(JSON.stringify({ type: 'audio_cancelled' }));
+    await page.locator('.trunk-stage[data-stage="listening"]').waitFor();
+    assert.deepEqual(await geometry(), beforeStreaming, `${width}: listening does not shift the page`);
+    socket.send(JSON.stringify({ type: 'turn', turn: { id: 'synthetic-turn', role: 'assistant', text: 'Hotový přepis.', createdAt: new Date().toISOString() } }));
+    socket.send(JSON.stringify({ type: 'transcript', role: 'assistant', delta: 'Další samostatná věta.' }));
+    await page.getByRole('heading', { name: 'Další samostatná věta.', exact: true }).waitFor();
+    socket.send(JSON.stringify({ type: 'turn', turn: { id: 'next-synthetic-turn', role: 'assistant', text: 'Zachovám klid a přidám důraz.', createdAt: new Date().toISOString() } }));
     socket.send(JSON.stringify({ type: 'state', session: fixture.voiceTurn('Vylepši hůlku. Zachovej klid a přidej důraz.') }));
     await page.getByText('Zachovám klid a přidám důraz.', { exact: true }).first().waitFor();
     await page.screenshot({ path: path.join(output, `upgrade-microphone-${width}.png`), fullPage: true });

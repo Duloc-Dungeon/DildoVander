@@ -98,12 +98,19 @@ try {
     await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
     await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).click();
     await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).waitFor();
-    assert.equal(await page.locator('.trunk-stage').isVisible(), false, 'failed artwork does not reserve an empty stage');
+    assert.equal(await page.locator('.trunk-stage').isVisible(), false, 'failed artwork replaces the hidden image with recovery controls');
     assert.equal(await page.getByText('Ilustrace se nezdařila.', { exact: true }).count(), 1, 'artwork failure has one recovery message');
     assert.equal(await page.locator('#workshop-title').evaluate(element => element === document.activeElement), true, 'completion moves focus to the saved wand');
+    const artworkFrame = () => page.locator('.trunk-workshop__presentation').evaluate(element => {
+      const { width, height } = element.getBoundingClientRect();
+      return { width, height };
+    });
+    const failedArtworkFrame = await artworkFrame();
     await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
     await page.locator('.trunk-stage__wand').waitFor();
     await page.waitForFunction(() => document.querySelector('.trunk-stage__wand')?.naturalWidth > 0);
+    assert.deepEqual(await artworkFrame(), failedArtworkFrame, `${width}: artwork recovery keeps the same frame`);
+    assert.equal(await page.getByRole('button', { name: 'Přehrát verdikt kufru', exact: true }).count(), 0);
     await page.evaluate(() => window.scrollTo(0, 0));
     const returnBox = await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).boundingBox();
     assert(returnBox && returnBox.y + returnBox.height <= 844, `${width}: saved result includes its next action in the first viewport`);

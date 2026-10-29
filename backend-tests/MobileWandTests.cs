@@ -125,13 +125,21 @@ internal static class MobileWandTests
             [promptMessage], "gpt-6.1-terra")))
         using (var live = JsonDocument.Parse(JsonSerializer.Serialize(MobileWorkshopLiveRuntime.Start(
             new(owner, "humor-operation", "session", "stamp", "https://localhost", DateTimeOffset.UtcNow.AddMinutes(1), captured),
-            [promptMessage], "vesper", "humor-start"))))
+            [promptMessage], new { id = "voice_workshop_fixture" }, "humor-start", "An expressive original Czech baritone."))))
         {
             var instructions = draft.RootElement.GetProperty("instructions").GetString()!;
             var liveInstructions = live.RootElement.GetProperty("session").GetProperty("instructions").GetString()!;
             Check(instructions.Contains(WorkshopHumorInstructions.Text)
                 && liveInstructions.Contains(WorkshopHumorInstructions.Text),
                 "live voice and delegated dialogue receive the same character-based roast policy");
+            Check(liveInstructions.Contains("Emoce vyjadřuj intonací, důrazem a střídáním tempa")
+                && liveInstructions.Contains("při otázce") && liveInstructions.Contains("při opravě", StringComparison.OrdinalIgnoreCase)
+                && liveInstructions.Contains("An expressive original Czech baritone.")
+                && !liveInstructions.Contains("talentovaný a klidný řemeslník"),
+                "actual workshop startup requests expressive situation-based delivery and the saved custom voice description");
+            Check(live.RootElement.GetProperty("session").GetProperty("audio").GetProperty("output")
+                .GetProperty("voice").GetProperty("id").GetString() == "voice_workshop_fixture",
+                "expressive workshop startup keeps the custom voice ID object intact");
             Check(draft.RootElement.GetProperty("reasoning").GetProperty("effort").GetString() == "none",
                 "the short authored reply does not consume its small output budget on hidden reasoning");
             using var input = JsonDocument.Parse(draft.RootElement.GetProperty("input").GetString()!);
