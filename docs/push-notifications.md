@@ -2,6 +2,15 @@
 
 Oznámení se zapínají výslovně v účtu (`/me/account`, pro obsluhu `/settings`). Před zahájením večera je stejná karta v nabídce **Účet** na čekací obrazovce. Povolení se vztahuje na zařízení a aktuální přihlášení. Po novém přihlášení je potřeba znovu zapnout oznámení. Automatická obnova nativního tokenu zachovává existující souhlas; vypnutí má přednost před souběžnou obnovou. Karta nabízí i zkušební oznámení.
 
+Po přihlášení s hotovou hůlkou se při vstupu do čekárny objeví přímá nabídka
+**Zapnout oznámení** pro otevření večera. Stejná nabídka je na hlavní herní
+obrazovce a po uložení hůlky v herní dílně, až skončí hlasový rozhovor.
+Systémové oprávnění se žádá až po stisku tlačítka; samotný příchod na obrazovku
+nic neregistruje. **Později** odloží nabídku pro daný účet po dobu otevřené karty,
+včetně obnovení stránky a přechodů mezi těmito místy. Zapnutá, systémem zamítnutá,
+nepodporovaná nebo nenakonfigurovaná oznámení novou nabídku nezobrazují.
+Ruční nastavení zůstává dostupné i po odložení.
+
 Server každých 15 sekund pozoruje uložený stav a vytváří zprávy pro:
 
 - příchozí herní výzvu oprávněnému soupeři ve stejné spuštěné skupině;

@@ -10,8 +10,8 @@ const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: 
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
 vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', props: ['image'], template: '<div class="portrait-stage" />' } }));
-vi.mock('./PrelaunchWand.vue', () => ({ default: { name: 'PrelaunchWand', emits: ['open-change'], template: '<section><button @click="$emit(\'open-change\', true)">Vytvořit hůlku</button><button @click="$emit(\'open-change\', false)">Zpět k odpočtu</button></section>' } }));
-vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', template: '<div class="push-notifications-stub" />' } }));
+vi.mock('./PrelaunchWand.vue', () => ({ default: { name: 'PrelaunchWand', emits: ['open-change', 'complete-change'], template: '<section><button @click="$emit(\'open-change\', true)">Vytvořit hůlku</button><button @click="$emit(\'open-change\', false)">Zpět k odpočtu</button></section>' } }));
+vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div class="push-notifications-stub" />' } }));
 vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
@@ -70,6 +70,22 @@ it('offers wand creation only after revealing the saved character', async () => 
     await view.findComponent({ name: 'PrelaunchWand' }).get('button').trigger('click');
     expect(view.get('.launch-card').attributes('style')).toContain('display: none');
     expect(api.request.mock.calls.some(call => call[1] === 'POST')).toBe(false);
+  } finally { view.unmount(); }
+});
+it('offers notifications on arrival with a saved wand and hides the offer inside the workshop', async () => {
+  persisted = true; artworkStatus = 'ready';
+  const view = entry();
+  try {
+    await flushPromises(); image.value = 'blob:portrait'; await flushPromises();
+    expect(view.findAllComponents({ name: 'PushNotifications' }).some(component => component.props('context') === 'waiting')).toBe(false);
+    view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
+    const workshop = view.findComponent({ name: 'PrelaunchWand' });
+    workshop.vm.$emit('complete-change', true); await flushPromises();
+    expect(view.findAllComponents({ name: 'PushNotifications' }).some(component => component.props('context') === 'waiting')).toBe(true);
+    workshop.vm.$emit('open-change', true); await flushPromises();
+    expect(view.findAllComponents({ name: 'PushNotifications' }).some(component => component.props('context') === 'waiting')).toBe(false);
+    workshop.vm.$emit('open-change', false); await flushPromises();
+    expect(view.findAllComponents({ name: 'PushNotifications' }).some(component => component.props('context') === 'waiting')).toBe(true);
   } finally { view.unmount(); }
 });
 it('keeps optional character labels collapsed without changing the saved character', async () => {

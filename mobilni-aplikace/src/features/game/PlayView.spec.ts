@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createRouter, createMemoryHistory } from 'vue-router';
+vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div />' } }));
 const api = vi.hoisted(() => ({ transport: vi.fn(), request: vi.fn(), setAccount: (_value: unknown) => {}, changed: () => {} }));
 vi.mock('./gameLive', () => ({ connectGameLive: (changed: () => void) => { api.changed = changed; return () => {}; } }));
 vi.mock('../identity/session', async () => {
