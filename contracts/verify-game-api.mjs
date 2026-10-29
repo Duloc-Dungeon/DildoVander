@@ -22,6 +22,17 @@ assert.ok(command({ operationId: uuid, expectedRevision: 1, choice: 'trick', spa
 assert.equal(command({ operationId: uuid, expectedRevision: 1, choice: 'trick', sparkBid: 2 }), false);
 assert.equal(command({ operationId: uuid, expectedRevision: -1 }), false);
 assert.equal(command({ operationId: uuid, expectedRevision: 1, choice: 'fireball' }), false);
+assert.ok(command({ operationId: uuid, expectedRevision: 1, choice: 'protect' }));
+const yolo = ajv.getSchema('urn:game:GameYoloView');
+assert.ok(yolo({ status: 'choosing', beats: [], verdict: null, winnerId: null, errorCode: null, outcome: null, scenario: { id: 'tea-inspector-v1', title: 'Čaj pro kontrolora', objective: 'Čaj na stole.', situation: 'Okno je otevřené.', act: 1, ownChoiceLocked: true, opponentChoiceLocked: false, options: [], revealed: [] } }));
+assert.ok(yolo({ status: 'complete', beats: [], verdict: 'Společné fiasko.', winnerId: null, errorCode: null, outcome: 'fiasco', scenario: null }));
+assert.equal(yolo({ status: 'complete', beats: [], verdict: 'Hotovo.', winnerId: null, errorCode: null, outcome: 'technical-error' }), false);
+const decision = ajv.getSchema('urn:game:GameYoloDecision');
+const longestCard = { act: 1, choice: 'levitate', title: 'T'.repeat(100), benefit: 'B'.repeat(240), cost: 'C'.repeat(240) };
+const longestReveal = `Plán: ${longestCard.title}. ${longestCard.benefit} ${longestCard.cost}`;
+assert.equal(longestReveal.length, 589);
+assert.ok(decision({ ...longestCard, consequence: longestReveal }), 'a valid generated card fits the revealed-decision contract');
+assert.equal(decision({ ...longestCard, consequence: 'X'.repeat(641) }), false, 'the response contract remains bounded');
 const team = ajv.getSchema('urn:game:GameTeamCreate');
 assert.ok(team({ operationId: uuid, partnerId: 'one', opponentIds: ['two', 'three'] }));
 assert.equal(team({ operationId: uuid, partnerId: 'one', opponentIds: ['two', 'two'] }), false);

@@ -1,5 +1,10 @@
 # WNS v2 — implementace a skutečně provedené kontroly
 
+## Rozhodnutí, progrese a YOLO — 29. října 2026
+
+Aktuální změny pravidel, API, krátkého tréninku a stavového YOLO scénáře včetně
+reprodukce a dosud neprovedeného playtestu popisuje [herní prototyp](game-design-prototype.md).
+
 ## Týmová hra a trénink — 29. října 2026
 
 - `TeamView` a `team.css` přebírají dvoubarevné jeviště, ukazují všechny čtyři

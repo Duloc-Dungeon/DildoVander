@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import GeneratedWand from '../archive/GeneratedWand.vue';
 import { AccountArchiveClient } from '../archive/accountArchive';
@@ -218,15 +218,10 @@ function showProjectedError(cause: unknown): void {
   errorFeedback.value = projectCustomerSessionError(cause);
 }
 
-watch(() => account.value?.id, (next, previous) => {
-  if (next !== previous) {
-    resetPrivateState();
-    if (next) void loadProfile(generation);
-  }
-}, { flush: 'sync' });
-onMounted(() => {
-  if (account.value) void loadProfile(generation);
-});
+watch([() => account.value?.id, pane], () => {
+  resetPrivateState();
+  if (account.value && pane.value === 'character') void loadProfile(generation);
+}, { immediate: true, flush: 'sync' });
 onBeforeUnmount(resetPrivateState);
 </script>
 

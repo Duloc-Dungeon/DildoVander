@@ -1853,7 +1853,16 @@
                 "enum": [
                   "strike",
                   "trick",
-                  "shield"
+                  "shield",
+                  "levitate",
+                  "tray",
+                  "cup",
+                  "protect",
+                  "sabotage",
+                  "shortcut",
+                  "finish",
+                  "adapt",
+                  "risk"
                 ]
               },
               {
@@ -2146,18 +2155,44 @@
       "GameLobbyOpponent": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "maxLength": 128 },
-          "displayName": { "type": "string", "maxLength": 240 },
-          "xp": { "type": "integer", "minimum": 0 },
-          "matchesPlayed": { "type": "integer", "minimum": 0 },
-          "hasWand": { "type": "boolean" },
-          "wandTier": { "type": "integer", "minimum": 0, "maximum": 2 },
+          "id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "xp": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matchesPlayed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hasWand": {
+            "type": "boolean"
+          },
+          "wandTier": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2
+          },
           "tacticalUnlocked": {
             "type": "boolean",
             "description": "True only when both the 30 XP and tier-two wand requirements are met."
           }
         },
-        "required": ["id", "displayName", "xp", "matchesPlayed", "hasWand", "wandTier", "tacticalUnlocked"],
+        "required": [
+          "id",
+          "displayName",
+          "xp",
+          "matchesPlayed",
+          "hasWand",
+          "wandTier",
+          "tacticalUnlocked"
+        ],
         "additionalProperties": false
       },
       "GameRound": {
@@ -2288,7 +2323,9 @@
               "generating",
               "complete",
               "failed",
-              "cancelled"
+              "cancelled",
+              "choosing",
+              "preparing"
             ]
           },
           "beats": {
@@ -2350,6 +2387,31 @@
                 "type": "null"
               }
             ]
+          },
+          "scenario": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameYoloScenario"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "winner",
+                  "draw",
+                  "fiasco"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2385,7 +2447,8 @@
               "complete",
               "failed",
               "declined",
-              "cancelled"
+              "cancelled",
+              "preparing"
             ]
           },
           "revision": {
@@ -2557,7 +2620,8 @@
                 "enum": [
                   "win",
                   "loss",
-                  "draw"
+                  "draw",
+                  "fiasco"
                 ]
               },
               {
@@ -2602,6 +2666,43 @@
           },
           "loadoutsAvailable": {
             "type": "boolean"
+          },
+          "combatNarration": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "generating",
+                      "complete",
+                      "failed"
+                    ]
+                  },
+                  "text": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 420
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2772,12 +2873,26 @@
           "player": {
             "type": "object",
             "properties": {
-              "id": {"type": "string"},
-              "displayName": {"type": "string"},
-              "xp": {"type": "integer", "minimum": 0},
-              "matchesPlayed": {"type": "integer", "minimum": 0},
-              "tacticalUnlocked": {"type": "boolean"},
-              "yoloUnlocked": {"type": "boolean"}
+              "id": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "xp": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "matchesPlayed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tacticalUnlocked": {
+                "type": "boolean"
+              },
+              "yoloUnlocked": {
+                "type": "boolean"
+              }
             },
             "required": [
               "id",
@@ -3087,6 +3202,191 @@
             "type": "boolean"
           }
         },
+        "additionalProperties": false
+      },
+      "GameYoloOption": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 192
+          },
+          "benefit": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "cost": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "guard": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "attack": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "benefit",
+          "cost"
+        ],
+        "additionalProperties": false
+      },
+      "GameYoloDecision": {
+        "type": "object",
+        "properties": {
+          "act": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "choice": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 192
+          },
+          "benefit": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "cost": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "consequence": {
+            "type": "string",
+            "maxLength": 640
+          },
+          "guard": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "attack": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "act",
+          "choice",
+          "title",
+          "benefit",
+          "cost",
+          "consequence"
+        ],
+        "additionalProperties": false
+      },
+      "GameYoloAct": {
+        "type": "object",
+        "properties": {
+          "act": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "player": {
+            "$ref": "#/components/schemas/GameYoloDecision"
+          },
+          "opponent": {
+            "$ref": "#/components/schemas/GameYoloDecision"
+          }
+        },
+        "required": [
+          "act",
+          "player",
+          "opponent"
+        ],
+        "additionalProperties": false
+      },
+      "GameYoloScenario": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "tea-inspector-v1",
+              "ai-scenario-v1"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "objective": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "situation": {
+            "type": "string",
+            "maxLength": 650
+          },
+          "act": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "ownChoiceLocked": {
+            "type": "boolean"
+          },
+          "opponentChoiceLocked": {
+            "type": "boolean"
+          },
+          "options": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/GameYoloOption"
+            }
+          },
+          "revealed": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/GameYoloAct"
+            }
+          },
+          "selectionReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "objective",
+          "situation",
+          "act",
+          "ownChoiceLocked",
+          "opponentChoiceLocked",
+          "options",
+          "revealed"
+        ],
         "additionalProperties": false
       }
     }
