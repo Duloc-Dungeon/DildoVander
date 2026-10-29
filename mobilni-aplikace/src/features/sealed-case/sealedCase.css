@@ -31,7 +31,7 @@
 .sealed-content textarea::placeholder { color: var(--wns-placeholder, var(--wns-muted)); opacity: 1; }
 .sealed-content .sealed-check { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; cursor: pointer; }
 .sealed-check input { width: 22px; height: 22px; flex: 0 0 22px; margin: 2px 0 0; }
-.sealed-content :is(button, a, input, textarea, select, summary):focus-visible { outline: 3px solid var(--wns-mint); outline-offset: 4px; }
+.sealed-content :is(button, a, input, textarea, select, summary):focus-visible { outline: 3px solid var(--wns-focus-ring); outline-offset: 4px; }
 .sealed-panel:focus { outline: none; }
 .sealed-panel:focus-visible { outline: 2px solid var(--wns-mint); outline-offset: 8px; border-radius: 4px; }
 .sealed-fields { display: grid; gap: 0 16px; }

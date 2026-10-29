@@ -6,10 +6,53 @@ internal static class SealedCasePlanTests
     internal static void Run()
     {
         ExplicitConfirmationRevisionAndResolutionSurviveRestart();
+        LegacyMissingParametersRemainResolvable();
         CompetingRevisionsAcceptOnePlan();
         OverdueChaptersResolveInOrderFromCanonicalPlans();
         DeadlineCrossedWhileWaitingForWriterRejectsConfirmation();
         Console.WriteLine("PASS explicit durable plan confirmation/revision, deadline, authorized targets, replay and canonical resolution.");
+    }
+
+    private static void LegacyMissingParametersRemainResolvable()
+    {
+        using var fixture = new SealedCaseTimingTests.Fixture("first", 8);
+        var start = fixture.Start();
+        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000,
+            SealedScenario.Create(fixture.Store.ReadRoster(fixture.Id, "group"), "first"));
+        fixture.Clock.Now = start.Timing.IntroductionEndsAt;
+        var revision = fixture.Read().Revision;
+        var sabotage = fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "legacy-sabotage", revision,
+            new(1, 0, true, SealedIntent.Sabotage, ResourceId: "source-1"));
+        var help = fixture.Store.ConfirmPlan(fixture.Id, "group", "p2", "legacy-help", sabotage.Revision,
+            new(1, 0, true, SealedIntent.Help, "p3"));
+
+        using (var connection = new SqliteConnection("Data Source=" + fixture.Path))
+        {
+            connection.Open(); using var command = connection.CreateCommand();
+            command.CommandText = "DROP TRIGGER sealed_case_events_no_update";
+            command.ExecuteNonQuery();
+            try
+            {
+                command.CommandText = "UPDATE sealed_case_events SET payload_json=json_remove(payload_json,'$.resourceId') WHERE case_id=$case AND idempotency_key='legacy-sabotage'";
+                command.Parameters.AddWithValue("$case", fixture.Id);
+                Equal(1, command.ExecuteNonQuery());
+                command.Parameters.Clear();
+                command.CommandText = "UPDATE sealed_case_events SET payload_json=json_remove(payload_json,'$.targetId') WHERE case_id=$case AND idempotency_key='legacy-help'";
+                command.Parameters.AddWithValue("$case", fixture.Id);
+                Equal(1, command.ExecuteNonQuery());
+            }
+            finally
+            {
+                command.Parameters.Clear();
+                command.CommandText = "CREATE TRIGGER sealed_case_events_no_update BEFORE UPDATE ON sealed_case_events BEGIN SELECT RAISE(ABORT,'sealed case history is append-only'); END";
+                command.ExecuteNonQuery();
+            }
+        }
+
+        fixture.Clock.Now = start.Timing.PlanningEndsAt;
+        var resolved = fixture.Reopen().ResolveConfirmedChapter(fixture.Id, "group", 1, help.Revision);
+        Equal(SealedIntent.Sabotage, resolved.Results.Single(result => result.ActorId == "p1").Intent);
+        Equal(SealedIntent.Help, resolved.Results.Single(result => result.ActorId == "p2").Intent);
     }
 
     private static void ExplicitConfirmationRevisionAndResolutionSurviveRestart()
@@ -27,6 +70,10 @@ internal static class SealedCasePlanTests
             new(1, 0, true, SealedIntent.Hold)), "case_not_found");
         Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "unknown-target", revision,
             new(1, 0, true, SealedIntent.Guard, "hidden-unknown")), "sealed_case_invalid_target");
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "missing-sabotage-source", revision,
+            new(1, 0, true, SealedIntent.Sabotage)), "sealed_case_invalid_plan");
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "missing-help-target", revision,
+            new(1, 0, true, SealedIntent.Help)), "sealed_case_invalid_plan");
         var first = new SealedPlanConfirmation(1, 0, true, SealedIntent.Hold);
         var receipt = fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "first-plan", revision, first);
         Denied(() => fixture.Store.PauseTimeline(fixture.Id, "group", "p1", "first-plan", revision), "idempotency_key_reused");

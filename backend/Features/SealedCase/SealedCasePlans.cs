@@ -65,7 +65,7 @@ internal sealed partial class SealedCaseStore
             checked(confirmation.ExpectedActionRevision + 1), confirmation.PreparedIntent, confirmation.ResourceId, confirmation.Summary, confirmation.DefensePolicy, confirmation.ShelteredPosition);
         if (action.Summary is { } summary && (summary.Length > 500 || summary.Any(c => char.IsControl(c) && c is not '\n' and not '\r' and not '\t')))
         { throw new SealedCasePersistenceException("sealed_case_invalid_plan", 400); }
-        try { action.Validate(); }
+        try { action.ValidateForSubmission(); }
         catch (SealedCaseRuleException) { throw new SealedCasePersistenceException("sealed_case_invalid_plan", 400); }
         if (new[] { action.TargetId, action.Destination, action.Method, action.Condition?.EvidenceId, action.ResourceId }.Any(value => value?.Length > 128))
         {

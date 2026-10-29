@@ -10,10 +10,38 @@ internal sealed record SealedPlayerCard(string Id, string Name, string Seat, str
 internal sealed record SealedClueView(string Id, string Chain, string Family, string[] Candidates, string SourceEvent,
     string? Label = null, string? Description = null);
 internal sealed record SealedSource(string Id, string Label);
+internal sealed record SealedPublicSourceSchedule(string Family, string Label, string Location, int ReleaseChapter);
+internal static class SealedCaseFeedback
+{
+    internal static string? InvestigationObservation(SealedIntent intent, SealedScenarioState? before,
+        SealedScenarioState? after, string playerId)
+    {
+        if (intent is not (SealedIntent.Investigate or SealedIntent.EchoScene) || after is null) { return null; }
+        string[] Notes(SealedScenarioState? scenario) => scenario?.Notes.GetValueOrDefault(playerId, []) ?? [];
+        var beforeNotes = Notes(before);
+        const string discoveredPrefix = "Prozkoumal jsi doloženou stopu ";
+        const string noClueNote = "Prozkoumal jsi místo. Nová doložená stopa tu zatím dostupná není.";
+        var newNote = Notes(after).Skip(beforeNotes.Length).FirstOrDefault(note =>
+            note.StartsWith(discoveredPrefix, StringComparison.Ordinal)
+            || note == noClueNote
+            || note.Contains("přesměrovanému doručení", StringComparison.Ordinal));
+        if (newNote is null || newNote.Contains("přesměrovanému doručení", StringComparison.Ordinal)) { return null; }
+        if (newNote.StartsWith(discoveredPrefix, StringComparison.Ordinal))
+        {
+            var clueId = newNote[discoveredPrefix.Length..].TrimEnd('.');
+            if (!after.KnownClues.GetValueOrDefault(playerId, []).Contains(clueId, StringComparer.Ordinal)) { return null; }
+            return before?.KnownClues.GetValueOrDefault(playerId, []).Contains(clueId, StringComparer.Ordinal) == true
+                ? "Znovu jsi narazil na již známou stopu."
+                : "Získal jsi novou doloženou stopu.";
+        }
+        return newNote == noClueNote ? "Na tomto místě nebyla nová doložená stopa dostupná." : null;
+    }
+}
 internal sealed record SealedChoice(string Id, string Label, string Benefit, string Cost, string Risk, SealedPlanConfirmation Plan);
 internal sealed record SealedStatement(string Id, string Actor, string Body, string[] Recipients, bool Public, long CreatedAt);
 internal sealed record SealedRecap(int Chapter, string Actor, string? Target, string Intent, string Result, string EventRef,
-    string? Reason = null, SealedModifiers? Modifiers = null, SealedRolls? Rolls = null, bool TraceCreated = false);
+    string? Reason = null, SealedModifiers? Modifiers = null, SealedRolls? Rolls = null, bool TraceCreated = false,
+    string? Observation = null);
 internal sealed record SealedFinaleView(string Phase, int BallotSize, bool OwnSubmitted, string[] OwnBallot,
     string[] RunoffCandidates, int RunoffPlaces, string[]? Selected, string? Winner, string[]? Conspirators, SealedRecap[]? Reconstruction,
     string? Message = null);
@@ -25,7 +53,8 @@ internal sealed record SealedPlayView(string Id, string Phase, long ServerNow, i
     SealedAction? OwnPlan, SealedChoice[] Choices, SealedClueView[] Clues, SealedItem[] OwnItems, SealedItem[] VisibleItems,
     string[] Notes, SealedStatement[] Statements, SealedRecap[] OwnOutcomes, SealedFinaleView? Finale, SealedSource[]? Sources = null, bool OwnOversight = false, bool CanManageAi = false, bool AiAvailable = false, bool CanJoin = true,
     SealedScenarioSummary? Scenario = null, string? OwnObjective = null, string? ChapterTitle = null,
-    [property: JsonIgnore] SealedScenarioPresentation? Presentation = null)
+    [property: JsonIgnore] SealedScenarioPresentation? Presentation = null,
+    Dictionary<string, string[]>? Routes = null, SealedPublicSourceSchedule[]? SourceSchedule = null)
 {
     public SealedNarration PublicNarration => SealedCaseAi.Factual(this, true);
     public SealedNarration PrivateNarration => SealedCaseAi.Factual(this, false);
@@ -229,7 +258,13 @@ internal sealed partial class SealedCaseStore
         SealedPlayView Present(SealedPlayView view, string? objective = null) => view with
         {
             Scenario = presentation.Describe(), OwnObjective = objective, Presentation = presentation,
-            ChapterTitle = view.Chapter > 0 ? presentation.ChapterTitles[presentation.ChapterIndex(view.Chapter, variant)] : null
+            ChapterTitle = view.Chapter > 0 ? presentation.ChapterTitles[presentation.ChapterIndex(view.Chapter, variant)] : null,
+            Routes = world is null ? null : world.Checkpoint.Adjacency.ToDictionary(route => route.Key, route => route.Value.ToArray(), StringComparer.Ordinal),
+            SourceSchedule = world?.Checkpoint.Scenario?.Clues
+                .Select(clue => new SealedPublicSourceSchedule(clue.Family, presentation.ClueLabels[clue.Family], clue.Location, clue.ReleaseChapter))
+                .DistinctBy(source => (source.Family, source.Location, source.ReleaseChapter))
+                .OrderBy(source => source.ReleaseChapter).ThenBy(source => source.Location, StringComparer.Ordinal)
+                .ThenBy(source => source.Family, StringComparer.Ordinal).ToArray()
         };
         var ready = latest.Values.Count(entry => entry.Ready && entry.Consent && entry.SnapshotRef is not null && eligible.Contains(entry.PlayerId));
         if (world is null)
@@ -279,7 +314,8 @@ internal sealed partial class SealedCaseStore
         var statements = Statements(connection, transaction, caseId, actor).Where(m => m.Public || m.Actor == actor || m.Recipients.Contains(actor))
             .Select(m => m.Actor == actor ? m : m with { Recipients = [] }).ToArray();
         var outcomes = Recap(connection, transaction, caseId).Where(e => e.Actor == player.Id && ReadConfirmedPlans(connection, transaction, caseId, e.Chapter).ContainsKey(player.Id))
-            .Select(e => e with { Result = "Plán přijatý · výsledek zatím neznáš", EventRef = "", Reason = null, Modifiers = null, Rolls = null, TraceCreated = false }).ToArray();
+            .Select(e => e with { Result = "Tah se vyhodnotil", EventRef = "", Reason = null, Modifiers = null, Rolls = null,
+                TraceCreated = false, Observation = OwnResolutionObservation(connection, transaction, caseId, e.Chapter, player.Id) }).ToArray();
         var finale = timing.Phase is "finale" or "finished" ? ReadFinale(connection, transaction, caseId, members, actor, timing) : null;
         var choices = Choices(player.Id, state, player.Location, timing.Chapter, ownPlan?.Revision ?? 0, clues, scene, timing.Variant);
         transaction.Commit();
@@ -294,6 +330,28 @@ internal sealed partial class SealedCaseStore
             scene.Clues.Where(c => c.Location == player.Location && c.ReleaseChapter <= timing.Chapter).Select(c => new SealedSource(c.Id, presentation.ClueLabels[c.Family] + " · " + c.Id)).ToArray(),
             scene.Oversight?.GetValueOrDefault(timing.Chapter) == player.Id),
             member.Team == SealedSecretTeam.Guardian ? presentation.GuardianObjective : presentation.ConspiratorObjective);
+    }
+
+    private static string? OwnResolutionObservation(SqliteConnection connection, SqliteTransaction transaction,
+        string caseId, int chapter, string playerId)
+    {
+        var ownPlan = ReadConfirmedPlans(connection, transaction, caseId, chapter).GetValueOrDefault(playerId);
+        if (ownPlan?.Intent is not (SealedIntent.Investigate or SealedIntent.EchoScene)) { return null; }
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = chapter == 1
+            ? "SELECT initial_checkpoint_json FROM sealed_case_world WHERE case_id=$case"
+            : "SELECT checkpoint_json FROM sealed_case_resolutions WHERE case_id=$case AND chapter=$previous";
+        command.Parameters.AddWithValue("$case", caseId);
+        command.Parameters.AddWithValue("$previous", chapter - 1);
+        var beforeCheckpoint = command.ExecuteScalar() as string;
+        if (beforeCheckpoint is null) { return null; }
+        command.CommandText = "SELECT checkpoint_json FROM sealed_case_resolutions WHERE case_id=$case AND chapter=$chapter";
+        command.Parameters.AddWithValue("$chapter", chapter);
+        var afterCheckpoint = command.ExecuteScalar() as string;
+        if (afterCheckpoint is null) { return null; }
+        var before = JsonSerializer.Deserialize<SealedGameCheckpoint>(beforeCheckpoint, Json)!.Scenario;
+        var after = JsonSerializer.Deserialize<SealedGameCheckpoint>(afterCheckpoint, Json)!.Scenario;
+        return SealedCaseFeedback.InvestigationObservation(ownPlan.Intent, before, after, playerId);
     }
 
     private static SealedChoice[] Choices(string actor, SealedPlayerState state, string location, int chapter, int actionRevision,

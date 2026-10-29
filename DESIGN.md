@@ -475,6 +475,25 @@ nepřehrává při načtení historie, stejném pollingu, skrytém dokumentu neb
 mimo viditelnou scénu. Herní pravidla, souhlasy a preference zvuku se nemění.
 Trénink, YOLO a týmové obrazovky tento místní výtvarný režim nepřebírají.
 
+### Pod pečetí: vyšetřovací spis
+
+Deník má lokální papírovou plochu (`#f2e6c8`) s inkoustovým textem
+(`#29291f`) a tmavě zelenými doloženými částmi (`#324e3b`). Zachovává Manrope
+a tmavý zákaznický shell. Nejde o změnu společných tokenů. Řetězec propojuje
+části A/B/C linkou; chybějící část má přerušovaný obrys a výslovný popisek,
+takže význam nenese samotná barva. Tvrzení spoluhráčů zůstávají mimo papírový
+soubor vlastních dokladů.
+Přehled tvrzení ukazuje autora, rozsah sdílení, odkaz na část řetězce a vlastní
+ověření hned. Úplný původní text je pod klávesnicově přístupným rozbalením;
+dlouhá zpráva s více stopami tak nezahltí všechny řádky. Ovládání vlastních
+stop má pro čtečky obrazovky doplněný kontext příslušného řetězce.
+
+Otevření spisu má jeden místní `clip-path` přechod 280 ms; při omezeném
+pohybu je obsah ihned statický. Ovládání ani herní stav na efekt nečekají.
+Veřejný plán průzkumu používá čitelný seznam tras a kapitol, bez zobrazení
+cizích skrytých poloh nebo událostí. Místní styly vlastní
+`src/features/sealed-case/sealedDossier.css` v mobilní aplikaci.
+
 ### Kaskáda a rozsah
 
 `src/main.ts` načítá aplikační základ, starší `consumer-brand.css` a nakonec

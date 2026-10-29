@@ -8,12 +8,16 @@ import AwNotice from '../../components/AwNotice.vue';
 import { account } from '../identity/session';
 import SealedPortrait from './SealedPortrait.vue';
 import SealedCaseFinale from './SealedCaseFinale.vue';
+import SealedEvidenceBoard from './SealedEvidenceBoard.vue';
+import SealedExplorationPlan from './SealedExplorationPlan.vue';
+import { actionGuidance, clueShare, evidenceChains, planProblem } from './sealedDossier';
 import lockIcon from '../../assets/wns-v2/icons/regular/lock-key.svg';
 import sealIcon from '../../assets/wns-v2/icons/regular/seal-check.svg';
 import { defaultScenarioId, errorText, factionLabel, intentNames, intentText, legacyScenario, memoryRecord,
   resultText, reasonText, operation, phaseNames, request, scenarioFor, SealedError,
-  type CreateCaseRequest, type Plan, type Play, type ScenarioCatalog } from './sealedCase';
+  type Clue, type CreateCaseRequest, type Plan, type Play, type ScenarioCatalog } from './sealedCase';
 import '../game/game.css';
+import './sealedDossier.css';
 
 const route = useRoute(); const router = useRouter();
 let mutationFailure: SealedError | undefined;
@@ -39,6 +43,10 @@ const aiRemaining = computed(() => view.value ? view.value.expectedPlayers - vie
 const oversight = ref<string | null>(null);
 const message = ref(''); const recipient = ref('PUBLIC'); const ballot = ref<string[]>([]); const personalText = ref('');
 const pane = ref<'own' | 'experienced' | 'presented' | 'planned'>('experienced');
+const draftProblem = computed(() => planProblem(draft.value));
+const chains = computed(() => evidenceChains(view.value?.clues ?? []));
+const latestOutcome = computed(() => view.value?.ownOutcomes.at(-1));
+const shareStatus = ref('');
 let timer: ReturnType<typeof setTimeout> | undefined; let controller: AbortController | undefined; let generation = 0;
 let disposed = false;
 const id = computed(() => typeof route.params.id === 'string' ? route.params.id : '');
@@ -216,7 +224,7 @@ function rebase() {
   pending.value = undefined; saveDraft();
 }
 async function confirm() {
-  if (!draft.value || !view.value || staleDraft.value || view.value.phase !== 'planning') return;
+  if (!draft.value || !view.value || staleDraft.value || draftProblem.value || view.value.phase !== 'planning') return;
   pending.value ??= { operationId: operation(), plan: { ...draft.value, summary: personalText.value || null, confirmed: true } }; saveDraft();
   if (await mutate('/actions', pending.value)) { pending.value = undefined; draft.value = undefined; personalText.value = ''; saveDraft(); }
 }
@@ -226,7 +234,29 @@ async function retryPending() {
 }
 async function sendMessage() {
   if (!message.value.trim()) return;
-  if (await mutate('/statements', { operationId: operation(), body: message.value, public: recipient.value === 'PUBLIC', recipients: recipient.value === 'PUBLIC' ? [] : [recipient.value] })) message.value = '';
+  if (await mutate('/statements', { operationId: operation(), body: message.value, public: recipient.value === 'PUBLIC', recipients: recipient.value === 'PUBLIC' ? [] : [recipient.value] })) {
+    message.value = ''; shareStatus.value = '';
+  }
+}
+async function prepareShare(clue: Clue) {
+  const addition = clueShare(clue, name);
+  const combined = message.value.trim() ? `${message.value}\n\n${addition}` : addition;
+  tab.value = 'messages';
+  if (combined.length > 1200) {
+    shareStatus.value = 'Do rozepsané zprávy se stopa nevejde. Nejdřív ji zkrať nebo odešli a pak připrav sdílení znovu.';
+  } else {
+    message.value = combined;
+    shareStatus.value = 'Stopa je připravená ve zprávě. Zkontroluj adresáta a obsah; zatím se nic neodeslalo.';
+  }
+  await nextTick(); panel.value?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+}
+async function prepareTravel(destination: string) {
+  const v = view.value;
+  if (!v || v.ownState !== 'Awake' || busy.value || pending.value || v.phase !== 'planning' || !v.adjacentLocations.includes(destination)) return;
+  if (draft.value?.intent === 0) return;
+  const plan = draft.value ?? { chapter: v.chapter, expectedActionRevision: v.ownPlan?.revision ?? 0, confirmed: true, intent: 4 };
+  choose({ ...plan, destination });
+  await nextTick(); panel.value?.querySelector<HTMLElement>('.sealed-draft')?.scrollIntoView({ block: 'nearest' });
 }
 async function vote(abstain = false) {
   if (!view.value?.finale) return;
@@ -235,6 +265,7 @@ async function vote(abstain = false) {
 const ballotCandidates = computed(() => view.value?.players.filter(p => p.id !== view.value!.ownId
   && (view.value!.finale?.phase !== 'runoff' || view.value!.finale.runoffCandidates.includes(p.id))) ?? []);
 watch(draft, saveDraft, { deep: true }); watch(personalText, saveDraft);
+watch(() => [route.params.id, account.value?.id], () => { message.value = ''; recipient.value = 'PUBLIC'; shareStatus.value = ''; });
 watch(() => [route.params.id, route.query.new], () => { generation++; controller?.abort(); clearTimeout(timer); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; loading.value = false; busy.value = false; error.value = ''; void refresh(); });
 watch(() => account.value?.id, () => { generation++; controller?.abort(); clearTimeout(timer); if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; catalog.value = undefined; catalogError.value = ''; scenarioId.value = defaultScenarioId; restoreCreateRequest(); loading.value = false; busy.value = false; error.value = ''; void refresh(); });
 function resume() { if (document.visibilityState === 'visible') void refresh(); }
@@ -268,7 +299,6 @@ function clueLabel(id: string) {
   return v?.clues.find(clue => clue.id === id)?.label ?? v?.sources.find(source => source.id === id)?.label
     ?? `Stopa ${(v?.clues.findIndex(clue => clue.id === id) ?? -1) + 1}`;
 }
-const clueOrigin = (event: string) => event.endsWith(':prelude') ? 'Úvod případu' : 'Získáno během hry';
 const ownStatements = computed(() => view.value?.statements.filter(statement => statement.actor === view.value?.ownId) ?? []);
 const phaseHint = computed(() => {
   const v = view.value;
@@ -455,6 +485,19 @@ async function openAction() {
                 <h3>Jen pro tvou postavu</h3>
                 <p>{{ view.privateNarration?.text ?? view.notes.at(-1) }}</p>
               </section>
+              <section v-if="view.ownState !== 'Operator'" class="sealed-dossier-door" aria-labelledby="sealed-dossier-door-title">
+                <h3 id="sealed-dossier-door-title">Vyšetřovací spis</h3>
+                <p v-if="chains.length">Vlastní stopy: {{ view.clues.length }} · úplné řetězce: {{ chains.filter(chain => !chain.missing.length).length }} z {{ chains.length }}.</p>
+                <p v-else>Každá stopa má své místo. Zatím na tebe všechna čekají.</p>
+                <AwButton @click="tab = 'journal'; pane = 'own'">Otevřít důkazní řetězce</AwButton>
+              </section>
+              <section v-if="latestOutcome && view.ownState !== 'Operator'" class="sealed-latest-outcome" aria-labelledby="sealed-latest-title">
+                <h3 id="sealed-latest-title">Poslední vyhodnocený tah</h3>
+                <p>Kapitola {{ latestOutcome.chapter }} · {{ actionText(latestOutcome.intent) }}</p>
+                <p>{{ resultText(latestOutcome.result) }}</p>
+                <p v-if="latestOutcome.observation">{{ latestOutcome.observation }}</p>
+              </section>
+              <SealedExplorationPlan v-if="view.ownState === 'Awake' && ['planning', 'quiet'].includes(view.phase)" :play="view" />
             </template>
             <p v-else-if="tab === 'story'" class="sealed-muted">Případ je uzavřený. Výsledek a rekonstrukci najdeš nahoře, vlastní stopy v deníku.</p>
 
@@ -472,6 +515,7 @@ async function openAction() {
               <p v-if="view.phase !== 'planning'" class="sealed-muted">Teď se nové tahy nepotvrzují. {{ view.phase === 'quiet' ? 'Telefon může stranou; potvrzený plán zůstává uložený.' : 'Další postup určuje aktuální fáze případu.' }}</p>
 
               <template v-if="view.phase === 'planning'">
+                <SealedExplorationPlan v-if="view.ownState === 'Awake'" :play="view" :actionable="!pending && !busy && draft?.intent !== 0" @travel="prepareTravel" />
                 <div class="sealed-choices">
                   <AwButton v-for="choice in view.choices" :key="choice.id" :aria-pressed="draft?.intent === choice.plan.intent" @click="choose(choice.plan)">
                     <strong>{{ choice.label }}</strong><span>{{ choice.benefit }}</span><small>{{ choice.cost }} · {{ choice.risk }}</small>
@@ -491,6 +535,7 @@ async function openAction() {
                   <label v-if="view.chapters === 6">Proveditelný typ akce
                     <select v-model.number="draft.intent"><option v-for="(label, intent) in actionNames" :key="intent" :value="intent">{{ label }}</option></select>
                   </label>
+                  <p v-if="actionGuidance(draft.intent)" class="sealed-action-guidance">{{ actionGuidance(draft.intent) }}</p>
                   <div class="sealed-fields">
                     <label>Adresát / cíl
                       <select v-model="draft.targetId"><option :value="null">Bez cíle / já</option><option v-for="player in view.players.filter(p => p.id !== view!.ownId)" :key="player.id" :value="player.id">{{ player.name }}</option></select>
@@ -535,7 +580,8 @@ async function openAction() {
                   <div class="sealed-plan-confirmation">
                     <p><strong>{{ actionNames[draft.intent] }}</strong><template v-if="draft.targetId"> · {{ name(draft.targetId) }}</template><template v-if="draft.destination"> · {{ view.locations[draft.destination] }}</template></p>
                     <p class="sealed-muted">Pokud se záměr neprovede, postava vyčká. Tvrzení v rozhovoru tento plán nenahradí.</p>
-                    <AwButton variant="primary" :busy="busy" :disabled="staleDraft || (draft.intent === 9 && !draft.lethalConfirmed)" @click="confirm">Výslovně potvrdit plán</AwButton>
+                    <p v-if="draftProblem" role="status">{{ draftProblem }}</p>
+                    <AwButton variant="primary" :busy="busy" :disabled="staleDraft || !!draftProblem || (draft.intent === 9 && !draft.lethalConfirmed)" @click="confirm">Výslovně potvrdit plán</AwButton>
                   </div>
                 </section>
 
@@ -554,7 +600,7 @@ async function openAction() {
             </template>
 
             <template v-if="tab === 'journal' && view.ownState !== 'Operator'">
-              <h2>Můj deník</h2>
+              <h2>Vyšetřovací spis</h2>
               <p class="sealed-muted">Co tvoje postava zažila, řekla a skutečně doložila.</p>
               <nav aria-label="Čtyři oddělené kontexty" class="sealed-journal-tabs">
                 <AwButton v-for="item in journalPanes" :key="item.id" :aria-pressed="pane === item.id" aria-controls="sealed-journal-pane" @click="selectPane(item.id)">{{ item.label }}</AwButton>
@@ -569,17 +615,11 @@ async function openAction() {
                   <p v-else class="sealed-empty">Zatím jsi nic netvrdil. Vzkaz můžeš poslat v Rozhovorech; není náhradou za potvrzený tah.</p>
                 </template>
                 <template v-if="pane === 'planned'">
-                  <ul v-if="view.ownOutcomes.length" class="sealed-entries"><li v-for="(outcome, index) in view.ownOutcomes" :key="index"><small>Kapitola {{ outcome.chapter }}</small>{{ actionText(outcome.intent) }} · {{ resultText(outcome.result) }}</li></ul>
+                  <ul v-if="view.ownOutcomes.length" class="sealed-entries"><li v-for="(outcome, index) in view.ownOutcomes" :key="index"><small>Kapitola {{ outcome.chapter }}</small>{{ actionText(outcome.intent) }} · {{ resultText(outcome.result) }}<p v-if="outcome.observation">{{ outcome.observation }}</p></li></ul>
                   <p v-else class="sealed-empty">Zatím žádný vyhodnocený tah. Nový plán připravíš v pohledu Moje akce.</p>
                 </template>
                 <template v-if="pane === 'own'">
-                  <p v-if="!view.clues.length" class="sealed-empty">Zatím nemáš novou doloženou stopu. Získat ji můžeš pátráním nebo dalším děním v případu.</p>
-                  <article v-for="clue in view.clues" :key="clue.id" class="sealed-clue">
-                    <h3>{{ clueLabel(clue.id) }}</h3>
-                    <p v-if="clue.description">{{ clue.description }}</p>
-                    <p>Okruh kandidátů: {{ clue.candidates.map(name).join(', ') || 'Žádný známý kandidát' }}.</p>
-                    <p class="sealed-muted">Zdroj: {{ clueOrigin(clue.sourceEvent) }}</p>
-                  </article>
+                  <SealedEvidenceBoard :play="view" @share="prepareShare" />
                 </template>
               </div>
             </template>
@@ -587,6 +627,7 @@ async function openAction() {
             <template v-if="tab === 'messages'">
               <h2>Rozhovory</h2>
               <p class="sealed-muted">Tvrzení není důkaz. Soukromý vzkaz dostane jen zvolený adresát.</p>
+              <p v-if="view.ownState !== 'Operator'" class="sealed-message-count">Tvoje odeslaná sdělení: {{ ownStatements.length }} · veřejná i soukromá.</p>
               <ol v-if="view.statements.length" class="sealed-entries sealed-messages">
                 <li v-for="statement in view.statements" :key="statement.id">
                   <p><strong>{{ name(statement.actor) }}</strong> <span class="sealed-message-scope">{{ statement.public ? 'Veřejně' : 'Soukromě' }}</span></p>
@@ -595,6 +636,7 @@ async function openAction() {
               </ol>
               <p v-else class="sealed-empty">Zatím tu nikdo nic netvrdil. Podezřelé ticho, ale samo o sobě nic nedokazuje.</p>
               <form v-if="view.ownState !== 'Operator'" class="sealed-message-form" @submit.prevent="sendMessage">
+                <p v-if="shareStatus" role="status">{{ shareStatus }}</p>
                 <label>Komu
                   <select v-model="recipient"><option value="PUBLIC">Všem v případu</option><option v-for="player in view.players.filter(p => p.id !== view!.ownId)" :key="player.id" :value="player.id">{{ player.name }}</option></select>
                 </label>

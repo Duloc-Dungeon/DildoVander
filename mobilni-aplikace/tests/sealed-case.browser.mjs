@@ -114,6 +114,7 @@ try {
     assert.deepEqual(requests[0].body, requests[1].body, 'lost ack repeats exact persisted operation');
     await page.getByRole('button', { name: 'Deník', exact: true }).click();
     await page.getByRole('button', { name: 'Doložené stopy', exact: true }).click();
+    await page.locator('.sealed-evidence-part summary').first().click();
     await page.getByText('Okruh kandidátů:', { exact: false }).waitFor();
     const journalText = await page.locator('.sealed-content').innerText();
     assert.ok(journalText.includes('Záznam z archivní knihy'), 'clue source uses human-readable copy');
@@ -214,6 +215,7 @@ try {
     await page.getByRole('alert').waitFor();
     assert.equal(await scenarioSelect.isDisabled(), true, 'pending creation pins the selected scenario');
     await page.getByRole('button', { name: 'Ověřit původní založení' }).click();
+    await page.waitForURL(`**/play/pod-peceti/${caseId}`);
     const creations = requests.filter(r => r.pathname === '/app/v1/sealed-cases');
     assert.equal(creations.length, 2);
     assert.equal(creations[0].body.scenarioId, neighbours.id);

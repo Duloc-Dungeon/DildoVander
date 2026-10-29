@@ -10,6 +10,7 @@ export interface Plan {
 export interface PlayerCard { id: string; name: string; seat: string; state: string; location: string | null; mask: string | null; portraitUrl: string | null; isAi?: boolean }
 export interface Item { id: string; name: string; ownerId: string; transferable: boolean }
 export interface Clue { id: string; chain: string; family: string; candidates: string[]; sourceEvent: string; label?: string | null; description?: string | null }
+export interface PublicSourceSchedule { family: string; label: string; location: string; releaseChapter: number }
 export interface ScenarioSummary {
   id: string; version: string; title: string; summary: string; universe: string; tone: string;
   guardianLabel: string; conspiratorLabel: string; echoLabel: string; echoExplanation: string;
@@ -29,7 +30,7 @@ export const legacyScenario: ScenarioSummary = {
   extremeConsequence: 'Tento čin může usmrtit postavu. Výslovně potvrzuji smrtící úmysl a možnou spotřebu jediného Krajního činu.',
 };
 export interface Choice { id: string; label: string; benefit: string; cost: string; risk: string; plan: Plan }
-export interface Recap { chapter: number; actor: string; target: string | null; intent: string; result: string; eventRef: string; reason?: string | null; rolls?: { attack: number; defense: number; attackTotal: number; defenseTotal: number } | null; traceCreated?: boolean }
+export interface Recap { chapter: number; actor: string; target: string | null; intent: string; result: string; eventRef: string; reason?: string | null; rolls?: { attack: number; defense: number; attackTotal: number; defenseTotal: number } | null; traceCreated?: boolean; observation?: string | null }
 export interface Play {
   id: string; phase: string; serverNow: number; chapter: number; chapters: number;
   planningEndsAt: number | null; quietEndsAt: number | null; finaleEndsAt: number | null;
@@ -38,6 +39,7 @@ export interface Play {
   ownTeam: string | null; ownKit: string | null; teamMembers: string[]; location: string | null;
   scenario?: ScenarioSummary; ownObjective?: string | null; chapterTitle?: string | null;
   locations: Record<string, string>; adjacentLocations: string[]; players: PlayerCard[];
+  routes?: Record<string, string[]> | null; sourceSchedule?: PublicSourceSchedule[] | null;
   ownPlan: (Plan & { id: string; revision: number; actorId: string }) | null; choices: Choice[];
   clues: Clue[]; sources: { id: string; label: string }[]; ownOversight: boolean; ownItems: Item[]; visibleItems: Item[]; notes: string[];
   statements: { id: string; actor: string; body: string; recipients: string[]; public: boolean; createdAt: number }[];
@@ -91,6 +93,8 @@ export function errorText(error: unknown): string {
     action_revision_conflict: 'Mezitím byla potvrzena jiná verze tvého plánu. Porovnej ji se svým návrhem.',
     sealed_case_ballot_closed: 'Toto hlasovací okno už je uzavřené.',
     sealed_case_invalid_ballot: 'Vyber přesný počet různých ostatních hráčů, nebo se zdrž hlasu.',
+    sealed_case_invalid_plan: 'Plán není proveditelný v této podobě. Zkontroluj typ akce, cíl a zdroj a připrav opravenou verzi.',
+    sealed_case_invalid_target: 'Tato postava není pro tvůj tah dostupným cílem. Obnov stav a vyber cíl z nabídky.',
     case_not_found: 'Tento případ už není dostupný. Mohl být ukončen kvůli soukromí některého hráče.',
   };
   return copy[code] ?? 'Spojení se nevrátilo v pořádku. Uložený plán zůstává na serveru; návrh zatím neodesílej pod novým potvrzením.';
