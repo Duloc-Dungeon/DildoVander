@@ -15,11 +15,14 @@ internal sealed class LocalTryHubExperimentStore
     private readonly string? path;
     private LocalTryHubExperimentSnapshot settings;
     private string? loadError;
+    private readonly bool speechEngineAvailable;
     internal LocalTryHubExperimentSnapshot Defaults { get; }
 
     public LocalTryHubExperimentStore(IConfiguration configuration, IHostEnvironment environment)
     {
-        Defaults = new(0, configuration["Wands:Voice:Provider"] ?? "elevenlabs",
+        speechEngineAvailable = !string.IsNullOrWhiteSpace(configuration["Wands:Voice:SpeechEnginePublicOrigin"])
+            && !string.IsNullOrWhiteSpace(configuration["ELEVENLABS_API_KEY"]);
+        Defaults = new(0, configuration["Wands:Voice:Provider"] ?? "speech-engine",
             OpenAiMobileWandQuestionProvider.DefaultInstructions, MobileWorkshopLiveRuntime.DefaultInstructions);
         settings = Defaults;
         if (!environment.IsDevelopment() || !configuration.GetValue<bool>("LocalTryHub:Enabled")) { return; }
@@ -49,7 +52,9 @@ internal sealed class LocalTryHubExperimentStore
     internal object View()
     {
         lock (gate) { return new { settings, defaults = new { Defaults.Provider, Defaults.DialoguePrompt,
-            Defaults.LivePrompt, speechDirections = WorkshopPrompts.SpeechDirections }, loadError }; }
+            Defaults.LivePrompt, speechDirections = WorkshopPrompts.SpeechDirections, speechEngineAvailable,
+            speechEngineUnavailableReason = speechEngineAvailable ? null
+                : "Speech Engine potřebuje veřejný callback. Spusť hub se zapnutým tunelem pro Speech Engine." }, loadError }; }
     }
 
     internal IResult Save(HttpContext context, LocalTryHubExperimentUpdate change)
@@ -83,7 +88,7 @@ internal sealed class LocalTryHubExperimentStore
         }
     }
 
-    private static bool Valid(string? provider, string? dialogue, string? live) => provider is "elevenlabs" or "gpt-live"
+    private static bool Valid(string? provider, string? dialogue, string? live) => provider is "elevenlabs" or "gpt-live" or "speech-engine"
         && !string.IsNullOrWhiteSpace(dialogue) && dialogue.Length <= 12000
         && !string.IsNullOrWhiteSpace(live) && live.Length <= 12000;
 }

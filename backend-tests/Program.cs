@@ -51,8 +51,10 @@ if (args is ["--mobile-workshop-runtime-live", "--case", var evidenceCase] && ev
 if (args is ["--mobile-workshop-live"]) { await MobileWorkshopLiveTests.RunAsync(); return; }
 if (args is ["--mobile-workshop-socket"]) { await MobileWorkshopSocketTests.RunAsync(); return; }
 if (args is ["--elevenlabs-workshop"]) { await ElevenLabsWorkshopTests.RunAsync(); WorkshopPresentationTests.Run(); return; }
+if (args is ["--speech-engine"]) { await SpeechEngineTests.RunAsync(); return; }
 if (args is ["--image-prompts"]) { ImageVisualizerTests.Run(); return; }
 if (args is ["--actor-voices"]) { await ActorVoiceSettingsTests.RunAsync(); return; }
+if (args is ["--workshop-settings"]) { await WorkshopSettingsTests.RunAsync(); return; }
 if (args is ["--mobile-workshop-voice-verify"]) { await MobileWorkshopLiveTests.VerifySpokenTurnsAsync(); return; }
 if (args is ["--mobile-workshop-artwork-verify", var sourceDatabase, var imageModel]) { await MobileWorkshopLiveTests.VerifyArtworkAsync(sourceDatabase, imageModel); return; }
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); GameYoloScenarioTests.Run(); GameYoloPreparationTests.Run(); GameYoloPreparedGameTests.Run(); GameCombatNarrationTests.Run(); return; }

@@ -9,7 +9,8 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
     IMobileWandQuestionProvider dialogue, ILogger<ElevenLabsWorkshopRuntime> logger)
 {
     internal async Task RunAsync(MobileWandAdmission admission, WebSocket socket,
-        Func<CancellationToken, Task> requireAuthority, CancellationToken requestToken)
+        Func<CancellationToken, Task> requireAuthority, CancellationToken requestToken,
+        Func<LabSocketSender, IWorkshopSpeechProvider>? speechFactory = null)
     {
         using var life = CancellationTokenSource.CreateLinkedTokenSource(requestToken);
         // The cross-process owner lease lasts 210 seconds; audio ends before it.
@@ -27,16 +28,19 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
         long newestTranscriptSequence = 0;
         long inputRevision = 0;
         var inputPending = false;
+        string? inputEventId = null;
+        IWorkshopSpeechProvider connectionSpeech = null!;
         CancellationTokenSource? activeInference = null;
         var decisionCount = 0;
         string? assessedEvidence = null;
         Task[] running = [];
-        Task? verdictPlayback = null;
+        Task<bool>? verdictPlayback = null;
+        Task? heldSpeech = null;
         try
         {
             if (!admission.ElevenLabsConsent) { throw new WandGenerationException("elevenlabs_consent_required", 403); }
             await requireAuthority(token);
-            var connectionSpeech = speech.Capture();
+            connectionSpeech = speechFactory?.Invoke(sender) ?? speech.Capture();
             playback = new WorkshopPlayback(connectionSpeech, sender, token);
             if (wands.ReadWorkshopState(admission.Owner, admission.Operation).Status != "asking")
             {
@@ -44,7 +48,7 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
             }
             await using var recognition = await connectionSpeech.ConnectAsync(token);
             await sender.JsonAsync(new { type = "ready", model = "elevenlabs-scribe-gpt", playbackMode = "stream" }, token);
-            decisions.Writer.TryWrite(0);
+            if (connectionSpeech is not SpeechEngineSpeechProvider) decisions.Writer.TryWrite(0);
             running = [InputAsync(recognition), RecognizeAsync(recognition), DecideAsync(), GuardAsync()];
             await await Task.WhenAny(running);
         }
@@ -111,6 +115,13 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                         playback.Interrupt();
                         await sender.JsonAsync(new { type = "interrupted" }, token);
                     }
+                    if (type == "speech_engine_activity" && recognition is SpeechEngineRecognition engineRecognition)
+                    {
+                        if (!command.RootElement.TryGetProperty("eventId", out var activity)
+                            || !activity.TryGetInt64(out var eventId) || eventId < 1 || eventId > 9007199254740991L)
+                            throw new InvalidDataException("Invalid Speech Engine activity.");
+                        engineRecognition.Activity(eventId);
+                    }
                 }
             }
         }
@@ -121,7 +132,17 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
             while (!token.IsCancellationRequested)
             {
                 var item = await recognition.ReceiveAsync(token);
-                if (item is null || string.IsNullOrWhiteSpace(item.Text)) { continue; }
+                if (item is null) { return; }
+                if (item.SpeechStarted)
+                {
+                    if (recognition is SpeechEngineRecognition engine && !engine.IsPendingActivity(item.EventId)) continue;
+                    CancellationTokenSource? interruptedInference;
+                    lock (inputState) { inputRevision++; inputPending = true; interruptedInference = activeInference; }
+                    try { interruptedInference?.Cancel(); } catch (ObjectDisposedException) { }
+                    playback.Interrupt();
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(item.Text)) { continue; }
                 // Some provider variants supply IDs; retransmission must not add
                 // evidence twice. Equal text with no ID can be a real repeated turn.
                 if (item.Committed && item.EventId is not null && !commits.Add(item.EventId)) { continue; }
@@ -156,11 +177,14 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                             "user", item.Text, "voice");
                     }
                 }
+                if (recognition is SpeechEngineRecognition)
+                    await sender.JsonAsync(new { type = "speech_engine_user_committed", eventId = SpeechEngineProtocol.EventId(item.EventId) }, token);
                 await SnapshotAsync(turn, item.Text, true, token);
                 turn = null;
                 lock (inputState)
                 {
-                    inputPending = false;
+                    inputPending = item.MoreSpeechPending || recognition is SpeechEngineRecognition engine && engine.HasPendingAfter(item.EventId);
+                    inputEventId = item.EventId;
                     inputRevision++;
                 }
                 if (accepted && !decisions.Writer.TryWrite(0)) { throw new WandGenerationException("wand_dialogue_limit", 413); }
@@ -175,12 +199,15 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                 if (wands.ReadWorkshopState(admission.Owner, admission.Operation).Status != "asking") { continue; }
                 MobileWandWorkshopMessage[] messages;
                 long observedInput;
+                string? observedEventId;
                 lock (inputState)
                 {
                     if (inputPending) { continue; }
                     messages = wands.ReadWorkshopMessages(admission.Owner, admission.Operation);
                     observedInput = inputRevision;
+                    observedEventId = inputEventId;
                 }
+                var replySpeech = connectionSpeech.ForReply(observedEventId);
                 var evidence = WandGenerationStore.UserEvidenceDigest(messages);
                 if (evidence == assessedEvidence) { continue; }
                 assessedEvidence = evidence;
@@ -198,6 +225,7 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                 var spokenPrefix = new System.Text.StringBuilder();
                 var transcript = new TranscriptTurn("assistant");
                 var completed = false;
+                var holdSpeechCompletion = false;
                 var speaking = SpeakClausesAsync();
                 try
                 {
@@ -219,7 +247,7 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                         if (token.IsCancellationRequested) { return; }
                         try { await SnapshotAsync(transcript, text, false, audioLife.Token, CurrentInput); }
                         catch (OperationCanceledException) when (!decisionLife.IsCancellationRequested) { }
-                    }, decisionLife.Token, admission.LocalExperiment?.DialoguePrompt);
+                    }, decisionLife.Token, admission.DialogueInstructions, admission.ReasoningEffort);
                     var prefix = spokenPrefix.ToString().TrimStart();
                     if (!WandGenerationValidation.Text(draft.Reply, 600)
                         || !draft.Reply.StartsWith(prefix, StringComparison.Ordinal))
@@ -236,6 +264,8 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                     }
                     lock (inputState)
                     {
+                        using var replyLease = replySpeech.EnterReply();
+                        if (replyLease is null) continue;
                         if (inputPending || observedInput != inputRevision) { continue; }
                         var current = wands.ReadWorkshopMessages(admission.Owner, admission.Operation);
                         var status = wands.ReadWorkshopState(admission.Owner, admission.Operation).Status;
@@ -247,8 +277,10 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                         {
                             try
                             {
+                                if (connectionSpeech is SpeechEngineSpeechProvider) Volatile.Write(ref heldSpeech, speaking);
                                 wands.FinishWorkshopConversation(admission.Owner, admission.Operation,
                                     admission.Profile.ProfileId, admission.Profile.Revision, evidence);
+                                Volatile.Write(ref holdSpeechCompletion, connectionSpeech is SpeechEngineSpeechProvider);
                             }
                             catch (WandGenerationException error) when (error.Code == "wand_conversation_changed") { continue; }
                         }
@@ -289,9 +321,12 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                     {
                         await foreach (var text in clauses.Reader.ReadAllAsync(audioLife.Token))
                         {
-                            await playback.SpeakAsync(text, version, previous.ToString());
+                            await playback.SpeakAsync(text, version, previous.ToString(), replySpeech);
                             previous.Append(text);
                         }
+                        // Speech Engine responses must belong to a user turn.
+                        // Keep the manufacture turn open until its saved verdict.
+                        if (!Volatile.Read(ref holdSpeechCompletion)) await replySpeech.CompleteReplyAsync(audioLife.Token);
                     }
                     catch (OperationCanceledException) when (audioLife.IsCancellationRequested) { }
                     catch { decisionLife.Cancel(); throw; }
@@ -299,7 +334,7 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
 
                 bool CurrentInput()
                 {
-                    lock (inputState) { return !inputPending && observedInput == inputRevision; }
+                    lock (inputState) { return !inputPending && observedInput == inputRevision && replySpeech.IsCurrentReply; }
                 }
             }
         }
@@ -313,6 +348,8 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                 await Task.Delay(500, token);
                 await requireAuthority(token);
                 if (verdictPlayback is { IsFaulted: true }) { await verdictPlayback; }
+                if (verdictPlayback is { IsCompletedSuccessfully: true } && !verdictPlayback.Result)
+                { verdictSent = false; verdictPlayback = null; }
                 var state = wands.ReadWorkshopState(admission.Owner, admission.Operation);
                 if (state.Status != lastStatus)
                 {
@@ -327,14 +364,27 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                 {
                     var version = playback.Version;
                     var verdict = state.VerdictText();
-                    if (await SnapshotAsync(new("assistant"), verdict, true, token, NoPendingInput))
-                    {
-                        verdictSent = true;
-                        // Keep revocation polling live while the verdict is synthesized.
-                        verdictPlayback = playback.SpeakAsync(verdict, version);
-                    }
+                    string? eventId;
+                    lock (inputState) { eventId = inputEventId; }
+                    var verdictSpeech = connectionSpeech.ForReply(eventId);
+                    verdictSent = true;
+                    // Publication waits for the closing reply too; otherwise a
+                    // fast manufacture could publish the verdict before its tail.
+                    verdictPlayback = SpeakVerdictAsync(verdict, version, verdictSpeech);
                 }
             }
+        }
+
+        async Task<bool> SpeakVerdictAsync(string text, int version, IWorkshopSpeechProvider replySpeech)
+        {
+            // Drain the held closing clauses first. Guard continues polling
+            // authority while this separate playback task waits.
+            if (Volatile.Read(ref heldSpeech) is { } closing) await closing.WaitAsync(token);
+            await requireAuthority(token);
+            if (!await SnapshotAsync(new("assistant"), text, true, token, () => NoPendingInput() && replySpeech.IsCurrentReply)) return false;
+            await playback.SpeakAsync(text, version, replySpeech: replySpeech);
+            await replySpeech.CompleteReplyAsync(token);
+            return true;
         }
 
         bool NoPendingInput() { lock (inputState) { return !inputPending; } }
@@ -377,7 +427,8 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
         {
             lock (sync) { version++; current?.Cancel(); }
         }
-        internal async Task SpeakAsync(string text, int expectedVersion, string? previousText = null)
+        internal async Task SpeakAsync(string text, int expectedVersion, string? previousText = null,
+            IWorkshopSpeechProvider? replySpeech = null)
         {
             await serial.WaitAsync(token);
             try
@@ -390,7 +441,7 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                 }
                 try
                 {
-                    await speech.SpeakAsync(text, sender.AudioAsync, playback.Token, previousText);
+                    await (replySpeech ?? speech).SpeakAsync(text, sender.AudioAsync, playback.Token, previousText);
                     await sender.JsonAsync(new { type = "audio_pause" }, playback.Token);
                 }
                 catch (OperationCanceledException) when (playback.IsCancellationRequested) { }

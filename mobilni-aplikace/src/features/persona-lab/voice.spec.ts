@@ -120,8 +120,21 @@ describe('bounded audio playback', () => {
     await voice.connect(async () => { throw new Error('wand_character_preparing'); }, 'test', 'https://lab.example', { purpose: 'workshop' });
     expect(microphone).not.toHaveBeenCalled(); expect(observer.error).toHaveBeenCalled();
   });
+  it('aborts a pending workshop ticket when the guest ends the attempt', async () => {
+    let ticketSignal: AbortSignal | undefined;
+    const pending = voice.connect(signal => {
+      ticketSignal = signal;
+      return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(new DOMException('Stopped', 'AbortError'))));
+    }, 'test', 'https://lab.example', { purpose: 'workshop' });
+    await Promise.resolve(); await Promise.resolve();
+    expect(ticketSignal?.aborted).toBe(false);
+    voice.end(); await pending;
+    expect(ticketSignal?.aborted).toBe(true);
+    expect(observer.phase).toHaveBeenLastCalledWith('ended');
+    expect(observer.error).not.toHaveBeenCalled();
+  });
   it('keeps workshop microphone frames flowing during playback and a pending Stop acknowledgement', async () => {
-    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '' }), 'test', 'https://lab.example', { purpose: 'workshop' });
+    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '', speechEngine: null }), 'test', 'https://lab.example', { purpose: 'workshop' });
     ready('stream'); message(new Int16Array(6000).fill(500).buffer);
     expect(observer.phase).toHaveBeenLastCalledWith('speaking');
     capture(new Float32Array(960).fill(.1));

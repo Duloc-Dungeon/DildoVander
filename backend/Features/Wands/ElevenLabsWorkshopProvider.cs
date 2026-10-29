@@ -5,7 +5,13 @@ using Kufr.Backend.Features.Voices;
 
 namespace Kufr.Backend.Features.Wands;
 
-internal sealed record WorkshopRecognition(string Text, bool Committed, string? EventId = null);
+internal sealed record WorkshopRecognition(string Text, bool Committed, string? EventId = null, bool SpeechStarted = false,
+    bool MoreSpeechPending = false);
+
+internal sealed class WorkshopReplyLease(Action? release = null) : IDisposable
+{
+    public void Dispose() => Interlocked.Exchange(ref release, null)?.Invoke();
+}
 
 internal interface IWorkshopRecognitionConnection : IAsyncDisposable
 {
@@ -16,6 +22,10 @@ internal interface IWorkshopRecognitionConnection : IAsyncDisposable
 internal interface IWorkshopSpeechProvider
 {
     IWorkshopSpeechProvider Capture() => this;
+    IWorkshopSpeechProvider ForReply(string? eventId) => this;
+    bool IsCurrentReply => true;
+    WorkshopReplyLease? EnterReply() => new();
+    Task CompleteReplyAsync(CancellationToken token) => Task.CompletedTask;
     Task<IWorkshopRecognitionConnection> ConnectAsync(CancellationToken token);
     Task SpeakAsync(string text, Func<byte[], CancellationToken, Task> audio, CancellationToken token);
     Task SpeakAsync(string text, Func<byte[], CancellationToken, Task> audio, CancellationToken token, string? previousText) =>

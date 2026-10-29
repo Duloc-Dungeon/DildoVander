@@ -212,7 +212,8 @@ internal sealed partial class KeepsakeStore
     private bool IsRealWandArtworkConfigured() => MayDispatch("wand_artwork")
         && configuration.GetValue<string>("Keepsake:ProviderMode") == "openai"
         && !string.IsNullOrWhiteSpace(configuration["OPENAI_API_KEY"])
-        && OpenAiKeepsakeProvider.SupportsTransparentWandArtwork(configuration["Keepsake:ImageModel"]);
+        && OpenAiKeepsakeProvider.SupportsTransparentWandArtwork(configuration["Keepsake:ImageModel"]
+            ?? Kufr.Backend.Features.Images.ImageGenerationDefaults.Model);
 
     private bool CompleteWandArtwork(SqliteConnection connection, SqliteTransaction transaction, LeasedJob job,
         Document document, JobRequest request, KeepsakeProviderOutput output, bool publish)

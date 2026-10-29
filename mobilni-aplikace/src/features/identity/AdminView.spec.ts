@@ -9,7 +9,7 @@ vi.mock('./session', async () => {
   return {account,accountOrigin:ref('https://example.test'),accountRequest:api.request,authenticatePasskey:api.reauthenticate,
     refreshIdentity:vi.fn(),hasRole:(role:string)=>account.value?.roles.some(value=>value===role||value==='Owner')};
 });
-const render = () => mount(AdminView,{global:{stubs:{OperationsPanel:true,ModelReleasesPanel:true,ActorVoicesPanel:true,LaunchManagementPanel:true,RouterLink:true}}});
+const render = () => mount(AdminView,{global:{stubs:{OperationsPanel:true,ModelReleasesPanel:true,ActorVoicesPanel:true,WorkshopSettingsPanel:true,LaunchManagementPanel:true,RouterLink:true}}});
 const failure = (code:string,status=400) => Object.assign(new Error('Server odmítl požadavek.'),{code,status});
 const invitationToken = 'private-once-token-1234567890123456';
 beforeEach(()=>{
@@ -21,6 +21,7 @@ describe('account invitations',()=>{
     const wrapper = render();
     try {
       await flushPromises();
+      expect(wrapper.find('workshop-settings-panel-stub').exists()).toBe(true);
       expect(wrapper.find('#invitations').exists()).toBe(true);
       expect(wrapper.get('#invite-role option[value="Owner"]').text()).toBe('Vlastník');
       expect(wrapper.get('#invite-role option[value="Customer"]').text()).toBe('Účastník');

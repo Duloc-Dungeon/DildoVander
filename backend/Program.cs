@@ -129,6 +129,9 @@ builder.Services.AddSingleton<Kufr.Backend.Features.Voices.ActorVoiceSettings>()
 builder.Services.AddSingleton(Kufr.Backend.Features.Wands.ElevenLabsWorkshopOptions.Read(builder.Configuration));
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IWorkshopSpeechProvider, Kufr.Backend.Features.Wands.ElevenLabsWorkshopProvider>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.ElevenLabsWorkshopRuntime>();
+builder.Services.AddSingleton<Kufr.Backend.Features.Wands.WorkshopSettingsStore>();
+builder.Services.AddSingleton<Kufr.Backend.Features.Wands.SpeechEngineSessions>();
+builder.Services.AddHostedService(services => services.GetRequiredService<Kufr.Backend.Features.Wands.SpeechEngineSessions>());
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.MobileWorkshopLiveRuntime>();
 builder.Services.AddHostedService<Kufr.Backend.Features.Wands.MobileWandWorkshopWorker>();
 builder.Services.AddSingleton<OpenAiVectorMemoryProvider>();
@@ -207,6 +210,7 @@ app.Lifetime.ApplicationStopping.Register(() => logs.Write("info", "server_stopp
 
 app.Use((context, next) => ServerLogEvents.RequestAsync(context, next, logs));
 app.MapLocalTryHubSession();
+Kufr.Backend.Features.Wands.SpeechEngineEndpoints.MapWorkshopSpeechEngine(app);
 if (keepsakeArchiveConfigured || builder.Configuration.GetValue<bool>("ApplicationIdentity:Enabled")) { app.UseForwardedHeaders(); }
 app.UseMobileGameAuthentication();
 app.UseSealedCaseAuthentication();
@@ -232,6 +236,7 @@ app.MapMobileGameProgress();
 app.MapMobileGameTeams();
 app.MapCustomerCharacters();
 app.MapActorVoiceSettings();
+Kufr.Backend.Features.Wands.WorkshopSettingsEndpoints.MapWorkshopSettings(app);
 app.MapCustomerSessions(includeSessionResults: keepsakeArchiveConfigured);
 app.MapCustomerConversationPreferences();
 app.MapTonightEndpoints();

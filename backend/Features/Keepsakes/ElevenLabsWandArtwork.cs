@@ -165,10 +165,11 @@ internal sealed class WandArtworkFallbackProvider(IKeepsakeProvider primary,
 
     internal static bool CanFallback(Exception error) => error switch
     {
-        System.ClientModel.ClientResultException { Status: 401 or 404 or 408 or 429 or >= 500 } => true,
-        HttpRequestException => true,
+        System.ClientModel.ClientResultException { Status: 404 or 408 or 429 or >= 500 } => true,
+        HttpRequestException http => http.StatusCode is null || (int)http.StatusCode.Value is 404 or 408 or 429 or >= 500,
         InvalidDataException or JsonException => true,
         KeepsakeException { Code: "provider_image_missing" or "wand_artwork_transparent_model_required"
+            or "wand_artwork_unsupported_model" or "wand_artwork_unsupported_parameter"
             or "wand_artwork_invalid" or "wand_artwork_opaque" or "wand_artwork_transparency_required" } => true,
         _ => false
     };

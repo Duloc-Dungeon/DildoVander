@@ -222,7 +222,9 @@ internal static class AccountIdentity
                 {
                     bodySize.MaxRequestBodySize = HttpMethods.IsPut(context.Request.Method)
                         && context.GetEndpoint()?.Metadata.GetMetadata<Kufr.Backend.Features.Customers.CharacterAdminEndpoints.PortraitUploadMetadata>() is not null
-                        ? Kufr.Backend.Features.Customers.CharacterAdminEndpoints.MaximumUploadBytes + 1L : 65536;
+                        ? Kufr.Backend.Features.Customers.CharacterAdminEndpoints.MaximumUploadBytes + 1L
+                        : HttpMethods.IsPut(context.Request.Method) && context.Request.Path == "/app/v1/admin/workshop-settings"
+                            ? 256 * 1024 : 65536;
                 }
                 if (accountSocket || context.Request.Method is not ("GET" or "HEAD" or "OPTIONS"))
                 {

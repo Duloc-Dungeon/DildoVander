@@ -15,6 +15,39 @@ backend a hlasový transport zkoušej právě tam. AI Persona Lab je oddělené
 prostředí pro DV01 a jeho GPT Live nastavení; neověřuje zákaznický prompt ani
 chování mobilní dílny.
 
+Pro třetí volbu **Speech Engine + GPT** spusť:
+
+```powershell
+.\devtools\local-try-hub\Start-LocalTryHub.ps1 -SpeechEngineTunnel
+```
+
+ElevenLabs potřebuje veřejný serverový WebSocket. Tato volba stáhne oficiální
+`cloudflared` 2026.10.6 do místních dat a před každým spuštěním ověří připnutý
+SHA-256. Dočasný tunel Cloudflare vede pouze na oddělený loopback gateway
+na portu 5083. Ten propustí jen WebSocket callback Speech Engine s dokladem
+ElevenLabs; registrace, účet, místní přihlašovací schopnost i ostatní API vrací
+404. Vlastní backend ověřuje podpis JWT a jednorázovou schopnost konkrétního
+hovoru. Zvuk proudí mezi prohlížečem a ElevenLabs přes WebRTC; tunel přenáší
+serverové přepisy a odpovědi. Ctrl+C ukončí i gateway a tunel. Bez tohoto
+parametru se žádný tunel nespouští a třetí volba vysvětlí chybějící callback.
+Místo tunelu lze předat vlastní `-SpeechEnginePublicOrigin https://...`;
+na této adrese musí být dostupná pouze správně směrovaná cesta callbacku.
+
+Speech Engine používá oficiální prohlížečový SDK `@elevenlabs/client`, hlas
+Kufra vybraný správcem, `eleven_v4`, češtinu a rychlost 1.0. Terra vytváří
+stejné odpovědi se stejnými prompty a Fast; reasoning je výchozí `none` a lze
+ho změnit v administraci. Výrobu
+stále potvrzuje náš backend. Předběžný přepis klienta je pouze náhled.
+Ukládá se až potvrzená replika z podepsaného serverového spojení. Každý hovor
+má vlastní dočasný prostředek ElevenLabs bez nahrávání, s retencí
+nastavenou na 0 dní a limitem 180 sekund. Při ukončení se maže; neúspěšná smazání se opakují
+podle odolné fronty `identity/speech-engine-cleanup.json`, i po restartu.
+Stávající ElevenLabs Scribe + TTS i GPT-Live zůstávají samostatné volby.
+První repliku Speech Engine předá přes oficiální `overrides.agent.firstMessage`;
+backend ji uloží jednou a při opakovaném připojení znovu použije poslední
+uloženou repliku. Následující odpovědi proudí přes upstream v rámci skutečného
+tahu hosta. Při výrobě zůstane jeho odpověď otevřená až do uloženého výsledku.
+
 ## Místní účet a data
 
 Backend používá samostatná data pod
@@ -57,7 +90,7 @@ nekopíruje do souborů.
 skončí s pokynem k nastavení proměnné. Bez `ELEVENLABS_API_KEY` zůstane dostupný
 psaný rozhovor, ale hlas a záložní kresba hůlky nebudou fungovat.
 Místní backend má zapnutou výrobu hůlky a ukládá její data do oddělené složky
-`keepsakes`. Používá model příběhu `gpt-6.1-terra` a model kresby `gpt-image-2`;
+`keepsakes`. Používá model příběhu `gpt-6.1-terra` a model kresby `gpt-image-2.5-flare`;
 pokud kresba uložené hůlky selže a je dostupný klíč ElevenLabs, může se zkusit
 záložní kresba přes ElevenLabs (`gpt-image-1.5`) s průhledným PNG. Tato záloha
 platí jen pro kresbu hůlky, kterou uživatel právě zkouší. Fotografie, profil ani
@@ -67,8 +100,10 @@ poskytovatele. Odpovědi se průběžně převádějí na hlas; mikrofon zůstá
 i během přehrávání, takže host může Kufrovi skočit do řeči. V dílně lze měnit
 hlasitost a tichý hlas se při přehrávání vyrovnává s omezením špiček.
 
-Na rozcestníku lze místně přepnout hlasového poskytovatele mezi **ElevenLabs v4
-+ GPT** a **GPT-Live** a upravit základní prompty pro GPT backend a GPT-Live.
+Na rozcestníku lze místně přepnout hlasového poskytovatele mezi **Speech Engine
++ GPT**, **ElevenLabs v4 + GPT** a **GPT-Live** a upravit základní prompty pro
+GPT backend a GPT-Live. S veřejným callbackem je výchozí Speech Engine; bez něj
+launcher nastaví původní ElevenLabs. Již uložená volba se zachová.
 Uložení se zapisuje do `%LOCALAPPDATA%\DildoVander\local-try-hub\experiments.json`;
 platí jen pro toto místní prostředí a použije se při dalším připojení nebo
 požadavku. Změny neovlivní právě probíhající rozhovor ani produkci. Oba prompty

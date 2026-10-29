@@ -30,7 +30,7 @@ internal sealed class ChronicleIllustrator(IConfiguration configuration) : IChro
         if (mode != "openai") { throw new InvalidOperationException("chronicle_illustrator_unconfigured"); }
         var key = configuration["OPENAI_API_KEY"] ?? throw new InvalidOperationException("chronicle_illustrator_unconfigured");
         var model = configuration["Chronicle:ImageModel"] ?? configuration["Keepsake:ImageModel"]
-            ?? throw new InvalidOperationException("chronicle_image_model_unconfigured");
+            ?? Kufr.Backend.Features.Images.ImageGenerationDefaults.Model;
         using var bounded = BoundedSdkTransport.Create(http, 24 * 1024 * 1024);
         var client = new ImageClient(model, new ApiKeyCredential(key), new OpenAIClientOptions
         { Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0) });

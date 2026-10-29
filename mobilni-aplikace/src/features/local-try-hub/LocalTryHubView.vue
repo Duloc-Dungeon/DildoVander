@@ -3,14 +3,18 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { account, accountOrigin, accountRequest, refreshIdentity } from '../identity/session';
 
-type Provider = 'elevenlabs' | 'gpt-live';
+type Provider = 'elevenlabs' | 'gpt-live' | 'speech-engine';
 type ExperimentSettings = {
   revision: number;
   provider: Provider;
   dialoguePrompt: string;
   livePrompt: string;
 };
-type ExperimentDefaults = Pick<ExperimentSettings, 'provider' | 'dialoguePrompt' | 'livePrompt'> & { speechDirections?: string };
+type ExperimentDefaults = Pick<ExperimentSettings, 'provider' | 'dialoguePrompt' | 'livePrompt'> & {
+  speechDirections?: string;
+  speechEngineAvailable?: boolean;
+  speechEngineUnavailableReason?: string | null;
+};
 type ExperimentDraft = Pick<ExperimentSettings, 'provider' | 'dialoguePrompt' | 'livePrompt'>;
 type ExperimentResponse = {
   settings?: ExperimentSettings;
@@ -87,7 +91,7 @@ const isDirty = computed(() => !!settings.value && (
   || draft.value.dialoguePrompt !== settings.value.dialoguePrompt
   || draft.value.livePrompt !== settings.value.livePrompt
 ));
-const providerLabel = (provider: Provider) => provider === 'elevenlabs' ? 'ElevenLabs v4 + GPT' : 'GPT-Live';
+const providerLabel = (provider: Provider) => ({ elevenlabs: 'ElevenLabs v4 + GPT', 'gpt-live': 'GPT-Live', 'speech-engine': 'Speech Engine + GPT' })[provider];
 
 async function postJson(path: string, body: unknown): Promise<Response> {
   return fetch(path, {
@@ -245,6 +249,13 @@ onBeforeUnmount(() => resetController.abort());
           <input v-model="draft.provider" type="radio" name="local-try-provider" value="gpt-live">
           <span><strong>GPT-Live</strong><small>Samostatná hlasová relace GPT-Live.</small></span>
         </label>
+        <label class="local-try-hub__choice">
+          <input v-model="draft.provider" type="radio" name="local-try-provider" value="speech-engine" :disabled="defaults?.speechEngineAvailable === false">
+          <span><strong>Speech Engine + GPT</strong><small>Hlas přes WebRTC, průběžný přepis a přerušování. Dialogy zpracovává GPT.</small></span>
+        </label>
+        <p v-if="defaults?.speechEngineAvailable === false" role="status" class="local-try-hub__help">
+          Speech Engine není na tomto serveru připravený. {{ defaults.speechEngineUnavailableReason || 'Správce musí nastavit veřejnou adresu pro zpětné spojení.' }} Do té doby použij jiného poskytovatele.
+        </p>
 
         <label class="local-try-hub__prompt-label" for="local-dialogue-prompt">GPT backend – rozhovor</label>
         <textarea id="local-dialogue-prompt" v-model="draft.dialoguePrompt" maxlength="12000" rows="10" />

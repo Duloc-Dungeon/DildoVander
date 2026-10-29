@@ -31,7 +31,7 @@ internal static class KeepsakeProviderFactory
             { Timeout = Timeout.InfiniteTimeSpan }, configuration["OPENAI_API_KEY"]
             ?? throw new InvalidOperationException("OpenAI key missing."),
             configuration["Keepsake:StoryModel"] ?? throw new InvalidOperationException("Keepsake:StoryModel required."),
-            configuration["Keepsake:ImageModel"] ?? throw new InvalidOperationException("Keepsake:ImageModel required."));
+            configuration["Keepsake:ImageModel"] ?? ImageGenerationDefaults.Model);
         var key = configuration["ELEVENLABS_API_KEY"];
         if (string.IsNullOrWhiteSpace(key) || !configuration.GetValue("Keepsake:ElevenLabsArtworkFallback", true))
         {
@@ -56,7 +56,9 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
             if (request.GenerationKind == "base" && request.NormalizedPhoto is null
                 && request.Snapshot.GeneratedWand is not null && request.CanonicalArtworkAssetId is null)
                 throw new KeepsakeException("wand_artwork_not_ready", 409);
-            using var bounded = BoundedSdkTransport.Create(httpClient, 48 * 1024 * 1024);
+            using var artworkErrors = request.GenerationKind == "wand_artwork" && request.NormalizedPhoto is null
+                ? new HttpClient(new ArtworkErrorHandler(httpClient, request)) : null;
+            using var bounded = BoundedSdkTransport.Create(artworkErrors ?? httpClient, 48 * 1024 * 1024);
             var options = new OpenAIClientOptions
             {
                 Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0)
@@ -304,6 +306,88 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
             microStory = new { type = "string", maxLength = 900 }
         }
     };
+
+    private sealed class ArtworkErrorHandler(HttpClient upstream, KeepsakeProviderRequest artwork) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            using var forwarded = new HttpRequestMessage(request.Method, request.RequestUri)
+            { Content = request.Content, Version = request.Version, VersionPolicy = request.VersionPolicy };
+            foreach (var header in request.Headers) { forwarded.Headers.TryAddWithoutValidation(header.Key, header.Value); }
+            HttpResponseMessage response;
+            try { response = await upstream.SendAsync(forwarded, HttpCompletionOption.ResponseHeadersRead, token); }
+            finally { forwarded.Content = null; }
+            try
+            {
+                if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                {
+                    var rejection = await ReadRejectionAsync(response.Content, token);
+                    // Persist closed categories only. Provider messages can echo guest prompts.
+                    Stage(artwork, "wand_generate", "rejected", JsonSerializer.Serialize(new
+                    { http_status = 400, category = rejection.Category, parameter = rejection.Parameter }));
+                    if (rejection.Category is "unsupported_model" or "unsupported_parameter")
+                    {
+                        throw new KeepsakeException("wand_artwork_" + rejection.Category, 400);
+                    }
+                }
+                return response;
+            }
+            catch { response.Dispose(); throw; }
+        }
+    }
+
+    private sealed record ImageRejection(string Category, string? Parameter = null);
+
+    private static async Task<ImageRejection> ReadRejectionAsync(HttpContent content, CancellationToken token)
+    {
+        const int maximumBytes = 16 * 1024;
+        var unknown = new ImageRejection("unclassified_bad_request");
+        if (content.Headers.ContentLength > maximumBytes) { return unknown; }
+        var bytes = new byte[maximumBytes + 1];
+        try
+        {
+            await using var stream = await content.ReadAsStreamAsync(token);
+            var count = 0;
+            while (count < bytes.Length)
+            {
+                var read = await stream.ReadAsync(bytes.AsMemory(count), token);
+                if (read == 0) { break; }
+                count += read;
+            }
+            if (count > maximumBytes) { return unknown; }
+            try
+            {
+                using var document = JsonDocument.Parse(bytes.AsMemory(0, count), new JsonDocumentOptions { MaxDepth = 8 });
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count(property => property.Name == "error") != 1
+                    || !root.TryGetProperty("error", out var error) || error.ValueKind != JsonValueKind.Object
+                    || error.EnumerateObject().GroupBy(property => property.Name).Any(group => group.Count() > 1)) { return unknown; }
+                if (new[] { "type", "code", "param", "message" }.Any(name => error.TryGetProperty(name, out var value)
+                    && value.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))) { return unknown; }
+                string? Field(string name) => error.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                    ? value.GetString() : null;
+                var type = Field("type"); var code = Field("code"); var parameter = Field("param"); var message = Field("message") ?? "";
+                if (type != "invalid_request_error" || message.Length > 4096) { return unknown; }
+                if (code is "content_policy_violation" or "moderation_blocked" or "safety_violation"
+                    || new[] { "policy", "safety", "violation", "blocked", "disallowed", "abuse" }
+                    .Any(word => message.Contains(word, StringComparison.OrdinalIgnoreCase))) { return new("policy_rejection"); }
+                if ((parameter is null or "model") && (code is "model_not_found" or "unsupported_model" or "invalid_model"))
+                { return new("unsupported_model", "model"); }
+                if (parameter is not ("model" or "background" or "output_format" or "size" or "quality" or "moderation")) { return unknown; }
+                var explicitUnsupported = code is "unsupported_parameter" or "unsupported_value";
+                var compatibilityMessage = message.Contains("not supported", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("does not support", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("unsupported", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("supported values", StringComparison.OrdinalIgnoreCase);
+                if (explicitUnsupported || (code is null or "invalid_value") && compatibilityMessage)
+                { return new(parameter == "model" ? "unsupported_model" : "unsupported_parameter", parameter); }
+                return unknown;
+            }
+            catch (JsonException) { return unknown; }
+        }
+        catch (IOException) { return unknown; }
+        finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(bytes); }
+    }
 
     private static void Stage(KeepsakeProviderRequest request, string stage, string phase, string content)
     {

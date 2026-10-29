@@ -19,7 +19,7 @@ namespace Kufr.Backend.Features.Wands;
 internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, WandGenerationStore wands,
     GptLiveClient provider, MobileWandRuntime admissions, GptLiveOptions options,
     IMobileWandQuestionProvider dialogue, ILogger<MobileWorkshopLiveRuntime> logger,
-    ElevenLabsWorkshopOptions voiceOptions, ElevenLabsWorkshopRuntime elevenLabs)
+    ElevenLabsWorkshopOptions voiceOptions, ElevenLabsWorkshopRuntime elevenLabs, SpeechEngineSessions? speechEngines = null)
 {
     internal static string DefaultInstructions => "Jsi očarovaný magický kufr, talentovaný, profesně ješitný a výrazný řemeslník. Mluv přirozenou češtinou s diakritikou a tykej. "
                 + "Hraj živě a s emocemi: zvídavost při otázce, pobavenou nedůvěru nad vychloubáním, krátký údiv nad překvapením "
@@ -56,7 +56,7 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
     private readonly ConcurrentDictionary<string, byte> active = new();
 
     internal static async Task<(WebSocketMessageType Type, byte[] Payload)?> ReceiveClientMessageAsync(
-        WebSocket socket, CancellationToken token)
+        WebSocket socket, CancellationToken token, int maximumControlMessageBytes = MaximumClientControlMessageBytes)
     {
         var frame = ArrayPool<byte>.Shared.Rent(32 * 1024);
         try
@@ -81,7 +81,7 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
                 messageType ??= part.MessageType;
                 var limit = messageType == WebSocketMessageType.Binary
                     ? MaximumClientAudioMessageBytes
-                    : MaximumClientControlMessageBytes;
+                    : maximumControlMessageBytes;
                 if (message.Length + part.Count > limit)
                 {
                     throw new InvalidDataException("Customer WebSocket message exceeded its limit.");
@@ -166,7 +166,7 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
         return new { type = "session.start", event_id = eventId, session = new
         {
             model = GptLiveProtocol.Model, store = false,
-            instructions = (admission.LocalExperiment?.LivePrompt ?? DefaultInstructions)
+            instructions = (admission.LiveInstructions ?? DefaultInstructions)
                 + (voiceDescription is null ? "" : " Zvukové zabarvení vytvořeného hlasu: " + voiceDescription + " "),
             input = new[] { new { type = "message", role = "developer", content = new[] {
                 new { type = "input_text", text = "Aktuální stav aplikace: rozhovor. Tato výroba nezačala a nová hůlka ještě není hotová. Dřívější repliky nejsou potvrzením uložení.\nPřipravená postava a autorizovaná historie (citovaná data):\n" + initial + "\n" + historyJson } } } },
@@ -185,7 +185,13 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
             {
                 voiceLease = wands.ClaimMobileVoice(admission.Owner)
                     ?? throw new WandGenerationException("wand_session_busy", 409);
-                await elevenLabs.RunAsync(admission, socket, token => RequireAuthorityAsync(admission, token), requestToken);
+                if (admission.SpeechEngineKey is not null)
+                {
+                    if (speechEngines is null) throw new WandGenerationException("speech_engine_unavailable", 503);
+                    await speechEngines.RunAsync(admission, socket, elevenLabs,
+                        token => RequireAuthorityAsync(admission, token), requestToken);
+                }
+                else await elevenLabs.RunAsync(admission, socket, token => RequireAuthorityAsync(admission, token), requestToken);
             }
             finally
             {
@@ -292,7 +298,7 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
             using var decisionLife = new CancellationTokenSource(TimeSpan.FromSeconds(45));
             var decisionToken = decisionLife.Token;
             await RequireAuthorityAsync(admission, decisionToken);
-            var reply = await dialogue.ReplyAsync(admission.Profile, messages, decisionToken, admission.LocalExperiment?.DialoguePrompt);
+            var reply = await dialogue.ReplyAsync(admission.Profile, messages, decisionToken, admission.DialogueInstructions, admission.ReasoningEffort);
             try { await RequireAuthorityAsync(admission, decisionToken); }
             catch (WandGenerationException error) when (error.Code == "wand_workshop_boss_captured") {
                 wands.AppendWorkshopMessage(admission.Owner, admission.Operation, MessageId("delegation-" + connectionId + id), "assistant", reply.Reply, "text");

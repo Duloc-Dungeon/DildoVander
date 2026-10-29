@@ -146,6 +146,7 @@ internal static class MobileWandDialogueStreamingTests
             var root = document.RootElement;
             CorrectRequest = root.GetProperty("stream").GetBoolean() && root.GetProperty("service_tier").GetString() == "fast"
                 && root.GetProperty("model").GetString() == "gpt-6.1-terra"
+                && root.GetProperty("reasoning").GetProperty("effort").GetString() == "none"
                 && root.GetProperty("instructions").GetString() == "Synthetic developer prompt"
                 && root.GetProperty("text").GetProperty("format").GetProperty("schema").GetProperty("properties")
                     .EnumerateObject().First().Name == "readyToFinish";

@@ -307,7 +307,7 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
         this.http = http;
         key = configuration["OPENAI_API_KEY"];
         imageModel = configuration["CustomerCharacters:PortraitModel"] ?? configuration["Keepsake:ImageModel"]
-            ?? "gpt-image-2.5-flare";
+            ?? Kufr.Backend.Features.Images.ImageGenerationDefaults.Model;
         if (imageModel.Length is < 1 or > 100 || imageModel.Any(char.IsControl))
         {
             throw new CharacterException("portrait_provider_configuration_error", 503);

@@ -7,20 +7,22 @@ internal sealed class ElevenLabsWorkshopOptions
     internal string Model { get; init; } = WorkshopPrompts.SpeechModel;
     internal double Speed { get; init; } = WorkshopPrompts.SpeechSpeed;
     internal bool UseLegacyGptLive { get; init; }
+    internal bool UseSpeechEngine { get; init; }
 
     internal static ElevenLabsWorkshopOptions Read(IConfiguration configuration)
     {
         var section = configuration.GetSection("Wands:Voice");
-        var provider = section["Provider"] ?? "elevenlabs";
+        var provider = section["Provider"] ?? "speech-engine";
         var options = new ElevenLabsWorkshopOptions
         {
             ApiKey = configuration["ELEVENLABS_API_KEY"],
             VoiceId = section["VoiceId"] ?? WorkshopPrompts.VoiceId,
             Model = section["Model"] ?? WorkshopPrompts.SpeechModel,
             Speed = section.GetValue("Speed", WorkshopPrompts.SpeechSpeed),
-            UseLegacyGptLive = provider == "gpt-live"
+            UseLegacyGptLive = provider == "gpt-live",
+            UseSpeechEngine = provider == "speech-engine"
         };
-        if (provider is not ("elevenlabs" or "gpt-live")
+        if (provider is not ("elevenlabs" or "gpt-live" or "speech-engine")
             || options.VoiceId.Length is < 1 or > 100
             || options.VoiceId.Any(character => !char.IsAsciiLetterOrDigit(character))
             || !options.Model.StartsWith("eleven_", StringComparison.Ordinal) || options.Model.Length > 80

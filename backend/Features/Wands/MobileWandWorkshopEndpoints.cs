@@ -27,7 +27,8 @@ internal static partial class MobileWandWorkshopEndpoints
         {
             if (upgrade is not (null or 0 or 1)) throw new WandGenerationException("invalid_wand_workshop_tier", 400);
             var voiceProvider = http.RequestServices.GetService<LocalTryHubExperimentStore>()?.Snapshot()?.Provider
-                ?? (http.RequestServices.GetService<ElevenLabsWorkshopOptions>()?.UseLegacyGptLive == true ? "gpt-live" : "elevenlabs");
+                ?? (http.RequestServices.GetService<ElevenLabsWorkshopOptions>()?.UseLegacyGptLive == true ? "gpt-live"
+                    : http.RequestServices.GetService<ElevenLabsWorkshopOptions>()?.UseSpeechEngine == true ? "speech-engine" : "elevenlabs");
             var owner = Owner(http);
             var profile = await profiles.ReadAsync(owner, http.RequestAborted);
             if (profile is null)

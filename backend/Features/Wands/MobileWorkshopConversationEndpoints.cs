@@ -59,8 +59,9 @@ internal static partial class MobileWandWorkshopEndpoints
                     text, "text");
                 var observed = wands.ReadWorkshopMessages(owner, id);
                 var experiment = http.RequestServices.GetService<LocalTryHubExperimentStore>()?.Snapshot();
+                var settings = http.RequestServices.GetService<WorkshopSettingsStore>()?.Snapshot();
                 var reply = await dialogue.ReplyAsync(wands.ReadWorkshopProfile(owner, id), observed, http.RequestAborted,
-                    experiment?.DialoguePrompt);
+                    experiment?.DialoguePrompt ?? settings?.DialoguePrompt, settings?.ReasoningEffort ?? "none");
                 try { await RequireConversationAsync(http, state, profiles, wands, games); }
                 catch (WandGenerationException error) when (error.Code == "wand_workshop_boss_captured") {
                     wands.PauseWorkshopForBoss(owner, id);
@@ -111,11 +112,52 @@ internal static partial class MobileWandWorkshopEndpoints
             if (!AccountAiConsent.HasConsent(user)) { throw new WandGenerationException("ai_consent_required", 409); }
             var admission = new MobileWandAdmission(owner, id, http.User.FindFirstValue(AccountIdentity.SessionClaim)!,
                 user.SecurityStamp ?? "", request.SocketOrigin, DateTimeOffset.UtcNow.AddSeconds(30), wands.ReadWorkshopProfile(owner, id))
-            { ElevenLabsConsent = true, LocalExperiment = experiment };
+            { ElevenLabsConsent = true, LocalExperiment = experiment,
+                WorkshopSettings = http.RequestServices.GetService<WorkshopSettingsStore>()?.Snapshot(),
+                LaunchSnapshot = wands.ReadWorkshopLaunchSnapshot(owner, id)
+                    ?? throw new WandGenerationException("wand_session_unavailable", 404) };
+            SpeechEngineSessions.Prepared? engine = null;
+            if ((experiment?.Provider ?? (http.RequestServices.GetService<ElevenLabsWorkshopOptions>()?.UseSpeechEngine == true
+                ? "speech-engine" : "elevenlabs")) == "speech-engine")
+            {
+                var engines = http.RequestServices.GetRequiredService<SpeechEngineSessions>();
+                if (!engines.Available) throw new WandGenerationException("speech_engine_public_endpoint_required", 503);
+                var runtime = http.RequestServices.GetRequiredService<MobileWorkshopLiveRuntime>();
+                if (!runtime.TryEnter(owner, id)) throw new WandGenerationException("wand_session_busy", 409);
+                string? voiceLease = null;
+                using var preparation = CancellationTokenSource.CreateLinkedTokenSource(http.RequestAborted);
+                preparation.CancelAfter(TimeSpan.FromSeconds(45));
+                try
+                {
+                    voiceLease = wands.ClaimMobileVoice(owner) ?? throw new WandGenerationException("wand_session_busy", 409);
+                    var messages = wands.ReadWorkshopMessages(owner, id);
+                    var previous = messages.LastOrDefault();
+                    var opening = previous?.Role == "assistant" ? previous.Text
+                        : messages.Any(message => message.Role == "user")
+                            ? "Po přerušení tu zůstala tvoje odpověď. Poslouchám, můžeš pokračovat."
+                            : (await http.RequestServices.GetRequiredService<IMobileWandQuestionProvider>()
+                                .ReplyAsync(admission.Profile, messages, preparation.Token, admission.DialogueInstructions, admission.ReasoningEffort)).Reply;
+                    await runtime.RequireAuthorityAsync(admission, preparation.Token);
+                    if (!WandGenerationValidation.Text(opening, 1800)) throw new WandGenerationException("dialogue_response_invalid", 502);
+                    if (previous?.Role != "assistant")
+                        wands.AppendWorkshopMessage(owner, id, Guid.NewGuid().ToString("N"), "assistant", opening, "voice");
+                    engine = await engines.PrepareAsync(admission, preparation.Token, opening);
+                    await runtime.RequireAuthorityAsync(admission, preparation.Token);
+                    admission = admission with { SpeechEngineKey = engine.Key, ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(30) };
+                }
+                catch (OperationCanceledException) when (preparation.IsCancellationRequested && !http.RequestAborted.IsCancellationRequested)
+                { throw new WandGenerationException("speech_engine_preparation_timeout", 504); }
+                finally
+                {
+                    runtime.Exit(owner, id);
+                    if (voiceLease is not null) wands.ReleaseMobileVoice(owner, voiceLease);
+                }
+            }
             var ticket = tickets.Ticket(admission);
             var path = $"/app/v1/customer/wand/workshop/sessions/{id}/live";
             var url = new UriBuilder(origin) { Scheme = "wss", Path = path, Query = "ticket=" + ticket }.Uri.AbsoluteUri;
-            return Results.Ok(new { url, path, expiresAt = admission.ExpiresAt });
+            return Results.Ok(new { url, path, expiresAt = admission.ExpiresAt,
+                speechEngine = engine is null ? null : new { conversationToken = engine.ConversationToken, firstMessage = engine.FirstMessage } });
         }).WithMetadata(new AccountIdentity.SocketTicketRateLimitMetadata());
         group.MapPost("/workshop/sessions/{id}/artwork/repair", async (string id, WorkshopRepairRequest request,
             HttpContext http, WandGenerationStore wands, CharacterProfileStore profiles, GameStore games, [FromServices] KeepsakeStore keepsakes) =>

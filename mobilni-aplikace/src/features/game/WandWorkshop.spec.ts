@@ -34,6 +34,27 @@ beforeEach(() => {
 });
 afterEach(() => { view?.unmount(); view = undefined; vi.useRealTimers(); });
 describe('customer Live workshop', () => {
+  it('displays Speech Engine partial revisions without saving a user message', async () => {
+    session = saved();
+    await render(); await click('Pokračovat hlasem');
+    api.observer.userPartial('Chci chránit'); await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Chci chránit');
+    api.observer.userPartial('Chci chránit most'); await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Chci chránit most');
+    expect(session.messages).toEqual([]);
+    expect(api.request.mock.calls.filter(([path]) => path.endsWith('/messages'))).toEqual([]);
+    api.observer.userPartial('');
+    api.observer.workshopTranscript({ role: 'user', sequence: 1, text: 'Chci chránit mosty.', final: true });
+    await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Chci chránit mosty.');
+    api.observer.userPartial('Další věta');
+    api.observer.workshopTranscript({ role: 'user', sequence: 1, text: 'Chci chránit mosty.', final: true });
+    await flushPromises();
+    expect(view!.get('[data-speaker="user"]').text()).toContain('Další věta');
+    api.observer.phase('error'); await flushPromises();
+    expect(view!.text()).not.toContain('Další věta');
+  });
+
   it('shows revised words immediately and keeps both speakers visible without stale output', async () => {
     session = saved();
     await render(); await click('Pokračovat hlasem');

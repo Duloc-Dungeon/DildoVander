@@ -23,6 +23,9 @@ internal interface IMobileWandQuestionProvider
     Task<MobileWandDialogueDraft> ReplyAsync(CharacterConversationSnapshot profile,
         MobileWandWorkshopMessage[] messages, CancellationToken token, string? instructions) =>
         ReplyAsync(profile, messages, token);
+    Task<MobileWandDialogueDraft> ReplyAsync(CharacterConversationSnapshot profile,
+        MobileWandWorkshopMessage[] messages, CancellationToken token, string? instructions, string reasoningEffort) =>
+        ReplyAsync(profile, messages, token, instructions);
     async Task<MobileWandDialogueDraft> ReplyStreamingAsync(CharacterConversationSnapshot profile,
         MobileWandWorkshopMessage[] messages, Func<string, CancellationToken, Task> clause,
         CancellationToken token, string? instructions = null)
@@ -47,6 +50,10 @@ internal interface IMobileWandQuestionProvider
             await clause(part, cancellation);
         }, token, instructions);
     }
+    Task<MobileWandDialogueDraft> ReplyStreamingAsync(CharacterConversationSnapshot profile,
+        MobileWandWorkshopMessage[] messages, Func<string, CancellationToken, Task> clause,
+        Func<string, CancellationToken, Task> text, CancellationToken token, string? instructions, string reasoningEffort) =>
+        ReplyStreamingAsync(profile, messages, clause, text, token, instructions);
 }
 
 internal sealed class MobileWandQuestionAuthoringException(string code, bool safeFallback) : Exception(code)
@@ -82,9 +89,14 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
         CancellationToken token, string? instructions = null) =>
         ReplyStreamingAsync(profile, messages, clause, (_, _) => Task.CompletedTask, token, instructions);
 
+    public Task<MobileWandDialogueDraft> ReplyStreamingAsync(CharacterConversationSnapshot profile,
+        MobileWandWorkshopMessage[] messages, Func<string, CancellationToken, Task> clause,
+        Func<string, CancellationToken, Task> text, CancellationToken token, string? instructions = null) =>
+        ReplyStreamingAsync(profile, messages, clause, text, token, instructions, "none");
+
     public async Task<MobileWandDialogueDraft> ReplyStreamingAsync(CharacterConversationSnapshot profile,
         MobileWandWorkshopMessage[] messages, Func<string, CancellationToken, Task> clause,
-        Func<string, CancellationToken, Task> text, CancellationToken token, string? instructions = null)
+        Func<string, CancellationToken, Task> text, CancellationToken token, string? instructions, string reasoningEffort)
     {
         if (string.IsNullOrWhiteSpace(key)) { throw new MobileWandQuestionAuthoringException("dialogue_provider_unavailable", true); }
         if (!IsPreparedProfile(profile) || messages.Length > 160)
@@ -98,7 +110,7 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
             var client = new ResponsesClient(new ApiKeyCredential(key), new ResponsesClientOptions
             { Transport = BoundedSdkTransport.Pipeline(transport), RetryPolicy = new ClientRetryPolicy(0) });
             var options = ModelReaderWriter.Read<CreateResponseOptions>(BinaryData.FromString(
-                BuildReplyRequest(profile, messages, model, instructions, stream: true)))
+                BuildReplyRequest(profile, messages, model, instructions, stream: true, reasoningEffort: reasoningEffort)))
                 ?? throw new MobileWandQuestionAuthoringException("dialogue_context_invalid", false);
             var incremental = new MobileWandReplyStream();
             var previousText = "";
@@ -162,8 +174,12 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
     public Task<MobileWandDialogueDraft> ReplyAsync(CharacterConversationSnapshot profile,
         MobileWandWorkshopMessage[] messages, CancellationToken token) => ReplyAsync(profile, messages, token, null);
 
+    public Task<MobileWandDialogueDraft> ReplyAsync(CharacterConversationSnapshot profile,
+        MobileWandWorkshopMessage[] messages, CancellationToken token, string? instructions) =>
+        ReplyAsync(profile, messages, token, instructions, "none");
+
     public async Task<MobileWandDialogueDraft> ReplyAsync(CharacterConversationSnapshot profile,
-        MobileWandWorkshopMessage[] messages, CancellationToken token, string? instructions)
+        MobileWandWorkshopMessage[] messages, CancellationToken token, string? instructions, string reasoningEffort)
     {
         if (string.IsNullOrWhiteSpace(key))
             throw new MobileWandQuestionAuthoringException("dialogue_provider_unavailable", true);
@@ -175,13 +191,14 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
             using var bounded = BoundedSdkTransport.Create(http, 131_072, new[] { "application/json" });
             var client = new ResponsesClient(new ApiKeyCredential(key), new ResponsesClientOptions
             { Transport = BoundedSdkTransport.Pipeline(bounded), RetryPolicy = new ClientRetryPolicy(0) });
-            using var body = BinaryContent.Create(BinaryData.FromString(BuildReplyRequest(profile, messages, model, instructions)));
+            using var body = BinaryContent.Create(BinaryData.FromString(BuildReplyRequest(profile, messages, model, instructions, reasoningEffort: reasoningEffort)));
             var response = await client.CreateResponseAsync(body, new RequestOptions { CancellationToken = token });
             using var document = JsonDocument.Parse(response.GetRawResponse().Content.ToMemory());
             telemetry.ReadUsage(document.RootElement);
             OpenAiServiceTierPolicy.ValidateResponse(document.RootElement, OpenAiOperation.WandWorkshop);
             return ParseReply(document.RootElement);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (ClientResultException error) when (error.Status is >= 400 and < 500)
         {
             telemetry.Fail(error, token);
@@ -196,9 +213,9 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
     }
 
     internal static string BuildReplyRequest(CharacterConversationSnapshot profile,
-        MobileWandWorkshopMessage[] messages, string model, string? instructions = null, bool stream = false)
+        MobileWandWorkshopMessage[] messages, string model, string? instructions = null, bool stream = false, string reasoningEffort = "none")
     {
-        if (!IsPreparedProfile(profile) || messages.Length > 160)
+        if (!IsPreparedProfile(profile) || messages.Length > 160 || !WorkshopSettingsStore.ValidReasoning(reasoningEffort))
             throw new ArgumentException("A prepared profile and bounded conversation are required.");
         var facts = profile.Enrichment!.Facts;
         var context = JsonSerializer.Serialize(new
@@ -217,8 +234,9 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
             }, Json);
         var payload = JsonSerializer.Serialize(new
         {
-            model, stream, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.WandWorkshop), max_output_tokens = 420,
-            reasoning = new { effort = "none" },
+            model, stream, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.WandWorkshop),
+            max_output_tokens = reasoningEffort switch { "low" => 900, "medium" => 1800, "high" => 3000, _ => 420 },
+            reasoning = new { effort = reasoningEffort },
             instructions = instructions ?? DefaultInstructions,
             input = stream ? (object)new[] { new { type = "message", role = "user",
                 content = new[] { new { type = "input_text", text = context } } } } : context,
@@ -228,7 +246,9 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
                         reply = new { type = "string", minLength = 1, maxLength = 600 } },
                     required = new[] { "readyToFinish", "reply" } } } }
         }, Json);
-        if (Encoding.UTF8.GetByteCount(payload) > 65_536)
+        // A valid 12k Czech admin prompt can exceed 72k after JSON escaping.
+        // Bound the whole request while allowing that prompt and its context.
+        if (Encoding.UTF8.GetByteCount(payload) > 256 * 1024)
             throw new MobileWandQuestionAuthoringException("dialogue_context_too_large", false);
         return payload;
     }

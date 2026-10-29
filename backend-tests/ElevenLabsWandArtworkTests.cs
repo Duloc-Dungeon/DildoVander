@@ -21,6 +21,7 @@ internal static class ElevenLabsWandArtworkTests
         var output = await provider.GenerateAsync(request, default);
         Check(primaryCalls == 1 && handler.Creates == 1 && handler.Polls == 1 && handler.Downloads == 1,
             "one primary image failure dispatches exactly one ElevenLabs generation");
+        await CompatibilityRejectionsAsync(request, output);
         Check(output.Provider == "elevenlabs" && output.Model == "gpt-image-1.5"
             && !output.ContentResponse.Contains("content_url"), "fallback provenance omits expiring signed media URLs");
         var prompt = handler.Prompt ?? throw new Exception("Image prompt missing.");
@@ -74,6 +75,118 @@ internal static class ElevenLabsWandArtworkTests
         var snapshot = new KeepsakeIssueSnapshot("PRIVATE_OUTCOME", "PRIVATE_DEVICE", 1, "PRIVATE_CATALOG", "PRIVATE_NAME",
             "PRIVATE_FACTS", "PRIVATE_EVIDENCE", GeneratedWand: wand);
         return new("PRIVATE_ID", snapshot, new(), "PRIVATE_JOB", null, null, null, null, null) { GenerationKind = "wand_artwork" };
+    }
+
+    private static async Task CompatibilityRejectionsAsync(KeepsakeProviderRequest request, KeepsakeProviderOutput fixtureOutput)
+    {
+        const string unsupportedBackground = """{"error":{"type":"invalid_request_error","code":"invalid_value","param":"background","message":"Transparent backgrounds are not supported for this model. PRIVATE_PROVIDER_BODY"}}""";
+        var diagnostics = new List<string>();
+        using var rejectedHttp = new RejectedImageHandler(HttpStatusCode.BadRequest, unsupportedBackground);
+        using var secondaryHttp = new ImageHandler();
+        using var secondary = new ElevenLabsWandArtwork(new HttpClient(secondaryHttp), "offline-secret");
+        using var primary = new OpenAiKeepsakeProvider(new HttpClient(rejectedHttp), "offline-primary", "unused-story", "gpt-image-2");
+        using var fallback = new WandArtworkFallbackProvider(primary, secondary.GenerateAsync);
+        var actual = await fallback.GenerateAsync(request with
+        {
+            RecordStage = (_, phase, content) => { if (phase == "rejected") { diagnostics.Add(content); } return true; }
+        }, default);
+        Check(rejectedHttp.Requests == 1 && secondaryHttp.Creates == 1 && actual.Provider == "elevenlabs"
+            && actual.Model == "gpt-image-1.5", "an explicit preview-model parameter rejection makes one stable-model secondary request");
+        using (var diagnostic = JsonDocument.Parse(diagnostics.Single()))
+        {
+            Check(diagnostic.RootElement.GetProperty("category").GetString() == "unsupported_parameter"
+                && diagnostic.RootElement.GetProperty("parameter").GetString() == "background"
+                && !diagnostics.Single().Contains("PRIVATE_PROVIDER_BODY"),
+                "compatibility diagnostics retain only fixed classification and allowlisted parameter, never provider text");
+        }
+
+        foreach (var supported in new[]
+        {
+            """{"error":{"type":"invalid_request_error","code":"unsupported_parameter","param":"output_format","message":"PRIVATE_PROVIDER_BODY"}}""",
+            """{"error":{"type":"invalid_request_error","code":"model_not_found","param":"model","message":"Unavailable model. PRIVATE_PROVIDER_BODY"}}""",
+            """{"error":{"type":"invalid_request_error","code":null,"param":"background","message":"Invalid value transparent. Supported values are auto and opaque."}}"""
+        })
+        {
+            var calls = 0;
+            using var http = new RejectedImageHandler(HttpStatusCode.BadRequest, supported);
+            using var sdk = new OpenAiKeepsakeProvider(new HttpClient(http), "offline-primary", "unused-story", "gpt-image-2");
+            using var provider = new WandArtworkFallbackProvider(sdk, (_, _) => { calls++; return Task.FromResult(fixtureOutput); });
+            _ = await provider.GenerateAsync(request, default);
+            Check(http.Requests == 1 && calls == 1, "allowlisted unsupported parameter/model receives one compatibility fallback");
+        }
+
+        foreach (var rejected in new (HttpStatusCode Status, string Body)[]
+        {
+            (HttpStatusCode.BadRequest, """{"error":{"type":"invalid_request_error","code":"content_policy_violation","param":"background","message":"not supported"}}"""),
+            (HttpStatusCode.BadRequest, """{"error":{"type":"invalid_request_error","code":"unsupported_value","param":"background","message":"not supported due to safety policy"}}"""),
+            (HttpStatusCode.BadRequest, """{"error":{"type":"invalid_request_error","code":"unsupported_parameter","param":"prompt","message":"not supported"}}"""),
+            (HttpStatusCode.BadRequest, """{"error":{"type":"invalid_request_error","code":"invalid_value","param":"background","message":"Invalid request. PRIVATE_PROVIDER_BODY"}}"""),
+            (HttpStatusCode.BadRequest, """{"error":{"type":"invalid_request_error","code":3,"param":"background","message":"not supported"}}"""),
+            (HttpStatusCode.BadRequest, """{"error":{"type":"invalid_request_error","code":"content_policy_violation","code":"unsupported_value","param":"background"}}"""),
+            (HttpStatusCode.BadRequest, new string('x', 16 * 1024 + 1)),
+            (HttpStatusCode.BadRequest, "not-json PRIVATE_PROVIDER_BODY"),
+            (HttpStatusCode.Unauthorized, unsupportedBackground), (HttpStatusCode.Forbidden, unsupportedBackground)
+        })
+        {
+            var calls = 0;
+            var stages = new List<string>();
+            using var http = new RejectedImageHandler(rejected.Status, rejected.Body);
+            using var sdk = new OpenAiKeepsakeProvider(new HttpClient(http), "offline-primary", "unused-story", "gpt-image-2");
+            using var provider = new WandArtworkFallbackProvider(sdk, (_, _) => { calls++; return Task.FromResult(fixtureOutput); });
+            try
+            {
+                _ = await provider.GenerateAsync(request with
+                { RecordStage = (_, phase, content) => { if (phase == "rejected") { stages.Add(content); } return true; } }, default);
+                throw new Exception("An unclassified or denied request unexpectedly generated secondary artwork.");
+            }
+            catch (System.ClientModel.ClientResultException error)
+            {
+                Check(error.Status == (int)rejected.Status && !error.Message.Contains("PRIVATE_PROVIDER_BODY"),
+                    "non-compatible failures retain the original status with sanitized SDK error content");
+            }
+            Check(calls == 0 && http.Requests == 1 && stages.All(content => !content.Contains("PRIVATE_PROVIDER_BODY")),
+                "policy/auth/unknown/malformed/oversized failures never dispatch fallback or persist raw provider bodies");
+        }
+
+        var revokedCalls = 0;
+        using var revokedHttp = new RejectedImageHandler(HttpStatusCode.BadRequest, unsupportedBackground);
+        using var revokedSdk = new OpenAiKeepsakeProvider(new HttpClient(revokedHttp), "offline-primary", "unused-story", "gpt-image-2");
+        using var revoked = new WandArtworkFallbackProvider(revokedSdk, (_, _) => { revokedCalls++; return Task.FromResult(fixtureOutput); });
+        await ExpectCodeAsync(() => revoked.GenerateAsync(request with { RecordStage = (_, phase, _) => phase != "rejected" }, default),
+            "publication_epoch_changed");
+        Check(revokedCalls == 0, "publication authority revoked during compatibility classification blocks secondary dispatch");
+        Check(!WandArtworkFallbackProvider.CanFallback(new HttpRequestException("unauthorized", null, HttpStatusCode.Unauthorized))
+            && !WandArtworkFallbackProvider.CanFallback(new HttpRequestException("bad request", null, HttpStatusCode.BadRequest)),
+            "HTTP transport exceptions cannot bypass authentication or unclassified bad requests");
+        using var cancellation = new CancellationTokenSource();
+        using var canceledHttp = new RejectedImageHandler(HttpStatusCode.BadRequest, unsupportedBackground, cancellation.Cancel);
+        using var canceledSdk = new OpenAiKeepsakeProvider(new HttpClient(canceledHttp), "offline-primary", "unused-story", "gpt-image-2");
+        var canceledFallbacks = 0;
+        using var canceled = new WandArtworkFallbackProvider(canceledSdk, (_, _) => { canceledFallbacks++; return Task.FromResult(fixtureOutput); });
+        try
+        {
+            await canceled.GenerateAsync(request, cancellation.Token);
+            throw new Exception("Cancellation during rejection classification was ignored.");
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        Check(canceledHttp.Requests == 1 && canceledFallbacks == 0, "cancellation while reading the primary rejection never starts secondary image work");
+    }
+
+    private sealed class RejectedImageHandler(HttpStatusCode status, string body, Action? beforeReturn = null) : HttpMessageHandler
+    {
+        internal int Requests;
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Requests++;
+            Check(request.RequestUri!.Host == "api.openai.com" && request.RequestUri.AbsolutePath == "/v1/images/generations",
+                "compatibility checks use the actual image SDK endpoint");
+            using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            Check(payload.RootElement.GetProperty("model").GetString() == "gpt-image-2"
+                && payload.RootElement.GetProperty("background").GetString() == "transparent",
+                "primary keeps its configured model and real transparent PNG request");
+            beforeReturn?.Invoke();
+            return new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        }
     }
 
     private static byte[] TransparentPng()

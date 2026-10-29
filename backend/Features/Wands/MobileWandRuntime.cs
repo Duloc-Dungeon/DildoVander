@@ -20,7 +20,12 @@ internal sealed record MobileWandAdmission(string Owner, string Operation, strin
     (string GroupId, long AccessRevision)? LaunchSnapshot = null)
 {
     internal bool ElevenLabsConsent { get; init; }
+    internal string? SpeechEngineKey { get; init; }
     internal LocalTryHubExperimentSnapshot? LocalExperiment { get; init; }
+    internal WorkshopPromptSnapshot? WorkshopSettings { get; init; }
+    internal string? DialogueInstructions => LocalExperiment?.DialoguePrompt ?? WorkshopSettings?.DialoguePrompt;
+    internal string? LiveInstructions => LocalExperiment?.LivePrompt ?? WorkshopSettings?.LivePrompt;
+    internal string ReasoningEffort => WorkshopSettings?.ReasoningEffort ?? "none";
 }
 
 // The phone owns its microphone; the account socket never impersonates a device
@@ -36,7 +41,7 @@ internal sealed class MobileWandRuntime(IServiceScopeFactory scopes, WandGenerat
         var token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
         tickets[Hash(token)] = admission with
         {
-            LaunchSnapshot = wands.ReadWorkshopLaunchSnapshot(admission.Owner, admission.Operation)
+            LaunchSnapshot = admission.LaunchSnapshot ?? wands.ReadWorkshopLaunchSnapshot(admission.Owner, admission.Operation)
                 ?? throw new WandGenerationException("wand_session_unavailable", 404)
         };
         return token;

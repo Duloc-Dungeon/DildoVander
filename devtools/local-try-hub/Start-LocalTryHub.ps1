@@ -1,6 +1,8 @@
 #Requires -Version 7.4
 [CmdletBinding()]
-param()
+param([switch] $SpeechEngineTunnel, [string] $SpeechEnginePublicOrigin)
+
+. (Join-Path $PSScriptRoot 'SpeechEngineTunnel.ps1')
 
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -24,6 +26,8 @@ $frontendLog = Join-Path $logDirectory "$runId-frontend.log"
 $frontendErrorLog = Join-Path $logDirectory "$runId-frontend-error.log"
 $backendProcess = $null
 $frontendProcess = $null
+$speechGatewayProcess = $null
+$speechTunnelProcess = $null
 $isolatedPrefixes = @(
   'ASPNETCORE_', 'Backend__', 'ApplicationIdentity__', 'Keepsake__', 'CustomerCharacters__',
   'Wands__', 'Memory__', 'Conversations__', 'SealedCase__', 'Game__', 'Show__', 'Launch__',
@@ -67,7 +71,7 @@ function Stop-StartedProcessTree([System.Diagnostics.Process] $process) {
       catch {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
       }
-      $process.WaitForExit(10000)
+      $null = $process.WaitForExit(10000)
     }
   }
 }
@@ -131,12 +135,12 @@ function New-LocalChildEnvironment([bool] $includeProviderKeys) {
   }
   foreach ($name in @($childEnvironment.Keys)) {
     if ($isolatedPrefixes | Where-Object { $name.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }) {
-      $childEnvironment.Remove($name)
+      $childEnvironment[$name] = $null
     }
   }
   foreach ($name in @('DOTNET_ENVIRONMENT', 'DOTNET_STARTUP_HOOKS', 'DOTNET_ADDITIONAL_DEPS',
       'DOTNET_SHARED_STORE', 'NODE_OPTIONS', 'NODE_PATH', 'DEBUG')) {
-    $childEnvironment.Remove($name)
+    $childEnvironment[$name] = $null
   }
 
   foreach ($name in @('OPENAI_API_KEY', 'ELEVENLABS_API_KEY')) {
@@ -146,7 +150,7 @@ function New-LocalChildEnvironment([bool] $includeProviderKeys) {
     $value = @($processValue, $userValue, $machineValue) |
       Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
       Select-Object -First 1
-    $childEnvironment.Remove($name)
+    $childEnvironment[$name] = $null
     if ($includeProviderKeys -and -not [string]::IsNullOrWhiteSpace($value)) {
       $childEnvironment[$name] = $value
     }
@@ -180,10 +184,10 @@ try {
   }
   $backendEnvironment = New-LocalChildEnvironment $true
   $frontendEnvironment = New-LocalChildEnvironment $false
-  if (-not $backendEnvironment.ContainsKey('OPENAI_API_KEY')) {
+  if ([string]::IsNullOrWhiteSpace($backendEnvironment['OPENAI_API_KEY'])) {
     throw 'Chybí OPENAI_API_KEY. Místní dílna používá skutečný OpenAI backend; nastav klíč jako Process, User nebo Machine proměnnou prostředí a spusť launcher znovu.'
   }
-  if (-not $backendEnvironment.ContainsKey('ELEVENLABS_API_KEY')) {
+  if ([string]::IsNullOrWhiteSpace($backendEnvironment['ELEVENLABS_API_KEY'])) {
     Write-Warning 'ELEVENLABS_API_KEY není v místním nastavení dostupný; hlasový vstup a výstup nebudou dostupné.'
   }
 
@@ -194,6 +198,24 @@ try {
   New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
   New-Item -ItemType Directory -Path $identityRoot -Force | Out-Null
   New-Item -ItemType Directory -Path $keepsakeRoot -Force | Out-Null
+  if ($SpeechEngineTunnel) {
+    Test-LocalPortAvailable 'http://127.0.0.1:5083'
+    $cloudflared = Get-LocalCloudflared (Join-Path $dataRoot 'tools')
+    $speechGatewayProcess = Start-Process -FilePath (Get-Command node).Source `
+      -ArgumentList "`"$(Join-Path $PSScriptRoot 'speech-engine-gateway.mjs')`"" `
+      -WorkingDirectory $repositoryRoot -WindowStyle Hidden -PassThru -Environment $frontendEnvironment `
+      -RedirectStandardOutput (Join-Path $logDirectory "$runId-speech-gateway.log") `
+      -RedirectStandardError (Join-Path $logDirectory "$runId-speech-gateway-error.log")
+    Wait-ForLocalEndpoint 'http://127.0.0.1:5083/healthz' $speechGatewayProcess 'Speech Engine gateway'
+    $tunnelLog = Join-Path $logDirectory "$runId-speech-tunnel.log"
+    $tunnelEnvironment = New-SpeechEngineTunnelEnvironment $frontendEnvironment
+    $tunnelArguments = New-SpeechEngineTunnelArguments (Join-Path $logDirectory "$runId-speech-tunnel-config.yml")
+    $speechTunnelProcess = Start-Process -FilePath $cloudflared `
+      -ArgumentList $tunnelArguments `
+      -WorkingDirectory $dataRoot -WindowStyle Hidden -PassThru -Environment $tunnelEnvironment `
+      -RedirectStandardOutput (Join-Path $logDirectory "$runId-speech-tunnel-output.log") -RedirectStandardError $tunnelLog
+    $SpeechEnginePublicOrigin = Wait-SpeechEngineTunnel $speechTunnelProcess $tunnelLog
+  }
   $certificateBase64 = Get-TrustedLocalhostCertificateBase64
 
   $backendEnvironment['ASPNETCORE_ENVIRONMENT'] = 'Development'
@@ -211,12 +233,13 @@ try {
   $backendEnvironment['Keepsake__GenerationEnabled'] = 'true'
   $backendEnvironment['Keepsake__ProviderMode'] = 'openai'
   $backendEnvironment['Keepsake__StoryModel'] = 'gpt-6.1-terra'
-  $backendEnvironment['Keepsake__ImageModel'] = 'gpt-image-2'
+  $backendEnvironment['Keepsake__ImageModel'] = 'gpt-image-2.5-flare'
   $backendEnvironment['Keepsake__ElevenLabsArtworkFallback'] = 'true'
-  $backendEnvironment['Wands__Voice__Provider'] = 'elevenlabs'
+  $backendEnvironment['Wands__Voice__Provider'] = if ($SpeechEnginePublicOrigin) { 'speech-engine' } else { 'elevenlabs' }
   $backendEnvironment['Wands__Voice__VoiceId'] = 'U48DQ1c9SVmD2BVCSiHL'
   $backendEnvironment['Wands__Voice__Speed'] = '1.0'
   $backendEnvironment['Wands__Voice__Model'] = 'eleven_v4'
+  if ($SpeechEnginePublicOrigin) { $backendEnvironment['Wands__Voice__SpeechEnginePublicOrigin'] = $SpeechEnginePublicOrigin }
   $localSessionSecret = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
   $backendEnvironment['LocalTryHub__Enabled'] = 'true'
   $backendEnvironment['LocalTryHub__SessionSecret'] = $localSessionSecret
@@ -250,7 +273,8 @@ try {
 
   Write-Host "Místní zkoušení: $frontendOrigin/local-try-hub"
   Write-Host 'Kufrova dílna používá zákaznický rozhovor. Persona Lab je samostatný test DV01.'
-  Write-Host 'Obě služby naslouchají pouze na tomto počítači. Ctrl+C je ukončí.'
+  Write-Host 'Stránka a přihlášení jsou dostupné jen na tomto počítači. Ctrl+C ukončí všechny místní služby.'
+  if ($SpeechEngineTunnel) { Write-Host 'Veřejný tunel zpřístupňuje pouze podepsaný callback Speech Engine, nikoli stránku, API účtu ani lokální přihlášení.' }
   Write-Host "Místní data: $dataRoot"
   Write-Host "Lokální logy: $logDirectory"
   while ($true) {
@@ -259,11 +283,18 @@ try {
     if ($backendProcess.HasExited -or $frontendProcess.HasExited) {
       throw "Jedna místní služba skončila. Logy jsou v $logDirectory"
     }
+    if ($SpeechEngineTunnel) {
+      $speechGatewayProcess.Refresh()
+      $speechTunnelProcess.Refresh()
+      if ($speechGatewayProcess.HasExited -or $speechTunnelProcess.HasExited) { throw 'Tunel Speech Engine se přerušil. Spusť hub znovu.' }
+    }
     Start-Sleep -Seconds 1
   }
 }
 finally {
   Stop-StartedProcessTree $frontendProcess
+  Stop-StartedProcessTree $speechTunnelProcess
+  Stop-StartedProcessTree $speechGatewayProcess
   Stop-StartedProcessTree $backendProcess
   foreach ($origin in @($backendOrigin, $frontendOrigin)) {
     if (Test-LocalPortInUse $origin) {

@@ -159,6 +159,34 @@ describe('local try hub direct access', () => {
 });
 
 describe('local conversation experiments', () => {
+  it('offers Speech Engine without changing loaded saved prompts or revision', async () => {
+    const view = await mountLoadedHub();
+    expect(view.get('input[value="speech-engine"]').attributes('disabled')).toBeUndefined();
+    await view.get('input[value="speech-engine"]').setValue();
+    expect((view.get('#local-dialogue-prompt').element as HTMLTextAreaElement).value).toBe(initialSettings.dialoguePrompt);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ settings: { ...initialSettings, revision: 8, provider: 'speech-engine' }, defaults }));
+    await view.findAll('button').find(button => button.text() === 'Použít pro další připojení')!.trigger('click');
+    await flushPromises();
+    expect(fetch).toHaveBeenLastCalledWith('/local-try-api/experiments', expect.objectContaining({
+      body: JSON.stringify({ expectedRevision: 7, provider: 'speech-engine', dialoguePrompt: initialSettings.dialoguePrompt, livePrompt: initialSettings.livePrompt }),
+    }));
+    expect(view.get('.local-try-hub__applied').text()).toContain('Speech Engine + GPT');
+    view.unmount();
+  });
+
+  it('disables an unavailable Speech Engine and explains its server configuration', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ settings: initialSettings, defaults: {
+      ...defaults, speechEngineAvailable: false, speechEngineUnavailableReason: 'Chybí veřejná adresa pro zpětné spojení.',
+    } }));
+    const view = await mountLoadedHub();
+    expect(view.get('input[value="speech-engine"]').attributes('disabled')).toBeDefined();
+    expect(view.text()).toContain('Chybí veřejná adresa pro zpětné spojení.');
+    expect((view.get('input[value="elevenlabs"]').element as HTMLInputElement).checked).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
   it('loads the applied provider and prompts through the local same-origin API', async () => {
     const view = await mountLoadedHub();
     expect(fetch).toHaveBeenCalledWith('/local-try-api/experiments/read', expect.objectContaining({

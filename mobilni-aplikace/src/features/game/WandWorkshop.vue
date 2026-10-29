@@ -24,6 +24,7 @@ const muted = ref(false); const outputLevel = ref(0);
 const volume = ref(100);
 const partial = ref(''); let partialRole = ''; let partialComplete = false;
 const streamedTranscript = ref(emptyWorkshopTranscript());
+const userPartial = ref('');
 const artworkUrl = ref(''); const artworkError = ref('');
 const answerField = ref<HTMLTextAreaElement>(); const correction = ref<WorkshopMessage | null>(null); const correctionText = ref('');
 const title = ref<HTMLElement>();
@@ -38,7 +39,7 @@ let refreshInFlight: Promise<void> | null = null; let syncFailures = 0;
 let operation = ''; let artworkKey = ''; let retryId = '';
 let pendingMessage: { messageId: string; sessionId: string; text: string } | undefined;
 const live = new LabVoice({
-  phase(value) { livePhase.value = value; },
+  phase(value) { livePhase.value = value; if (['idle', 'ended', 'error'].includes(value)) userPartial.value = ''; },
   transcript(role, delta) {
     if (partialRole !== role || partialComplete) { partial.value = ''; partialRole = role; }
     partialComplete = false; partial.value += delta;
@@ -49,6 +50,7 @@ const live = new LabVoice({
   session() {},
   workshopSession(value) { applySession(normalizeSession(value as Parameters<typeof normalizeSession>[0])); },
   workshopTranscript(value) { streamedTranscript.value = updateWorkshopTranscript(streamedTranscript.value, value); },
+  userPartial(value) { userPartial.value = value; },
   outputLevel(value) { outputLevel.value = value; },
   error(code) {
     error.value = code === 'wand_workshop_boss_captured' ? 'Baron uzavřel dílnu. Po osvobození navážeš na stejný rozhovor.'
@@ -74,7 +76,7 @@ const canStart = computed(() => entry.value?.eligible === true && account.value?
 const canAnswer = computed(() => canStart.value && session.value?.status === 'asking' && !busy.value);
 const confirmedReply = computed(() => [...messages.value].reverse().find(message => message.role === 'assistant')?.text || session.value?.question?.text || '');
 const subtitle = computed(() => partial.value || confirmedReply.value);
-const captionText = computed(() => [subtitle.value, streamedTranscript.value.user?.text, streamedTranscript.value.assistant?.text].join('\n'));
+const captionText = computed(() => [subtitle.value, userPartial.value || streamedTranscript.value.user?.text, streamedTranscript.value.assistant?.text].join('\n'));
 watch(captionText, async () => {
   const viewport = caption.value;
   if (!viewport || viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight > 24) return;
@@ -214,15 +216,14 @@ async function ensureSession(): Promise<WorkshopSession> {
 }
 async function startVoice() {
   if (!canStart.value || busy.value || active.value || wand.value) return;
-  mode.value = 'voice';
   mode.value = 'voice'; error.value = ''; partial.value = ''; partialComplete = false;
   streamedTranscript.value = emptyWorkshopTranscript();
   const scope = controller;
-  await live.connect(async () => {
+  await live.connect(async ticketSignal => {
     const current = await ensureSession();
     return accountRequest<import('../persona-lab/contracts').SocketTicket>(`${workshopSessionPath(current.id)}/ticket`, 'POST', {
       socketOrigin: window.location.origin,
-    }, scope.signal);
+    }, ticketSignal ?? scope.signal);
   }, () => session.value?.id ?? operation, accountOrigin.value || window.location.origin, { purpose: 'workshop' });
 }
 async function useText() {
@@ -372,8 +373,8 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
           <h2 v-if="!session" class="trunk-workshop__greeting">Hůlka začíná rozhovorem.</h2>
           <p v-if="!session">Promluv si s kufrem o své hůlce. Lidem rozumí. Po staletí mu sedají na víko a tvrdí, že se tam ještě něco vejde.</p>
           <div v-if="session" ref="caption" class="trunk-workshop__caption" role="region" aria-label="Průběžný přepis" tabindex="0">
-            <template v-if="streamedTranscript.latestSequence">
-              <p v-if="streamedTranscript.user?.text" class="trunk-workshop__live-line" data-speaker="user"><strong>Ty</strong><span>{{ streamedTranscript.user.text }}</span></p>
+            <template v-if="streamedTranscript.latestSequence || userPartial">
+              <p v-if="userPartial || streamedTranscript.user?.text" class="trunk-workshop__live-line" data-speaker="user"><strong>Ty</strong><span>{{ userPartial || streamedTranscript.user?.text }}</span></p>
               <p v-if="streamedTranscript.assistant?.text" class="trunk-workshop__live-line" data-speaker="assistant"><strong>Kufr</strong><span>{{ streamedTranscript.assistant.text }}</span></p>
             </template>
             <h2 v-else class="trunk-workshop__question" :data-speaker="partial && partialRole === 'user' ? 'user' : 'assistant'">{{ subtitle }}</h2>

@@ -6,6 +6,7 @@ using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
+using Kufr.Backend.Features.Launch;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,6 +21,10 @@ internal static partial class AccountIdentityTests
         using var device = fixture.Client();
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Owner");
         await CsrfAsync(owner);
+        // These session APIs run after opening; the shared fixture deliberately starts before launch.
+        var launch = fixture.App.Services.GetRequiredService<LaunchPolicyStore>();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        LaunchTestSchedule.Set(launch, launch.ReadBetaAdmission().GroupId!, now - 1000, now);
         var firstProfile = await CustomerAsync(first, firstKey);
         var secondProfile = await CustomerAsync(second, secondKey);
         const string labelRoute = "/app/v1/customer/character/label";
