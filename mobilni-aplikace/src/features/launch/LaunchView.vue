@@ -477,7 +477,11 @@ onBeforeUnmount(() => {
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
         <CharacterCountdown v-if="state?.character" class="countdown" heading-id="launch-title" :name="characterDisplayName(state.character.name, state.character.label)" :universe="state.character.universe" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
-        <CharacterLabelEditor v-if="state?.character" :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" />
+        <details v-if="state?.character" class="launch-label-options">
+          <summary>Rozlišovací označení (nepovinné)</summary>
+          <CharacterLabelEditor :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" />
+        </details>
+        <a v-if="canPrepareWand" class="launch-next-step" href="#prelaunch-wand-title">Pokračovat k hůlce</a>
       </PaperSurface>
       <PortraitCurtain class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" @revealed="revealed = $event" @failed="portrait.fail()" />
       <div class="launch-text">
@@ -539,6 +543,10 @@ onBeforeUnmount(() => {
 .launch-account-options { max-width: 100%; }
 .launch-account-options[open] { flex-basis: 100%; width: 100%; }
 .launch-account-options summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
+.launch-label-options { margin-top: 1rem; }
+.launch-label-options summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
+.launch-label-options[open] :deep(form) { margin-top: .75rem; }
+.launch-next-step { display: inline-flex; align-items: center; min-height: 44px; color: var(--wns-mint); text-underline-offset: .2em; }
 .group-opening { display: flex; flex-direction: column; align-items: center; overflow: hidden; }
 .group-opening-art { display: block; width: min(100%, 36rem); max-height: 58dvh; object-fit: contain; margin: 0 auto; }
 .group-opening-copy { position: relative; width: min(100% - 2rem, 30rem); display: grid; justify-items: center; gap: 1rem; padding: 1rem 2rem max(1rem, env(safe-area-inset-bottom)); text-align: center; }

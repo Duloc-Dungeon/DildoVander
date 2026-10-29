@@ -23,17 +23,17 @@ describe('lost access guidance', () => {
   it('offers an expandable keyboard-native summary and existing support route', async () => {
     const wrapper = await render();
     const details = wrapper.get('details');
-    expect(details.get('summary').text()).toBe('Ztratili jste přístup?');
+    expect(details.get('summary').text()).toBe('Nemůžeš se přihlásit?');
     expect(details.attributes('open')).toBeUndefined();
 
     await details.get('summary').trigger('click');
     expect(details.attributes('open')).toBeDefined();
-    expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktujte podporu');
-    expect(wrapper.text()).toContain('Podpora vás provede ověřením vlastnictví účtu; jednorázový kód obnovy může vystavit pouze vlastník služby.');
+    expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktuj podporu');
+    expect(wrapper.text()).toContain('Podpora tě provede ověřením vlastnictví účtu; jednorázový kód obnovy může vystavit pouze vlastník služby.');
     expect(wrapper.text()).toContain('Kód obnovy má omezenou platnost.');
     expect(wrapper.text()).toContain('původní klíče odebrány a ostatní relace odhlášeny');
     expect(wrapper.text()).toContain('Zobrazované jméno ani odkaz na památku vlastnictví účtu neprokazují.');
-    expect(wrapper.text()).toContain('Nikomu neposílejte přístupové klíče ani obnovovací kódy.');
+    expect(wrapper.text()).toContain('Nikomu neposílej přístupové klíče ani obnovovací kódy.');
     expect(wrapper.find('form').exists()).toBe(false);
     expect(wrapper.find('input').exists()).toBe(false);
     expect(wrapper.findAll('button')).toHaveLength(0);
@@ -45,11 +45,11 @@ describe('lost access guidance', () => {
     await wrapper.get('summary').trigger('click');
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.get('summary').text()).toBe('Ztratili jste přístup?');
-    expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktujte podporu');
+    expect(wrapper.get('summary').text()).toBe('Nemůžeš se přihlásit?');
+    expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktuj podporu');
     expect(wrapper.text()).toContain('jednorázový kód obnovy může vystavit pouze vlastník služby');
     expect(wrapper.text()).toContain('původní klíče odebrány a ostatní relace odhlášeny');
-    expect(wrapper.text()).toContain('Nikomu neposílejte přístupové klíče ani obnovovací kódy.');
+    expect(wrapper.text()).toContain('Nikomu neposílej přístupové klíče ani obnovovací kódy.');
     wrapper.unmount();
   });
 });
