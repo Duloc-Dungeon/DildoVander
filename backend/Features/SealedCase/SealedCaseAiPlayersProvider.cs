@@ -25,9 +25,18 @@ internal sealed class SealedCaseAiPlayers : ISealedCaseAiPlayers, IDisposable
     }
 
     internal static SealedAiMove Fallback(SealedPlayView view)
-        => view.Phase == "planning"
-            ? new(new(view.Chapter, view.OwnPlan?.Revision ?? 0, true, SealedIntent.Hold), null)
-            : new(null, new(view.Finale?.Phase == "runoff" ? 2 : 1, []));
+    {
+        if (view.Phase != "planning")
+        {
+            return new(null, new(view.Finale?.Phase == "runoff" ? 2 : 1, []));
+        }
+        // Awake first-case players cannot submit Hold. Reuse the offered
+        // self-protection plan in both variants without inventing a target.
+        var protection = view.OwnState == nameof(SealedPlayerState.Awake)
+            ? view.Choices.FirstOrDefault(choice => choice.Plan.Intent == SealedIntent.Guard)?.Plan
+            : null;
+        return new(protection ?? new(view.Chapter, view.OwnPlan?.Revision ?? 0, true, SealedIntent.Hold), null);
+    }
 
     public async Task<SealedAiMove> ChooseAsync(SealedPlayView view, CancellationToken token)
     {
