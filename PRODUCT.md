@@ -217,8 +217,9 @@ typografie a skutečné herní postavy tvoří jednotný profesionální celek.
   „Vstoupit“ se „Pokračovat“ zobrazí až po alespoň 10 sekundách představení
   v popředí. Potom lze pokračovat i bez portrétu; tato výjimka se nerozšiřuje
   na jiné funkční akce ani herní výsledky.
-- Pozvánka si zachovává skutečnou dvoukřídlou oponu. Pevný rám se nenatahuje,
-  správný portrét je dekódovaný pod látkou. Hotový obraz, chyba a povolený
+- Odhalení postavy i čekárna používají stejný nástup živého zrcadla a osobního
+  textu podle volby vlastníka z 29. října 2026. Správný portrét je dekódovaný
+  pod mlhou; hotový obraz, chyba a povolený
   vstup mají přednost před nepovinnými efekty; časová výjimka pro představení
   postavy je vymezena výše.
 - Ověř 320 a 390 px, širší obrazovku, 200% text, klávesnici, kontrast,

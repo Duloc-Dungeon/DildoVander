@@ -380,7 +380,20 @@ na mobilu za ní. Původní oprávnění a potvrzení odpojení zůstávají zá
 
 ### Představení postavy
 
-Dvoukřídlá opona a dekódovaný soukromý portrét tvoří jeden slavnostní moment.
+Představení i čekárna používají společné živé zrcadlo (`PortraitMirror`):
+mlha se za 1,1 sekundy vyčistí od středu a sklem jednou přejde odlesk.
+Časovou osu řídí `motion-v` 2.9.0, v pozadí se pozastaví; hotový portrét
+ani polling ji neopakují. Sdílený `CharacterIntroduction` uvádí stejnou
+osobní větu a krátký přechod textu; při omezeném pohybu zůstává statický.
+Sklo má jemný stálý odraz, zamlžení drobné kapky a jednorázový užší odlesk.
+Po odhalení lze tlačítkem na zrcadle zopakovat obraz i stejnou osobní větu.
+Přehrání nemění uloženou postavu, stav prvního odhalení ani přístup k další
+akci; nevyvolává nové načtení nebo generaci. Při omezeném pohybu a chybějícím
+portrétu se ovládání nepřehratelného efektu nenabízí.
+Při skutečné přípravě či načítání portrétu mlha pomalu mění světlo a polohu
+v cyklu 4,6 sekundy. Pohyb nepředstírá postup výroby; při načtení obrázku nebo
+chybě končí, v pozadí a mimo záběr je pozastavený. Omezený pohyb a pomalé
+obnovování obrazovky používají statickou mlhu.
 Chybějící obrázek má náhradní podobu a pravdivý stav. Nevyvolávej novou
 generaci kvůli přehrání efektu. Pravidlo deseti sekund v popředí před zobrazením
 „Pokračovat“ je výslovná místní výjimka vlastníka v `PRODUCT.md`, ne obecný
