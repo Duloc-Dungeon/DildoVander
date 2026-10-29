@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMemoryHistory, createRouter, isNavigationFailure, NavigationFailureType } from 'vue-router';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { account, offlineSession, offlineSessionExpiresAt, refreshIdentity } from '../src/features/identity/session';
 import { installAccessGuard } from '../src/application/accessGuard';
 import { accessDenial } from '../src/application/access';
@@ -7,7 +7,7 @@ import { accessDenial } from '../src/application/access';
 const launchState = vi.hoisted(() => ({ allowed: true }));
 vi.mock('../src/features/identity/session', async () => {
   const { ref } = await import('vue');
-  return { account: ref(null), accountRequest: vi.fn(async () => ({ allowed: launchState.allowed })), offlineSession: ref(false), offlineSessionExpiresAt: ref(0), refreshIdentity: vi.fn(async () => {}) };
+  return { account: ref(null), accountRequest: vi.fn(async () => ({ allowed: launchState.allowed })), offlineSession: ref(false), offlineSessionExpiresAt: ref(0), refreshIdentity: vi.fn(async () => {}), authenticationGenerationSnapshot: () => 0 };
 });
 const operator = { id: 'operator', displayName: 'Operator', roles: ['Operator'] };
 function guardedRouter() {
@@ -67,9 +67,9 @@ describe('operational route authentication', () => {
   it('fails closed on session verification errors even with a remembered account', async () => {
     account.value = operator; vi.mocked(refreshIdentity).mockRejectedValue(new Error('offline'));
     const router = guardedRouter();
-    const failure = await router.push('/suitcase');
-    expect(isNavigationFailure(failure, NavigationFailureType.aborted)).toBe(true);
-    expect(router.currentRoute.value.path).toBe('/');
+    await router.push('/suitcase');
+    expect(router.currentRoute.value.path).toBe('/signin');
+    expect(router.currentRoute.value.query.return).toBe('/suitcase');
     expect(account.value).toEqual(operator);
   });
   it('rejects active route rendering immediately after logout or role removal', () => {

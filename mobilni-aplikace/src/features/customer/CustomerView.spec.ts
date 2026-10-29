@@ -8,7 +8,7 @@ vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
   const account = ref<{ id: string; displayName: string; roles: string[]; openAiConsent?: boolean }>({ id: 'customer-1', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
   api.setAccount.mockImplementation((value: typeof account.value) => { account.value = value; });
-  return { account, accountDeletionRequested: ref(false), accountRequest: api.request, authenticatePasskey: vi.fn(), signOut: vi.fn() };
+  return { account, accountDeletionRequested: ref(false), offlineSession: ref(false), accountRequest: api.request, authenticatePasskey: vi.fn(), signOut: vi.fn() };
 });
 vi.mock('./customerBle', () => ({
   customerBle: {

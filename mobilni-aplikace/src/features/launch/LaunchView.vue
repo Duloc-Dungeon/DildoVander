@@ -26,7 +26,7 @@ import type { PrelaunchCharacterResponse as PrelaunchState } from './generatedPr
 
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { customerFixedUniverse, customerMembershipState, refreshCustomerMembership } from '../../application/launchAccess';
-import { isCustomerAccount } from '../../application/access';
+import { isCustomerAccount, requiresCustomerMembership } from '../../application/access';
 import { CountdownRickroll } from './countdownRickroll';
 import RickrollVideo from '../media/RickrollVideo.vue';
 import { readRickrollVideo } from '../media/rickrollMedia';
@@ -80,7 +80,7 @@ let serverTimeAnchor = 0;
 let monotonicAnchor = 0;
 let lastLaunchCheck = Number.NEGATIVE_INFINITY;
 const registration = computed(() => invitationRegistration.value?.owner === account.value?.id ? invitationRegistration.value : null);
-const requiresBetaAdmission = computed(() => isCustomerAccount(account.value) && customerMembershipState.value === 'unassigned');
+const requiresBetaAdmission = computed(() => requiresCustomerMembership(account.value) && customerMembershipState.value === 'unassigned');
 const writing = computed(() => registration.value?.status === 'saving');
 const uncertain = computed(() => registration.value?.status === 'uncertain');
 const hasPortrait = computed(() => !!portrait.url.value);
@@ -244,7 +244,7 @@ async function refreshPolicy(): Promise<void> {
   }
   if (rickrollActive.value) return;
   // Server permission always wins over local presentation, including staff/testers.
-  if (value.allowed && account.value && !isCustomerAccount(account.value)) {
+  if (value.allowed && account.value && (!isCustomerAccount(account.value) || account.value.roles.includes('Tester'))) {
     // Operational accounts keep their established destination. The consumer
     // group-opening presentation must not become a staff onboarding detour.
     await router.replace(defaultSignedInDestination(account.value));
@@ -264,13 +264,14 @@ function enterReception(): void {
 }
 async function enterGroup(continueToApp = false): Promise<void> {
   const owner = account.value;
-  if (!owner || groupBusy.value || !policy.value?.allowed || (isCustomerAccount(owner) && customerMembershipState.value !== 'active')) return;
+  if (!owner || groupBusy.value || !policy.value?.allowed || (requiresCustomerMembership(owner) && customerMembershipState.value !== 'active')) return;
   const epoch = accountEpoch;
   groupBusy.value = true;
   error.value = '';
   try {
     await refreshPolicy();
-    if (epoch !== accountEpoch || !policy.value?.allowed || account.value?.id !== owner.id || customerMembershipState.value !== 'active') return;
+    if (epoch !== accountEpoch || !policy.value?.allowed || account.value?.id !== owner.id
+      || (requiresCustomerMembership(account.value) && customerMembershipState.value !== 'active')) return;
     if (!continueToApp) {
       entranceRetryAttempted.value = false;
       groupPresenting.value = true;
@@ -398,7 +399,7 @@ async function retryRead(): Promise<void> {
     if (epoch !== accountEpoch || controller?.signal.aborted) return;
     await refreshPolicy();
     if (epoch !== accountEpoch || controller?.signal.aborted) return;
-    if (isCustomerAccount(account.value) && customerMembershipState.value !== 'active') {
+    if (requiresCustomerMembership(account.value) && customerMembershipState.value !== 'active') {
       if (customerMembershipState.value === 'unassigned') await refreshBetaEnrollment();
       else if (customerMembershipState.value === null) readError.value = copy.value.readFailed;
       return;

@@ -16,7 +16,7 @@ import type { DeviceSnapshot } from '../src/features/device_connection/FakeDevic
 
 vi.mock('../src/features/identity/session', async () => {
   const { ref } = await import('vue');
-  return { account: ref(null), accountRequest: vi.fn(async () => ({ allowed: true })), accountDeletionRequested: ref(false), offlineSession: ref(false), offlineSessionExpiresAt: ref(0), refreshIdentity: vi.fn(async () => {}), hasRole: () => false };
+  return { account: ref(null), accountRequest: vi.fn(async () => ({ allowed: true })), accountDeletionRequested: ref(false), offlineSession: ref(false), offlineSessionExpiresAt: ref(0), refreshIdentity: vi.fn(async () => {}), authenticationGenerationSnapshot: () => 0, hasRole: () => false };
 });
 
 const wrappers: Array<ReturnType<typeof mount>> = [];

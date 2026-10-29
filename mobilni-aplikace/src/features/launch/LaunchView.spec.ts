@@ -61,6 +61,17 @@ beforeEach(() => {
     return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL', ...(artworkSource ? { source: artworkSource } : {}) } : null };
   });
 });
+it.each(['unassigned', 'revoked'] as const)('lets a mixed Tester leave the waiting room with %s membership', async membership => {
+  memberState = membership;
+  allowed = true;
+  api.setAccount({ id: 'guest', displayName: 'Tester', roles: ['Beta', 'Tester'], openAiConsent: true });
+  const view = entry(false);
+  await flushPromises();
+  expect(api.replace).toHaveBeenCalledWith('/me/character');
+  expect(api.request.mock.calls.some(call => call[0] === '/app/v1/enrollment/default')).toBe(false);
+  view.unmount();
+});
+
 it('opens the preparation and waiting layout only through the big W entrance', async () => {
   persisted = true;
   const view = entry(false);

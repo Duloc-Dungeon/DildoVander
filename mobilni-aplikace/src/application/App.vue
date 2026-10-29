@@ -14,7 +14,7 @@ import { deviceSession } from '../features/suitcase/deviceSession';
 import { nativeDebug } from '../features/suitcase/nativeDebug';
 import { directorStop, clearDirectorStop } from '../features/director/directorStop';
 import { servoBench } from '../features/suitcase/servoBench';
-import { accessDenial, canEnterStaffArea, isCustomerAccount } from './access';
+import { accessDenial, canEnterStaffArea, isCustomerAccount, requiresCustomerMembership } from './access';
 import { accessRedirect, waitingRoomRedirect } from './accessGuard';
 import WnsNavigation from './WnsNavigation.vue';
 import { wnsSound } from './wnsSound';
@@ -31,8 +31,7 @@ startPushRuntime(router);
 const gameExperience = computed(() => route.path === '/play' || route.path.startsWith('/play/'));
 const launchExperience = computed(() => route.path === '/launch' || route.path === '/signin'
   || !account.value
-  || customerMembershipState.value === 'revoked'
-  || (customerAccount.value && !isOwnerPlayer(account.value) && customerMembershipState.value !== 'active')
+  || (requiresCustomerMembership(account.value) && customerMembershipState.value !== 'active')
   || (launchAllowed.value !== true && (['/privacy', '/support', '/account-deletion'].includes(route.path)
     || !canEnterStaffArea(account.value) && !account.value?.roles.includes('Tester'))));
 const browserMode = !Capacitor.isNativePlatform();
@@ -125,7 +124,7 @@ watch(offlineSession, () => {
   if (redirect) void router.replace(redirect);
 }, { flush: 'sync' });
 watch(customerMembershipState, state => {
-  if (state !== 'revoked' || !customerAccount.value) return;
+  if (state !== 'revoked' || !requiresCustomerMembership(account.value)) return;
   nativeDebug.invalidatePrivateState();
   void nativeDebug.cancel();
   void Promise.resolve(deviceSession.clearUserGrants()).catch(() => {});

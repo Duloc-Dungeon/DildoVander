@@ -7,10 +7,13 @@ import CustomerDataPanel from '../customer/CustomerDataPanel.vue';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import { customerCopy, type CustomerCopyKey } from '../../application/customerCopy';
-import { isCustomerAccount } from '../../application/access';
-import { account, accountDeletionRequested, accountRequest, refreshIdentity, authenticatePasskey, signOut, hasRole, type AccountDetails, type AccountSession } from './session';
+import { accessDenial, isCustomerAccount } from '../../application/access';
+import { accountToolRoutes } from '../../application/accountToolRoutes';
+import { account, accountDeletionRequested, accountRequest, offlineSession, refreshIdentity, authenticatePasskey, signOut, hasRole, type AccountDetails, type AccountSession } from './session';
 const props = withDefaults(defineProps<{ customerSurface?: boolean }>(), { customerSurface: false });
 const showCustomerData = computed(() => props.customerSurface && isCustomerAccount(account.value) && !accountDeletionRequested.value);
+const availableTools = computed(() => accountToolRoutes.filter(tool =>
+  !accountDeletionRequested.value && accessDenial(tool.meta ?? {}, account.value, offlineSession.value) === null));
 const details = ref<AccountDetails | null>(null);
 const keyNames = ref<Record<string, string>>({});
 const error = ref<CustomerCopyKey | ''>(''); const message = ref<CustomerCopyKey | ''>(''); const busy = ref(false);
@@ -61,6 +64,12 @@ function trust(session: AccountSession) {
           <RouterLink to="/settings/admin/launch" class="aw-button aw-button--primary">Večer a pozvánky</RouterLink>
           <RouterLink to="/settings/admin" class="aw-button aw-button--secondary">Účty a oprávnění</RouterLink>
         </div>
+      </section>
+      <section v-if="availableTools.length" class="aw-card">
+        <h2>Nástroje</h2>
+        <nav class="button-row" aria-label="Nástroje účtu">
+          <RouterLink v-for="tool in availableTools" :key="tool.path" :to="tool.path" class="aw-button aw-button--secondary">{{ tool.meta?.title }}</RouterLink>
+        </nav>
       </section>
       <PushNotifications v-if="!accountDeletionRequested" />
       <section class="aw-card"><h2>{{ account.displayName }}</h2><p v-if="details">{{ customerCopy.text('settings.passkey-count', { count: details.passkeyCount }) }}</p><AwButton :busy="busy" @click="action(() => authenticatePasskey('add'), 'settings.passkey-added')">{{ customerCopy.text('settings.add-passkey') }}</AwButton><p v-if="!customerSurface && hasRole('Administrator')"><RouterLink to="/settings/admin/launch">Večer a pozvánky</RouterLink></p></section>
