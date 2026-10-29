@@ -184,6 +184,17 @@ internal sealed partial class SealedGame
                         actions[actor].Intent == SealedIntent.Dream ? "UNCERTAIN" : "CONFIRMED")];
             }
         }
+        void ActionNote(SealedAction action, string text, string observation)
+        {
+            state.Notes[action.ActorId] = [.. state.Notes.GetValueOrDefault(action.ActorId, []), text];
+            if (state.Experiences is not null)
+            {
+                var source = state.CaseId + ":" + EventId(_seed, chapter, action.ActorId);
+                state.Experiences[action.ActorId] = [.. state.Experiences.GetValueOrDefault(action.ActorId, []),
+                    new(source + ":action:" + action.Id, action.ActorId, source, text, "CONFIRMED",
+                        ActionObservation: observation, ActionRef: action.Id, ActionChapter: chapter)];
+            }
+        }
         void Finish(SealedAction a, bool success, string? reason = null, bool trace = false)
             => events[a.ActorId] = Event(a, success ? SealedResult.Success : SealedResult.Hold, 3, reason) with { TraceCreated = trace };
         var ordered = actions.Values.Where(a => !denied.Contains(a.ActorId) && !events.ContainsKey(a.ActorId))
@@ -195,7 +206,7 @@ internal sealed partial class SealedGame
             { Finish(action, false, "TRIGGER_NOT_OBSERVED"); }
         }
         ordered = ordered.Where(a => !events.ContainsKey(a.ActorId)).ToArray();
-        // Sabotage changes at most one delivery/availability, never the fact or log.
+        // DELAY changes one clue's availability for new investigations; it never changes the clue or its history.
         var sabotaged = new HashSet<string>(StringComparer.Ordinal);
         foreach (var action in ordered.Where(a => a.Intent == SealedIntent.Sabotage))
         {
@@ -213,7 +224,16 @@ internal sealed partial class SealedGame
                 else { valid = false; }
             }
             Finish(action, valid, valid ? null : "SABOTAGE_NOT_REACHED", valid);
-            if (valid) { Note(actor.Id, "Zasáhl jsi do jediného doručení stopy. Původní důkaz a historie zůstaly zachované."); }
+            if (action.Method == "DELAY")
+            {
+                var lastChapter = SealedCaseRules.Schedule(state.Variant, working.Count).Chapters;
+                ActionNote(action, valid
+                    ? chapter == lastChapter
+                        ? "Tvé zdržení stopy se podařilo. Již získané kopie zůstávají; do závěrečného hlasování ji nikdo nově nezíská pátráním."
+                        : "Tvé zdržení stopy se podařilo. Již získané kopie zůstávají; nová pátrání ji uvidí až v další kapitole."
+                    : "Pokus o zdržení stopy nemá potvrzený výsledek.", valid ? "DELAY_SUCCEEDED" : "DELAY_NOT_OBSERVED");
+            }
+            else if (valid) { Note(actor.Id, "Přesměroval jsi dostupné doručení."); }
         }
         // Theft claims compete against one snapshot of ownership. One item has
         // exactly one winner, including when its owner simultaneously transfers it.
@@ -289,9 +309,14 @@ internal sealed partial class SealedGame
                         {
                             var clueIndex = Array.FindIndex(state.Clues, c => c.Id == available.Id); state.Clues[clueIndex] = available with { RedirectTo = null };
                         }
-                        Note(actor.Id, receiver == actor.Id ? "Prozkoumal jsi doloženou stopu " + available.Id + "." : "Při pátrání došlo k přesměrovanému doručení.");
+                        if (receiver == actor.Id)
+                        {
+                            var kind = known.Contains(available.Id) ? "INVESTIGATION_KNOWN_CLUE" : "INVESTIGATION_NEW_CLUE";
+                            ActionNote(action, "Prozkoumal jsi doloženou stopu " + available.Id + ".", kind);
+                        }
+                        else { Note(actor.Id, "Při pátrání došlo k přesměrovanému doručení."); }
                     }
-                    else { Note(actor.Id, "Prozkoumal jsi místo. Nová doložená stopa tu zatím dostupná není."); }
+                    else { ActionNote(action, "Prozkoumal jsi místo. Nová doložená stopa tu zatím dostupná není.", "INVESTIGATION_NO_NEW_CLUE"); }
                     Finish(action, true); break;
                 case SealedIntent.Dream:
                     Note(actor.Id, "Ve snu se vrací ozvěna tvých vlastních vzpomínek. Sen nepotvrzuje cizí tajný čin."); Finish(action, true); break;

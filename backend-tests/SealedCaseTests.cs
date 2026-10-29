@@ -17,9 +17,12 @@ internal static class SealedCaseTests
         received_presentation_does_not_reveal_other_recipients();
         undefined_enums_and_phase_two_conditions_are_rejected();
         required_action_parameters_are_rejected_when_missing();
-        investigation_feedback_uses_actor_observation_deltas();
         dream_and_echo_actions_require_the_matching_state();
         preparation_is_consumed_or_expires_in_the_next_chapter();
+        delay_changes_only_future_access_and_records_own_results();
+        guard_blocks_delay_only_in_its_resolved_room_and_chapter();
+        competing_delays_have_one_deterministic_winner();
+        preparation_for_steal_changes_the_real_modifier();
         own_presentation_tracks_delivery_without_belief();
         perceived_result_references_point_to_own_experiences();
         simultaneous_help_cannot_resurrect_a_lethal_target();
@@ -38,26 +41,8 @@ internal static class SealedCaseTests
         Throws<SealedCaseRuleException>(legacyHelp.ValidateForSubmission);
         Throws<SealedCaseRuleException>(selfHelp.ValidateForSubmission);
         Throws<SealedCaseRuleException>(() => new SealedActionBook().Confirm(legacySabotage, "A", 1, 2, 0));
-        new SealedAction("sabotage-valid", "A", 1, SealedIntent.Sabotage, ResourceId: "source").ValidateForSubmission();
+        new SealedAction("sabotage-valid", "A", 1, SealedIntent.Sabotage, Method: "DELAY", ResourceId: "source").ValidateForSubmission();
         new SealedAction("help-valid", "A", 1, SealedIntent.Help, TargetId: "B").ValidateForSubmission();
-    }
-
-    private static void investigation_feedback_uses_actor_observation_deltas()
-    {
-        static SealedScenarioState Snapshot(string[] known, string[] notes) => new("scenario", "full", [],
-            new(StringComparer.Ordinal) { ["A"] = known }, new(StringComparer.Ordinal) { ["A"] = notes },
-            new(StringComparer.Ordinal), new(StringComparer.Ordinal));
-
-        const string discovered = "Prozkoumal jsi doloženou stopu clue-1.";
-        Equal("Znovu jsi narazil na již známou stopu.", SealedCaseFeedback.InvestigationObservation(
-            SealedIntent.Investigate, Snapshot(["clue-1"], []), Snapshot(["clue-1"], [discovered]), "A"));
-        Equal("Získal jsi novou doloženou stopu.", SealedCaseFeedback.InvestigationObservation(
-            SealedIntent.Investigate, Snapshot([], []), Snapshot(["clue-1"], [discovered]), "A"));
-        Equal("Na tomto místě nebyla nová doložená stopa dostupná.", SealedCaseFeedback.InvestigationObservation(
-            SealedIntent.Investigate, Snapshot([], []), Snapshot(["delivered-by-peer"],
-                ["Prozkoumal jsi místo. Nová doložená stopa tu zatím dostupná není."]), "A"));
-        Equal<string?>(null, SealedCaseFeedback.InvestigationObservation(SealedIntent.Investigate,
-            Snapshot([], []), Snapshot(["clue-1"], ["Při pátrání došlo k přesměrovanému doručení."]), "A"));
     }
 
     private static void Confirmed_orders_replace_and_retry_is_idempotent()
@@ -66,7 +51,7 @@ internal static class SealedCaseTests
         var first = Action("a1", "A", 1, SealedIntent.Rest);
         book.Confirm(first, "A", 10, 20, 0);
         Equal(first, book.Confirm(first, "A", 21, 20, 0));
-        var replacement = Action("a2", "A", 1, SealedIntent.Prepare, revision: 2, preparedIntent: SealedIntent.Investigate);
+        var replacement = Action("a2", "A", 1, SealedIntent.Prepare, revision: 2, preparedIntent: SealedIntent.Steal);
         book.Confirm(replacement, "A", 19, 20, 1);
         Equal(1, book.Orders.Count);
         Equal(replacement, book.Orders[("A", 1)]);
@@ -302,6 +287,137 @@ internal static class SealedCaseTests
             Equal(rest || attack == SealedIntent.Stun ? 1 : 0, result.Modifiers!.Preparation);
             Equal(0, game.Players["A"].PreparationChapter);
         }
+    }
+
+    private static void delay_changes_only_future_access_and_records_own_results()
+    {
+        var clue = new SealedClue("source-A", "chain-A", "A", ["A"], "SALON", 1, "case:prelude");
+        var ids = new[] { "A", "B", "C", "D", "E", "F", "G", "H" };
+        var players = ids.Select(id => new SealedPlayer(id, "SALON", knownPlayers: ids.Where(other => other != id))).ToArray();
+        var initialCopies = new Dictionary<string, string[]>(StringComparer.Ordinal) { ["C"] = [clue.Id] };
+        var scenario = new SealedScenarioState("POD_PECETI_POSLEDNI_ZVON_V1", "first", [clue], initialCopies,
+            new(StringComparer.Ordinal), new(StringComparer.Ordinal), new(StringComparer.Ordinal),
+            new(StringComparer.Ordinal), new(StringComparer.Ordinal), "case", []);
+        var game = new SealedGame(players, "delay-seed") { Scenario = scenario };
+
+        game.Resolve(1,
+        [
+            new("delay-1", "A", 1, SealedIntent.Sabotage, Method: "DELAY", ResourceId: clue.Id),
+            new("search-1", "B", 1, SealedIntent.Investigate)
+        ]);
+        var afterFirst = game.Scenario!;
+        Equal(2, afterFirst.Clues.Single().DelayedUntil);
+        Equal(true, afterFirst.KnownClues.GetValueOrDefault("C", []).Contains(clue.Id));
+        Equal(false, afterFirst.KnownClues.GetValueOrDefault("B", []).Contains(clue.Id));
+        var firstExperience = afterFirst.Experiences!["A"].Single(experience => experience.ActionRef == "delay-1");
+        Equal("DELAY_SUCCEEDED", firstExperience.ActionObservation);
+        Equal(1, firstExperience.ActionChapter);
+        var checkpoint = JsonSerializer.Deserialize<SealedGameCheckpoint>(JsonSerializer.Serialize(game.Checkpoint(), new JsonSerializerOptions(JsonSerializerDefaults.Web)), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        game = SealedGame.Restore(checkpoint);
+
+        game.Resolve(2,
+        [
+            new("delay-2", "A", 2, SealedIntent.Sabotage, Method: "DELAY", ResourceId: clue.Id),
+            new("search-2", "B", 2, SealedIntent.Investigate)
+        ]);
+        var afterSecond = game.Scenario!;
+        Equal("DELAY_NOT_OBSERVED", afterSecond.Experiences!["A"].Single(experience => experience.ActionRef == "delay-2").ActionObservation);
+        Equal(true, afterSecond.KnownClues.GetValueOrDefault("B", []).Contains(clue.Id));
+        Equal(1, afterSecond.Experiences["A"].Single(experience => experience.ActionRef == "delay-1").ActionChapter);
+
+        game.Resolve(3,
+        [
+            new("delay-3", "A", 3, SealedIntent.Sabotage, Method: "DELAY", ResourceId: clue.Id),
+            new("search-3", "D", 3, SealedIntent.Investigate)
+        ]);
+        var final = game.Scenario!;
+        Equal(4, final.Clues.Single().DelayedUntil);
+        Equal(false, final.KnownClues.GetValueOrDefault("D", []).Contains(clue.Id));
+        Equal("DELAY_SUCCEEDED", final.Experiences!["A"].Single(experience => experience.ActionRef == "delay-3").ActionObservation);
+        Equal(clue.Chain, final.Clues.Single().Chain);
+        Equal(clue.SourceEvent, final.Clues.Single().SourceEvent);
+        Equal(string.Join(',', clue.Candidates), string.Join(',', final.Clues.Single().Candidates));
+        Equal(true, final.Notes["A"].Last().Contains("do závěrečného hlasování", StringComparison.Ordinal));
+    }
+
+    private static void guard_blocks_delay_only_in_its_resolved_room_and_chapter()
+    {
+        foreach (var arrives in new[] { true, false })
+        {
+            var game = DelayGame(arrives ? "ARCHIV" : "SALON");
+            var results = game.Resolve(1,
+            [
+                new("delay", "A", 1, SealedIntent.Sabotage, Method: "DELAY", ResourceId: "source"),
+                new("search", "B", 1, SealedIntent.Investigate),
+                new("guard", "G", 1, SealedIntent.Guard, Destination: arrives ? "SALON" : "ARCHIV")
+            ]);
+            Equal(arrives ? SealedResult.Hold : SealedResult.Success, results.Single(item => item.ActorId == "A").Result);
+            Equal(arrives, game.Scenario!.KnownClues.GetValueOrDefault("B", []).Contains("source"));
+            Equal(arrives ? 0 : 2, game.Scenario.Clues.Single().DelayedUntil);
+            Equal(1, game.Players["G"].Ward);
+            Equal(0, game.Scenario.Experiences!.GetValueOrDefault("G", []).Count(item => item.ActionObservation is not null));
+            Equal(arrives ? "DELAY_NOT_OBSERVED" : "DELAY_SUCCEEDED",
+                game.Scenario.Experiences!["A"].Single(item => item.ActionRef == "delay").ActionObservation);
+            if (arrives)
+            {
+                game.Resolve(2, [new("delay-next", "A", 2, SealedIntent.Sabotage, Method: "DELAY", ResourceId: "source")]);
+                Equal(0, game.Players["G"].Ward);
+                Equal(3, game.Scenario.Clues.Single().DelayedUntil);
+            }
+        }
+    }
+
+    private static void competing_delays_have_one_deterministic_winner()
+    {
+        string? winner = null;
+        foreach (var reverse in new[] { false, true })
+        {
+            var game = DelayGame("ARCHIV");
+            SealedAction[] actions =
+            [
+                new("delay-A", "A", 1, SealedIntent.Sabotage, Method: "DELAY", ResourceId: "source"),
+                new("delay-C", "C", 1, SealedIntent.Sabotage, Method: "DELAY", ResourceId: "source"),
+                new("search", "B", 1, SealedIntent.Investigate)
+            ];
+            var results = game.Resolve(1, reverse ? actions.Reverse().ToArray() : actions);
+            var delays = results.Where(item => item.Intent == SealedIntent.Sabotage).ToArray();
+            Equal(1, delays.Count(item => item.Result == SealedResult.Success));
+            var resolvedWinner = delays.Single(item => item.Result == SealedResult.Success).ActorId;
+            winner ??= resolvedWinner;
+            Equal(winner, resolvedWinner);
+            Equal(2, game.Scenario!.Clues.Single().DelayedUntil);
+            Equal(false, game.Scenario.KnownClues.GetValueOrDefault("B", []).Contains("source"));
+            Equal(1, game.Scenario.Experiences!.Values.SelectMany(items => items)
+                .Count(item => item.ActionObservation == "DELAY_SUCCEEDED"));
+            Equal(1, game.Scenario.Experiences.Values.SelectMany(items => items)
+                .Count(item => item.ActionObservation == "DELAY_NOT_OBSERVED"));
+        }
+    }
+
+    private static SealedGame DelayGame(string guardLocation)
+    {
+        var ids = new[] { "A", "B", "C", "D", "E", "F", "G", "H" };
+        var players = ids.Select(id => new SealedPlayer(id, id == "G" ? guardLocation : "SALON",
+            knownPlayers: ids.Where(other => other != id))).ToArray();
+        var state = new SealedScenarioState("POD_PECETI_POSLEDNI_ZVON_V1", "first",
+            [new("source", "chain", "A", ["A"], "SALON", 1, "case:prelude")],
+            new(StringComparer.Ordinal), new(StringComparer.Ordinal), new(StringComparer.Ordinal), new(StringComparer.Ordinal),
+            new(StringComparer.Ordinal), new(StringComparer.Ordinal), "case", []);
+        return new SealedGame(players, "guard-and-collision-seed") { Scenario = state };
+    }
+
+    private static void preparation_for_steal_changes_the_real_modifier()
+    {
+        var ids = new[] { "A", "B", "C", "D", "E", "F", "G", "H" };
+        var players = ids.Select(id => new SealedPlayer(id, "SALON", knownPlayers: ids.Where(other => other != id))).ToArray();
+        var state = new SealedScenarioState("POD_PECETI_POSLEDNI_ZVON_V1", "full", [],
+            new(StringComparer.Ordinal), new(StringComparer.Ordinal),
+            new(StringComparer.Ordinal) { ["token"] = new SealedItem("token", "token", "B") },
+            new(StringComparer.Ordinal));
+        var game = new SealedGame(players, "prepared-steal-seed") { Scenario = state };
+        game.Resolve(1, [new("prepare-steal", "A", 1, SealedIntent.Prepare, PreparedIntent: SealedIntent.Steal)]);
+        var steal = game.Resolve(2, [new("steal", "A", 2, SealedIntent.Steal, ResourceId: "token")]).Single();
+        Equal(1, steal.Modifiers!.Preparation);
     }
 
     private static SealedGame NewGame(bool observes = true, Func<string,string,int>? dice = null) => new(

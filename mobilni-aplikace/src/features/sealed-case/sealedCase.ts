@@ -30,7 +30,11 @@ export const legacyScenario: ScenarioSummary = {
   extremeConsequence: 'Tento čin může usmrtit postavu. Výslovně potvrzuji smrtící úmysl a možnou spotřebu jediného Krajního činu.',
 };
 export interface Choice { id: string; label: string; benefit: string; cost: string; risk: string; plan: Plan }
-export interface Recap { chapter: number; actor: string; target: string | null; intent: string; result: string; eventRef: string; reason?: string | null; rolls?: { attack: number; defense: number; attackTotal: number; defenseTotal: number } | null; traceCreated?: boolean; observation?: string | null }
+export interface ActionObservation {
+  actionRef: string; chapter: number;
+  kind: 'DELAY_SUCCEEDED' | 'DELAY_NOT_OBSERVED' | 'INVESTIGATION_NEW_CLUE' | 'INVESTIGATION_KNOWN_CLUE' | 'INVESTIGATION_NO_NEW_CLUE';
+}
+export interface Recap { chapter: number; actor: string; target: string | null; intent: string; result: string; eventRef: string; reason?: string | null; rolls?: { attack: number; defense: number; attackTotal: number; defenseTotal: number } | null; traceCreated?: boolean; observation?: string | null; actionObservation?: ActionObservation | null }
 export interface Play {
   id: string; phase: string; serverNow: number; chapter: number; chapters: number;
   planningEndsAt: number | null; quietEndsAt: number | null; finaleEndsAt: number | null;

@@ -30,8 +30,8 @@ internal sealed record SealedAction(string Id, string ActorId, int Chapter, Seal
             throw new SealedCaseRuleException("Conditional phase-two actions are not supported.");
         if (string.IsNullOrWhiteSpace(Id) || string.IsNullOrWhiteSpace(ActorId) || Chapter < 1 || Revision < 1 || Fallback != "HOLD")
             throw new SealedCaseRuleException("Invalid action envelope.");
-        if (Intent == SealedIntent.Prepare && (PreparedIntent is null || PreparedIntent is SealedIntent.Hold or SealedIntent.Rest or SealedIntent.Prepare))
-            throw new SealedCaseRuleException("PREPARE requires one declared next-action intent.");
+        if (Intent == SealedIntent.Prepare && PreparedIntent is not (SealedIntent.Steal or SealedIntent.Stun or SealedIntent.Lethal))
+            throw new SealedCaseRuleException("PREPARE requires an action that has an implemented preparation effect.");
         if (Intent != SealedIntent.Prepare && PreparedIntent is not null)
             throw new SealedCaseRuleException("Only PREPARE may declare prepared intent.");
         if (Condition is { Kind: SealedConditionKind.TargetAppearsAsleep, EvidenceId: not null })
@@ -46,6 +46,15 @@ internal sealed record SealedAction(string Id, string ActorId, int Chapter, Seal
         if (Intent == SealedIntent.Sabotage && string.IsNullOrWhiteSpace(ResourceId))
         {
             throw new SealedCaseRuleException("SABOTAGE requires a selected source resource.");
+        }
+        if (Intent == SealedIntent.Sabotage && Method is not ("DELAY" or "REDIRECT"))
+        {
+            throw new SealedCaseRuleException("SABOTAGE requires the DELAY or REDIRECT method.");
+        }
+        if (Intent == SealedIntent.Sabotage && Method == "DELAY" && TargetId is not null
+            || Intent == SealedIntent.Sabotage && Method == "REDIRECT" && string.IsNullOrWhiteSpace(TargetId))
+        {
+            throw new SealedCaseRuleException("SABOTAGE target must match its method.");
         }
         if (Intent == SealedIntent.Help && (string.IsNullOrWhiteSpace(TargetId) || TargetId == ActorId))
         {
@@ -327,7 +336,8 @@ internal sealed class SealedWorldLog
     internal void Append(SealedWorldEvent item) { if (_events.Any(x => x.Id == item.Id)) throw new SealedCaseRuleException("Duplicate world event id."); _events.Add(item); }
 }
 internal sealed record SealedExperience(string Id, string ObserverId, string? SourceEventId, string Text, string Confidence,
-    int Phase = 3, string Modality = "SAW", string? PerceivedState = null)
+    int Phase = 3, string Modality = "SAW", string? PerceivedState = null,
+    string? ActionObservation = null, string? ActionRef = null, int? ActionChapter = null)
 {
     internal string Classification => Confidence switch
     {

@@ -340,6 +340,172 @@ describe('sealed case scenario selection', () => {
   });
 });
 
+describe('sealed case short action menu', () => {
+  const shortChoices = [
+    { id: 'investigate', label: 'Pátrat v archivu', benefit: 'Najít stopu.', cost: 'Jeden tah.', risk: 'Nezaručeno.', plan: { chapter: 1, expectedActionRevision: 0, confirmed: true, intent: 4 } },
+    { id: 'guard', label: 'Chránit sebe', benefit: 'Ochrana.', cost: 'Jeden tah.', risk: 'Není důkaz.', plan: { chapter: 1, expectedActionRevision: 0, confirmed: true, intent: 2 } },
+    { id: 'delay-A1', label: 'Zdržet stopu · A · A1', benefit: 'Odložit.', cost: 'Jeden tah.', risk: 'Může selhat.', plan: { chapter: 1, expectedActionRevision: 0, confirmed: true, intent: 7, method: 'DELAY', resourceId: 'A1' } },
+  ];
+
+  it.each(['Guardian', 'Conspirator'])('shows the same three public actions for %s and keeps selection local', async ownTeam => {
+    const value = play('planning', { chapters: 3, ownTeam, choices: shortChoices });
+    const view = await renderPlay(value);
+    await view.findAll('button').find(item => item.text() === 'Moje akce')!.trigger('click');
+    await flushPromises();
+    const choices = view.findAll('.sealed-choices button').map(item => item.text());
+    expect(choices).toHaveLength(3);
+    expect(view.findAll('.sealed-choices button strong').map(item => item.text())).toEqual(['Pátrat', 'Chránit sebe', 'Zdržet stopu']);
+    expect(choices.join(' ')).toContain('novou stopu');
+    expect(choices.join(' ')).toContain('nepotvrzuje, že k útoku došlo');
+    expect(choices.join(' ')).toContain('již získané kopie zůstávají');
+    await view.findAll('.sealed-choices button')[1]!.trigger('click');
+    await flushPromises();
+    expect(view.text()).toContain('Chránit sebe spotřebuje hlavní tah');
+    expect(view.findAll('.sealed-draft label').some(item => item.text().includes('Adresát / cíl'))).toBe(false);
+    expect(api.transport.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+    await view.findAll('button').find(item => item.text() === 'Výslovně potvrdit plán')!.trigger('click');
+    await flushPromises();
+    const request = api.transport.mock.calls.find(([url, options]) => url.endsWith('/actions') && options.method === 'POST');
+    expect(JSON.parse(request![1].body).plan).toMatchObject({ intent: 2, targetId: null });
+  });
+
+  it('only allows a currently visible source for short DELAY and sends no clue or redirect parameters', async () => {
+    const value = play('planning', { chapters: 3, choices: shortChoices,
+      clues: [{ id: 'A1', chain: '1', family: 'A', candidates: ['two'], sourceEvent: marker.privateSource },
+        { id: 'C9', chain: '9', family: 'C', candidates: ['two'], sourceEvent: marker.privateSource }],
+      sources: [{ id: 'A1', label: 'Záznam z archivní knihy' }], ownItems: [{ id: 'WAND', name: 'Hůlka', ownerId: 'one', transferable: true }],
+      visibleItems: [{ id: 'OTHER', name: 'Cizí předmět', ownerId: 'two', transferable: true }] });
+    const view = await renderPlay(value);
+    await view.findAll('button').find(item => item.text() === 'Moje akce')!.trigger('click');
+    await flushPromises();
+    await view.findAll('.sealed-choices button').find(item => item.text().startsWith('Zdržet stopu'))!.trigger('click');
+    await flushPromises();
+    const resource = view.findAll('label').find(item => item.text().includes('Předmět / stopa'))!.find('select');
+    expect(resource.findAll('option').map(item => item.text())).toEqual(['Vyber dostupný zdroj', 'Záznam z archivní knihy']);
+    expect(view.findAll('label').some(item => item.text().includes('Zásah do jediného doručení'))).toBe(false);
+    expect(view.text()).toContain('ID zdroje samo o sobě nezpřístupňuje jeho obsah');
+    expect(view.text()).toContain('Zůstáváš v místě zdroje, který teď vidíš');
+    expect(view.findAll('.sealed-draft label').some(item => item.text().startsWith('Místo'))).toBe(false);
+    expect(api.transport.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+    await resource.setValue('A1');
+    await view.findAll('button').find(item => item.text() === 'Výslovně potvrdit plán')!.trigger('click');
+    await flushPromises();
+    const request = api.transport.mock.calls.find(([url, options]) => url.endsWith('/actions') && options.method === 'POST');
+    expect(JSON.parse(request![1].body).plan).toMatchObject({ intent: 7, resourceId: 'A1', method: 'DELAY', targetId: null, destination: null });
+    expect(JSON.stringify(JSON.parse(request![1].body).plan)).not.toContain('C9');
+    expect(JSON.stringify(JSON.parse(request![1].body).plan)).not.toContain('REDIRECT');
+  });
+
+  it('preserves a valid adjacent move when switching local Investigate and Guard drafts, then clears it for DELAY', async () => {
+    const view = await renderPlay(play('planning', { chapters: 3, choices: shortChoices }));
+    await view.findAll('button').find(item => item.text() === 'Moje akce')!.trigger('click');
+    await flushPromises();
+    await view.findAll('.sealed-choices button').find(item => item.text().startsWith('Pátrat'))!.trigger('click');
+    await flushPromises();
+    const destination = () => view.findAll('label').find(item => item.text().startsWith('Místo'))!.find('select');
+    await destination().setValue('SALON');
+    await view.findAll('.sealed-choices button').find(item => item.text().startsWith('Chránit sebe'))!.trigger('click');
+    await flushPromises();
+    expect((destination().element as HTMLSelectElement).value).toBe('SALON');
+    await view.findAll('.sealed-choices button').find(item => item.text().startsWith('Pátrat'))!.trigger('click');
+    await flushPromises();
+    expect((destination().element as HTMLSelectElement).value).toBe('SALON');
+    await view.findAll('.sealed-choices button').find(item => item.text().startsWith('Zdržet stopu'))!.trigger('click');
+    await flushPromises();
+    expect(view.findAll('label').some(item => item.text().startsWith('Místo'))).toBe(false);
+    expect(api.transport.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+  });
+
+  it('explains missing visible sources before allowing a delay request', async () => {
+    const view = await renderPlay(play('planning', { chapters: 3, choices: shortChoices, sources: [] }));
+    await view.findAll('button').find(item => item.text() === 'Moje akce')!.trigger('click');
+    await flushPromises();
+    expect(view.text()).toContain('v tomto místě nevidíš žádnou uvolněnou stopu');
+    expect(view.findAll('.sealed-choices button')[2]!.attributes('disabled')).toBeDefined();
+    expect(api.transport.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+  });
+
+  it('blocks a restored short delay draft when its source is no longer in the permitted view', async () => {
+    const value = play('planning', { chapters: 3, choices: shortChoices,
+      sources: [{ id: 'A1', label: 'Záznam z archivní knihy' }] });
+    localStorage.setItem(`dv:sealed-draft:one:${value.id}`, JSON.stringify({ draft: {
+      chapter: 1, expectedActionRevision: 0, confirmed: true, intent: 7, resourceId: 'C9', method: 'DELAY',
+    } }));
+    const view = await renderPlay(value);
+    await view.findAll('button').find(item => item.text() === 'Moje akce')!.trigger('click');
+    await flushPromises();
+    expect(view.text()).toContain('Vyber jednu z uvolněných stop, které teď vidíš v tomto místě.');
+    expect(view.findAll('button').find(item => item.text() === 'Výslovně potvrdit plán')!.attributes('disabled')).toBeDefined();
+    expect(api.transport.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+  });
+
+  it('cleans a changed full-game draft locally without replacing the saved plan before confirmation', async () => {
+    const value = play('planning', { ownPlan: { id: 'saved', actorId: 'one', chapter: 1, revision: 2,
+      expectedActionRevision: 1, confirmed: true, intent: 4 } });
+    const storageKey = `dv:sealed-draft:one:${value.id}`;
+    const draft = { chapter: 1, expectedActionRevision: 2, confirmed: true, intent: 4, targetId: 'two',
+      resourceId: 'STALE', method: 'REDIRECT', preparedIntent: 6, destination: null };
+    localStorage.setItem(storageKey, JSON.stringify({ draft }));
+    const view = await renderPlay(value);
+    await view.findAll('button').find(item => item.text() === 'Moje akce')!.trigger('click');
+    await flushPromises();
+    const type = view.findAll('label').find(item => item.text().includes('Proveditelný typ akce'))!.find('select');
+    expect(type.find('option[value="4"]').attributes('disabled')).toBeUndefined();
+    await type.setValue('2');
+    await type.trigger('change');
+    await flushPromises();
+    const saved = JSON.parse(localStorage.getItem(storageKey)!);
+    expect(saved.draft).toMatchObject({ intent: 2, targetId: null, resourceId: null, method: null, preparedIntent: null });
+    await type.setValue('4');
+    await type.trigger('change');
+    await flushPromises();
+    expect(JSON.parse(localStorage.getItem(storageKey)!).draft).toMatchObject({ intent: 4, targetId: null, resourceId: null, method: null });
+    expect(view.find('.sealed-receipt').text()).toContain('Pátrat');
+    expect(api.transport.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+  });
+
+  it('preserves full-game Guard targets and makes REDIRECT target method-dependent', async () => {
+    const value = play('planning', { choices: [
+      { id: 'guard-other', label: 'Chránit postavu', benefit: 'Ochrana.', cost: 'Jeden tah.', risk: 'Dosah se ověří.',
+        plan: { chapter: 1, expectedActionRevision: 0, confirmed: true, intent: 2, targetId: 'two' } },
+      { id: 'sabotage', label: 'Sabotovat', benefit: 'Zásah.', cost: 'Jeden tah.', risk: 'Může selhat.',
+        plan: { chapter: 1, expectedActionRevision: 0, confirmed: true, intent: 7, resourceId: 'A1', method: 'REDIRECT', targetId: 'two' } },
+    ] });
+    const view = await renderPlay(value);
+    await view.findAll('button').find(item => item.text() === 'Moje akce')!.trigger('click');
+    await flushPromises();
+    await view.findAll('.sealed-choices button').find(item => item.text().includes('Chránit postavu'))!.trigger('click');
+    await flushPromises();
+    let target = view.findAll('label').find(item => item.text().includes('Adresát / cíl'))!.find('select');
+    expect((target.element as HTMLSelectElement).value).toBe('two');
+    await view.findAll('.sealed-choices button').find(item => item.text().includes('Sabotovat'))!.trigger('click');
+    await flushPromises();
+    const method = view.findAll('label').find(item => item.text().includes('Metoda sabotáže'))!.find('select');
+    expect((method.element as HTMLSelectElement).value).toBe('REDIRECT');
+    target = view.findAll('label').find(item => item.text().includes('Adresát / cíl'))!.find('select');
+    expect((target.element as HTMLSelectElement).value).toBe('two');
+    await method.setValue('DELAY');
+    await method.trigger('change');
+    await flushPromises();
+    expect(view.findAll('label').some(item => item.text().includes('Adresát / cíl'))).toBe(false);
+    expect(api.transport.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+  });
+
+  it('keeps own sabotage feedback tied to its chapter and leaves missing evidence unknown', async () => {
+    const base = { chapter: 3, actor: 'one', target: null, intent: 'Sabotage', result: 'Tah se vyhodnotil', eventRef: '' };
+    let view = await renderPlay(play('planning', { ownOutcomes: [{ ...base, actionObservation: { actionRef: 'action-3', chapter: 3, kind: 'DELAY_SUCCEEDED' } }] }));
+    expect(view.text()).toContain('Tvá zaznamenaná zkušenost potvrzuje úspěšné zdržení');
+    view.unmount(); wrapper = undefined;
+    view = await renderPlay(play('planning', { ownOutcomes: [{ ...base, actionObservation: { actionRef: 'action-2', chapter: 2, kind: 'DELAY_SUCCEEDED' } }] }));
+    expect(view.text()).toContain('Výsledek zdržení zatím z tvé zkušenosti neznáš');
+    expect(view.text()).not.toContain('potvrzuje úspěšné zdržení');
+    view.unmount(); wrapper = undefined;
+    view = await renderPlay(play('planning', { ownOutcomes: [{ ...base, actionObservation: { actionRef: 'action-3', chapter: 3, kind: 'DELAY_NOT_OBSERVED' } }] }));
+    expect(view.text()).toContain('Výsledek zůstává neznámý');
+    expect(view.text()).not.toContain('prokázan');
+  });
+});
+
 describe('sealed case focused views and disclosure', () => {
   it('keeps each view button in sync with the visible panel', async () => {
     const view = await renderPlay(play());
@@ -356,9 +522,10 @@ describe('sealed case focused views and disclosure', () => {
     expect(view.findAll('summary').map(item => item.text())).toContain('Další možnosti tahu');
     expect(view.findAll('details').every(item => !item.element.hasAttribute('open'))).toBe(true);
     const labels = view.findAll('label').map(item => item.text());
-    for (const label of ['Adresát / cíl', 'Místo', 'Předmět / stopa']) {
+    for (const label of ['Adresát / cíl', 'Místo']) {
       expect(labels.some(text => text.includes(label))).toBe(true);
     }
+    expect(labels.some(text => text.includes('Viditelná stopa k pátrání (volitelné)'))).toBe(true);
     const advanced = view.findAll('details').find(item => item.find('summary').text() === 'Další možnosti tahu')!;
     expect(advanced.findAll('label').some(item => item.text().includes('Podmínka'))).toBe(true);
     expect(button('Příběh').attributes('aria-pressed')).toBe('false');
@@ -428,7 +595,7 @@ describe('sealed case focused views and disclosure', () => {
     expect(view.text()).toContain('Zatím nemáš novou doloženou stopu.');
   });
 
-  it('uses the same stable clue label in a resource selector and the journal', async () => {
+  it('keeps the investigate source selector limited to currently visible sources', async () => {
     const view = await renderPlay(play('planning', {
       clues: [
         { id: 'A1', chain: '1', family: 'A', candidates: ['two'], sourceEvent: marker.privateSource },
@@ -441,10 +608,13 @@ describe('sealed case focused views and disclosure', () => {
     await flushPromises();
     await button('Pátrat v archivu').trigger('click');
     await flushPromises();
-    const resource = view.findAll('label').find(item => item.text().includes('Předmět / stopa'))!.find('select');
-    const optionLabels = resource.findAll('option').map(option => option.text());
-    expect(optionLabels).toContain('Záznam z archivní knihy');
-    expect(optionLabels).toContain('Stopa 2');
+    const source = view.findAll('label').find(item => item.text().includes('Viditelná stopa k pátrání'))!.find('select');
+    expect(source.findAll('option').map(option => option.element.value)).toEqual(['Bez určení zdroje', 'A1']);
+    await source.setValue('A1');
+    await button('Výslovně potvrdit plán').trigger('click');
+    await flushPromises();
+    const request = api.transport.mock.calls.find(([url, options]) => url.endsWith('/actions') && options.method === 'POST');
+    expect(JSON.parse(request![1].body).plan).toMatchObject({ intent: 4, resourceId: 'A1' });
 
     await button('Deník').trigger('click');
     await flushPromises();
@@ -513,7 +683,7 @@ describe('sealed case focused views and disclosure', () => {
       sourceSchedule: [{ family: 'C', label: 'Závěrečný záznam', location: 'SALON', releaseChapter: 3 }] });
     const draft: Plan = { chapter: 1, expectedActionRevision: 0, confirmed: true, intent, targetId: 'two',
       destination: null, defensePolicy: 1, shelteredPosition: true, resourceId: null,
-      condition: intent === 10 ? { kind: 0 } : null, ...(intent === 3 ? { preparedIntent: 4 } : {}) };
+      condition: intent === 10 ? { kind: 0 } : null, ...(intent === 3 ? { preparedIntent: 6 } : {}) };
     const storageKey = `dv:sealed-draft:one:${value.id}`;
     localStorage.setItem(storageKey, JSON.stringify({ draft, personalText: 'Můj rozepsaný záměr.' }));
     const view = await renderPlay(value);
@@ -523,7 +693,8 @@ describe('sealed case focused views and disclosure', () => {
     await button('Připravit přesun: Salon').trigger('click');
     await flushPromises();
     expect(api.transport.mock.calls).toHaveLength(requestsBefore);
-    expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ draft: { ...draft, destination: 'SALON' }, personalText: 'Můj rozepsaný záměr.' });
+    const expectedDraft = { ...draft, destination: 'SALON', ...(intent === 3 ? { targetId: null } : {}) };
+    expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ draft: expectedDraft, personalText: 'Můj rozepsaný záměr.' });
     const confirmation = button('Výslovně potvrdit plán');
     if (chapter !== draft.chapter) {
       expect(confirmation.attributes('disabled')).toBeDefined();
@@ -532,7 +703,7 @@ describe('sealed case focused views and disclosure', () => {
       await confirmation.trigger('click');
       await flushPromises();
       const action = api.transport.mock.calls.find(([url, options]) => url.endsWith('/actions') && options.method === 'POST');
-      expect(JSON.parse(action![1].body).plan).toMatchObject({ ...draft, destination: 'SALON', summary: 'Můj rozepsaný záměr.' });
+      expect(JSON.parse(action![1].body).plan).toMatchObject({ ...expectedDraft, summary: 'Můj rozepsaný záměr.' });
     }
   });
 
