@@ -219,10 +219,9 @@
       "scenarios": [
         "T79"
       ],
-      "status": "mapped_with_open_gates",
-      "tests": [
-        "ai-eval/test_dv01.py#test_skill_metadata_and_references"
-      ]
+      "status": "retired",
+      "reason": "Project-scoped skills were removed at the user's request.",
+      "tests": []
     },
     "R20": {
       "scenarios": [
@@ -1143,12 +1142,10 @@
       "gate": "Syntetický permission/revision kontrakt. Produkční appearance purpose/observation/subjekt/revokace nejsou existujícím costume souhlasem pokryté: permission_pending."
     },
     "T79": {
-      "tests": [
-        "ai-eval/test_dv01.py#test_skill_metadata_and_references"
-      ],
+      "tests": [],
       "layer": "A/E",
-      "status": "guard_covered",
-      "gate": "Projektový discovery mechanismus existuje. Nové skill metadata/reference jsou dry-run; nový katalog potřebuje fresh session, skutečný model routing nebyl spuštěn."
+      "status": "retired",
+      "gate": "Project-scoped skill workflows were removed at the user's request. This historical scenario has no current execution claim."
     },
     "T80": {
       "tests": [

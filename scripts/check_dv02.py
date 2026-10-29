@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the DV02 coverage inventory and project skill references offline."""
+"""Validate the DV02 coverage inventory and documentation references offline."""
 import json
 from pathlib import Path
 import re
@@ -55,21 +55,9 @@ def main():
                 require(bool(row.get('gate')), f'{row["id"]}: missing concrete gate')
             else:
                 require(bool(row.get('reason')), f'{row["id"]}: missing applicability reason')
-    names = ('dildovander-show-authoring', 'dildovander-show-debug')
-    for name in names:
-        folder = ROOT / '.agents/skills' / name
-        skill = folder / 'SKILL.md'
-        text = skill.read_text(encoding='utf-8')
-        require(text.startswith('---\n'), f'{name}: missing frontmatter')
-        metadata = text.split('---', 2)[1]
-        require(f'\nname: {name}\n' in metadata and '\ndescription: ' in metadata,
-                f'{name}: invalid name/description')
-        require('$' + name in (folder / 'agents/openai.yaml').read_text(encoding='utf-8'),
-                f'{name}: default prompt targets another skill')
-        validate_links(skill)
     validate_links(ROOT / 'docs/dv02.md')
-    print('PASS DV02: 48 requirements, 80 scenario families, 2 skill metadata/link workflows')
-    print('Coverage is an inventory; actual receipts identify executed checks. Physical G and live skill reload remain separate.')
+    print('PASS DV02: 48 requirements, 80 scenario families, documentation links')
+    print('Coverage is an inventory; actual receipts identify executed checks. Physical G remains separate.')
 
 
 if __name__ == '__main__':

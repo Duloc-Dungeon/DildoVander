@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { createWorkshopFixtureServer } from './fixtures/wand-workshop.mjs';
+import { assertApplicationHeader } from './fixtures/application-header.mjs';
 
 const { server, origin, requests } = await createWorkshopFixtureServer(0, { reference: true });
 const output = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'dildovander-prelaunch-wand');
@@ -65,12 +66,14 @@ try {
     assert.equal(await overflow(), false, `${width}: missing portrait fits`);
     await page.screenshot({ path: path.join(output, `portrait-failed-${width}.png`), fullPage: true }); captures++;
     if (width === 390) await page.emulateMedia({ reducedMotion: 'no-preference' });
+    // Position the portrait before its short reveal animation starts.
+    await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
     portraitStatus = 'ready';
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
     if (width === 390) {
       await page.locator('.portrait-mirror[data-mirror="revealing"]').waitFor();
-      await page.screenshot({ path: path.join(output, 'portrait-animation-after-w-390.png'), fullPage: true }); captures++;
+      // Full-page capture can scroll the portrait out of view and cancel its reveal.
+      await page.screenshot({ path: path.join(output, 'portrait-animation-after-w-390.png') }); captures++;
     }
     assert.equal(await page.locator('.viewport-curtain').count(), 0, 'portrait and wand reveal without a curtain overlay');
     await page.locator('.portrait-stage[data-curtain="open"]').waitFor();
@@ -89,6 +92,10 @@ try {
     await page.screenshot({ path: path.join(output, `reveal-${width}.png`), fullPage: true }); captures++;
     // The W entrance was clicked; restore keyboard modality before checking its ring.
     await page.keyboard.press('Tab');
+    const handoffHeading = page.locator('#prelaunch-wand-title');
+    await handoffHeading.focus();
+    assert.equal(await handoffHeading.evaluate(element => document.activeElement === element), true, 'handoff heading remains an announcement target');
+    assert.equal(await handoffHeading.evaluate(element => getComputedStyle(element).outlineStyle), 'none', 'handoff announcement does not frame its heading');
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).focus();
     const focus = await prepareButton.evaluate(button => ({
       color: getComputedStyle(button).outlineColor,
@@ -117,8 +124,10 @@ try {
     assert.equal(await page.locator('.launch-card').isVisible(), false, 'portrait yields to workshop');
     const caseBox = await page.locator('.trunk-stage__visual').boundingBox();
     assert(caseBox && caseBox.width >= Math.min(width - 64, 260), `${width}: case remains the main workshop object`);
-    assert(caseBox && caseBox.y < 300 && caseBox.y + caseBox.height <= 844, `${width}: case is visible without scrolling past duplicate headers`);
-    assert.equal(await page.locator('.launch-masthead').isVisible(), false, 'workshop has one header');
+    const topbarBox = await page.locator('.application-topbar').boundingBox();
+    assert(caseBox && topbarBox && caseBox.y - topbarBox.height < 300 && caseBox.y + caseBox.height <= 844, `${width}: case stays visible below the shared top bar`);
+    await assertApplicationHeader(page);
+    assert.equal(await page.locator('.launch-masthead, .signin-masthead').count(), 0, 'workshop keeps only the shared brand header');
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: path.join(output, `case-${width}.png`) }); captures++;
     assert.equal(await page.locator('#workshop-title').evaluate(element => element === document.activeElement), true);

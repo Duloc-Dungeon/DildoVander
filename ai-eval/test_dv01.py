@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from dv01_replay import (HERE, capture_current_reference, read_current_reference, text_sha256,
-                         validate_inputs, validate_skills, run_offline)
+                         validate_inputs, run_offline)
 
 
 class CharacterReplayTests(unittest.TestCase):
@@ -51,9 +51,6 @@ class CharacterReplayTests(unittest.TestCase):
             lf.write_bytes(b"authored persona\nsecond line\n")
             crlf.write_bytes(b"authored persona\r\nsecond line\r\n")
             self.assertEqual(text_sha256(lf), text_sha256(crlf))
-
-    def test_skill_metadata_and_references(self):
-        self.assertTrue(validate_skills())
 
     def test_dry_run_never_spawns_provider_or_claims_behavior(self):
         with tempfile.TemporaryDirectory() as directory, patch("subprocess.run") as run:

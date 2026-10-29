@@ -1,6 +1,7 @@
 // Runs against the production bundle with a deterministic in-memory backend.
 // No account data, network service, or paid generation provider is used.
 import assert from 'node:assert/strict';
+import { assertApplicationHeader } from './fixtures/application-header.mjs';
 import { createServer } from 'node:http';
 import { readFile, mkdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -120,6 +121,7 @@ try {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal(await page.locator('.application-sidebar, .application-header, .application-footer').count(), 0,
     'unknown guest policy must not flash postlaunch navigation before its response');
+  await assertApplicationHeader(page);
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0,
     'ordinary invitation without an active operation has no hardware control');
   releasePolicy();
@@ -129,7 +131,7 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-w-entrance.png'), fullPage: true });
   await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByRole('heading', { name: /Vstup na vlastní pověst/ }).waitFor();
-  assert.equal(await page.getByRole('link', { name: 'Wand Night Stand, úvod' }).count(), 1);
+  assert.equal(await page.locator('.application-topbar__brand').count(), 1);
   assert.equal(await page.getByText(/DildoVander|tester|operátor|administrace/i).count(), 0);
   assert.equal(await page.getByLabel('Jméno postavy').count(), 1);
   assert.equal(await page.locator('.application-sidebar').count(), 0);

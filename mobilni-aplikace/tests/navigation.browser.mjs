@@ -5,6 +5,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { createGameFixtureServer } from './fixtures/game.mjs';
+import { assertApplicationHeader } from './fixtures/application-header.mjs';
 
 const output = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'wns-navigation');
 await mkdir(output, { recursive: true });
@@ -58,6 +59,7 @@ try {
     });
     const navigation = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
     async function checkNavigation(selected) {
+      await assertApplicationHeader(page);
       await navigation.waitFor();
       assert.deepEqual(await navigation.locator('a').evaluateAll(links => links.map(link => [link.textContent, link.getAttribute('href')])), [
         ['Dílna', '/play/wand'], ['Hry', '/play'], ['Památky', '/me/keepsakes'], ['Já', '/me/account'],
@@ -90,6 +92,15 @@ try {
     await page.goto(`${origin}/__game/first-wand`);
     await page.getByRole('heading', { name: 'Nejdřív vlastní hůlku.' }).waitFor();
     await checkNavigation('Hry');
+    if (width === 390) {
+      await page.evaluate(() => document.documentElement.style.setProperty('--safe-area-inset-top', '24px'));
+      await page.waitForFunction(() => {
+        const height = document.querySelector('.application-topbar').getBoundingClientRect().height;
+        return Math.abs(parseFloat(getComputedStyle(document.querySelector('.application-frame')).getPropertyValue('--application-header-height')) - height) < 1;
+      });
+      assert.equal(await page.locator('.application-topbar').evaluate(header => getComputedStyle(header).paddingTop), '24px', 'shared top bar consumes the native top inset');
+      await page.evaluate(() => document.documentElement.style.removeProperty('--safe-area-inset-top'));
+    }
     await checkPrimaryAction(page.getByRole('link', { name: 'Vstoupit do kufrovy dílny', exact: true }));
     await page.screenshot({ path: path.join(output, `play-${width}.png`) });
     await page.getByRole('link', { name: 'Pod pečetí', exact: true }).click();
@@ -110,6 +121,14 @@ try {
     await page.waitForURL('**/play/wand');
     await page.getByRole('heading', { name: 'Kufrova dílna', exact: true }).waitFor();
     await checkNavigation('Dílna');
+    const workshopTitle = page.locator('#workshop-title');
+    await page.keyboard.press('Tab');
+    await workshopTitle.focus();
+    assert.equal(await workshopTitle.evaluate(element => document.activeElement === element), true, 'workshop heading remains an announcement target');
+    assert.equal(await workshopTitle.evaluate(element => getComputedStyle(element).outlineStyle), 'none', 'announcing the workshop does not frame its heading');
+    const workshopBounds = await page.locator('.trunk-workshop').boundingBox();
+    const titleBounds = await workshopTitle.boundingBox();
+    assert(titleBounds.x - workshopBounds.x >= 16, 'workshop heading has a reading gutter on every viewport');
     await checkPrimaryAction(page.getByRole('link', { name: 'Upravit nebo dokončit přípravu postavy', exact: true }));
     await page.screenshot({ path: path.join(output, `workshop-${width}.png`) });
     await page.goto(`${origin}/me/conversation`);
