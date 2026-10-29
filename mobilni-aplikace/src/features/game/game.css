@@ -78,8 +78,6 @@
 .game-commentator-invite { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: center; gap: 20px; margin: 32px 0; }
 .game-commentator-invite h2 { font-size: 1.4rem; }
 .game-commentator-invite p { font-size: .875rem; }
-.game-yolo .game-character { max-width: 190px; margin-inline: auto; margin-bottom: -30px; }
-.game-yolo .game-paper { position: relative; }
 .game-boss-stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: center; }
 .game-boss-stage p { font-size: .875rem; }
 .game-boss-portrait { max-width: 200px; margin-inline: auto; }
