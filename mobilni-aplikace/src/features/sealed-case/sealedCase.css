@@ -33,7 +33,6 @@
 .sealed-check input { width: 22px; height: 22px; flex: 0 0 22px; margin: 2px 0 0; }
 .sealed-content :is(button, a, input, textarea, select, summary):focus-visible { outline: 3px solid var(--wns-focus-ring); outline-offset: 4px; }
 .sealed-panel:focus { outline: none; }
-.sealed-panel:focus-visible { outline: 2px solid var(--wns-mint); outline-offset: 8px; border-radius: 4px; }
 .sealed-fields { display: grid; gap: 0 16px; }
 .sealed-content .sealed-setup { border-radius: 16px; padding: clamp(16px, 4vw, 24px); margin-bottom: 24px; }
 .sealed-setup h2 { margin-top: 0; }

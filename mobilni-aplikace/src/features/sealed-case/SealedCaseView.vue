@@ -411,7 +411,6 @@ async function openAction() {
     <div class="game-content sealed-content">
       <header class="sealed-header">
         <RouterLink to="/play">← Večer</RouterLink>
-        <span>Wand Night Stand</span>
       </header>
       <div class="sealed-title">
         <div>

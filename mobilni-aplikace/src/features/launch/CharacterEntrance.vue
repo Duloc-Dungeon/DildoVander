@@ -101,7 +101,7 @@ onBeforeUnmount(() => clearInterval(timer));
 </template>
 
 <style scoped>
-.character-entrance { width: min(100%, 70rem); margin: auto; padding: max(24px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; color: var(--wns-text); }
+.character-entrance { width: min(100%, 70rem); margin: auto; padding: 24px 24px max(32px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; color: var(--wns-text); }
 .entrance-stage { width: min(100%, 340px); margin-inline: auto; min-width: 0; }
 .entrance-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 28px; color: var(--wns-on-peach); text-align: center; }
 .entrance-placeholder img { opacity: .65; }

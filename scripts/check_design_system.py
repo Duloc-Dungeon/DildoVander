@@ -18,8 +18,7 @@ UI_ROOTS = (
     "firmware/diagnostics/servo-bench/web",
 )
 GUIDANCE = (
-    "AGENTS.md", "DESIGN.md", ".agents/skills/dildovander-ui/SKILL.md",
-    ".agents/skills/dildovander-keepsake-design/SKILL.md",
+    "AGENTS.md", "DESIGN.md",
     "design-system/README.md", "design-system/style-guide.md",
     "design-system/components.md", "design-system/screens.md",
 )

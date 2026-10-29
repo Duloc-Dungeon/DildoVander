@@ -3,7 +3,7 @@ import PushNotifications from '../identity/PushNotifications.vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
-import WnsWordmark from '../../components/WnsWordmark.vue';
+import ApplicationHeaderActions from '../../application/ApplicationHeaderActions.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from '../identity/AccountDeletion.vue';
@@ -545,10 +545,9 @@ onBeforeUnmount(() => {
     <footer class="launch-footer"><AwButton v-if="account" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
   <SceneShell v-else-if="!rickrollActive" class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
-    <header v-show="!workshopOpen" class="launch-masthead">
-      <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><WnsWordmark /></RouterLink>
+    <ApplicationHeaderActions v-if="!workshopOpen">
       <AwButton v-if="account" class="launch-signout" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton>
-    </header>
+    </ApplicationHeaderActions>
     <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">
       <PaperSurface class="launch-copy">
         <h1 id="launch-title">{{ language === 'en' ? 'Request beta access' : 'Požádat o přístup do bety' }}</h1>
@@ -620,11 +619,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.launch-page { min-height: 100dvh; padding: max(1rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px)); color: var(--aw-ivory); }
-.launch-masthead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .5rem 2rem; }
-.launch-wordmark { min-height: 44px; display: flex; align-items: center; gap: .8rem; color: var(--aw-ivory); text-decoration: none; font-family: var(--aw-font-display); font-size: 1.8rem; font-weight: 500; line-height: .9; letter-spacing: -.025em; }
-.launch-wordmark img { display: none; }
-.launch-wordmark span { white-space: nowrap; }
+.launch-page { min-height: var(--application-content-height, 100dvh); padding: 1rem max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px)); color: var(--aw-ivory); }
 .launch-language { display: inline-flex; align-items: center; font: inherit; font-size: .875rem; color: var(--aw-game-paper, var(--aw-ivory)); background: rgb(3 24 22 / .72); border: 1px solid var(--aw-game-brass, var(--aw-border-subtle)); border-radius: 8px; min-height: 44px; padding: .5rem; }
 .launch-card { width: min(100%, 42rem); margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
 .launch-art { order: 2; width: 100%; }
@@ -679,9 +674,6 @@ onBeforeUnmount(() => {
 :focus-visible { outline: 2px solid var(--aw-info); outline-offset: 3px; }
 @media (max-width: 760px) {
   .launch-page { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
-  .launch-masthead { padding-block: 0 1.5rem; }
-  .launch-wordmark { font-size: 1.55rem; }
-  .launch-wordmark img { width: 40px; height: 40px; }
   .launch-card { gap: .85rem; }
   .launch-copy { max-width: none; }
   .launch-copy :deep(h1) { font-size: 2.25rem; line-height: 1.1; }
@@ -691,8 +683,6 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 340px) { .launch-page { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); } }
 .launch-page { --wns-display: var(--wns-font-family); background: var(--wns-bg, #080909); color: var(--wns-text, #f5f5f0); }
-.launch-masthead { width: min(100%, 62rem); margin-inline: auto; padding-block: .5rem clamp(1.25rem, 5vh, 3rem); }
-.launch-wordmark { font: 800 1.2rem/.95 var(--wns-display); letter-spacing: -.06em; }
 .launch-language { border: 0; border-radius: 999px; background: transparent; color: var(--wns-muted, #b2b9b6); }
 .launch-card { max-width: 62rem; gap: 1.25rem; }
 .launch-copy { color: var(--wns-text, #f5f5f0); }

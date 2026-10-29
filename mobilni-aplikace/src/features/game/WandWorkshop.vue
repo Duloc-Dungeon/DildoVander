@@ -324,7 +324,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 
 <template>
   <section class="trunk-workshop" :data-result="!!wand" :data-new-wand="newlyCompleted" :data-mode="mode" :data-stage="stage" aria-labelledby="workshop-title">
-    <header class="trunk-workshop__header"><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton><RouterLink v-else to="/play" @click="stopMedia">← Zpět do hry</RouterLink><RouterLink v-if="!prelaunch" to="/me/character" @click="stopMedia">Moje postava</RouterLink><span>Ollivander Industries™</span></header>
+    <header class="trunk-workshop__header"><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton><RouterLink v-else to="/play" @click="stopMedia">← Zpět do hry</RouterLink><RouterLink v-if="!prelaunch" to="/me/character" @click="stopMedia">Moje postava</RouterLink></header>
     <div class="trunk-workshop__identity">
       <h1 id="workshop-title" ref="title" tabindex="-1">{{ wand ? wand.name : upgrade ? 'Nová kapitola tvé hůlky' : 'Kufrova dílna' }}</h1>
       <p v-if="entry?.profile"><strong>{{ entry.profile.name }}</strong> · {{ entry.profile.universe }}</p>
@@ -396,7 +396,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 </template>
 
 <style scoped>
-.trunk-workshop { box-sizing: border-box; width: min(100%, 68rem); margin: auto; padding: calc(.5rem + env(safe-area-inset-top, 0px)) 0 calc(1.5rem + env(safe-area-inset-bottom, 0px)); color: var(--wns-text); font-size: 1rem; overflow-wrap: anywhere; }
+.trunk-workshop { box-sizing: border-box; width: min(100%, 68rem); margin: auto; padding: .5rem 0 calc(1.5rem + env(safe-area-inset-bottom, 0px)); color: var(--wns-text); font-size: 1rem; overflow-wrap: anywhere; }
 .trunk-workshop__header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: 1rem; }
 .trunk-workshop__header span { color: var(--wns-muted); font-size: .75rem; }
 .trunk-workshop__identity h1 { margin: 0 0 .4rem; letter-spacing: -.03em; }
@@ -430,7 +430,10 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop[data-result='true'] :deep(.trunk-stage__wand) { max-height: none; }
 .trunk-workshop__announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The scene carries the expression; controls and durable state stay still. */
-.trunk-workshop { padding-inline: clamp(1rem, 3vw, 2rem); }
+.trunk-workshop {
+  padding-left: max(clamp(1rem, 3vw, 2rem), env(safe-area-inset-left, 0px));
+  padding-right: max(clamp(1rem, 3vw, 2rem), env(safe-area-inset-right, 0px));
+}
 .trunk-workshop ::selection { background: var(--wns-mint); color: var(--wns-on-mint); }
 .trunk-workshop :is(a, button, textarea, summary):focus-visible { outline: 3px solid var(--wns-mint); outline-offset: 4px; }
 .trunk-workshop textarea { caret-color: var(--wns-mint); }
@@ -472,9 +475,8 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop .aw-button--primary { box-shadow: none; border: 0; min-height: 56px; }
 .trunk-workshop[data-result='false'] .trunk-workshop__presentation { padding: clamp(16px, 3vw, 32px); }
 .trunk-workshop[data-result='false'] :deep(.trunk-stage__visual) { width: min(100%, 36rem); }
-@media (min-width: 850px) { .trunk-workshop__scene { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 2.5rem; margin-top: 2rem; align-items: start; } .trunk-workshop__presentation { position: sticky; top: 1rem; } }
+@media (min-width: 850px) { .trunk-workshop__scene { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 2.5rem; margin-top: 2rem; align-items: start; } .trunk-workshop__presentation { position: sticky; top: calc(var(--application-header-height, 0px) + 1rem); } }
 @media (max-width: 849px) {
-  .trunk-workshop { padding-inline: 0; }
   .trunk-workshop__journey { margin-top: 1rem; }
   .trunk-workshop[data-result='false'] :deep(.trunk-stage__visual) { width: min(100%, 26rem, 46svh); margin-inline: auto; }
   .trunk-workshop :deep(.trunk-stage__activity) { min-height: 44px; text-align: center; }
