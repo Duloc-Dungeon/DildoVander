@@ -9,9 +9,8 @@ internal sealed record SealedWorldResolution(long Revision, int Chapter, bool Re
 
 internal sealed partial class SealedCaseStore
 {
-    // This is a server-only persistence boundary. No HTTP endpoint accepts a
-    // checkpoint, seed, outcome or version from a player. Public routes remain
-    // closed until scenario/roster/projection integration is complete.
+    // This is a server-only persistence boundary. Public play routes accept only
+    // confirmed player plans; checkpoints, seeds, outcomes and versions stay server-owned.
     private static readonly string ContentVersionJson = ReadContentVersion();
 
     private static string ReadContentVersion()
@@ -251,9 +250,19 @@ internal sealed partial class SealedCaseStore
             AND r.chapter=(SELECT MAX(chapter) FROM sealed_case_resolutions WHERE case_id=w.case_id)
             WHERE w.case_id=$id
             """;
-        cmd.Parameters.AddWithValue("$id", caseId); using var r = cmd.ExecuteReader();
-        if (!r.Read()) throw new SealedCasePersistenceException("world_not_initialized", 409);
-        return new(revision, r.GetInt32(2), r.GetString(0), JsonSerializer.Deserialize<SealedGameCheckpoint>(r.GetString(1), Json)!);
+        cmd.Parameters.AddWithValue("$id", caseId);
+        string version; int chapter; SealedGameCheckpoint checkpoint;
+        using (var r = cmd.ExecuteReader())
+        {
+            if (!r.Read()) throw new SealedCasePersistenceException("world_not_initialized", 409);
+            version = r.GetString(0); chapter = r.GetInt32(2);
+            checkpoint = JsonSerializer.Deserialize<SealedGameCheckpoint>(r.GetString(1), Json)!;
+        }
+        if (version != ContentVersionFor(checkpoint.Scenario))
+        {
+            throw new SealedCasePersistenceException("unsupported_content_version", 409);
+        }
+        return new(revision, chapter, version, checkpoint);
     }
 
     private static void AdvanceWorldRevision(SqliteConnection c, SqliteTransaction tx, string caseId, long old)

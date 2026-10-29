@@ -63,6 +63,19 @@ internal sealed partial class SealedCaseStore
             confirmation.Intent, confirmation.TargetId, confirmation.Destination, confirmation.Method,
             confirmation.Condition, confirmation.Fallback, confirmation.LethalConfirmed,
             checked(confirmation.ExpectedActionRevision + 1), confirmation.PreparedIntent, confirmation.ResourceId, confirmation.Summary, confirmation.DefensePolicy, confirmation.ShelteredPosition);
+        if (action.Intent == SealedIntent.Sabotage && string.IsNullOrWhiteSpace(action.ResourceId))
+        {
+            throw new SealedCasePersistenceException("sealed_case_source_required", 400);
+        }
+        if (action.Intent == SealedIntent.Sabotage && action.Method is not ("DELAY" or "REDIRECT"))
+        {
+            throw new SealedCasePersistenceException("sealed_case_invalid_sabotage_method", 400);
+        }
+        if (action.Intent == SealedIntent.Sabotage
+            && (action.Method == "DELAY" && action.TargetId is not null || action.Method == "REDIRECT" && string.IsNullOrWhiteSpace(action.TargetId)))
+        {
+            throw new SealedCasePersistenceException("sealed_case_invalid_sabotage_target", 400);
+        }
         if (action.Summary is { } summary && (summary.Length > 500 || summary.Any(c => char.IsControl(c) && c is not '\n' and not '\r' and not '\t')))
         { throw new SealedCasePersistenceException("sealed_case_invalid_plan", 400); }
         try { action.ValidateForSubmission(); }
@@ -74,6 +87,39 @@ internal sealed partial class SealedCaseStore
         var world = ReadWorld(connection, transaction, caseId, revision);
         var actor = world.Checkpoint.Players.SingleOrDefault(player => player.Id == actorId)
             ?? throw new SealedCasePersistenceException("case_not_found", 404);
+        var scenario = world.Checkpoint.Scenario
+            ?? throw new SealedCasePersistenceException("sealed_case_scenario_unavailable", 409);
+        var actorState = actor.State;
+        if (actorState == SealedPlayerState.Sleeping && actor.SleepingUntilStart <= timing.Chapter
+            || actorState == SealedPlayerState.Unconscious && actor.UnconsciousUntilEnd < timing.Chapter)
+        {
+            actorState = SealedPlayerState.Awake;
+        }
+        if (scenario.Variant == "first" && actorState == SealedPlayerState.Awake)
+        {
+            var allowed = action.Intent is SealedIntent.Investigate or SealedIntent.Guard or SealedIntent.Sabotage;
+            var validGuard = action.Intent != SealedIntent.Guard || action.TargetId is null;
+            var validSabotage = action.Intent != SealedIntent.Sabotage
+                || action.Method == "DELAY" && action.TargetId is null && !string.IsNullOrWhiteSpace(action.ResourceId);
+            if (!allowed || !validGuard || !validSabotage)
+            {
+                throw new SealedCasePersistenceException("sealed_case_action_not_allowed", 400);
+            }
+        }
+        if (scenario.Variant == "first" && actorState == SealedPlayerState.Awake
+            && action.Intent == SealedIntent.Sabotage && action.Method == "DELAY")
+        {
+            if (action.Destination is not null && action.Destination != actor.Location)
+            {
+                throw new SealedCasePersistenceException("sealed_case_source_unavailable", 400);
+            }
+            var source = scenario.Clues.FirstOrDefault(clue => clue.Id == action.ResourceId
+                && clue.Location == actor.Location && clue.ReleaseChapter <= timing.Chapter);
+            if (source is null)
+            {
+                throw new SealedCasePersistenceException("sealed_case_source_unavailable", 400);
+            }
+        }
         // Target validation uses only the actor's own knowledge. Do not reject a
         // secretly dead/asleep/elsewhere target and thereby disclose world truth.
         if (action.TargetId is { } target && target != actorId && !actor.KnownPlayers.Contains(target, StringComparer.Ordinal))

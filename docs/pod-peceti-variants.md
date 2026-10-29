@@ -32,8 +32,13 @@ rekonstrukce zůstávají zachované. Pokud předchozí pokus o založení nemá
 ověřenou odpověď, aplikace nejdříve nabídne ověření téhož požadavku se stejným
 scénářem, délkou a počtem hráčů.
 
-`first` zůstává prvním případem se třemi kapitolami pro 8–12 hráčů;
-`full` má šest kapitol pro 8–30 hráčů. Ve zkrácené hře se použijí příběhové
+`first` je krátký případ se třemi kapitolami pro 8–12 hráčů;
+`full` má šest kapitol pro 8–30 hráčů. Bdělá postava má v krátké hře stejnou
+nabídku na obou stranách: **Pátrat / Chránit sebe / Zdržet stopu**. Server ji
+vynucuje i pro přímé požadavky. Ochrana má vlastní osobu bez cizího cíle;
+sabotáž pouze `DELAY` s konkrétním dostupným zdrojem. Plná hra si ponechává
+ostatní účinné mechaniky. Neúčinná příprava pátrání se nenabízí ani nově
+nepotvrzuje v žádné délce. Ve zkrácené hře se použijí příběhové
 body 1, 3 a 6: výchozí stopa, propojení zdrojů, poslední akce před hlasováním.
 Texty proto neslibují šest kol při zvolení krátké hry. Načtení katalogu ani
 obnovení obrazovky nevyvolává generování textu nebo placené AI volání.
@@ -181,12 +186,28 @@ výslovné potvrzení.
 Rozepsaný typ akce, její ostatní parametry a vlastní text při tom zůstávají
 zachované. Bez rozepsané akce se připraví pátrání s přesunem.
 
-`ownOutcomes` rozlišuje vyhodnocený tah od přijetí plánu. Volitelné
-`observation` rozlišuje nový nález, opětovné prozkoumání známé stopy a místo
-bez nové dostupné stopy, pouze podle uložené vlastní zkušenosti daného tahu.
-Neodhaluje interní výsledek střetu ani cizí tajné stavy. Nové potvrzení
-sabotáže vyžaduje zdroj a pomoc jinou cílovou postavu; starší uložené příkazy
-zůstávají vyhodnotitelné podle původního bezpečného fallbacku.
+`ownOutcomes` rozlišuje vyhodnocený tah od přijetí plánu. Strukturovaný
+`actionObservation` váže vlastní zkušenost na konkrétní akci a kapitolu.
+Rozlišuje nový nález, známou stopu, žádnou novou dostupnou stopu a oprávněnou
+zkušenost zdržení. Chybějící podklad znamená neznámý výsledek. Zobrazovaný
+český text ani `TraceCreated` nejsou zdrojem herního stavu. Projekce neodhaluje
+interní důvod neúspěchu ani cizí tajné stavy. Zdroje se vybírají pouze v současném
+místě po uvolnění, jejich ID není vlastnictví důkazu. Pro konkrétní volbu C
+je potřeba přijet před začátkem třetí kapitoly.
+
+Úspěšné DELAY odloží nové získávání celé jedné stopy do další kapitoly,
+zachová již získané kopie i obsah. V poslední kapitole nebude tuto stopu
+možné nově získat pátráním před hlasováním. Zachovává se časová platnost
+ochrany, pořadí vyhodnocení, kolize a omezení opakovaného zdržení.
+
+Rozhodnutí vlastníka z 29. října 2026 ruší podporu starých rozehraných případů:
+žádné takové hry nejsou. Tato iterace má jeden čistý cílový stav, bez
+experimentálního přepínače a migračního runtime. Podrobnosti obsahuje
+[aktuální GDD](pod-peceti-game-design.md) a
+[rozhodovací záznam](continuation/pod-peceti/TRUST-20261029.md).
+První dobrovolný pilot: osm lidí, Společenství vlastníků krbu, stávajících
+45 minut a přibližně 15 minut reflexe podle [návodu](pod-peceti-human-pilot.md).
+Pilot dosud neproběhl; automatické testy nedokládají lidskou zábavnost.
 
 Lokální syntetický náhled po buildu: `npm run preview:sealed-case --prefix
 mobilni-aplikace`. Browser regrese spisu: `npm run test:sealed-dossier:browser

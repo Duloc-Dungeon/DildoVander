@@ -1,5 +1,11 @@
 # Pod pečetí — rozpracovaný checkpoint 2026-10-27
 
+Aktuální iterace důvěry a důkazů z 29. října 2026 má vlastní
+[rozhodovací a ověřovací záznam](TRUST-20261029.md),
+[GDD](../../pod-peceti-game-design.md) a
+[návod dobrovolného lidského pilotu](../../pod-peceti-human-pilot.md).
+Níže zůstává historický checkpoint; jeho výsledky se nepřepisují.
+
 ## Navazující změna: AI hráči v lobby
 
 Implementováno přidání AI míst pouze pro ownera/zakladatele před uzavřením lobby,

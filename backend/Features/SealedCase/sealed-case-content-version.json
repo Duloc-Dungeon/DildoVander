@@ -1,16 +1,16 @@
 {
   "module": "POD_PECETI",
-  "rulesVersion": "1.0.0",
+  "rulesVersion": "1.1.0",
   "scenarioId": "POD_PECETI_POSLEDNI_ZVON_V1",
   "scenarioVersion": "1.0.0",
-  "scenarioSchemaVersion": "1.0",
+  "scenarioSchemaVersion": "1.1",
   "contracts": {
-    "action": "1.0",
+    "action": "1.1",
     "event": "1.0",
-    "context": "1.0"
+    "context": "1.1"
   },
-  "sourcePackageVersion": "1.0",
-  "sourcePackageDate": "2026-10-26",
-  "status": "PARAMETERIZED_PLAYTEST_BASELINE",
+  "sourcePackageVersion": "1.1",
+  "sourcePackageDate": "2026-10-29",
+  "status": "HUMAN_PILOT_CANDIDATE",
   "disclosure": "SERVER_ONLY_CONTENT_NOT_FOR_CLIENT"
 }

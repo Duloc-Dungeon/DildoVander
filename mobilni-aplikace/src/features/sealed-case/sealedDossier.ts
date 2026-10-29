@@ -48,24 +48,32 @@ export function sharedEvidence(play: Pick<Play, 'clues' | 'statements'>) {
 export function planProblem(plan: Plan | undefined): string {
   if (!plan) return '';
   if (plan.intent === 0 && plan.destination) return 'Vyčkávání neumožňuje přesun. Zvol jiný typ akce, nebo zůstaň na místě.';
-  if (plan.intent === 7 && !plan.resourceId) return 'Pro sabotáž vyber zdroj doručení.';
+  if (plan.intent === 7 && !plan.resourceId) return 'Vyber jednu konkrétní stopu, kterou teď vidíš v tomto místě.';
+  if (plan.intent === 7 && !plan.method) return 'Vyber metodu sabotáže.';
+  if (plan.intent === 7 && !['DELAY', 'REDIRECT'].includes(plan.method ?? '')) return 'Vyber platnou metodu sabotáže.';
+  if (plan.intent === 7 && plan.method === 'REDIRECT' && !plan.targetId) return 'Pro přesměrování vyber oprávněného adresáta.';
   if ([5, 6, 8, 9, 10, 12, 17].includes(plan.intent) && !plan.targetId) return 'Vyber postavu, na kterou má tah mířit.';
   if ([6, 12, 17].includes(plan.intent) && !plan.resourceId) return 'Vyber předmět nebo vlastní stopu k předání.';
   if (plan.intent === 3 && plan.preparedIntent == null) return 'Vyber, na jaký příští tah se připravuješ.';
+  if (plan.intent === 3 && plan.preparedIntent === 4) return 'Příprava pátrání nemá herní účinek. Zvol jiný příští tah.';
   return '';
 }
 
-export function actionGuidance(intent: number): string {
+export function actionGuidance(intent: number, method?: string, targetId?: string): string {
+  if (intent === 7) return method === 'REDIRECT'
+    ? 'Vyber zdroj viditelný na tomto místě a oprávněného adresáta. Přesměrování mění jedno doručení; obsah a historii stopy nemění.'
+    : 'Vyber jednu konkrétní stopu viditelnou na tomto místě. Zůstaneš u zdroje; přesun vyžaduje jiný tah. Zdržení změní novou dostupnost stopy pro pátrání do další kapitoly; již získané kopie zůstávají. Spotřebuje tah a může selhat. V poslední kapitole po úspěchu nikdo tuto stopu nově nezíská pátráním před hlasováním.';
   return ({
     0: 'Při vyčkávání se nepřesouváš. Chceš-li změnit místnost, zvol jiný typ akce.',
-    4: 'Pátráš až po přesunu. Bez vybraného zdroje prozkoumáš dostupné stopy v cílovém místě; další pátrání nemusí přinést nový poznatek.',
+    4: 'Pátrání spotřebuje tento tah. Můžeš získat novou stopu, znovu narazit na známou, nebo tu nemusí být žádná nová dostupná stopa.',
     5: 'Sledování potřebuje dostupné pozorování cíle. Postavy se nejprve přesunou; nynější poloha nezaručuje dosah.',
     6: 'Vyber cizí předmět a jeho držitele. Krádež se vyhodnotí až po společných přesunech.',
-    7: 'Vyber zdroj doručení v místě, kde po přesunu budeš. Sabotáž zasahuje doručení stopy; úspěch není předem jistý.',
     8: 'Vyber postavu a prostředek. Dosah se ověří až po společných přesunech.',
     9: 'Vyber postavu a prostředek. Krajní čin vyžaduje samostatné výslovné potvrzení; dosah se ověří až po přesunech.',
     10: 'Pomoc probouzí postavu v bezvědomí. Není to ochrana ani pomoc s pátráním. Cíl musí být po přesunech v dosahu; jeho skrytý stav předem neznáš.',
     12: 'Předáváš vlastní doloženou stopu vybrané známé postavě. Rozhovor je pouze tvrzení a stopu do jejího spisu nepřidá.',
     17: 'Vyber vlastní přenositelný předmět a příjemce. Po přesunech musíte být na stejném místě.',
-  } as Record<number, string>)[intent] ?? '';
+  } as Record<number, string>)[intent] ?? (intent === 2 ? (targetId
+    ? 'Ochrana vybrané postavy spotřebuje hlavní tah. Po přesunech se použije, jen pokud jste ve stejné místnosti; blokuje tam cizí sabotáž. Sama nedokazuje pokus o útok.'
+    : 'Chránit sebe spotřebuje hlavní tah. Po společném přesunu chrání tvou přítomnou postavu v této kapitole před cizí sabotáží ve stejné místnosti; samo o sobě nedokazuje, že se někdo o sabotáž pokusil.') : '');
 }

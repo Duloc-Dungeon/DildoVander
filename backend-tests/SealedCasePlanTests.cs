@@ -6,60 +6,81 @@ internal static class SealedCasePlanTests
     internal static void Run()
     {
         ExplicitConfirmationRevisionAndResolutionSurviveRestart();
-        LegacyMissingParametersRemainResolvable();
+        ShortGamePlanPolicyIsEnforcedByTheServer();
+        FullGameKeepsAnImplementedPreparation();
         CompetingRevisionsAcceptOnePlan();
         OverdueChaptersResolveInOrderFromCanonicalPlans();
         DeadlineCrossedWhileWaitingForWriterRejectsConfirmation();
         Console.WriteLine("PASS explicit durable plan confirmation/revision, deadline, authorized targets, replay and canonical resolution.");
     }
 
-    private static void LegacyMissingParametersRemainResolvable()
+    private static void ShortGamePlanPolicyIsEnforcedByTheServer()
     {
         using var fixture = new SealedCaseTimingTests.Fixture("first", 8);
         var start = fixture.Start();
+        var shortGame = SealedScenario.Create(fixture.Store.ReadRoster(fixture.Id, "group"), "first");
+        var actor = shortGame.Players["p1"];
+        var visibleSource = shortGame.Scenario!.Clues[0] with { Location = actor.Location, ReleaseChapter = 1 };
+        shortGame.Scenario = shortGame.Scenario with { Clues = [visibleSource, .. shortGame.Scenario.Clues.Skip(1)] };
         fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000,
-            SealedScenario.Create(fixture.Store.ReadRoster(fixture.Id, "group"), "first"));
+            shortGame);
         fixture.Clock.Now = start.Timing.IntroductionEndsAt;
         var revision = fixture.Read().Revision;
-        var sabotage = fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "legacy-sabotage", revision,
-            new(1, 0, true, SealedIntent.Sabotage, ResourceId: "source-1"));
-        var help = fixture.Store.ConfirmPlan(fixture.Id, "group", "p2", "legacy-help", sabotage.Revision,
-            new(1, 0, true, SealedIntent.Help, "p3"));
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "short-full-action", revision,
+            new(1, 0, true, SealedIntent.Help, "p2")), "sealed_case_action_not_allowed");
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "short-redirect", revision,
+            new(1, 0, true, SealedIntent.Sabotage, "p2", Method: "REDIRECT", ResourceId: "source-1")), "sealed_case_action_not_allowed");
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "short-guard-target", revision,
+            new(1, 0, true, SealedIntent.Guard, "p2")), "sealed_case_action_not_allowed");
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "short-prepare-search", revision,
+            new(1, 0, true, SealedIntent.Prepare, PreparedIntent: SealedIntent.Investigate)), "sealed_case_invalid_plan");
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "guessed-sabotage-source", revision,
+            new(1, 0, true, SealedIntent.Sabotage, Method: "DELAY", ResourceId: "not-in-player-view")), "sealed_case_source_unavailable");
+        var currentWorld = fixture.Store.ReadWorld(fixture.Id, "group").Checkpoint;
+        var departure = currentWorld.Adjacency[currentWorld.Players.Single(player => player.Id == "p1").Location][0];
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "delay-while-leaving-source", revision,
+            new(1, 0, true, SealedIntent.Sabotage, Destination: departure, Method: "DELAY", ResourceId: visibleSource.Id)),
+            "sealed_case_source_unavailable");
+        var selfGuard = fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "short-self-guard", revision,
+            new(1, 0, true, SealedIntent.Guard));
+        Equal(SealedIntent.Guard, fixture.Store.ReadOwnPlan(fixture.Id, "group", "p1", 1).Action!.Intent);
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p2", "short-redirect-after-guard", selfGuard.Revision,
+            new(1, 0, true, SealedIntent.Sabotage, "p3", Method: "REDIRECT", ResourceId: "source-1")), "sealed_case_action_not_allowed");
 
-        using (var connection = new SqliteConnection("Data Source=" + fixture.Path))
+        foreach (var expiredState in new[] { SealedPlayerState.Sleeping, SealedPlayerState.Unconscious })
         {
-            connection.Open(); using var command = connection.CreateCommand();
-            command.CommandText = "DROP TRIGGER sealed_case_events_no_update";
-            command.ExecuteNonQuery();
-            try
-            {
-                command.CommandText = "UPDATE sealed_case_events SET payload_json=json_remove(payload_json,'$.resourceId') WHERE case_id=$case AND idempotency_key='legacy-sabotage'";
-                command.Parameters.AddWithValue("$case", fixture.Id);
-                Equal(1, command.ExecuteNonQuery());
-                command.Parameters.Clear();
-                command.CommandText = "UPDATE sealed_case_events SET payload_json=json_remove(payload_json,'$.targetId') WHERE case_id=$case AND idempotency_key='legacy-help'";
-                command.Parameters.AddWithValue("$case", fixture.Id);
-                Equal(1, command.ExecuteNonQuery());
-            }
-            finally
-            {
-                command.Parameters.Clear();
-                command.CommandText = "CREATE TRIGGER sealed_case_events_no_update BEFORE UPDATE ON sealed_case_events BEGIN SELECT RAISE(ABORT,'sealed case history is append-only'); END";
-                command.ExecuteNonQuery();
-            }
+            using var expiredFixture = new SealedCaseTimingTests.Fixture("first", 8);
+            var expiredStart = expiredFixture.Start();
+            var game = SealedScenario.Create(expiredFixture.Store.ReadRoster(expiredFixture.Id, "group"), "first");
+            var expiredActor = game.Players["p1"];
+            expiredActor.State = expiredState;
+            expiredActor.SleepingUntilStart = 1;
+            expiredActor.UnconsciousUntilEnd = 0;
+            expiredFixture.Store.InitializeWorld(expiredFixture.Id, "group", expiredStart.Revision, 1000, game);
+            expiredFixture.Clock.Now = expiredStart.Timing.IntroductionEndsAt;
+            Denied(() => expiredFixture.Store.ConfirmPlan(expiredFixture.Id, "group", "p1", "expired-state-" + expiredState,
+                expiredFixture.Read().Revision, new(1, 0, true, SealedIntent.Prepare, PreparedIntent: SealedIntent.Stun)),
+                "sealed_case_action_not_allowed");
         }
+    }
 
-        fixture.Clock.Now = start.Timing.PlanningEndsAt;
-        var resolved = fixture.Reopen().ResolveConfirmedChapter(fixture.Id, "group", 1, help.Revision);
-        Equal(SealedIntent.Sabotage, resolved.Results.Single(result => result.ActorId == "p1").Intent);
-        Equal(SealedIntent.Help, resolved.Results.Single(result => result.ActorId == "p2").Intent);
+    private static void FullGameKeepsAnImplementedPreparation()
+    {
+        using var fixture = new SealedCaseTimingTests.Fixture("full", 8);
+        var start = fixture.Start();
+        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000, World(fixture));
+        fixture.Clock.Now = start.Timing.IntroductionEndsAt;
+        var revision = fixture.Read().Revision;
+        fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "full-prepare-steal", revision,
+            new(1, 0, true, SealedIntent.Prepare, PreparedIntent: SealedIntent.Steal));
+        Equal(SealedIntent.Steal, fixture.Store.ReadOwnPlan(fixture.Id, "group", "p1", 1).Action!.PreparedIntent);
     }
 
     private static void ExplicitConfirmationRevisionAndResolutionSurviveRestart()
     {
-        using var fixture = new SealedCaseTimingTests.Fixture("first", 8);
+        using var fixture = new SealedCaseTimingTests.Fixture("full", 8);
         var start = fixture.Start();
-        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000, World());
+        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000, World(fixture));
         fixture.Clock.Now = start.Timing.IntroductionEndsAt;
         var revision = fixture.Read().Revision;
         Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "proposal-only", revision,
@@ -71,10 +92,12 @@ internal static class SealedCasePlanTests
         Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "unknown-target", revision,
             new(1, 0, true, SealedIntent.Guard, "hidden-unknown")), "sealed_case_invalid_target");
         Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "missing-sabotage-source", revision,
-            new(1, 0, true, SealedIntent.Sabotage)), "sealed_case_invalid_plan");
+            new(1, 0, true, SealedIntent.Sabotage)), "sealed_case_source_required");
+        Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "invalid-sabotage-method", revision,
+            new(1, 0, true, SealedIntent.Sabotage, Method: "UNKNOWN", ResourceId: "source-1")), "sealed_case_invalid_sabotage_method");
         Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "missing-help-target", revision,
             new(1, 0, true, SealedIntent.Help)), "sealed_case_invalid_plan");
-        var first = new SealedPlanConfirmation(1, 0, true, SealedIntent.Hold);
+        var first = new SealedPlanConfirmation(1, 0, true, SealedIntent.Investigate);
         var receipt = fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "first-plan", revision, first);
         Denied(() => fixture.Store.PauseTimeline(fixture.Id, "group", "p1", "first-plan", revision), "idempotency_key_reused");
         Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "start-timeline", 9, first), "idempotency_key_reused");
@@ -82,19 +105,19 @@ internal static class SealedCasePlanTests
         Equal(1, original.Action!.Revision); Equal("p1", original.Action.ActorId); Equal(false, original.Locked);
         Equal<SealedAction?>(null, fixture.Store.ReadOwnPlan(fixture.Id, "group", "p2", 1).Action);
         Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "stale-revise", receipt.Revision,
-            new(1, 0, true, SealedIntent.Rest)), "action_revision_conflict");
+            new(1, 0, true, SealedIntent.Guard)), "action_revision_conflict");
         var replacement = fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "replace-plan", receipt.Revision,
-            new(1, 1, true, SealedIntent.Rest));
+            new(1, 1, true, SealedIntent.Guard));
         Equal(2, fixture.Store.ReadOwnPlan(fixture.Id, "group", "p1", 1).Action!.Revision);
         Denied(() => fixture.Store.ResolveConfirmedChapter(fixture.Id, "group", 1, replacement.Revision), "chapter_not_closed");
         fixture.Clock.Now = start.Timing.PlanningEndsAt;
         Denied(() => fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "late-revise", replacement.Revision,
-            new(1, 2, true, SealedIntent.Hold)), "chapter_locked");
+            new(1, 2, true, SealedIntent.Investigate)), "chapter_locked");
         var retry = fixture.Reopen().ConfirmPlan(fixture.Id, "group", "p1", "first-plan", revision, first);
         Equal(receipt.EventId, retry.EventId); Equal(receipt.Revision, retry.Revision); Equal(true, retry.Replayed);
         Equal(true, fixture.Store.ReadOwnPlan(fixture.Id, "group", "p1", 1).Locked);
         var resolved = fixture.Reopen().ResolveConfirmedChapter(fixture.Id, "group", 1, replacement.Revision);
-        Equal(1, resolved.Results.Count(result => result.ActorId == "p1" && result.Intent == SealedIntent.Rest));
+        Equal(1, resolved.Results.Count(result => result.ActorId == "p1" && result.Intent == SealedIntent.Guard));
         var replay = fixture.Reopen().ResolveConfirmedChapter(fixture.Id, "group", 1, replacement.Revision);
         Equal(true, replay.Replayed); Equal(resolved.Revision, replay.Revision);
         Equal(1, fixture.Store.ReadWorldHistory(fixture.Id, "group").Count);
@@ -117,7 +140,7 @@ internal static class SealedCasePlanTests
     private static void CompetingRevisionsAcceptOnePlan()
     {
         using var fixture = new SealedCaseTimingTests.Fixture("first", 8); var start = fixture.Start();
-        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000, World());
+        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000, World(fixture));
         fixture.Clock.Now = start.Timing.IntroductionEndsAt;
         var revision = fixture.Read().Revision;
         using var barrier = new Barrier(2);
@@ -127,7 +150,7 @@ internal static class SealedCasePlanTests
             try
             {
                 fixture.Reopen().ConfirmPlan(fixture.Id, "group", "p1", "parallel-plan-" + index, revision,
-                    new(1, 0, true, index == 0 ? SealedIntent.Hold : SealedIntent.Rest));
+                    new(1, 0, true, index == 0 ? SealedIntent.Investigate : SealedIntent.Guard));
                 return "committed";
             }
             catch (SealedCasePersistenceException error) { return error.Code; }
@@ -140,7 +163,7 @@ internal static class SealedCasePlanTests
     private static void OverdueChaptersResolveInOrderFromCanonicalPlans()
     {
         using var fixture = new SealedCaseTimingTests.Fixture("first", 8); var start = fixture.Start();
-        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000, World());
+        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000, World(fixture));
         fixture.Clock.Now = start.Timing.FinaleEndsAt;
         var revision = fixture.Read().Revision;
         Denied(() => fixture.Store.ResolveWorldChapter(fixture.Id, "group", 1, revision, 1, []), "sealed_case_plan_authority_required");
@@ -157,7 +180,7 @@ internal static class SealedCasePlanTests
     private static void DeadlineCrossedWhileWaitingForWriterRejectsConfirmation()
     {
         using var fixture = new SealedCaseTimingTests.Fixture("first", 8); var start = fixture.Start();
-        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000, World());
+        fixture.Store.InitializeWorld(fixture.Id, "group", start.Revision, 1000, World(fixture));
         fixture.Clock.Now = start.Timing.PlanningEndsAt - 1;
         var revision = fixture.Read().Revision;
         using var connection = new SqliteConnection("Data Source=" + fixture.Path); connection.Open();
@@ -167,7 +190,7 @@ internal static class SealedCasePlanTests
         {
             try
             {
-                fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "waiting-confirm", revision, new(1, 0, true, SealedIntent.Hold));
+                fixture.Store.ConfirmPlan(fixture.Id, "group", "p1", "waiting-confirm", revision, new(1, 0, true, SealedIntent.Investigate));
                 return "committed";
             }
             catch (SealedCasePersistenceException error) { return error.Code; }
@@ -184,10 +207,12 @@ internal static class SealedCasePlanTests
         Equal<SealedAction?>(null, fixture.Store.ReadOwnPlan(fixture.Id, "group", "p1", 1).Action);
     }
 
-    private static SealedGame World()
+    private static SealedGame World(SealedCaseTimingTests.Fixture fixture)
     {
         var players = Enumerable.Range(1, 8).Select(i => "p" + i).ToArray();
-        return new(players.Select(id => new SealedPlayer(id, knownPlayers: players.Where(other => other != id))).ToArray(), "synthetic-plan-seed");
+        var game = new SealedGame(players.Select(id => new SealedPlayer(id, knownPlayers: players.Where(other => other != id))).ToArray(), "synthetic-plan-seed");
+        game.Scenario = SealedScenario.Create(fixture.Store.ReadRoster(fixture.Id, "group"), fixture.Variant).Scenario;
+        return game;
     }
     private static void Equal<T>(T expected, T actual)
     {

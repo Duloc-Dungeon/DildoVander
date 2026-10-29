@@ -129,6 +129,7 @@ internal static partial class SealedCaseHttpTests
             Check(!introduction.TryGetProperty("revision", out _), "no global case revision in play projection");
             var schedule = SealedCaseRules.Schedule(variant, count);
             fixture.AdvanceSeconds(schedule.IntroductionSeconds);
+            string? shortChoiceContract = null;
             for (var chapter = 1; chapter <= schedule.Chapters; chapter++)
             {
                 for (var index = 0; index < count; index++)
@@ -138,6 +139,12 @@ internal static partial class SealedCaseHttpTests
                     { await AiBoundariesAsync(view.Deserialize<SealedPlayView>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!); }
                     Equal(chapter, view.GetProperty("chapter").GetInt32()); Equal("planning", view.GetProperty("phase").GetString());
                     Equal(3, view.GetProperty("choices").GetArrayLength());
+                    if (variant == "first" && chapter == 1)
+                    {
+                        var choices = view.GetProperty("choices").GetRawText();
+                        if (shortChoiceContract is null) { shortChoiceContract = choices; }
+                        else { Equal(shortChoiceContract, choices); }
+                    }
                     var routes = view.GetProperty("routes");
                     Check(routes.GetProperty("ARCHIV").EnumerateArray().Any(), "play view publishes the frozen route graph");
                     var publicSources = view.GetProperty("sourceSchedule").EnumerateArray().ToArray();
@@ -158,7 +165,11 @@ internal static partial class SealedCaseHttpTests
                         "scenario exposes only an allowlisted presentation, never the secret graph/seed or frozen pack");
                     var choice = view.GetProperty("choices")[0].GetProperty("plan");
                     if (chapter == 2 && index == 0)
-                    { choice = JsonSerializer.SerializeToElement(new SealedPlanConfirmation(chapter, 0, true, SealedIntent.Stun, "p2", Method: "IMPACT_SEAL"), new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
+                    {
+                        choice = variant == "first"
+                            ? view.GetProperty("choices")[1].GetProperty("plan")
+                            : JsonSerializer.SerializeToElement(new SealedPlanConfirmation(chapter, 0, true, SealedIntent.Stun, "p2", Method: "IMPACT_SEAL"), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                    }
                     foreach (var outcome in view.GetProperty("ownOutcomes").EnumerateArray())
                     {
                         Check(outcome.GetProperty("rolls").ValueKind == JsonValueKind.Null && outcome.GetProperty("modifiers").ValueKind == JsonValueKind.Null
@@ -173,11 +184,20 @@ internal static partial class SealedCaseHttpTests
                                     or "Na tomto místě nebyla nová doložená stopa dostupná."
                                 && !outcome.GetProperty("observation").GetString()!.Contains("přesměrovan", StringComparison.Ordinal),
                                 "own investigation feedback classifies actor observations without exposing hidden delivery mechanics");
+                            var observation = outcome.GetProperty("actionObservation");
+                            Check(HasExactProperties(observation, "actionRef", "chapter", "kind")
+                                && observation.GetProperty("chapter").GetInt32() == outcome.GetProperty("chapter").GetInt32()
+                                && !string.IsNullOrWhiteSpace(observation.GetProperty("actionRef").GetString())
+                                && observation.GetProperty("kind").GetString() is "INVESTIGATION_NEW_CLUE" or "INVESTIGATION_KNOWN_CLUE" or "INVESTIGATION_NO_NEW_CLUE",
+                                "investigation feedback comes from this exact confirmed action/chapter's stored own experience");
                         }
                     }
                     var operationId = $"play-plan-{chapter}-{index}";
                     var confirmed = await clients[index].PostAsJsonAsync(prefix + "/actions", new { operationId, plan = choice });
-                    Equal(HttpStatusCode.OK, confirmed.StatusCode);
+                    if (confirmed.StatusCode != HttpStatusCode.OK)
+                    {
+                        throw new InvalidOperationException($"SealedCase HTTP plan {chapter}/{index}/{choice.GetProperty("intent").GetRawText()}: {(int)confirmed.StatusCode} {await confirmed.Content.ReadAsStringAsync()}");
+                    }
                     var ack = await confirmed.Content.ReadFromJsonAsync<JsonElement>(); Check(!ack.TryGetProperty("revision", out _), "private action acknowledgment omits case revision");
                     var replay = await clients[index].PostAsJsonAsync(prefix + "/actions", new { operationId, plan = choice });
                     Equal(HttpStatusCode.OK, replay.StatusCode); Equal(true, (await replay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("replayed").GetBoolean());
