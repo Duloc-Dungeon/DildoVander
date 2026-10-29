@@ -182,7 +182,7 @@ function points(participant: 'left' | 'right') { return current.value?.rounds.re
 <template>
   <section class="archive-view archive-duel-view" :data-state="current?.state" aria-labelledby="duel-title">
     <div class="archive-duel-intro"><h1 id="duel-title">Souboj postav</h1><p v-if="accountRead">Uložená historie tvého účtu · <RouterLink to="/me/keepsakes">Zpět k památkám</RouterLink></p><p v-if="current?.state !== 'Running'">Komediální fikce · body a průběh potvrzuje server. Rekvizity zůstávají v přihrádkách; nejde o šermování.</p></div>
-    <div class="archive-actions archive-duel-toolbar"><RouterLink to="/archive">Hůlky večera</RouterLink><RouterLink to="/archive/chronicle">Večerní kronika</RouterLink><button class="aw-button aw-button--secondary" :disabled="pending || refreshing" @click="refresh">Obnovit souboj</button></div>
+    <div class="archive-actions archive-duel-toolbar"><RouterLink to="/me/keepsakes">Moje památky</RouterLink><button class="aw-button aw-button--secondary" :disabled="pending || refreshing" @click="refresh">Obnovit souboj</button></div>
     <p class="aw-notice" role="status" aria-live="polite">{{ message }}</p>
     <template v-if="current">
       <p>{{ duelNarration(current) }}</p><p v-if="current.mode === 'exhibition'">Fiktivní exhibice</p>

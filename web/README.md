@@ -1,16 +1,14 @@
 # Veřejná aplikace · Vapour Chrome
 
-Hostovaná aplikace vzniká z `mobilni-aplikace`: Vue komponenty, router,
-společný shell a stejné adaptéry pro Capacitor. Home, Kufr, Workshop, Archiv
-a nastavení jsou její routy. `/ios/` a instalační manifesty zůstávají
-samostatnou distribuční výjimkou. Připravený kód ani tato dokumentace
-neznamenají provedené produkční nasazení.
+Hostovaná aplikace vzniká z `mobilni-aplikace` a používá stejné Vue obrazovky
+a router jako iOS a Android: přihlášení, Kufrovu dílnu, hry, postavu, památky,
+účet a oprávněnou správu. Staré ovládání fyzického Kufru, Provoz/Režie,
+3D Dílna a původní Archiv jsou odstraněné. Jejich adresy slouží pouze jako
+kompatibilní vstupy do současné aplikace. `/ios/` a instalační manifesty
+zůstávají samostatnou distribuční výjimkou. Změna zdrojů neznamená nasazení.
 
-[Show Pack](../docs/show-pack.md) rozšiřuje stejné Vue obrazovky o identitu,
-sběratelskou kartu, soukromé proroctví, duel a kroniku. Veřejné cesty
-`/archive/chronicle` a `/archive/duel` mají výslovné kompatibilní odkazy z
-`/keepsake/chronicle.html` a `/keepsake/duel.html`; nejde o další HTML aplikace.
-Oprávnění pro vlastníka památky, tah duelu a obsluhu zůstávají oddělená.
+Detaily `/keepsake/` a `/archive/duel` stále používají současné Památky.
+Oprávnění vlastníka a omezené guest granty zůstávají samostatné.
 Proxy generuj z `deploy/keepsake_proxy.py`, bez obecného API catch-all.
 
 `build-site.py --web-dist <dist> --destination <nový-adresář>` balí výhradně
@@ -21,13 +19,12 @@ zdroje, verzi API a hashe souborů od nezávislé revize ModelBundle.
 Výstup obsahuje jeden HTML vstup a kompilované prostředky. Publikace odmítá
 rozpracovaný zdroj, neplatný inventář a soukromé soubory.
 
-ModelBundle se načítá samostatně přes `/models/active.json`. Chybějící model
-neblokuje ostatní routy. Geometrii a výrobní výstupy stále vlastní CAD pipeline;
-aktualizace aplikace je necertifikuje znovu. Explicitní offline distribuce skládá
-udržovaný viewer s vybraným modelem. Syntetické fixtures jsou jen pro testy.
+Geometrii, ModelBundle a výrobní výstupy stále vlastní samostatná CAD pipeline.
+Aplikace již nenabízí 3D prohlížeč ani offline viewer; změny aplikace
+necertifikují výrobní výstupy znovu.
 
 `/keepsake/` zachovává návštěvnické odkazy DV10; `/keepsake/evening/` vede přes
-router na veřejný Archiv. Owner URL `/keepsake/?k=<locator>` sama neuděluje
+router do současných Památek. Owner URL `/keepsake/?k=<locator>` sama neuděluje
 přístup. Fragmenty `#c=`, `#r=` a `#s=` zachytí kořenový inline skript před
 načtením modulů a odstraní je z adresy; výměna vyžaduje výslovnou akci hosta.
 Soukromé guest API používá vlastní cookie, CSRF a idempotentní mutace.
@@ -41,7 +38,7 @@ nepřesměrovává. HTML a privátní odpovědi mají `no-store`; privátní gue
 navíc `noindex` a `no-referrer`. Fingerprintované `/assets/` a neměnné modelové
 balíčky mají oddělenou cache. Aktivační reference modelu zůstává `no-store`.
 
-CI projekt `site` sestavuje aplikaci a testuje viewer fixtures bez CAD toolchainu.
+CI projekt `site` sestavuje aplikaci bez CAD toolchainu.
 CAD nemá povinnou ani automatickou CI gate. Rychlý lokální build/publish a ruční
 generation-only fallback popisuje [CAD workflow](../mechanika/final/CAD-WORKFLOW.md).
 Neznámý mechanický soubor zůstává konzervativně výrobním vstupem pro výslovnou

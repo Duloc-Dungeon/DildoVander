@@ -80,12 +80,8 @@ jobs:
           npm run test:owner:browser
           npm run test:persona-lab:browser
           npm run test:updates:browser
-          node tests/debug.browser.mjs
-          node tests/director.browser.mjs
           node scripts/archive-show.browser.mjs
           node tests/personal-wand-duel.browser.mjs
-          node tests/workshop-offline.browser.mjs
-          node tests/workshop-media.browser.mjs
       - name: Check real compiled application inputs without CAD
         env:
           KUFR_SITE_WEB_DIST: ${{ github.workspace }}/mobilni-aplikace/dist

@@ -7,7 +7,7 @@ import { customerCopy, type CustomerCopyKey } from './customerCopy';
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', name: 'home', redirect: to => ({ path: to.hash === '#director' ? '/suitcase/director' : '/signin', query: to.query, hash: to.hash === '#director' ? '' : to.hash }) },
+    { path: '/', name: 'home', redirect: to => ({ path: '/signin', query: to.query, hash: to.hash === '#director' ? '' : to.hash }) },
     { path: '/demo', redirect: '/' },
     { path: '/support', name: 'support', component: () => import('../features/information/SupportView.vue'), meta: { title: 'Podpora' } },
     { path: '/privacy', name: 'privacy', component: () => import('../features/information/PrivacyView.vue'), meta: { title: 'Ochrana soukromí' } },
@@ -27,17 +27,11 @@ export const router = createRouter({
     { path: '/me/account', name: 'customer-account', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Můj účet', private: true, requiresAccount: true } },
     { path: '/testing-sessions', name: 'testing-sessions', component: () => import('../features/testing-sessions/TestingSessionsView.vue'), meta: { title: 'Testovací relace', private: true, requiresAccount: true, tester: true } },
     { path: '/persona-lab', name: 'persona-lab', component: () => import('../features/persona-lab/PersonaLabView.vue'), meta: { title: 'AI laboratoř', private: true, requiresAccount: true, lab: true } },
-    { path: '/tonight', name: 'tonight', component: () => import('../features/tonight/TonightPage.vue'), meta: { title: 'Dnešní provoz', private: true, requiresAccount: true, operation: true, staff: true } },
-    { path: '/suitcase', name: 'suitcase', component: () => import('../features/suitcase/SuitcaseView.vue'), meta: { title: 'Kufr', keepAlive: true, requiresAccount: true, operation: true, offlineLocal: true, private: true, staff: true } },
-    { path: '/connections', name: 'connections', component: () => import('../features/suitcase/ConnectionsView.vue'), meta: { title: 'Připojení', keepAlive: true, requiresAccount: true, operation: true, offlineLocal: true, private: true, staff: true } },
-    { path: '/suitcase/diagnostics', name: 'diagnostics', component: () => import('../features/suitcase/DiagnosticsView.vue'), meta: { title: 'Diagnostika', keepAlive: true, requiresAccount: true, operation: true, offlineLocal: true, private: true, staff: true } },
-    { path: '/suitcase/director', name: 'director', component: () => import('../features/director/DirectorPanel.vue'), meta: { title: 'Režie', private: true, requiresAccount: true, operation: true, staff: true } },
-    { path: '/workshop', name: 'workshop', component: () => import('../features/workshop/WorkshopView.vue'), meta: { title: 'Dílna' } },
-    { path: '/archive', name: 'archive', component: () => import('../features/archive/ArchiveView.vue'), meta: { title: 'Archiv', private: true, requiresAccount: true } },
+    ...['/tonight', '/suitcase/:pathMatch(.*)*', '/connections', '/app/:pathMatch(.*)*', '/companion/:pathMatch(.*)*'].map(path => ({ path, redirect: '/play' })),
+    ...['/workshop/:pathMatch(.*)*', '/simulator/:pathMatch(.*)*'].map(path => ({ path, redirect: '/play/wand' })),
+    ...['/archive', '/archive/chronicle', '/keepsake/chronicle.html', '/keepsake/evening/:pathMatch(.*)*'].map(path => ({ path, redirect: '/me/keepsakes' })),
     { path: '/archive/duel', name: 'duel', component: () => import('../features/archive/DuelView.vue'), meta: { title: 'Souboj', private: true } },
-    { path: '/archive/chronicle', name: 'chronicle', component: () => import('../features/archive/ChronicleView.vue'), meta: { title: 'Kronika' } },
     { path: '/keepsake/duel.html', redirect: to => ({ path: '/archive/duel', query: to.query }) },
-    { path: '/keepsake/chronicle.html', redirect: to => ({ path: '/archive/chronicle', query: to.query }) },
     { path: '/keepsake/:pathMatch(.*)*', name: 'keepsake', component: () => import('../features/archive/KeepsakeView.vue'), meta: { title: 'Moje památka', private: true } },
     { path: '/signin', name: 'signin', component: () => import('../features/identity/SignInView.vue'), meta: { title: 'Přihlášení', private: true } },
     { path: '/settings', name: 'settings', component: () => import('../features/identity/SettingsView.vue'), meta: { title: 'Nastavení', private: true, requiresAccount: true, lab: true } },
@@ -45,11 +39,6 @@ export const router = createRouter({
     { path: '/settings/admin/launch', name: 'launch-admin', component: () => import('../features/launch/LaunchManagementView.vue'), meta: { title: 'Večer a pozvánky', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/settings/admin/characters', name: 'character-admin', component: () => import('../features/customer/CharacterAdminView.vue'), meta: { title: 'Postavy a portréty', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/admin/customer-sessions', name: 'customer-admin', component: () => import('../features/customer/CustomerAdminView.vue'), meta: { title: 'Zákaznické relace', private: true, requiresAccount: true, staff: true, operation: true } },
-    { path: '/app/:pathMatch(.*)*', redirect: '/suitcase' },
-    { path: '/companion/:pathMatch(.*)*', redirect: '/suitcase' },
-    { path: '/simulator/:pathMatch(.*)*', redirect: { path: '/workshop', query: { mode: 'simulation' } } },
-    { path: '/workshop/index.html', redirect: '/workshop' },
-    { path: '/workshop/viewer.html', redirect: '/workshop' },
     { path: '/:pathMatch(.*)*', component: () => import('./NotFoundView.vue'), meta: { title: 'Stránka nenalezena' } },
   ],
   scrollBehavior(to, from, saved) {
@@ -69,11 +58,8 @@ const localizedRouteTitles: Partial<Record<string, CustomerCopyKey>> = {
   'customer-conversation': 'customer.conversation-pane',
   'customer-keepsakes': 'customer.keepsakes-pane',
   'customer-account': 'customer.account-pane',
-  archive: 'route.title-archive',
-  chronicle: 'route.title-chronicle',
   keepsake: 'route.title-keepsake',
   signin: 'signin.title',
-  workshop: 'route.title-workshop',
   notFound: 'route.title-not-found',
 };
 
@@ -83,12 +69,6 @@ function updateDocumentTitle(to: Pick<RouteLocationNormalizedLoaded, 'name' | 'm
   document.title = `${title} · Wand Night Stand`;
 }
 
-router.beforeEach(to => {
-  if (to.hash === '#director' && ['/', '/suitcase', '/suitcase/diagnostics'].includes(to.path)) return {path: '/suitcase/director'};
-  if (['/keepsake/evening/', '/keepsake/evening', '/keepsake/evening/index.html'].includes(to.path)) {
-    return { path: '/archive', query: to.query };
-  }
-});
 router.afterEach(to => {
   updateDocumentTitle(to);
   let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');

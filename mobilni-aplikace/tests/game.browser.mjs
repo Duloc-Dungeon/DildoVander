@@ -89,9 +89,9 @@ try {
       if (state === 'yolo') { await page.getByRole('button', { name: 'Ukázat celý výsledek' }).click(); await page.getByText('Eliška vítězí díky Děrovačce osudu.', { exact: true }).waitFor(); }
       if (state === 'tactical') assert.equal(await page.getByRole('radio', {name:/Štít/}).isDisabled(), true);
       if (state === 'loadout') { await page.getByRole('radio', {name:/Nátlak/}).check(); await page.getByText('Může ti zbýt jediný typ kouzla.', {exact:false}).waitFor(); }
-      if (state === 'captured') assert.equal(await page.getByRole('link', {name:'Vyzvat bosse',exact:true}).count(), 1);
+      if (state === 'captured') assert.equal(await page.getByRole('link', {name:'Vyzvat Barona',exact:true}).count(), 1);
       if (state === 'boss-setup') {
-        await page.getByRole('button', { name: 'Vyzvat bosse', exact: true }).click();
+        await page.getByRole('button', { name: 'Vyzvat Barona', exact: true }).click();
         await page.waitForURL(`**/play/boss/${'a'.repeat(32)}`);
         await page.getByRole('button', { name: 'Potvrdit tah' }).waitFor();
       }

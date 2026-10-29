@@ -83,8 +83,6 @@ try {
   await page.setViewportSize({ width: 390, height: 844 }); await fits(); await page.screenshot({ path: path.join(output, 'duel-mobile.png'), fullPage: true });
   await page.goto(`${origin}/archive/duel?duel=${id}`); await page.getByRole('heading', { name: 'Souboj postav', exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Úder', exact: true }).count(), 0);
-  await page.goto(`${origin}/archive`); await page.getByRole('heading', { name: identity.wizardAlias }).waitFor(); await fits();
-  assert(!(await page.locator('main').innerText()).includes('PRIVATE_PUBLIC_EXTRA')); await page.screenshot({ path: path.join(output, 'identity-mobile.png'), fullPage: true });
   await page.goto(`${origin}/keepsake/?k=${id}`); await page.getByRole('button', { name: 'Vytvořit kouzelnickou identitu této edice' }).waitFor();
   assert.equal(requests.filter(request => request.path.endsWith('/wizard-identity')).length, 0);
   assert(!(await page.locator('main').innerText()).includes('PRIVATE_FUTURE_BODY'));
@@ -97,16 +95,7 @@ try {
   assert.deepEqual(await readFile(await download.path()), png, 'downloaded partial PNG preserves fixture bytes');
   await page.goto(`${origin}/keepsake/?k=${id}&view=share&editionId=${id}`); await page.getByRole('heading', { name: identity.wizardAlias }).waitFor();
   assert.equal(await page.getByRole('heading', { name: 'Soukromé proroctví', exact: true }).count(), 0);
-  await page.goto(`${origin}/keepsake/chronicle.html`); await page.getByText('První potvrzená prezentace teprve přijde.').waitFor();
-  chronicle = { ...chronicle, revision: 2, confirmedPresentations: 2, mostPopularSlots: [1, 2] };
-  await page.getByRole('button', { name: 'Obnovit kroniku' }).click(); await page.getByText(/Na prvním místě je remíza/).waitFor(); await fits(); await page.screenshot({ path: path.join(output, 'chronicle-mobile.png'), fullPage: true });
-  available = false; await page.getByRole('button', { name: 'Obnovit kroniku' }).click(); await page.getByText(/Kronika zatím není dostupná/).waitFor(); assert.equal(await page.getByRole('table').count(), 0);
-  available = true; account = { id: 'synthetic-admin', displayName: 'Správce ukázky', roles: ['Administrator'] };
-  await page.goto(`${origin}/archive/chronicle`); await page.getByLabel('Kufr', { exact: true }).selectOption('synthetic-device'); await page.getByLabel('Večer', { exact: true }).selectOption('legacy-evening_219');
-  for (const label of ['Kufr', 'Večer']) assert((await page.getByLabel(label, { exact: true }).boundingBox()).height >= 44, 'context selectors keep shared touch target sizing');
-  await page.getByRole('button', { name: 'Načíst soukromý přehled' }).click(); await page.getByText('Soukromá syntetická evidence', { exact: true }).waitFor();
-  await fits(); await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({ path: path.join(output, 'chronicle-admin-mobile.png'), fullPage: true });
-  const privateRead = requests.find(request => request.path === '/v1/admin/show/chronicle'); assert.equal(privateRead.headers['x-dv-device-id'], 'synthetic-device');
+  account = { id: 'synthetic-admin', displayName: 'Správce ukázky', roles: ['Administrator'] };
   await page.goto(`${origin}/keepsake/?k=${id}&account=1`); await page.getByRole('heading', { name: identity.wizardAlias }).waitFor();
   assert(!(await page.locator('main').innerText()).includes('PRIVATE_OWNER_WORDING')); await page.getByText(/Soukromé proroctví je dostupné jen vlastníkovi/).waitFor();
   assert(requests.every(request => !request.url.includes(grant)), 'grant never enters request URLs');

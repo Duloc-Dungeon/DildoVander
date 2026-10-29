@@ -50,7 +50,7 @@ describe('customer next-action guidance', () => {
     const wrapper = await render({ account: customer, profile: { status: 'saved' } }, true);
     expect(wrapper.get('.aw-button--primary').attributes('href')).toBe('/play');
     expect(wrapper.get('.aw-button--primary').text()).toBe('Přejít do hry');
-    expect(wrapper.text()).toContain('Tvoje postava je připravená.');
+    expect(wrapper.text()).toContain('Postava je připravená. Můžeš pokračovat do hry.');
     wrapper.unmount();
   });
 

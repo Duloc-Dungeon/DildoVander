@@ -68,9 +68,15 @@ try {
       await page.evaluate(() => document.fonts.ready);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `overflow at ${width}`);
       const bounds = await navigation.boundingBox();
-      assert.equal(Math.round(bounds.x), 0);
-      assert.equal(Math.round(bounds.width), width);
-      assert.equal(Math.round(bounds.y + bounds.height), 844);
+      if (width < 768) {
+        assert.equal(Math.round(bounds.x), 0);
+        assert.equal(Math.round(bounds.width), width);
+        assert.equal(Math.round(bounds.y + bounds.height), 844);
+      } else {
+        assert(bounds.x > 0 && bounds.x + bounds.width < width, 'desktop navigation stays inside the viewport');
+        assert(Math.abs(bounds.x * 2 + bounds.width - width) <= 1, 'desktop navigation stays centered');
+        assert(bounds.y + bounds.height < 844, 'desktop navigation leaves space below the dock');
+      }
       assert(await navigation.locator('a').evaluateAll(links => links.every(link => link.getBoundingClientRect().height >= 44)));
       assert(await navigation.locator('span').evaluateAll(labels => labels.every(label => label.scrollWidth <= label.clientWidth + 1)), 'navigation labels remain inside their own tab');
     }
@@ -108,8 +114,8 @@ try {
     await navigation.getByRole('link', { name: 'Památky', exact: true }).click();
     await page.waitForURL('**/me/keepsakes');
     await checkNavigation('Památky');
-    await page.getByText('Tvoje kolekce', { exact: true }).waitFor();
-    assert.equal(await page.getByRole('textbox', { name: 'Hledat v kolekci' }).count(), 0);
+    await page.getByRole('region', { name: 'Uložené památky', exact: true }).waitFor();
+    assert.equal(await page.getByRole('searchbox', { name: 'Hledat v památkách', exact: true }).count(), 0);
     await page.screenshot({ path: path.join(output, `keepsakes-${width}.png`), fullPage: true });
     await page.locator('summary').getByText('Herní tituly', { exact: true }).click();
     await page.locator('.game-titles__badge').getByText('Soupeř s pamětí', { exact: true }).waitFor();

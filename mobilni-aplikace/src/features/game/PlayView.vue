@@ -424,9 +424,9 @@ onBeforeUnmount(() => {
           <RouterLink v-if="progress?.keeperState !== 'captured' && lobby.player.xp >= 30 && (wandStatus?.tier ?? 0) < 2" class="aw-button aw-button--primary" to="/play/wand?upgrade=1">Vylepšit hůlku v kufrově dílně</RouterLink>
           <template v-if="progress?.keeperState === 'captured'">
             <p class="game-eyebrow">Ollivander je v zajetí.</p><h1 id="game-title">Dílnu převzal Baron.</h1><GameCharacter class="game-boss-portrait" character="boss" />
-            <PaperSurface class="game-paper"><p>„Osobní obsluha? Zrušena. Reklamace? Zamítnuta. Další otázky po mém vítězství.“</p><RouterLink class="aw-button aw-button--primary" to="/play/boss">Vyzvat bosse</RouterLink><p>Dílna se znovu otevře po porážce Barona. Tvoje hůlka i nárok na upgrade zůstávají zachované.</p></PaperSurface>
+            <PaperSurface class="game-paper"><p>„Osobní obsluha? Zrušena. Reklamace? Zamítnuta. Další otázky po mém vítězství.“</p><RouterLink class="aw-button aw-button--primary" to="/play/boss">Vyzvat Barona</RouterLink><p>Dílna se znovu otevře po porážce Barona. Tvoje hůlka i nárok na vylepšení zůstávají zachované.</p></PaperSurface>
           </template>
-          <template v-else><p class="game-eyebrow">Digitální dílna</p><h1 id="game-title">Kufr má slovo.</h1><PaperSurface class="game-paper"><h2>{{ progress?.keeperState === 'rescued' ? 'Vždycky jsem ti věřil. Skoro.' : lobby.player.xp >= 30 ? 'Tohle dřevo už ti nestačí.' : 'Každá hůlka začíná od tří kouzel.' }}</h2><p>Odehrál jsi {{ lobby.player.matchesPlayed }} zápasů a získal {{ lobby.player.xp }} XP. {{ lobby.player.tacticalUnlocked ? 'Hůlka II ti otevírá taktiku. Úder, Lest a Štít teď mají omezenou zásobu.' : lobby.player.xp >= 30 ? 'Na upgrade už máš nárok. Nejdřív jej dokonči v dílně, potom se otevře taktika.' : 'Na 30 XP získáš nárok na vylepšení hůlky. Zatím poznávej soupeře a dej si odvetu.' }}</p><RouterLink class="aw-button aw-button--primary" :to="lobby.player.tacticalUnlocked ? { path: '/play/challenge', query: { mode: 'tactical' } } : '/play/challenge'">{{ lobby.player.tacticalUnlocked ? 'Vyzkoušet taktiku' : 'Vyzvat soupeře' }}</RouterLink></PaperSurface></template>
+          <template v-else><p class="game-eyebrow">Digitální dílna</p><h1 id="game-title">Kufr má slovo.</h1><PaperSurface class="game-paper"><h2>{{ progress?.keeperState === 'rescued' ? 'Vždycky jsem ti věřil. Skoro.' : lobby.player.xp >= 30 ? 'Tohle dřevo už ti nestačí.' : 'Každá hůlka začíná od tří kouzel.' }}</h2><p>Odehrál jsi {{ lobby.player.matchesPlayed }} zápasů a získal {{ lobby.player.xp }} XP. {{ lobby.player.tacticalUnlocked ? 'Hůlka II ti otevírá taktiku. Úder, Lest a Štít teď mají omezenou zásobu.' : lobby.player.xp >= 30 ? 'Na vylepšení už máš nárok. Nejdřív ho dokonči v dílně, potom se otevře taktika.' : 'Na 30 XP získáš nárok na vylepšení hůlky. Zatím poznávej soupeře a dej si odvetu.' }}</p><RouterLink class="aw-button aw-button--primary" :to="lobby.player.tacticalUnlocked ? { path: '/play/challenge', query: { mode: 'tactical' } } : '/play/challenge'">{{ lobby.player.tacticalUnlocked ? 'Vyzkoušet taktiku' : 'Vyzvat soupeře' }}</RouterLink></PaperSurface></template>
         </template>
         <template v-else-if="ranking">
           <h1 id="game-title">Žebříček</h1>
@@ -444,7 +444,7 @@ onBeforeUnmount(() => {
             <p class="game-eyebrow">{{ bossProfile.rescued ? 'Ollivander je volný.' : 'Ollivander je v zajetí.' }}</p><h1 id="game-title">Baron Šarlatán</h1>
             <GameCharacter class="game-boss-portrait" character="boss" />
             <PaperSurface class="game-paper"><h2>{{ bossProfile.rescued ? 'Ještě jednu reklamaci?' : 'Je čas zvednout oponu.' }}</h2><p>6 energie proti {{ lobby.player.xp < 30 ? 3 : 5 }}. Nejvýše 12 výměn, tři čitelné fáze. Hůlku ani XP neztrácíš.</p><p>Obtížnost je zmrazená pro celou skupinu. Referenční síla: {{ bossProfile.referenceXp }} XP. První výhra osvobodí Ollivandera všem.</p><p v-if="lobby.player.xp < 30">V exhibici dostaneš neomezená kouzla, žádné vlastní jiskry. Můžeš hrát i bez hůlky.</p><p>Nesoutěžní hra · bez fyzické ceny</p>
-              <RouterLink v-if="bossProfile.activeAttemptId" class="aw-button aw-button--primary" :to="`/play/boss/${bossProfile.activeAttemptId}`">Pokračovat v pokusu</RouterLink><AwButton v-else variant="primary" :busy="busy" :disabled="uncertain" @click="startBoss">Vyzvat bosse</AwButton>
+              <RouterLink v-if="bossProfile.activeAttemptId" class="aw-button aw-button--primary" :to="`/play/boss/${bossProfile.activeAttemptId}`">Pokračovat v pokusu</RouterLink><AwButton v-else variant="primary" :busy="busy" :disabled="uncertain" @click="startBoss">Vyzvat Barona</AwButton>
             </PaperSurface>
           </template>
           <template v-else><h1 id="game-title">Opona zůstává zavřená.</h1><p>Další kapitola večera zatím nebyla odhalena.</p></template>
@@ -467,7 +467,7 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="chronicle">
           <p class="game-eyebrow">Tvé skutečné zápasy</p><h1 id="game-title">Moje kronika</h1>
-          <PaperSurface class="game-paper"><p v-if="!lobby.history.length">První historka teprve čeká na své kouzlo.</p><ol class="game-match-list"><li v-for="item in lobby.history" :key="item.id"><RouterLink :to="`/play/match/${item.id}`"><span>{{ modeName(item.mode) }}<strong>{{ item.opponent.displayName }}</strong></span><span>{{ item.playerScore }} : {{ item.opponentScore }}<small>+{{ item.xpAwarded }} XP</small></span></RouterLink></li></ol></PaperSurface>
+          <PaperSurface class="game-paper"><p v-if="!lobby.history.length">Zatím nemáš odehraný zápas. Kronikář už si připravil oslavný úvod; jméno vítěze pro jistotu vynechal.</p><ol class="game-match-list"><li v-for="item in lobby.history" :key="item.id"><RouterLink :to="`/play/match/${item.id}`"><span>{{ modeName(item.mode) }}<strong>{{ item.opponent.displayName }}</strong></span><span>{{ item.playerScore }} : {{ item.opponentScore }}<small>+{{ item.xpAwarded }} XP</small></span></RouterLink></li></ol></PaperSurface>
         </template>
         <template v-else>
           <h1 id="game-title">Tvůj tah,<br /><em>{{ lobby.player.displayName }}.</em></h1>
@@ -479,8 +479,8 @@ onBeforeUnmount(() => {
             <RouterLink class="game-secondary-link" to="/play/practice">Krátký trénink bez XP</RouterLink>
           </div>
           <nav class="game-mode-links" aria-label="Herní režimy">
-            <RouterLink v-if="lobby.player.tacticalUnlocked" :to="{ path: '/play/challenge', query: { mode: 'tactical' } }"><span><strong>Taktický duel</strong><small>Osm výměn. Omezená zásoba kouzel.</small></span><span aria-hidden="true">→</span></RouterLink>
-            <RouterLink v-if="(progress?.tacticalMatches ?? 0) >= 3" to="/play/teams"><span><strong>Najít spojence</strong><small>Dva proti dvěma. Každý volí vlastní tah.</small></span><span aria-hidden="true">→</span></RouterLink>
+            <RouterLink v-if="lobby.player.tacticalUnlocked" :to="{ path: '/play/challenge', query: { mode: 'tactical' } }"><span><strong>Taktický duel</strong><small>Osm výměn. Kouzla na příděl, odvaha z vlastních zásob.</small></span><span aria-hidden="true">→</span></RouterLink>
+            <RouterLink v-if="(progress?.tacticalMatches ?? 0) >= 3" to="/play/teams"><span><strong>Najít spojence</strong><small>Dva proti dvěma. Každý volí vlastní tah; vina se pak rozděluje společně.</small></span><span aria-hidden="true">→</span></RouterLink>
             <RouterLink v-if="lobby.player.yoloUnlocked" :to="{ path: '/play/challenge', query: { mode: 'yolo' } }"><span><strong>YOLO lóže</strong><small>AI vymyslí příběh i vítěze. Bez bojových XP.</small></span><span aria-hidden="true">→</span></RouterLink>
             <RouterLink v-if="lobby.boss?.revealed" to="/play/boss"><span><strong>{{ lobby.boss.rescued ? 'Odveta s Baronem' : 'Vyzvat Barona' }}</strong><small>{{ lobby.boss.rescued ? 'Baron čeká na další pokus.' : 'Ollivander je v zajetí. Osvoboď dílnu.' }}</small></span><span aria-hidden="true">→</span></RouterLink>
           </nav>

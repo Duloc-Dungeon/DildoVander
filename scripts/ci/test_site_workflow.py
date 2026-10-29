@@ -133,7 +133,11 @@ class PublicWorkflowTests(unittest.TestCase):
         validate(ROOT)
         source = (WORKFLOWS / 'kufr-site.yml').read_text()
         self.assertIn('npm run build', source)
-        self.assertIn('node tests/debug.browser.mjs', source)
+        self.assertIn('node scripts/archive-show.browser.mjs', source)
+        self.assertIn('node tests/personal-wand-duel.browser.mjs', source)
+        for retired in ('tests/debug.browser.mjs', 'tests/director.browser.mjs',
+                        'tests/workshop-offline.browser.mjs', 'tests/workshop-media.browser.mjs'):
+            self.assertNotIn(retired, source)
         self.assertNotIn('--base=/companion/', source)
         self.assertNotIn('verify-manufacturing', source)
         required = (WORKFLOWS / 'ci.yml').read_text().split('  required:', 1)[1]
