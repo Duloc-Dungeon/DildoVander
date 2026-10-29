@@ -213,7 +213,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.boss-narration { margin: 1rem 0; padding: 1rem; border: 1px solid var(--aw-border, currentColor); border-radius: var(--aw-radius-md, .75rem); }
+.boss-narration { margin: 1rem 0; padding: 1rem; border: 1px solid var(--aw-border, currentColor); border-radius: .75rem; }
 .boss-narration h2 { margin: 0 0 .5rem; font-size: 1.05rem; }
 .boss-narration__text { margin: 0 0 .75rem; line-height: 1.55; }
 .boss-narration__controls { display: flex; flex-wrap: wrap; gap: .5rem; }
