@@ -270,6 +270,23 @@ public final class NativeAccountRequestPolicyTest {
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/matches/" + match + "/choose?extra=1", "POST"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/matches/" + match + "/admin", "POST"));
     }
+
+    @Test public void bossNarrationAndAudioAreExactPostOnlyRoutes() {
+        String id = "0123456789abcdef0123456789abcdef";
+        for (String suffix : new String[] {"narration", "audio"}) {
+            String path = "/app/v1/game/boss/attempts/" + id + "/" + suffix;
+            assertTrue(NativeAccountRequestPolicy.allows(path, "POST"));
+            assertFalse(NativeAccountRequestPolicy.allows(path, "GET"));
+            for (String invalid : new String[] {path + "?x=1", path + "/extra", path + "\n",
+                path.replace(id, "0123456789abcdef0123456789abcdeG"), path.replace(id, id.substring(1))}) {
+                assertFalse(NativeAccountRequestPolicy.allows(invalid, "POST"));
+            }
+        }
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/boss/attempts/" + id + "/choose", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/boss/attempts/" + id + "/cancel", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/boss/attempts/" + id + "/choose", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/boss/attempts/" + id + "/cancel", "GET"));
+    }
     @Test public void acceptsAccountRoutesAndRejectsExternalOrArbitraryAdminRoutes() {
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/account", "GET"));
         assertTrue(NativeAccountRequestPolicy.allows("/v1/admin/show/chronicle?deviceId=device-1&eveningId=evening-1", "GET"));

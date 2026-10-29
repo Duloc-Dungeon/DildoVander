@@ -40,8 +40,13 @@ internal sealed partial class GameStore
             CREATE INDEX IF NOT EXISTS ix_boss_owner ON game_boss_attempts(group_id,user_id);
             CREATE TABLE IF NOT EXISTS game_boss_operations(
                 operation_id TEXT PRIMARY KEY, actor TEXT NOT NULL, fingerprint TEXT NOT NULL, target TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS game_boss_narration(
+                attempt_id TEXT PRIMARY KEY REFERENCES game_boss_attempts(id) ON DELETE CASCADE,
+                revision INTEGER NOT NULL, context_key TEXT NOT NULL, text TEXT, audio BLOB, audio_key TEXT,
+                claim TEXT, claim_until INTEGER NOT NULL DEFAULT 0);
             """;
         command.ExecuteNonQuery();
+        EnsureBossNarrationAudioSchema(connection);
     }
 
     internal GameBossView ReadBoss(string groupId, string? userId = null)
@@ -418,6 +423,8 @@ internal static class GameBossEndpoints
         });
         group.MapPost("/attempts/{id}/cancel", (string id, GameBossCommand request, HttpContext context, GameStore store) =>
             Results.Ok(store.CancelBoss((string)context.Items["boss-group"]!, User(context), id, request)));
+        group.MapPost("/attempts/{id}/narration", GameBossNarrationEndpoints.NarrateAsync);
+        group.MapPost("/attempts/{id}/audio", GameBossNarrationEndpoints.AudioAsync);
 
         app.MapPost("/app/v1/admin/game/groups/{id}/boss", RevealAsync).RequireAuthorization().RequireRateLimiting("account");
         app.MapGet("/app/v1/admin/game/groups/{id}/boss", async (string id, HttpContext context, AccountDatabase db, GameStore store) =>
@@ -455,7 +462,7 @@ internal static class GameBossEndpoints
         var bossAttemptAction = context.Request.Method == "POST"
             && (path == "/app/v1/game/boss/attempts"
                 || System.Text.RegularExpressions.Regex.IsMatch(path,
-                    @"^/app/v1/game/boss/attempts/[0-9a-fA-F]{32}/(?:choose|cancel)$",
+                    @"^/app/v1/game/boss/attempts/[0-9a-fA-F]{32}/(?:choose|cancel|narration|audio)$",
                     System.Text.RegularExpressions.RegexOptions.CultureInvariant));
         if (requireWand && context.Request.Method != "GET" && !bossAttemptAction
             && !path.EndsWith("/cancel", StringComparison.Ordinal)

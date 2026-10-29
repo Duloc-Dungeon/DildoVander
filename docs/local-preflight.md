@@ -1,6 +1,8 @@
 # Local pre-PR validation
 
-Run `python scripts/ci/preflight.py --dry-run` from the repository root to inspect the default quick plan. Run it without flags to execute that plan. The runner checks Node against the exact `contracts/.nvmrc` pin (24.21.0) and, when backend checks are selected, checks the SDK selected by `global.json` (10.0.303 with `latestPatch`). It reports mismatches as failed checks. The runner does not install dependencies unless `--install-dependencies` is supplied; quick installs use the contracts and app lockfiles, while full installs also include the design system and Playwright Chromium.
+Local preflight and its reports are optional diagnostics, not prerequisites for opening, updating or merging a PR. Focused validation, required CI and independent review still apply.
+
+Run `python scripts/ci/preflight.py --dry-run` from the repository root to inspect the default quick plan. Run it without flags to execute that plan. The runner checks Node against the exact `contracts/.nvmrc` pin (25.9.0) and, when backend checks are selected, checks the SDK selected by `global.json` (10.0.303 with `latestPatch`). It reports mismatches as failed checks. The runner does not install dependencies unless `--install-dependencies` is supplied; quick installs use the contracts and app lockfiles, while full installs also include the design system and Playwright Chromium.
 
 ## Profiles and scopes
 

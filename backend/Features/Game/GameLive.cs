@@ -68,6 +68,12 @@ internal sealed class GameChangedEndpointFilter(IHubContext<GameLiveHub> hub, IL
     {
         var result = await next(invocation);
         var context = invocation.HttpContext;
+        // Narration reads an existing revision; it cannot change gameplay.
+        // Broadcasting it as a move would make every reply trigger another refresh.
+        if (context.Request.Path.StartsWithSegments("/app/v1/game/boss/attempts")
+            && (context.Request.Path.Value?.EndsWith("/narration", StringComparison.Ordinal) == true
+                || context.Request.Path.Value?.EndsWith("/audio", StringComparison.Ordinal) == true))
+        { return result; }
         if (!HttpMethods.IsPost(context.Request.Method)
             || result is not IStatusCodeHttpResult { StatusCode: >= 200 and < 300 })
         {

@@ -180,7 +180,7 @@ internal static class PrelaunchCharacterEndpoints
         {
             throw new CharacterException("character_revision_conflict", 409);
         }
-        if (profile.Status == "saved")
+        if (profile.Status is "saved" or "failed")
         {
             if (!await store.RequestEnrichmentAsync(owner, token, profile.ProfileId, profile.Revision))
             {

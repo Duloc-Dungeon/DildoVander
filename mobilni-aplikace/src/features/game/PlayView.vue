@@ -10,6 +10,7 @@ import PushNotifications from '../identity/PushNotifications.vue';
 import amberWand from '../../assets/wns-v2/art/wand-amber.png';
 import GameCharacter from './GameCharacter.vue';
 import GameBossStage from './GameBossStage.vue';
+import GameBossNarration from './GameBossNarration.vue';
 import GameBossEnergy from './GameBossEnergy.vue';
 import GameLoadouts from './GameLoadouts.vue';
 import GameRanking from './GameRanking.vue';
@@ -422,6 +423,7 @@ onBeforeUnmount(() => {
                   <li v-for="phase in 3" :key="phase" :aria-current="phase === match.phase ? 'step' : undefined" :aria-label="`Fáze ${phase}`" />
                 </ol>
               </GameBossStage>
+              <GameBossNarration v-if="['active', 'complete'].includes(match.status)" :attempt="match" />
               <GameBossEnergy :player-energy="match.playerEnergy" :opponent-energy="match.opponentEnergy" :exhibition="match.exhibition" />
               <div class="boss-tactics">
                 <p v-if="match.hint">{{ match.hint }}</p>

@@ -622,6 +622,9 @@ internal static class GameEndpoints
             services.AddSingleton(sp => new GameStore(sp.GetRequiredService<AccountConfiguration>().DataRoot));
             services.AddSingleton<IGameYoloProvider, OpenAiGameYoloProvider>();
             services.AddSingleton<IGameCombatNarrator, OpenAiGameYoloProvider>();
+            services.AddSingleton<IGameBossNarrator, OpenAiGameYoloProvider>();
+            services.AddSingleton<IGameBossSpeech, ElevenLabsBossSpeech>();
+            services.AddSingleton<GameBossNarration>();
             services.AddHostedService<GameCombatNarrationWorker>();
             services.AddSingleton<GameYoloWorker>();
             services.AddHostedService(sp => sp.GetRequiredService<GameYoloWorker>());

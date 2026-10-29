@@ -125,6 +125,50 @@ try {
     await page.screenshot({ path: `${screenshotDir}/guest-launch-mobile.png`, fullPage: true });
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'guest waiting room fits the mobile viewport');
 
+    // Use the same authenticated HTTPS backend for the whole preparation.
+    // Only the fixture's generation providers are offline doubles.
+    await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).click();
+    await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
+    const answer = 'Hůlka má najít cestu domů i v mlze.';
+    await page.getByLabel('Tvoje sdělení kufru', { exact: true }).fill(answer);
+    const savedAnswer = page.waitForResponse(response =>
+      /\/workshop\/sessions\/[^/]+\/messages$/.test(new URL(response.url()).pathname)
+      && response.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Odeslat', exact: true }).click();
+    const answerResponse = await savedAnswer;
+    assert.equal(answerResponse.status(), 200);
+    const asking = (await answerResponse.json()).session;
+    assert(asking.messages.some(message => message.role === 'user' && message.text === answer));
+
+    await page.reload();
+    await page.getByRole('button', { name: 'Pokračovat v tvorbě hůlky', exact: true }).click();
+    await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
+    const resumed = await (await context.request.get(origin.origin + '/app/v1/customer/wand/workshop')).json();
+    assert.equal(resumed.session.id, asking.id, 'reload resumes the same durable workshop');
+    assert.equal(resumed.session.messages.filter(message => message.role === 'user' && message.text === answer).length, 1);
+    const finish = page.waitForResponse(response => response.url().endsWith(`/workshop/sessions/${asking.id}/finish`)
+      && response.request().method() === 'POST');
+    await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).click();
+    assert.equal((await finish).status(), 200);
+    await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).waitFor({ timeout: 60000 });
+    const completed = await (await context.request.get(origin.origin + '/app/v1/customer/wand/workshop')).json();
+    assert.equal(completed.session.id, asking.id);
+    assert.equal(completed.session.status, 'complete');
+    const wandId = completed.session.wand.wandId;
+    assert(wandId, 'manufacture persisted the selected wand');
+    const ownedWand = await (await context.request.get(origin.origin + '/app/v1/customer/wand')).json();
+    assert.equal(ownedWand.wand.wandId, wandId, 'the game uses the wand created in prelaunch');
+    await page.locator('.trunk-stage__wand').waitFor({ timeout: 60000 });
+    await page.waitForFunction(() => {
+      const image = document.querySelector('.trunk-stage__wand');
+      return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+    });
+    await page.screenshot({ path: `${screenshotDir}/guest-wand-complete-mobile.png`, fullPage: true });
+    await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).click();
+    await page.reload();
+    await page.getByRole('button', { name: 'Prohlédnout hůlku', exact: true }).waitFor();
+    assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Čekárna');
+
     await page.goto(origin.origin + '/me/account');
     await page.getByRole('button', { name: 'Odhlásit toto zařízení', exact: true }).click();
     await page.waitForURL(url => url.pathname === '/signin');
@@ -138,6 +182,8 @@ try {
     assert.equal(signedInSession.account.openAiConsent, true);
     const signedInCharacter = await (await context.request.get(origin.origin + '/app/v1/prelaunch/character')).json();
     assert.equal(signedInCharacter.character.profileId, profileId, 'the character remains attached after passkey sign-in');
+    const signedInWand = await (await context.request.get(origin.origin + '/app/v1/customer/wand')).json();
+    assert.equal(signedInWand.wand.wandId, wandId, 'the same manufactured wand survives logout and passkey sign-in');
 
     // A consumed invitation and a syntactically valid but unknown invitation
     // both receive the same user-facing rejection; neither exposes token data.
@@ -171,7 +217,7 @@ try {
     }
 
     assert.deepEqual(errors, [], `the guest journey produced no uncaught page errors: ${errors.join('; ')}`);
-    process.stdout.write('Guest journey browser evidence passed: consent, cancelled passkey recovery, server-confirmed character save reconciliation, reload, passkey sign-in, generic invite rejection, and mobile viewport.\n');
+    process.stdout.write('Guest journey browser evidence passed: consent, cancelled passkey recovery, server-confirmed character save, workshop text persistence and resume, wand manufacture, waiting room reload, passkey sign-in with the same wand, generic invite rejection, and mobile viewport. Offline providers only.\n');
   } finally {
     await context.close();
   }

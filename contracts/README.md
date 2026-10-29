@@ -148,7 +148,7 @@ ani fake výsledek nejsou důkaz cloudového tahu či fyzického potvrzení.
 
 ## Ověření
 
-Použij Node 24.21.0 podle `.nvmrc` a ve složce `contracts/` spusť:
+Použij Node 25.9.0 podle `.nvmrc` a ve složce `contracts/` spusť:
 
 ```text
 npm ci

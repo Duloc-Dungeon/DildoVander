@@ -1439,7 +1439,8 @@ internal static partial class MobileGameTests
 
         internal static async Task<HttpFixture> StartAsync(bool withLiveTransport = false, GptLiveClient? liveClient = null,
             TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true,
-            bool includeLiveDelegations = true, bool withKeepsakes = false, IGameYoloProvider? yoloProvider = null)
+            bool includeLiveDelegations = true, bool withKeepsakes = false, IGameYoloProvider? yoloProvider = null,
+            IGameBossNarrator? bossNarrator = null, IGameBossSpeech? bossSpeech = null)
         {
             var root = Path.Combine(Path.GetTempPath(), "mobile-game-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
             using var rsa = RSA.Create(2048);
@@ -1478,6 +1479,8 @@ internal static partial class MobileGameTests
             builder.Services.AddMobileGame(builder.Configuration);
             builder.Services.AddSingleton(new Kufr.Backend.Features.Chronicle.ChronicleStore(Path.Combine(root, "chronicle")));
             if (yoloProvider is not null) builder.Services.AddSingleton<IGameYoloProvider>(yoloProvider);
+            if (bossNarrator is not null) builder.Services.AddSingleton<IGameBossNarrator>(bossNarrator);
+            if (bossSpeech is not null) builder.Services.AddSingleton<IGameBossSpeech>(bossSpeech);
             if (withKeepsakes)
                 builder.Services.AddSingleton(new KeepsakeStore(builder.Configuration, TimeProvider.System));
             builder.Services.AddSingleton(new CharacterProfileStore(Path.Combine(root, "profiles")));

@@ -218,6 +218,7 @@ final class NativeAccountRequestPolicy {
         if (query == null && "/app/v1/game/boss/attempts".equals(path)) return "POST".equals(method);
         if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}$")) return "GET".equals(method);
         if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}/(choose|cancel)$")) return "POST".equals(method);
+        if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}/(narration|audio)$")) return "POST".equals(method);
         if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}$")) return "GET".equals(method);
         if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}/(accept|decline|cancel|choose|loadout|task|retry)$")) return "POST".equals(method);
         if (query != null && !query.isEmpty()) {

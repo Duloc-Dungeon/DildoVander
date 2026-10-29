@@ -718,7 +718,8 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                 case "add": optionsPath = "/app/v1/passkeys/options"; completionPath = "/app/v1/passkeys/complete"
                 default: throw AccountError.invalidPath
                 }
-                let options = try json(await send(path: optionsPath, method: "POST", body: body))
+                let optionsResult = try await send(path: optionsPath, method: "POST", body: body)
+                let options = try NativePasskeyOptionsResponse.parse(status: optionsResult.0, body: optionsResult.1)
                 try requestScheduler.requireCurrent(lease)
                 guard let challengeValue = options["challenge"] as? String, let challenge = Self.decode(challengeValue) else { throw AccountError.invalidResponse }
                 let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: config.1)
@@ -742,6 +743,8 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                 authorization.presentationContextProvider = self
                 controller = authorization
                 authorization.performRequests()
+            } catch let rejection as NativePasskeyOptionsResponse.Rejected {
+                finish(error: rejection.localizedDescription, expected: lease, code: rejection.code, status: rejection.status)
             } catch { finish(error: error.localizedDescription, expected: lease) }
         }
     }
@@ -808,11 +811,14 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
         }
     }
 
-    @MainActor private func finish(error: String?, expected: AccountRequestScheduler.Lease, code: String? = nil) {
+    @MainActor private func finish(error: String?, expected: AccountRequestScheduler.Lease, code: String? = nil, status: Int? = nil) {
         guard ceremonyLease?.id == expected.id else { return }
         let call = pending
         pending = nil; controller = nil; completionPath = ""; ceremonyLease = nil; credentialCompletionActive = false
-        if let error = error { call?.reject(error, code) } else { call?.resolve() }
+        if let error = error {
+            let data: [String: Any] = status.map { ["status": $0] } ?? [:]
+            call?.reject(error, code, nil, data)
+        } else { call?.resolve() }
         requestScheduler.release(expected)
     }
 

@@ -52,27 +52,27 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         }
         if (!await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, job.Tier, services, token))
         {
-            store.FailWorkshop(job.AccountId, job.OperationId, "workshop_authority_revoked");
+            store.FailWorkshop(job.AccountId, job.OperationId, "workshop_authority_revoked", Snapshot(job));
             return;
         }
         var user = await accounts.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == job.AccountId
             && !item.Disabled && !accounts.DeletionRequests.Any(deletion => deletion.UserId == job.AccountId), token);
         if (user is null || !AccountAiConsent.HasConsent(user))
         {
-            store.FailWorkshop(job.AccountId, job.OperationId, "account_or_consent_unavailable");
+            store.FailWorkshop(job.AccountId, job.OperationId, "account_or_consent_unavailable", Snapshot(job));
             return;
         }
         var profiles = services.GetRequiredService<CharacterProfileStore>();
         if (await profiles.CapturePreparedAsync(job.AccountId, job.Profile.ProfileId, job.Profile.Revision, token) is null)
         {
-            store.FailWorkshop(job.AccountId, job.OperationId, "wand_profile_revision_mismatch");
+            store.FailWorkshop(job.AccountId, job.OperationId, "wand_profile_revision_mismatch", Snapshot(job));
             return;
         }
 
         if (!await MobileWandWorkshopAccess.IsAllowedAsync(user, job.Tier, services, token,
             job.LaunchGroupId, job.LaunchAccessRevision))
         {
-            store.FailWorkshop(job.AccountId, job.OperationId, "game_group_inactive");
+            store.FailWorkshop(job.AccountId, job.OperationId, "game_group_inactive", Snapshot(job));
             return;
         }
 
@@ -80,7 +80,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         var boss = game.ReadBoss(job.LaunchGroupId, job.AccountId);
         if (boss.Revealed && !boss.Rescued)
         {
-            store.PauseWorkshopForBoss(job.AccountId, job.OperationId);
+            store.PauseWorkshopForBoss(job.AccountId, job.OperationId, Snapshot(job));
             return;
         }
 
@@ -95,12 +95,12 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         {
             session = await generation.GenerateAsync(job.AccountId, job.OperationId,
                 ct => ContextAuthorityAsync(job, services, ct), token, retry: session.Status == "unavailable",
-                evidence: GenerationEvidence(job));
+                evidence: GenerationEvidence(job), workshopSnapshot: Snapshot(job));
         }
 
         if (session.Status == "unavailable")
         {
-            store.FailWorkshop(job.AccountId, job.OperationId, session.ErrorCode ?? "wand_generation_unavailable");
+            store.FailWorkshop(job.AccountId, job.OperationId, session.ErrorCode ?? "wand_generation_unavailable", Snapshot(job));
             return;
         }
 
@@ -109,13 +109,13 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             if (!await AuthorityAsync(job, services, token))
             {
                 if (await ContextAuthorityAsync(job, services, token))
-                    store.PauseWorkshopForBoss(job.AccountId, job.OperationId);
+                    store.PauseWorkshopForBoss(job.AccountId, job.OperationId, Snapshot(job));
                 else
-                    store.FailWorkshop(job.AccountId, job.OperationId, "wand_generation_stale");
+                    store.FailWorkshop(job.AccountId, job.OperationId, "wand_generation_stale", Snapshot(job));
                 return;
             }
             var wand = store.Select(job.AccountId, job.OperationId, job.Profile.ProfileId,
-                job.Profile.Revision, 1, currentReadyMask: 1);
+                job.Profile.Revision, 1, currentReadyMask: 1, workshopSnapshot: Snapshot(job));
             await IssueWandKeepsakeAsync(job, wand, services, token);
             return;
         }
@@ -125,7 +125,7 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
             if (!await AuthorityAsync(job, services, token))
             {
                 if (await ContextAuthorityAsync(job, services, token))
-                    store.PauseWorkshopForBoss(job.AccountId, job.OperationId);
+                    store.PauseWorkshopForBoss(job.AccountId, job.OperationId, Snapshot(job));
                 return;
             }
             await IssueWandKeepsakeAsync(job, selected, services, token);
@@ -141,9 +141,14 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
 
     private static async Task<bool> ContextAuthorityAsync(MobileWandWorkshopJob job,
         IServiceProvider services, CancellationToken token) =>
-        await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, job.Tier, services, token)
+        services.GetRequiredService<WandGenerationStore>().WorkshopMatchesLaunchSnapshot(job.AccountId, job.OperationId,
+            job.LaunchGroupId, job.LaunchAccessRevision)
+        && await CurrentAuthorityAsync(job.AccountId, job.LaunchGroupId, job.LaunchAccessRevision, job.Tier, services, token)
         && await services.GetRequiredService<CharacterProfileStore>().CapturePreparedAsync(job.AccountId,
             job.Profile.ProfileId, job.Profile.Revision, token) is not null;
+
+    private static (string GroupId, long AccessRevision) Snapshot(MobileWandWorkshopJob job) =>
+        (job.LaunchGroupId, job.LaunchAccessRevision);
 
     private static bool IsBossCaptive(string groupId, string accountId, IServiceProvider services)
     {
@@ -166,21 +171,21 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
         {
             store.CompleteWorkshopWithoutArtwork(job.AccountId, job.OperationId,
                 keepsakes is not null && !RealArtworkConfigured(services.GetRequiredService<IConfiguration>())
-                    ? "wand_artwork_provider_unconfigured" : "wand_artwork_unavailable");
+                    ? "wand_artwork_provider_unconfigured" : "wand_artwork_unavailable", Snapshot(job));
             return;
         }
 
         try
         {
             var issued = keepsakes.Issue(ArtworkSnapshot(wand), new(job.AccountId, ownerSession));
-            store.CompleteWorkshop(job.AccountId, job.OperationId, issued.Id);
+            store.CompleteWorkshop(job.AccountId, job.OperationId, issued.Id, Snapshot(job));
         }
         catch (KeepsakeException error)
         {
             // The selected WandId is durable already; artwork availability is a separate job.
             logger.LogWarning("Workshop wand {WandId} was saved but its artwork archive could not be opened ({Code}).",
                 wand.WandId, error.Code);
-            store.CompleteWorkshopWithoutArtwork(job.AccountId, job.OperationId, "wand_artwork_archive_unavailable");
+            store.CompleteWorkshopWithoutArtwork(job.AccountId, job.OperationId, "wand_artwork_archive_unavailable", Snapshot(job));
         }
     }
 

@@ -77,6 +77,7 @@ internal static class MobileWandTests
             var wands = new WandGenerationStore(builder.Configuration, TimeProvider.System);
             var secondStore = new WandGenerationStore(builder.Configuration, TimeProvider.System);
             await WorkshopStateMachineAsync(profiles, wands, builder.Configuration);
+            await WorkshopMembershipRecoveryAsync(Path.Combine(root, "membership-recovery"));
             await LegacyOperationRetirementAsync(profiles, wands);
             await InFlightManufactureCaptureAsync(profiles, wands);
             var lease = wands.ClaimMobileVoice("alice")!;
@@ -102,7 +103,9 @@ internal static class MobileWandTests
             var runtime = new MobileWandRuntime(app.Services.GetRequiredService<IServiceScopeFactory>(), wands);
             var admission = new MobileWandAdmission("alice", operation, "cookie", user.SecurityStamp!, "https://localhost", DateTimeOffset.UtcNow.AddSeconds(30), captured);
             var ticket = runtime.Ticket(admission);
-            Check(runtime.Take(ticket, operation, "https://localhost") == admission, "ticket binds account operation and origin");
+            Check(runtime.Take(ticket, operation, "https://localhost") == admission with
+                { LaunchSnapshot = (group.Id, user.LaunchGroupAccessRevision) },
+                "ticket binds account operation, origin and immutable membership snapshot");
             try { runtime.Take(ticket, operation, "https://localhost"); throw new Exception("replayed ticket"); } catch (WandGenerationException) { }
             Check(await runtime.Authorized(admission, default), "live account admission");
             db.Sessions.Remove(await db.Sessions.SingleAsync(s => s.Id == "cookie")); await db.SaveChangesAsync();
@@ -112,6 +115,122 @@ internal static class MobileWandTests
             Console.WriteLine("Mobile workshop admission ticket replay, session revocation and account erasure passed.");
         }
         finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
+    }
+
+    private static async Task WorkshopMembershipRecoveryAsync(string root)
+    {
+        // Recovery leaves intentionally pending jobs; keep them out of the bounded shared queue fixtures.
+        Directory.CreateDirectory(root);
+        var profiles = new CharacterProfileStore(Path.Combine(root, "profiles"));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Backend:DatabasePath"] = Path.Combine(root, "wands.sqlite")
+        }).Build();
+        var wands = new WandGenerationStore(configuration, TimeProvider.System);
+        const string owner = "membership-recovery";
+        var (profile, snapshot) = await PrepareProfileAsync(profiles, owner, new("Raven", "Original fiction"));
+        var operation = Guid.NewGuid().ToString("N");
+        wands.BeginMobile(owner, operation, snapshot, 1);
+        wands.BeginWorkshop(owner, operation, snapshot, 1, "old-group", 1);
+        wands.AppendWorkshopMessage(owner, operation, Guid.NewGuid().ToString("N"), "user", "Follow the map.", "text");
+        wands.FinishWorkshopConversation(owner, operation, profile.ProfileId, profile.Revision);
+        wands.Begin(owner, operation, snapshot, 1, true);
+        var oldJob = wands.Claim(owner, operation, false, ("old-group", 1))!;
+        wands.RecoverWorkshopMembership(owner, operation, ("old-group", 1), "new-group", 2);
+        Check(!wands.CanDispatch(oldJob), "membership recovery invalidates the in-flight provider lease");
+        var staleCompletionRejected = false;
+        try { wands.Complete(oldJob, Candidates().Take(1).ToArray()); }
+        catch (WandGenerationException error) when (error.Code == "wand_generation_stale") { staleCompletionRejected = true; }
+        Check(staleCompletionRejected, "a provider response from the old membership cannot publish candidates");
+        Check(wands.Read(owner, operation)?.Status == "unavailable"
+            && wands.ReadWorkshopState(owner, operation).Status == "failed"
+            && wands.ReadWorkshopState(owner, operation).CanRetry,
+            "uncertain running manufacture is not silently repeated and requires explicit retry");
+        wands.ResumeWorkshop(owner, operation);
+        wands.FailWorkshop(owner, operation, "late_revocation", ("old-group", 1));
+        // Public status still projects the interrupted generation as failed until its retry is claimed.
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        { DataSource = configuration["Backend:DatabasePath"]! }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM mobile_wand_workshops WHERE account_id=$owner AND operation_id=$operation AND status='generating' AND retry_requested=1";
+            command.Parameters.AddWithValue("$owner", owner);
+            command.Parameters.AddWithValue("$operation", operation);
+            Check(Convert.ToInt32(command.ExecuteScalar()) == 1, "an old worker cannot fail a recovered workshop");
+        }
+        var staleClaimRejected = false;
+        try { wands.Claim(owner, operation, true, ("old-group", 1)); }
+        catch (WandGenerationException error) when (error.Code == "wand_session_unavailable") { staleClaimRejected = true; }
+        Check(staleClaimRejected, "old membership cannot claim a recovered generation lease");
+        var currentJob = wands.Claim(owner, operation, true, ("new-group", 2))!;
+        wands.Complete(currentJob, Candidates().Take(1).ToArray());
+        var staleSelectionRejected = false;
+        try { wands.Select(owner, operation, profile.ProfileId, profile.Revision, 1, 1, ("old-group", 1)); }
+        catch (WandGenerationException error) when (error.Code == "wand_session_unavailable") { staleSelectionRejected = true; }
+        Check(staleSelectionRejected, "old membership cannot select a recovered provider result");
+        var selected = wands.Select(owner, operation, profile.ProfileId, profile.Revision, 1, 1, ("new-group", 2));
+        wands.CompleteWorkshopWithoutArtwork(owner, operation, "fixture", ("new-group", 2));
+        wands.RecoverWorkshopMembership(owner, operation, ("new-group", 2), "new-group", 4);
+        Check(wands.ReadWorkshopState(owner, operation).Status == "complete"
+            && wands.ReadWorkshopState(owner, operation).Wand?.WandId == selected.WandId
+            && wands.ReadWorkshopMessages(owner, operation).Single().Text == "Follow the map.",
+            "re-enabled membership preserves immutable selection and conversation");
+
+        foreach (var generationStatus in new[] { "absent", "queued", "ready" })
+        {
+            foreach (var interruptedStatus in new[] { "failed", "paused" })
+            {
+                var recoveryOwner = "recovery-" + generationStatus + "-" + interruptedStatus;
+                var (recoveryProfile, recoverySnapshot) = await PrepareProfileAsync(profiles,
+                    recoveryOwner, new("Raven", "Original fiction"));
+                var recoveryOperation = Guid.NewGuid().ToString("N");
+                wands.BeginMobile(recoveryOwner, recoveryOperation, recoverySnapshot, 1);
+                wands.BeginWorkshop(recoveryOwner, recoveryOperation, recoverySnapshot, 1, "old-group", 1);
+                wands.AppendWorkshopMessage(recoveryOwner, recoveryOperation, Guid.NewGuid().ToString("N"),
+                    "user", "Keep this accepted answer.", "text");
+                wands.FinishWorkshopConversation(recoveryOwner, recoveryOperation,
+                    recoveryProfile.ProfileId, recoveryProfile.Revision);
+                if (generationStatus != "absent")
+                {
+                    wands.Begin(recoveryOwner, recoveryOperation, recoverySnapshot, 1, true);
+                }
+                if (generationStatus == "ready")
+                {
+                    var readyJob = wands.Claim(recoveryOwner, recoveryOperation, false, ("old-group", 1))!;
+                    wands.Complete(readyJob, Candidates().Take(1).ToArray());
+                }
+                if (interruptedStatus == "paused")
+                {
+                    wands.PauseWorkshopForBoss(recoveryOwner, recoveryOperation);
+                }
+                else
+                {
+                    wands.FailWorkshop(recoveryOwner, recoveryOperation, "workshop_authority_revoked");
+                }
+                var candidate = wands.Read(recoveryOwner, recoveryOperation)?.Candidates.SingleOrDefault();
+                wands.RecoverWorkshopMembership(recoveryOwner, recoveryOperation, ("old-group", 1), "new-group", 2);
+                Check(wands.ReadWorkshopState(recoveryOwner, recoveryOperation).Status == "generating",
+                    $"{generationStatus}/{interruptedStatus} recovery preserves accepted finish intent");
+                var editingRejected = false;
+                try
+                {
+                    wands.AppendWorkshopMessage(recoveryOwner, recoveryOperation, Guid.NewGuid().ToString("N"),
+                        "user", "Change evidence after manufacture.", "text");
+                }
+                catch (WandGenerationException error) when (error.Code == "wand_message_locked") { editingRejected = true; }
+                Check(editingRejected, $"{generationStatus}/{interruptedStatus} recovery never reopens frozen evidence");
+                if (candidate is not null)
+                {
+                    Check(wands.Claim(recoveryOwner, recoveryOperation, false, ("new-group", 2)) is null,
+                        "ready recovery cannot dispatch another paid generation");
+                    var recoveredSelection = wands.Select(recoveryOwner, recoveryOperation, recoveryProfile.ProfileId,
+                        recoveryProfile.Revision, 1, 1, ("new-group", 2));
+                    Check(recoveredSelection.WandId == candidate.WandId,
+                        "ready recovery selects the existing candidate from the accepted answer");
+                }
+            }
+        }
     }
 
     private static async Task WorkshopStateMachineAsync(CharacterProfileStore profiles, WandGenerationStore wands,

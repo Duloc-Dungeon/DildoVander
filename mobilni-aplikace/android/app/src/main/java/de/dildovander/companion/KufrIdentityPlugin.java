@@ -597,6 +597,8 @@ public final class KufrIdentityPlugin extends Plugin {
             org.json.JSONObject options = postJson(optionsPath, csrf, body);
             validateRelyingParty(mode, options);
             getActivity().runOnUiThread(() -> launchCredentialRequest(call, mode, completionPath, csrf, options));
+        } catch (PasskeyOptionsResponse.Rejected rejection) {
+            finishCeremony(call, rejection.code, rejection.status);
         } catch (Exception exception) {
             finishCeremony(call, exception.getMessage() != null && exception.getMessage().contains("rp") ? "passkey_origin_mismatch" : "passkey_unavailable");
         }
@@ -701,11 +703,14 @@ public final class KufrIdentityPlugin extends Plugin {
         addCookies(builder, origin());
         try (Response response = client.newCall(builder.build()).execute()) {
             persistCookies(origin(), response);
-            if (response.code() != 200 || response.body() == null || response.body().contentLength() > 131072) throw new IOException("Passkey options were rejected");
-            String text = response.body().string();
-            if (text.length() > 131072) throw new IOException("Passkey options are too large");
-            return new org.json.JSONObject(text);
-        } catch (org.json.JSONException exception) { throw new IOException("Passkey options are invalid", exception); }
+            String text = null;
+            if (response.body() != null && response.body().contentLength() <= PasskeyOptionsResponse.MAX_BYTES) {
+                okio.BufferedSource source = response.body().source();
+                source.request(PasskeyOptionsResponse.MAX_BYTES + 1L);
+                if (source.getBuffer().size() <= PasskeyOptionsResponse.MAX_BYTES) text = response.body().string();
+            }
+            return PasskeyOptionsResponse.parse(response.code(), text);
+        }
     }
 
     private static void validateRelyingParty(String mode, org.json.JSONObject options) throws Exception {
@@ -719,8 +724,18 @@ public final class KufrIdentityPlugin extends Plugin {
     }
 
     private void finishCeremony(PluginCall call, String code) {
+        finishCeremony(call, code, null);
+    }
+
+    private void finishCeremony(PluginCall call, String code, Integer status) {
         synchronized (this) { ceremonyActive = false; }
-        if (code == null) call.resolve(); else call.reject("Passkey verification failed. Try again or use another sign-in method.", code);
+        if (code == null) {
+            call.resolve();
+        } else {
+            JSObject data = new JSObject();
+            if (status != null) data.put("status", status);
+            call.reject(PasskeyOptionsResponse.FAILURE_MESSAGE, code, data);
+        }
     }
 
     private static void addCookies(Request.Builder builder, String origin) {
