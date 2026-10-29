@@ -8,6 +8,8 @@ import AwNotice from '../../components/AwNotice.vue';
 import { account } from '../identity/session';
 import SealedPortrait from './SealedPortrait.vue';
 import SealedCaseFinale from './SealedCaseFinale.vue';
+import lockIcon from '../../assets/wns-v2/icons/regular/lock-key.svg';
+import sealIcon from '../../assets/wns-v2/icons/regular/seal-check.svg';
 import { errorText, intentNames, intentText, resultText, reasonText, operation, phaseNames, request, SealedError, type Plan, type Play } from './sealedCase';
 import '../game/game.css';
 
@@ -247,8 +249,11 @@ async function openAction() {
         <span>Wand Night Stand</span>
       </header>
       <div class="sealed-title">
-        <h1 id="sealed-title">Pod <em>pečetí.</em></h1>
-        <p>Případ posledního zvonu</p>
+        <div>
+          <h1 id="sealed-title">Pod <em>pečetí.</em></h1>
+          <p>Případ posledního zvonu</p>
+        </div>
+        <span class="sealed-mark" aria-hidden="true"><img :src="lockIcon" alt="" /></span>
       </div>
 
       <AwNotice v-if="error" tone="danger" role="alert">
@@ -281,6 +286,11 @@ async function openAction() {
             </div>
             <p v-if="deadline && !['paused', 'finished', 'lobby'].includes(view.phase)" class="sealed-deadline">Do {{ deadline }}</p>
           </div>
+          <ol v-if="view.chapter > 0 && view.phase !== 'lobby'" class="sealed-chapters" aria-hidden="true">
+            <li v-for="chapter in view.chapters" :key="chapter" :class="{ 'is-past': chapter < view.chapter, 'is-current': chapter === view.chapter }">
+              <span>{{ chapter }}</span>
+            </li>
+          </ol>
           <p>{{ phaseHint }}</p>
           <AwButton v-if="view.phase === 'planning' && view.ownState !== 'Operator' && tab !== 'action'" variant="primary" @click="openAction">
             {{ view.ownPlan ? 'Prohlédnout můj plán' : draft ? 'Dokončit návrh tahu' : 'Připravit můj tah' }}
@@ -379,7 +389,14 @@ async function openAction() {
 
             <template v-if="tab === 'action' && view.ownState !== 'Operator'">
               <h2>Moje akce</h2>
-              <p v-if="view.ownPlan" class="sealed-confirmed">Uložený plán: {{ intentNames[view.ownPlan.intent] }}. Přijetí nepotvrzuje úspěch.</p>
+              <div v-if="view.ownPlan" :key="`${view.id}:${view.ownPlan.chapter}:${view.ownPlan.revision}`" class="sealed-receipt" role="status">
+                <span class="sealed-receipt-stamp" aria-hidden="true"><img :src="sealIcon" alt="" /></span>
+                <div>
+                  <strong>Uložený plán: {{ intentNames[view.ownPlan.intent] }}</strong>
+                  <p>Dům přijal tvůj plán. K jeho kvalitě se zatím nevyjadřuje.</p>
+                  <small>Přijetí nepotvrzuje úspěch.</small>
+                </div>
+              </div>
               <p v-else>Žádný potvrzený plán. Při uzávěrce vyčkáváš na svém místě.</p>
               <p v-if="view.phase !== 'planning'" class="sealed-muted">Teď se nové tahy nepotvrzují. {{ view.phase === 'quiet' ? 'Telefon může stranou; potvrzený plán zůstává uložený.' : 'Další postup určuje aktuální fáze případu.' }}</p>
 
