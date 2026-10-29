@@ -89,7 +89,7 @@ internal static partial class MobileWandWorkshopEndpoints
             var path = $"/app/v1/customer/wand/workshop/sessions/{id}/live";
             var url = new UriBuilder(origin) { Scheme = "wss", Path = path, Query = "ticket=" + ticket }.Uri.AbsoluteUri;
             return Results.Ok(new { url, path, expiresAt = admission.ExpiresAt });
-        });
+        }).WithMetadata(new AccountIdentity.SocketTicketRateLimitMetadata());
         group.MapPost("/workshop/sessions/{id}/artwork/repair", async (string id, WorkshopRepairRequest request,
             HttpContext http, WandGenerationStore wands, CharacterProfileStore profiles, GameStore games, [FromServices] KeepsakeStore keepsakes) =>
         {
