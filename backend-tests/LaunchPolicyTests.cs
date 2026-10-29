@@ -49,15 +49,15 @@ internal static class LaunchPolicyTests
             var saved = store.Update("admin-1", new(0, true, 2_000, false, true, 3_000, false,
                 "Europe/Prague", "Ještě chvilku…", "Mícháme hvězdný prach…", true, "safe prompt"), 1_000);
             Check(saved.Revision == 1 && !policy.Evaluate(beta).Allowed && !policy.Evaluate(customer).Allowed,
-                "each audience remains gated until its own launch");
+                "all audiences remain gated until production launches");
             Check(policy.Evaluate(tester).Allowed && policy.Evaluate(tester).Audience == "privileged",
                 "internal tester keeps privileged access independent of beta schedule");
-            Check(policy.Evaluate(beta).LaunchAt == 2_000 && policy.Evaluate(customer).LaunchAt == 3_000,
-                "audiences use separate server schedules");
+            Check(policy.Evaluate(beta).LaunchAt == 3_000 && policy.Evaluate(customer).LaunchAt == 3_000,
+                "beta and customer use the production server schedule");
 
             clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(2_000));
-            Check(policy.Evaluate(beta).Allowed && !policy.Evaluate(customer).Allowed,
-                "beta launch does not unlock production");
+            Check(!policy.Evaluate(beta).Allowed && !policy.Evaluate(customer).Allowed,
+                "obsolete beta launch does not unlock any audience");
             saved = store.Update("admin-1", new(1, true, 2_000, false, true, 3_000, true,
                 "Europe/Prague", "Ještě chvilku…", "Mícháme hvězdný prach…", true, "safe prompt"), 2_000);
             Check(saved.Revision == 2 && policy.Evaluate(customer).Allowed,
@@ -108,47 +108,13 @@ internal static class LaunchPolicyTests
                 && new LaunchPolicyStore(root).ReadGroup(configured.Id) == configured,
                 "group content settings update and persist independently");
             Check(store.ReadGroups().Length == 4 && new LaunchPolicyStore(root).ReadGroup(nightOne.Id) == nightOne,
-                "group names and closed countdown states persist independently");
-            nightOne = store.SaveCountdown("admin-1", nightOne.Id, new(nightOne.Revision, 2, true), 3_000);
-            nightTwo = store.SaveCountdown("admin-1", nightTwo.Id, new(nightTwo.Revision, 3, false), 3_000);
-            Check(!policy.Evaluate(customer, nightOne.Id, nightOne).Allowed && nightOne.LaunchAt is null
-                && !policy.Evaluate(customer, nightTwo.Id, nightTwo).Allowed
-                && !policy.Evaluate(customer, noLaunchTime.Id, noLaunchTime).Allowed,
-                "saving a countdown draft leaves the group closed until explicit confirmation");
-            nightOne = store.ConfirmCountdown("admin-1", nightOne.Id, new(nightOne.Revision), 3_000);
-            nightTwo = store.ConfirmCountdown("admin-1", nightTwo.Id, new(nightTwo.Revision), 3_000);
-            Check(nightOne.LaunchAt == 5_000 && nightTwo.LaunchAt == 6_000
-                && !policy.Evaluate(customer, nightOne.Id, nightOne).Allowed,
-                "confirmation starts the full countdown duration from server time");
+                "group names and inherited production state persist");
             Check(!policy.Evaluate(customer, "missing-group", null).Allowed
                 && policy.Evaluate(tester, nightOne.Id, nightOne).Allowed,
                 "unresolved memberships fail closed while tester retains its bypass");
-            clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(5_000));
             Check(policy.Evaluate(customer, nightOne.Id, nightOne).Allowed
-                && !policy.Evaluate(customer, nightTwo.Id, nightTwo).Allowed,
-                "Force opens only its own group at the confirmed countdown deadline");
-            clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(6_000));
-            Check(!policy.Evaluate(customer, nightTwo.Id, nightTwo).Allowed,
-                "a countdown without Force stays closed after expiry");
-            nightTwo = store.ReadGroup(nightTwo.Id)!;
-            var opened = store.StartGroup("admin-1", nightTwo.Id, new(nightTwo.Revision), 6_000);
-            Check(opened.OpenedAt == 6_000 && policy.Evaluate(customer, nightTwo.Id, opened).Allowed,
-                "owner can explicitly start a non-Force group after expiry");
-            var renamed = store.UpdateGroup("admin-1", nightTwo.Id,
-                new(opened.Revision, "Night two renamed", null), 6_000);
-            Check(renamed.OpenedAt == opened.OpenedAt && policy.Evaluate(customer, renamed.Id, renamed).Allowed,
-                "editing group name preserves its confirmed/open state");
-            var legacyRename = store.UpdateGroup("admin-1", nightTwo.Id,
-                new(renamed.Revision, "Night two renamed again", renamed.LaunchAt), 6_001);
-            Check(legacyRename.LaunchAt == opened.LaunchAt && legacyRename.OpenedAt == opened.OpenedAt,
-                "legacy name edits carrying the unchanged launchAt preserve an open night");
-            try
-            {
-                store.SaveCountdown("admin-1", nightTwo.Id, new(legacyRename.Revision, 5, false), 6_002);
-                throw new InvalidOperationException("Launch policy: countdown edit reset an already-open group.");
-            }
-            catch (LaunchConfigurationException error) when (error.Status == 409) { }
-
+                && policy.Evaluate(beta, nightTwo.Id, nightTwo).Allowed,
+                "all groups inherit the global manual production unlock");
             await RunAccessBoundaryAsync(root);
         }
         finally
@@ -157,7 +123,7 @@ internal static class LaunchPolicyTests
             Directory.Delete(root, recursive: true);
         }
 
-        Console.WriteLine("PASS launch policy: audience schedules, manual unlock, internal tester exception, optimistic concurrency, audit and persistence");
+        Console.WriteLine("PASS launch policy: shared production schedule, manual unlock, internal tester exception, optimistic concurrency, audit and persistence");
     }
 
     private static async Task VerifyDefaultProductionScheduleAsync(string root)
@@ -165,125 +131,128 @@ internal static class LaunchPolicyTests
         var store = new LaunchPolicyStore(root);
         var clock = new TestClock(DateTimeOffset.FromUnixTimeMilliseconds(1000));
         var policy = new LaunchAccessService(store, clock);
-        var independent = store.CreateGroup("owner", new("Independent", null), 1000);
-        var draft = store.SaveCountdown("owner", independent.Id, new(independent.Revision, 1, true), 1000);
-        independent = store.ConfirmCountdown("owner", independent.Id, new(draft.Revision), 1000);
-        SaveProduction(true, 3000, false, 1000);
+        var first = store.CreateGroup("owner", new("First", null, false, true), 1000);
+        var second = store.CreateGroup("owner", new("Second", null, true, false), 1000);
+        SaveProduction(store, true, 3000, false, 1000);
         var selected = store.CreateOrSelectBetaGroup("owner", new(store.ReadBetaAdmission().Revision), 1000);
-        var group = selected.Group;
-        Check(group.LaunchAt == 3000 && group.OpenedAt is null && group.ForceStartAtEnd
-            && group.CountdownConfirmedAt is not null && group.CountdownDurationSeconds is null
-            && !selected.Admission.RecruitmentOpen, "default group inherits the existing production term without opening recruitment");
-        foreach (var role in new[] { AccountRoles.Beta, AccountRoles.Customer })
+        Check(!selected.Admission.RecruitmentOpen, "schedule inheritance does not open recruitment");
+        AssertShared(false, 3000);
+
+        foreach (var group in store.ReadGroups())
         {
-            var access = policy.Evaluate(Principal(role), group.Id, group);
-            Check(!access.Allowed && access.LaunchAt == 3000, "default uses production even for Beta members");
+            ExpectInherited(() => store.SaveCountdown("owner", group.Id, new(group.Revision, 10, false), 1000));
+            ExpectInherited(() => store.ConfirmCountdown("owner", group.Id, new(group.Revision), 1000));
+            ExpectInherited(() => store.StartGroup("owner", group.Id, new(group.Revision), 3000));
+            ExpectInherited(() => store.UpdateGroup("owner", group.Id, new(group.Revision, group.Name, 9000), 1000));
+            ExpectInherited(() => store.UpdateGroup("owner", group.Id, new(group.Revision, group.Name, group.LaunchAt), 1000));
+            Check(store.ReadGroup(group.Id) == group, "rejected timer operations leave group state untouched");
         }
-        Check(policy.Evaluate(Principal(AccountRoles.Tester), group.Id, group).Allowed,
-            "tester bypass remains independent of the inherited production gate");
-        ExpectInherited(() => store.SaveCountdown("owner", group.Id, new(group.Revision, 10, false), 1000));
-        ExpectInherited(() => store.ConfirmCountdown("owner", group.Id, new(group.Revision), 1000));
-        ExpectInherited(() => store.StartGroup("owner", group.Id, new(group.Revision), 3000));
-        ExpectInherited(() => store.UpdateGroup("owner", group.Id, new(group.Revision, group.Name, 9000), 1000));
-        group = store.UpdateGroup("owner", group.Id, new(group.Revision, "Public default", null, false, true), 1001);
-        Check(group.Name == "Public default" && !group.AdultContentEnabled && group.FlirtEnabled && group.LaunchAt == 3000,
-            "default name and content remain editable without changing the inherited schedule");
-        var stable = group;
+        ExpectInherited(() => store.CreateGroup("owner", new("Legacy timer", 9000), 1000));
+        var inherited = store.CreateGroup("owner", new("Created after schedule", null), 1000);
+        Check(inherited.LaunchAt == 3000 && inherited.OpenedAt is null && inherited.ForceStartAtEnd
+            && inherited.CountdownConfirmedAt is not null && inherited.CountdownDurationSeconds is null,
+            "new groups inherit production without another timer draft");
+        first = store.ReadGroup(first.Id)!;
+        first = store.UpdateGroup("owner", first.Id, new(first.Revision, "Renamed", null, true, false), 1001);
+        Check(first.Name == "Renamed" && first.AdultContentEnabled && !first.FlirtEnabled && first.LaunchAt == 3000,
+            "group identity and content remain editable independently of production");
+        var stable = store.ReadGroups();
         var auditCount = store.ReadAudit().Count;
-        store.ReconcileDefaultGroup(1500);
-        Check(store.ReadGroup(group.Id) == stable && store.ReadAudit().Count == auditCount,
-            "reconciliation before the term preserves revision, marker and audit");
-        Check(store.ReadGroup(independent.Id) == independent, "default reconciliation leaves independent countdowns untouched");
+        store.ReconcileProductionGroups(1500);
+        Check(store.ReadGroups().SequenceEqual(stable) && store.ReadAudit().Count == auditCount,
+            "reconciliation preserves revisions and audit when production has not changed");
 
         clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(3000));
-        Check(policy.Evaluate(Principal(AccountRoles.Beta), group.Id, group).Allowed,
-            "default opens automatically at the exact production term while recruitment is closed");
-        group = store.ReadGroup(group.Id)!;
-        Check(group.OpenedAt == 3000, "automatic opening is persisted for raw domain readers");
-        SaveProduction(true, 9000, false, 3001);
-        group = store.ReadGroup(group.Id)!;
-        Check(group.OpenedAt is null && group.LaunchAt == 9000 && group.ForceStartAtEnd
-            && !policy.Evaluate(Principal(AccountRoles.Customer), group.Id, group).Allowed,
-            "moving production into the future recloses a previously opened default");
-        using (var reservation = store.ReserveWaitingRoomMove(group.Id, independent.Id))
+        AssertShared(true, 3000);
+        Check(store.ReadGroups().All(group => group.OpenedAt == 3000),
+            "all groups persist automatic opening at the production deadline");
+        SaveProduction(store, true, 9000, false, 3001);
+        AssertShared(false, 9000);
+        using (var reservation = store.ReserveWaitingRoomMove(first.Id, second.Id))
         {
             Check(reservation is not null && !reservation.SourceStarted(3001),
-                "waiting-room transfer observes the same reclosed persisted state");
+                "moving production into the future recloses the waiting-room source");
         }
-        SaveProduction(true, null, false, 3002);
-        group = store.ReadGroup(group.Id)!;
-        Check(group.OpenedAt is null && group.LaunchAt is null && !group.ForceStartAtEnd,
-            "enabled production without a date stays unscheduled and closed");
-        SaveProduction(true, 9000, true, 3003);
-        group = store.ReadGroup(group.Id)!;
-        Check(group.OpenedAt == 3003 && !group.ForceStartAtEnd,
-            "manual global unlock opens default before its term");
-        SaveProduction(false, 9000, false, 3004);
-        group = store.ReadGroup(group.Id)!;
-        Check(group.OpenedAt == 3003 && group.LaunchAt is null,
-            "disabled global gate remains open and preserves original opening time");
-        SaveProduction(true, 2000, false, 3005);
-        group = store.ReadGroup(group.Id)!;
-        Check(group.OpenedAt == 3003 && group.LaunchAt == 2000,
-            "already passed production term stays open without rewriting its opening time");
-
-        var priorDefault = group;
+        SaveProduction(store, true, null, false, 3002);
+        AssertShared(false, null);
+        SaveProduction(store, true, 9000, true, 3003);
+        AssertShared(true, 9000);
+        SaveProduction(store, false, 9000, false, 3004);
+        AssertShared(true, null);
+        SaveProduction(store, true, 10_000, false, 3005);
+        AssertShared(false, 10_000);
+        var beforeAdmission = store.ReadGroups();
         var admission = store.UpdateBetaAdmission("owner",
-            new(store.ReadBetaAdmission().Revision, independent.Id, false, null), 3006);
-        var replacement = store.ReadGroup(independent.Id)!;
-        Check(replacement.LaunchAt == 2000 && replacement.OpenedAt == 3006
-            && replacement.CountdownDurationSeconds is null, "selecting an existing group replaces its countdown with production atomically");
-        SaveProduction(true, 10_000, false, 3007);
-        Check(store.ReadGroup(group.Id) == priorDefault && store.ReadGroup(independent.Id)!.OpenedAt is null,
-            "only the current default follows later production changes");
-        var closedReplacement = store.ReadGroup(independent.Id)!;
-        admission = store.UpdateBetaAdmission("owner", new(admission.Revision, independent.Id, true, "Fiction"), 3008);
-        Check(store.ReadGroup(independent.Id) == closedReplacement && admission.RecruitmentOpen,
-            "opening recruitment does not alter production scheduling or group revision");
-        var reselected = store.CreateOrSelectBetaGroup("owner", new(admission.Revision, group.Id), 3009);
-        Check(reselected.Group.LaunchAt == 10_000 && reselected.Group.OpenedAt is null
-            && !reselected.Admission.RecruitmentOpen, "create-or-select also synchronizes an existing group");
+            new(store.ReadBetaAdmission().Revision, second.Id, true, "Fiction"), 3006);
+        Check(admission.RecruitmentOpen && store.ReadGroups().SequenceEqual(beforeAdmission),
+            "recruitment and selected group cannot create a second launch schedule");
 
-        // Simulate an existing installation whose stored default still has its
-        // old manual schedule despite a previously saved global production term.
+        // Simulate installations with divergent independent drafts and already-open groups.
         using (var connection = new SqliteConnection("Data Source=" + Path.Combine(root, "launch.sqlite")))
         {
             connection.Open();
             using var command = connection.CreateCommand();
-            command.CommandText = "UPDATE launch_groups SET opened_at=2000,launch_at=2500,force_start_at_end=0 WHERE id=$id";
-            command.Parameters.AddWithValue("$id", group.Id);
+            command.CommandText = "UPDATE launch_groups SET opened_at=2000,launch_at=2500,force_start_at_end=0,countdown_duration_seconds=90,countdown_confirmed_at=1000 WHERE id<>$selected";
+            command.Parameters.AddWithValue("$selected", second.Id);
             command.ExecuteNonQuery();
         }
         store = new LaunchPolicyStore(root);
         var startup = new LaunchScheduleStartup(store, clock);
         await startup.StartAsync(CancellationToken.None);
-        var reconciled = store.ReadGroup(group.Id)!;
-        Check(reconciled.LaunchAt == 10_000 && reconciled.OpenedAt is null && reconciled.ForceStartAtEnd,
-            "startup applies already saved production configuration without an administrator resave");
+        AssertShared(false, 10_000);
+        Check(store.ReadGroups().All(group => group.OpenedAt is null && group.ForceStartAtEnd
+            && group.CountdownDurationSeconds is null && group.CountdownConfirmedAt is not null),
+            "startup repairs every divergent group, including nonselected groups");
+        stable = store.ReadGroups();
         auditCount = store.ReadAudit().Count;
         await startup.StartAsync(CancellationToken.None);
-        Check(store.ReadGroup(group.Id) == reconciled && store.ReadAudit().Count == auditCount,
+        Check(store.ReadGroups().SequenceEqual(stable) && store.ReadAudit().Count == auditCount,
             "repeated startup reconciliation is idempotent");
         clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(10_000));
         await startup.StartAsync(CancellationToken.None);
-        Check(store.ReadGroup(group.Id)!.OpenedAt == 10_000,
-            "startup opens an already due production term using the injected clock");
+        AssertShared(true, 10_000);
+        Check(store.ReadGroups().All(group => group.OpenedAt == 10_000),
+            "startup opens all groups when production is already due");
 
-        void SaveProduction(bool enabled, long? term, bool unlocked, long now)
+        void AssertShared(bool allowed, long? launchAt)
         {
-            var configuration = store.Read();
-            store.Update("owner", new(configuration.Revision, true, 50_000, false, enabled, term, unlocked,
-                configuration.TimeZone, configuration.Teaser, configuration.InitialLoadingMessage,
-                configuration.PersonalizedLoadingEnabled, configuration.PersonalizedLoadingPrompt), now);
+            foreach (var role in new[] { AccountRoles.Beta, AccountRoles.Customer })
+            {
+                var principal = Principal(role);
+                var unassigned = policy.Evaluate(principal);
+                Check(unassigned.Allowed == allowed && unassigned.LaunchAt == launchAt,
+                    "unassigned beta and customer accounts follow production");
+                foreach (var group in store.ReadGroups())
+                {
+                    var access = policy.Evaluate(principal, group.Id, group);
+                    Check(access.Allowed == allowed && access.LaunchAt == launchAt,
+                        "every group and audience follows the identical production gate");
+                }
+                Check(!policy.Evaluate(principal, "missing", null).Allowed,
+                    "missing membership groups remain denied under every production state");
+            }
+            foreach (var role in new[] { AccountRoles.Owner, AccountRoles.Administrator, AccountRoles.Operator, AccountRoles.Viewer, AccountRoles.Tester })
+            {
+                Check(policy.Evaluate(Principal(role), "missing", null).Allowed,
+                    "privileged staff and testers retain their bypass");
+            }
         }
+    }
 
-        static void ExpectInherited(Action action)
-        {
-            try { action(); }
-            catch (LaunchConfigurationException error) when (error.Code == "launch_group_uses_production_schedule" && error.Status == 409)
-            { return; }
-            throw new InvalidOperationException("Default group manual countdown bypassed the production schedule.");
-        }
+    private static void SaveProduction(LaunchPolicyStore store, bool enabled, long? term, bool unlocked, long now)
+    {
+        var configuration = store.Read();
+        store.Update("owner", new(configuration.Revision, true, 50_000, false, enabled, term, unlocked,
+            configuration.TimeZone, configuration.Teaser, configuration.InitialLoadingMessage,
+            configuration.PersonalizedLoadingEnabled, configuration.PersonalizedLoadingPrompt), now);
+    }
+
+    private static void ExpectInherited(Action action)
+    {
+        try { action(); }
+        catch (LaunchConfigurationException error) when (error.Code == "launch_group_uses_production_schedule" && error.Status == 409)
+        { return; }
+        throw new InvalidOperationException("Group timer bypassed the production schedule.");
     }
 
     private static void VerifyBetaAdmission(string root)
@@ -296,12 +265,6 @@ internal static class LaunchPolicyTests
         Check(selected.Group.Name == "Interní beta" && selected.Admission.GroupId == selected.Group.Id
             && !selected.Admission.RecruitmentOpen,
             "admin can create and select the one internal beta group while keeping enrollment closed");
-        var independent = store.CreateGroup("owner", new("Independent countdown", null), 1000);
-        var draft = store.UpdateGroup("owner", independent.Id,
-            new(independent.Revision, independent.Name, 3_601_000), 1000);
-        Check(draft.LaunchAt is null && draft.CountdownDurationSeconds == 3600
-            && draft.CountdownConfirmedAt is null,
-            "legacy absolute group schedule becomes an unconfirmed countdown draft");
         var open = store.UpdateBetaAdmission("owner",
             new(selected.Admission.Revision, selected.Group.Id, true, "Middle-earth"), 2000);
         Check(open.RecruitmentOpen && open.FixedUniverse == "Middle-earth",
@@ -350,19 +313,17 @@ internal static class LaunchPolicyTests
         var store = new LaunchPolicyStore(root);
         var source = store.CreateGroup("owner", new("Source", null), 1000);
         var target = store.CreateGroup("owner", new("Target", null), 1000);
-        var draft = store.SaveCountdown("owner", source.Id, new(source.Revision, 1, false), 1000);
-        var countdown = store.ConfirmCountdown("owner", source.Id, new(draft.Revision), 1000);
+        SaveProduction(store, true, 5000, false, 1000);
         var reservation = store.ReserveWaitingRoomMove(source.Id, target.Id);
         Check(reservation is not null && !reservation.SourceStarted(1999),
             "waiting-room move reserves launch state before checking account state");
-        var start = Task.Run(() => store.StartGroup("owner", source.Id,
-            new(countdown.Revision), 2000));
+        var start = Task.Run(() => SaveProduction(store, true, 2000, true, 2000));
         await Task.Delay(100);
         Check(!start.IsCompleted,
             "group start cannot pass a membership reservation while the account assignment commits");
         reservation!.Dispose();
-        var opened = await start;
-        Check(opened.OpenedAt == 2000,
+        await start;
+        Check(store.ReadGroup(source.Id)!.OpenedAt == 2000,
             "group start proceeds after the waiting-room move releases its launch reservation");
     }
 
@@ -401,15 +362,14 @@ internal static class LaunchPolicyTests
             command.Parameters.AddWithValue("$source", source.Id);
             command.ExecuteNonQuery();
         }
-        var draft = launch.SaveCountdown("owner", source.Id, new(source.Revision, 1, false), 1000);
-        var countdown = launch.ConfirmCountdown("owner", source.Id, new(draft.Revision), 1000);
+        SaveProduction(launch, true, 5000, false, 1000);
         using var clock = new BlockingClock(DateTimeOffset.FromUnixTimeMilliseconds(3000));
         var access = new LaunchAccessService(launch, clock, scopeFactory);
 
         var sourceEvaluation = Task.Run(() => access.EvaluateAsync(Principal(AccountRoles.Customer, "source-user")));
         await clock.WaitUntilBlockedAsync();
         MoveIdentity("source-user", target.Id);
-        launch.StartGroup("owner", source.Id, new(countdown.Revision), 3000);
+        SaveProduction(launch, true, 3000, true, 3000);
         clock.Release();
         var movedSource = await sourceEvaluation.WaitAsync(TimeSpan.FromSeconds(5));
         Check(!movedSource.Allowed && movedSource.LaunchAt is null,
@@ -423,7 +383,7 @@ internal static class LaunchPolicyTests
         globalClock.Release();
         var movedGlobal = await globalEvaluation.WaitAsync(TimeSpan.FromSeconds(5));
         Check(!movedGlobal.Allowed && movedGlobal.LaunchAt is null,
-            "revalidation denies a globally unlocked account assigned to a closed group during evaluation");
+            "revalidation denies a globally unlocked account whose membership changes during evaluation");
 
         void MoveIdentity(string userId, string targetGroupId)
         {

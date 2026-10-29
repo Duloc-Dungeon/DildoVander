@@ -100,40 +100,33 @@ internal static partial class AccountIdentityTests
         Check((await stranger.GetAsync("/app/v1/admin/launch/groups")).StatusCode == HttpStatusCode.Unauthorized,
             "unauthenticated visitor cannot enumerate launch groups");
         var groupOneAt = future;
-        var groupTwoAt = future + 60_000;
+        var groupTwoAt = future;
         var groupOne = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/launch/groups",
             new { name = "Night one" }))).GetProperty("group");
         var groupOneId = groupOne.GetProperty("id").GetString()!;
-        Check(groupOne.GetProperty("launchAt").ValueKind == JsonValueKind.Null,
-            "new group has no effective schedule before its countdown is confirmed");
+        Check(groupOne.GetProperty("launchAt").GetInt64() == future,
+            "new group inherits the production deadline immediately");
         var groupOneDraft = await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown",
-            new { expectedRevision = 1, durationSeconds = 172800, forceStartAtEnd = false });
-        var groupOneDraftGroup = (await JsonAsync(groupOneDraft)).GetProperty("group");
+            new { expectedRevision = groupOne.GetProperty("revision").GetInt64(), durationSeconds = 172800, forceStartAtEnd = false });
         var confirmedGroupOne = await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown/confirm",
-            new { expectedRevision = groupOneDraftGroup.GetProperty("revision").GetInt64() });
-        groupOne = (await JsonAsync(confirmedGroupOne)).GetProperty("group");
-        groupOneAt = groupOne.GetProperty("launchAt").GetInt64();
-        Check(groupOneAt > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            "explicit countdown confirmation starts a server-owned future deadline");
-        var legacyDraft = (await JsonAsync(await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}",
-            new { expectedRevision = groupOne.GetProperty("revision").GetInt64(), name = "Night one", launchAt = groupOneAt + 60_000 }))).GetProperty("group");
-        Check(legacyDraft.GetProperty("launchAt").ValueKind == JsonValueKind.Null
-            && legacyDraft.GetProperty("countdownConfirmedAt").ValueKind == JsonValueKind.Null,
-            "legacy absolute schedule edits save a closed draft rather than starting the countdown");
-        groupOne = (await JsonAsync(await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown/confirm",
-            new { expectedRevision = legacyDraft.GetProperty("revision").GetInt64() }))).GetProperty("group");
-        groupOneAt = groupOne.GetProperty("launchAt").GetInt64();
-        var staleGroup = await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}",
-            new { expectedRevision = legacyDraft.GetProperty("revision").GetInt64(), name = "Night one", launchAt = groupOneAt });
-        Check(staleGroup.StatusCode == HttpStatusCode.Conflict, "legacy schedule update cannot bypass countdown confirmation or revision checks");
+            new { expectedRevision = groupOne.GetProperty("revision").GetInt64() });
+        var independentStart = await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/start",
+            new { expectedRevision = groupOne.GetProperty("revision").GetInt64() });
+        var legacyUpdate = await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}",
+            new { expectedRevision = groupOne.GetProperty("revision").GetInt64(), name = "Night one", launchAt = future + 60_000 });
+        var legacyCreate = await owner.PostAsJsonAsync("/app/v1/admin/launch/groups",
+            new { name = "Independent legacy group", launchAt = future + 60_000 });
+        foreach (var rejected in new[] { groupOneDraft, confirmedGroupOne, independentStart, legacyUpdate, legacyCreate })
+        {
+            Check(rejected.StatusCode == HttpStatusCode.Conflict
+                && (await rejected.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "launch_group_uses_production_schedule",
+                "obsolete independent countdown endpoints return the production schedule conflict");
+        }
         var groupTwo = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/launch/groups",
             new { name = "Night two" }))).GetProperty("group");
         var groupTwoId = groupTwo.GetProperty("id").GetString()!;
-        var groupTwoDraft = (await JsonAsync(await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupTwoId}/countdown",
-            new { expectedRevision = 1, durationSeconds = 259200, forceStartAtEnd = false }))).GetProperty("group");
-        groupTwo = (await JsonAsync(await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupTwoId}/countdown/confirm",
-            new { expectedRevision = groupTwoDraft.GetProperty("revision").GetInt64() }))).GetProperty("group");
-        groupTwoAt = groupTwo.GetProperty("launchAt").GetInt64();
+        Check(groupTwo.GetProperty("launchAt").GetInt64() == future,
+            "all new groups share the same production deadline");
         var groupList = await JsonAsync(await owner.GetAsync("/app/v1/admin/launch/groups"));
         Check(groupList.GetProperty("groups").GetArrayLength() == 2, "owner can list launch groups for invitation selection");
         Check((await customer.GetAsync("/app/v1/admin/launch/groups")).StatusCode == HttpStatusCode.Forbidden,
@@ -172,7 +165,7 @@ internal static partial class AccountIdentityTests
             && groupOneAccess.GetProperty("launchAt").GetInt64() == groupOneAt
             && !groupTwoAccess.GetProperty("allowed").GetBoolean()
             && groupTwoAccess.GetProperty("launchAt").GetInt64() == groupTwoAt,
-            "invited accounts receive only their group-specific launch schedules");
+            "invited accounts in distinct groups share the production launch schedule");
         var groupTwoAccessState = await JsonAsync(await groupTwoClient.GetAsync("/app/v1/customer/access"));
         var groupTwoUserId = groupTwoSession.GetProperty("account").GetProperty("id").GetString()!;
         var secondGroupTwoUserId = secondGroupTwoSession.GetProperty("account").GetProperty("id").GetString()!;
@@ -350,9 +343,9 @@ internal static partial class AccountIdentityTests
         Check((await beta.GetAsync("/app/v1/admin/launch/artwork")).StatusCode == HttpStatusCode.Forbidden,
             "beta install entitlement grants no artwork administration");
         await owner.PutAsJsonAsync("/app/v1/admin/launch", update with { ExpectedRevision = 1, BetaUnlocked = true });
-        Check((await JsonAsync(await beta.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean()
+        Check(!(await JsonAsync(await beta.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean()
             && !(await JsonAsync(await customer.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean(),
-            "manual beta launch leaves production gated");
+            "obsolete beta unlock leaves every audience gated by production");
         await owner.PutAsJsonAsync("/app/v1/admin/launch", update with { ExpectedRevision = 2, BetaUnlocked = true, ProductionUnlocked = true });
         Check((await customer.GetAsync("/app/v1/customer/character")).IsSuccessStatusCode, "server unlock restores existing character experience");
         Check((await beta.PostAsJsonAsync("/app/v1/admin/invitations",
@@ -362,14 +355,16 @@ internal static partial class AccountIdentityTests
             "beta members cannot create launch groups or issue group invitations");
         var groupTwoAfterUnlock = await JsonAsync(await groupTwoClient.GetAsync("/app/v1/launch"));
         var recoveredAfterUnlock = await JsonAsync(await recoveryClient.GetAsync("/app/v1/launch"));
-        Check(!groupTwoAfterUnlock.GetProperty("allowed").GetBoolean()
-            && !recoveredAfterUnlock.GetProperty("allowed").GetBoolean(),
-            $"global unlock cannot bypass future group schedules (now {recoveredAfterUnlock.GetProperty("serverNow")}; group2 {groupTwoAfterUnlock.GetProperty("allowed")}/{groupTwoAfterUnlock.GetProperty("launchAt")}, recovered {recoveredAfterUnlock.GetProperty("allowed")}/{recoveredAfterUnlock.GetProperty("launchAt")}; membership {recoveredGroupId})");
-        Check((await groupTwoClient.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.Forbidden
-            && (await recoveryClient.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.Forbidden,
-            "group-specific launch gates also protect the resource-access boundary after a global unlock");
+        Check(groupTwoAfterUnlock.GetProperty("allowed").GetBoolean()
+            && recoveredAfterUnlock.GetProperty("allowed").GetBoolean(),
+            "production unlock opens every valid group and recovered membership");
+        Check((await groupTwoClient.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.NoContent
+            && (await recoveryClient.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.NoContent,
+            "production unlock opens the resource boundary for every valid group");
         Check((await stranger.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.NoContent,
             "production launch restores public resource access");
+        Check((await owner.PutAsJsonAsync("/app/v1/admin/launch", update with { ExpectedRevision = 3 })).IsSuccessStatusCode,
+            "moving production back into the future recloses every group");
         await SeedAsync(fixture.App, db => db.Users.Where(user => user.Id == groupTwoUserId)
             .ExecuteUpdateAsync(updateUser => updateUser
                 .SetProperty(user => user.LaunchGroupRevokedAt, DateTimeOffset.UtcNow.ToUnixTimeSeconds())
@@ -396,27 +391,17 @@ internal static partial class AccountIdentityTests
                 member.GetProperty("userId").GetString() == groupTwoUserId
                 && member.GetProperty("state").GetString() == "revoked"),
             "moving a revoked account preserves revocation and fixed universe while advancing its membership revision");
-        var groupOneCountdown = await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown",
-            new { expectedRevision = groupOne.GetProperty("revision").GetInt64(), durationSeconds = 1, forceStartAtEnd = false });
-        var groupOneCountdownGroup = (await JsonAsync(groupOneCountdown)).GetProperty("group");
-        var groupOneCountdownConfirmed = await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown/confirm",
-            new { expectedRevision = groupOneCountdownGroup.GetProperty("revision").GetInt64() });
-        groupOneCountdownGroup = (await JsonAsync(groupOneCountdownConfirmed)).GetProperty("group");
-        await Task.Delay(TimeSpan.FromMilliseconds(1100));
-        var groupOneStarted = await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/start",
-            new { expectedRevision = groupOneCountdownGroup.GetProperty("revision").GetInt64() });
-        Check(groupOneStarted.IsSuccessStatusCode,
-            "owner can explicitly start a non-Force group after its countdown ends");
+        Check((await owner.PutAsJsonAsync("/app/v1/admin/launch", update with
+            { ExpectedRevision = 4, ProductionUnlocked = true })).IsSuccessStatusCode,
+            "owner starts every group through the sole production schedule");
         var waitingRoomAfterStart = await JsonAsync(await owner.GetAsync("/app/v1/admin/launch/waiting-room"));
         var remainingWaiters = waitingRoomAfterStart.GetProperty("members").EnumerateArray().ToArray();
-        Check(remainingWaiters.Any(member => member.GetProperty("userId").GetString() == unassignedUserId
-                && member.GetProperty("groupId").GetString() == groupTwoId)
+        Check(!remainingWaiters.Any(member => member.GetProperty("userId").GetString() == unassignedUserId)
             && !remainingWaiters.Any(member => member.GetProperty("userId").GetString() == groupOneUserId)
-            && remainingWaiters.Any(member => member.GetProperty("userId").GetString() == secondGroupTwoUserId
-                && member.GetProperty("groupId").GetString() == groupTwoId)
+            && !remainingWaiters.Any(member => member.GetProperty("userId").GetString() == secondGroupTwoUserId)
             && remainingWaiters.Any(member => member.GetProperty("userId").GetString() == groupTwoUserId
                 && member.GetProperty("state").GetString() == "revoked"),
-            "started group members leave the waiting roster while independent group waiters and revoked accounts remain visible");
+            "all opened group members leave the waiting roster while revoked accounts remain visible");
         Console.WriteLine("Prelaunch invitation, audience, immediate save, background artwork, private asset and manual launch HTTPS checks passed.");
     }
 

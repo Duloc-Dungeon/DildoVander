@@ -12,9 +12,6 @@ interface LaunchGroup {
   name: string;
   launchAt: number | null;
   revision: number;
-  countdownDurationSeconds?: number | null;
-  forceStartAtEnd?: boolean;
-  countdownConfirmedAt?: number | null;
   openedAt?: number | null;
   chronicleClosedAt?: number | null;
 }
@@ -37,8 +34,6 @@ const selectedGroup = ref('');
 const managementGroupId = ref('');
 const fixedUniverse = ref('');
 const recruitmentOpen = ref(false);
-const durationMinutes = ref(10);
-const forceStartAtEnd = ref(false);
 const currentTime = ref(Date.now());
 let clockTimer: ReturnType<typeof setInterval> | undefined;
 const busy = ref(false);
@@ -52,7 +47,6 @@ const membersDisclosure = ref<HTMLDetailsElement>();
 const admissionDisclosure = ref<HTMLDetailsElement>();
 const currentGroup = computed(() => groups.value.find(group => group.id === admission.value?.groupId) ?? null);
 const managedGroup = computed(() => groups.value.find(group => group.id === managementGroupId.value) ?? null);
-const managedDefaultGroup = computed(() => !!managedGroup.value && managedGroup.value.id === admission.value?.groupId);
 const managedWaitingCount = computed(() => members.value.filter(member =>
   member.groupId === managedGroup.value?.id && member.state === 'waiting').length);
 const waitingMemberCount = computed(() => members.value.filter(member => member.state === 'waiting').length);
@@ -60,29 +54,23 @@ const invitationStatus = computed(() => {
   if (!admission.value?.groupId) return 'Uzavřeno · skupina není nastavena';
   return admission.value.recruitmentOpen ? 'Otevřené' : 'Uzavřené';
 });
-const countdownDraftChanged = computed(() => managedGroup.value != null
-  && (managedGroup.value.countdownDurationSeconds == null
-    || durationMinutes.value * 60 !== managedGroup.value.countdownDurationSeconds
-    || forceStartAtEnd.value !== (managedGroup.value.forceStartAtEnd === true)));
 const groupName = computed(() => admission.value?.groupName || currentGroup.value?.name || '');
 const groupLaunchLabel = computed(() => currentGroup.value?.openedAt ? 'Večer je otevřený' : currentGroup.value?.launchAt
   ? new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' }).format(currentGroup.value.launchAt)
-  : 'brzy, termín zatím není potvrzený');
+  : 'společný termín zatím není potvrzený');
 const countdownStatus = computed(() => {
   if (!managedGroup.value) return 'Vyberte skupinu.';
   if (managedGroup.value.openedAt) return 'Noc už je otevřená.';
-  if (managedDefaultGroup.value && managedGroup.value.launchAt == null) return 'Produkční datum a čas zatím nejsou nastavené.';
-  if (managedGroup.value.launchAt == null) return managedGroup.value.countdownDurationSeconds
-    ? 'Návrh je uložený. Účastníkům se stále zobrazuje Brzy.' : 'Není nastavený odpočet. Účastníkům se zobrazuje Brzy.';
+  if (managedGroup.value.launchAt == null) return 'Společný termín otevření zatím není nastavený.';
   const expired = managedGroup.value.launchAt <= currentTime.value;
-  if (expired && !managedGroup.value.forceStartAtEnd) return 'Odpočet skončil. Účastníkům se stále zobrazuje Brzy, noc můžete otevřít ručně.';
+  if (expired) return 'Společný termín uplynul. Obnovte stav otevření.';
   const remainingSeconds = Math.ceil(Math.max(0, managedGroup.value.launchAt - currentTime.value) / 1000);
   const days = Math.floor(remainingSeconds / 86400);
   const hours = Math.floor(remainingSeconds / 3600) % 24;
   const minutes = Math.floor(remainingSeconds / 60) % 60;
   const seconds = remainingSeconds % 60;
   const remaining = `${days ? `${days} d ` : ''}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  return `Odpočet běží: ${remaining} · konec ${new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' }).format(managedGroup.value.launchAt)}${managedGroup.value.forceStartAtEnd ? ' · po skončení se noc otevře automaticky' : ''}.`;
+  return `Společný odpočet: ${remaining} · otevření ${new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' }).format(managedGroup.value.launchAt)}.`;
 });
 
 watch([error, reauthenticationRequired], ([currentError, needsReauthentication]) => {
@@ -130,8 +118,6 @@ async function load(): Promise<boolean> {
     }
     fixedUniverse.value = current.fixedUniverse ?? '';
     recruitmentOpen.value = current.recruitmentOpen === true;
-    durationMinutes.value = Math.max(1, Math.round((managedGroup.value?.countdownDurationSeconds ?? 600) / 60));
-    forceStartAtEnd.value = managedGroup.value?.forceStartAtEnd === true;
     assignmentTargets.value = Object.fromEntries(members.value.map(member => [member.userId, member.groupId ?? '']));
     mutationBlocked.value = false;
     return true;
@@ -203,8 +189,7 @@ async function assignGroup(member: WaitingMember): Promise<void> {
   lastActionSection.value = 'members';
   const targetName = groups.value.find(group => group.id === targetGroupId)?.name ?? 'bez skupiny';
   const targetGroup = groups.value.find(group => group.id === targetGroupId);
-  const mayEnterImmediately = member.state !== 'revoked' && (targetGroup?.openedAt != null
-    || (targetGroup?.forceStartAtEnd === true && targetGroup.launchAt != null && targetGroup.launchAt <= Date.now()));
+  const mayEnterImmediately = member.state !== 'revoked' && targetGroup?.openedAt != null;
   busy.value = true; error.value = ''; message.value = '';
   try {
     await accountRequest(`/app/v1/admin/launch/waiting-room/${encodeURIComponent(member.userId)}/group`, 'PUT', {
@@ -215,50 +200,6 @@ async function assignGroup(member: WaitingMember): Promise<void> {
     message.value = `${member.displayName} byl přesunut do skupiny ${targetName}.${member.state === 'revoked' ? ' Přístup zůstává odebraný.' : ''}`;
     await load();
   } catch (cause) { await reconcile('Přesun účastníka se nepodařilo potvrdit.', cause); }
-  finally { busy.value = false; }
-}
-async function saveCountdownDraft(): Promise<void> {
-  const group = managedGroup.value;
-  if (!group || busy.value || !Number.isInteger(durationMinutes.value) || durationMinutes.value < 1 || durationMinutes.value > 10080) return;
-  lastActionSection.value = null;
-  busy.value = true; error.value = ''; message.value = '';
-  try {
-    await accountRequest(`/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}/countdown`, 'PUT', {
-      expectedRevision: group.revision,
-      durationSeconds: durationMinutes.value * 60,
-      forceStartAtEnd: forceStartAtEnd.value,
-    });
-    message.value = 'Návrh odpočtu je uložený. Odpočet začne až po potvrzení.';
-    await load();
-  } catch (cause) { await reconcile('Návrh odpočtu se nepodařilo uložit.', cause); }
-  finally { busy.value = false; }
-}
-async function confirmCountdown(): Promise<void> {
-  const group = managedGroup.value;
-  if (!group || busy.value || countdownDraftChanged.value || !Number.isInteger(durationMinutes.value) || durationMinutes.value < 1 || durationMinutes.value > 10080) return;
-  lastActionSection.value = null;
-  busy.value = true; error.value = ''; message.value = '';
-  try {
-    await accountRequest(`/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}/countdown/confirm`, 'POST', {
-      expectedRevision: group.revision,
-    }, undefined, `Spustit odpočet pro ${group.name} na ${durationMinutes.value} minut?${forceStartAtEnd.value ? '\nPo skončení se noc automaticky otevře.' : '\nPo skončení zůstane čekárna zavřená.'}`);
-    message.value = 'Odpočet byl potvrzen a spuštěn.';
-    await load();
-  } catch (cause) { await reconcile('Spuštění odpočtu se nepodařilo potvrdit.', cause); }
-  finally { busy.value = false; }
-}
-async function startNight(): Promise<void> {
-  const group = managedGroup.value;
-  if (!group || busy.value) return;
-  lastActionSection.value = null;
-  busy.value = true; error.value = ''; message.value = '';
-  try {
-    await accountRequest(`/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}/start`, 'POST', {
-      expectedRevision: group.revision,
-    }, undefined, `Otevřít noc pro skupinu ${group.name}?`);
-    message.value = `Noc pro skupinu ${group.name} je otevřená.`;
-    await load();
-  } catch (cause) { await reconcile('Otevření noci se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
 async function closeChronicle(): Promise<void> {
@@ -289,14 +230,14 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
 <template>
   <section id="waiting-room" class="aw-card beta-admission" aria-labelledby="beta-admission-title">
     <h3 id="beta-admission-title">Pozvaní a otevření večera</h3>
-    <p>Nastavte skupinu a potvrďte otevření. Nábor nových beta účtů se spravuje zvlášť.</p>
+    <p>Všechny skupiny včetně beta sdílejí jeden termín otevření. Nábor nových beta účtů se spravuje zvlášť.</p>
     <section class="evening-readiness" aria-label="Připravenost večera">
       <h4>Připravenost</h4>
       <dl>
         <div><dt>Skupina</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading ? 'Načítám stav…' : managedGroup?.name ?? (groups.length ? 'Vyberte skupinu' : 'Skupina není dostupná') }}</dd></div>
         <div><dt>Čekající hosté</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : managedWaitingCount }}</dd></div>
         <div><dt>Přijímání hostů</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !admission ? 'Stav není načtený' : `${invitationStatus}${groupName ? ` · ${groupName}` : ''}` }}</dd></div>
-        <div><dt>Otevření</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : managedGroup.openedAt ? 'Večer je otevřený' : managedGroup.launchAt === null ? managedDefaultGroup ? 'Produkční termín není nastavený' : 'Odpočet není potvrzený' : countdownStatus }}</dd></div>
+        <div><dt>Otevření</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : countdownStatus }}</dd></div>
       </dl>
     </section>
     <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
@@ -309,7 +250,7 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
       <section class="waiting-room__section" aria-labelledby="group-countdown-title">
         <h4 id="group-countdown-title">Skupina a otevření</h4>
         <label for="management-group">Spravovaná skupina</label>
-        <select id="management-group" v-model="managementGroupId" class="aw-select" :disabled="busy || mutationBlocked" @change="durationMinutes = Math.max(1, Math.round((managedGroup?.countdownDurationSeconds ?? 600) / 60)); forceStartAtEnd = managedGroup?.forceStartAtEnd === true">
+        <select id="management-group" v-model="managementGroupId" class="aw-select" :disabled="busy || mutationBlocked">
           <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
         </select>
         <p v-if="managedGroup" role="status">{{ countdownStatus }}</p>
@@ -318,21 +259,11 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
           <p v-if="managedGroup.chronicleClosedAt" role="status">Závěr večera je uložený {{ joinedDate(managedGroup.chronicleClosedAt) }}.</p>
           <AwButton v-else :disabled="busy || mutationBlocked || loading" @click="closeChronicle">Uložit závěr večera</AwButton>
         </template>
-        <div v-if="managedDefaultGroup" class="waiting-room__production-schedule">
-          <p>Výchozí skupina používá datum a čas z produkčního plánu. Před termínem hosté čekají, v termínu se večer otevře automaticky.</p>
-          <AwButton :disabled="busy || mutationBlocked" @click="emit('edit-production-schedule')">Nastavit datum a čas otevření</AwButton>
+        <div v-if="managedGroup" class="waiting-room__production-schedule">
+          <p>Tato skupina sdílí termín otevření se všemi ostatními skupinami včetně beta. Před termínem hosté čekají; termín nastavíte ve společném plánu.</p>
+          <AwButton :disabled="busy || mutationBlocked" @click="emit('edit-production-schedule')">Upravit společný termín</AwButton>
         </div>
         <GameBossControl v-if="managedGroup?.openedAt" :key="managedGroup.id" :group-id="managedGroup.id" />
-        <template v-if="managedGroup && !managedGroup.openedAt && !managedDefaultGroup">
-          <label for="countdown-minutes">Délka odpočtu v minutách</label>
-          <input id="countdown-minutes" v-model.number="durationMinutes" class="aw-input" type="number" min="1" max="10080" step="1" :disabled="busy || mutationBlocked || managedGroup.launchAt !== null" />
-          <label class="waiting-room__force"><input v-model="forceStartAtEnd" type="checkbox" :disabled="busy || mutationBlocked || managedGroup.launchAt !== null" /> Spustit večer automaticky po skončení odpočtu</label>
-          <p>Uložení návrhu odpočet nespustí. Účastníkům se až do potvrzení zobrazuje „Brzy“.</p>
-          <AwButton v-if="managedGroup.launchAt === null" variant="secondary" :disabled="busy || mutationBlocked || !Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 10080" @click="saveCountdownDraft">Uložit návrh odpočtu</AwButton>
-          <p v-if="countdownDraftChanged">Uložte změny návrhu před potvrzením odpočtu.</p>
-          <AwButton v-if="managedGroup.launchAt === null" :disabled="busy || mutationBlocked || countdownDraftChanged || !Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 10080" @click="confirmCountdown">Potvrdit a spustit odpočet</AwButton>
-          <AwButton v-if="managedGroup.launchAt !== null && managedGroup.launchAt <= currentTime && !managedGroup.forceStartAtEnd" :disabled="busy || mutationBlocked" @click="startNight">Spustit noc</AwButton>
-        </template>
       </section>
 
       <details ref="membersDisclosure" class="waiting-room__disclosure" aria-labelledby="waiting-room-title">

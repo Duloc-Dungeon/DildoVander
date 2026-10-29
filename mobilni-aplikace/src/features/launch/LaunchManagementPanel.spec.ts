@@ -84,7 +84,8 @@ describe('Příprava večera', () => {
     const view = wrapper();
     try {
       await flushPromises();
-      expect(view.find('#beta-launch').exists()).toBe(true);
+      expect(view.find('#beta-launch').exists()).toBe(false);
+      expect(view.text()).toContain('včetně beta');
       expect(view.text()).toContain('Nastavení přístupu můžete dál upravovat.');
       await view.get('.launch-admin__schedule button').trigger('click');
       await flushPromises();
@@ -114,20 +115,21 @@ describe('Příprava večera', () => {
     } finally { view.unmount(); }
   });
 
-  it('loads independent audience controls and saves Prague local times as UTC instants', async () => {
+  it('uses one shared date for every group and preserves legacy beta fields in the request', async () => {
     const view = wrapper(); await flushPromises();
     expect(view.text()).toContain('Europe/Prague');
-    await view.get('#beta-launch').setValue('2026-03-30T10:00');
+    expect(view.find('#beta-launch').exists()).toBe(false);
+    expect(view.find('#launch-audience').exists()).toBe(false);
     await view.get('#production-launch').setValue('2026-10-30T10:00');
     await view.get('.launch-admin__schedule button').trigger('click'); await flushPromises();
     const save = api.request.mock.calls.find(([path, method]) => path === '/app/v1/admin/launch' && method === 'PUT');
-    expect(save?.[2]).toMatchObject({ expectedRevision: 7, betaLaunchAt: Date.UTC(2026, 2, 30, 8), productionLaunchAt: Date.UTC(2026, 9, 30, 9), timeZone: 'Europe/Prague' });
+    expect(save?.[2]).toMatchObject({ expectedRevision: 7, betaLaunchAt: null, productionLaunchAt: Date.UTC(2026, 9, 30, 9), timeZone: 'Europe/Prague' });
     view.unmount();
   });
 
   it('rejects a nonexistent spring daylight-saving time before sending a change', async () => {
     const view = wrapper(); await flushPromises();
-    await view.get('#beta-launch').setValue('2026-03-29T02:30');
+    await view.get('#production-launch').setValue('2026-03-29T02:30');
     await view.get('.launch-admin__schedule button').trigger('click'); await flushPromises();
     expect(view.findAll('[role="alert"]').some(alert => alert.text().includes('neexistuje'))).toBe(true);
     expect(api.request.mock.calls.some(([path, method]) => path === '/app/v1/admin/launch' && method === 'PUT')).toBe(false);

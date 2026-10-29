@@ -91,8 +91,11 @@ internal static class PushTests
             pushConfiguration, clock, NullLogger<PushWorker>.Instance);
         await worker.RunOnceAsync(default);
         Check(sender.Messages.Count == 0, "registration does not replay old evening state");
-        group = launch.SaveCountdown("operator", group.Id, new(group.Revision, 2, true), clock.Milliseconds);
-        group = launch.ConfirmCountdown("operator", group.Id, new(group.Revision), clock.Milliseconds);
+        var launchConfiguration = launch.Read();
+        launch.Update("operator", new(launchConfiguration.Revision, false, null, false,
+            true, clock.Milliseconds + 2000, false, launchConfiguration.TimeZone, launchConfiguration.Teaser,
+            launchConfiguration.InitialLoadingMessage, launchConfiguration.PersonalizedLoadingEnabled,
+            launchConfiguration.PersonalizedLoadingPrompt), clock.Milliseconds);
         await worker.RunOnceAsync(default);
         Check(sender.Messages.Single().Message.Tag == "evening", "countdown change queued and delivered");
         clock.Advance(3);

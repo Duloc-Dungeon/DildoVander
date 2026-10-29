@@ -9,6 +9,19 @@ Vývoj fyzického kufru je pozastavený. Níže zachované technické podklady p
 
 [Push oznámení](docs/push-notifications.md) pokrývají herní výzvy, pozvánky existujících hostů a změny večera na webu, Androidu a iOS. Před aktivací vyžadují nastavení doručovacích služeb.
 
+Čekárna má společný vstup přes velké **W / Vstoupit**, za kterým zůstává příprava
+**Postava → Portrét → Hůlka → Čekárna**. Všechny skupiny včetně bety sdílejí
+produkční termín otevření ve správě spuštění. Přijímání a členství se nastavují
+samostatně; obsluha a testeři zachovávají svůj dosavadní přístup. Starší beta
+časová pole zůstávají v API kvůli kompatibilitě, ale přístup už neřídí. Skupinové
+zápisy termínu a spuštění samostatného odpočtu vracejí
+`409 launch_group_uses_production_schedule`; při úpravě názvu a pravidel skupiny
+posílají klienti `launchAt: null`.
+
+Rickroll se spouští pouze při sledování přechodu odpočtu přes nulu. Pozdní
+příchod, návrat z pozadí ani nové načtení jej neopakují. Video musí být dostupné
+na backendu přes `Rickroll:FilePath`; prohlížeč může automatický zvuk omezit.
+
 [Seznam elektroniky a odkazy k nákupu](docs/elektronika.md) obsahuje podklady pro kufr a jeho montážní materiál.
 
 ## Zachované technické zázemí

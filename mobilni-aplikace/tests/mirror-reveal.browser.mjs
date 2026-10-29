@@ -39,7 +39,7 @@ try {
           }),
         }));
         await page.goto(`${origin}/__fixture/${surface === 'entrance' ? 'F' : 'E'}`);
-        if (surface === 'entrance') await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
+        await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
         const mirror = page.locator('.portrait-mirror');
         await page.locator(surface === 'entrance' ? '.entrance-stage' : '.portrait-stage').scrollIntoViewIfNeeded();
         const waiting = page.locator('.mirror-waiting-glow');

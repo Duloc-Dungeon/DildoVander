@@ -12,14 +12,14 @@ const groupId = '0123456789abcdef0123456789abcdef';
 const secondGroupId = '123456789abcdef0123456789abcdef0';
 const userId = 'abcdef0123456789abcdef0123456789';
 const member: { userId: string; displayName: string; joinedAt: number; groupId: string | null; groupName: string | null; state: 'waiting' | 'revoked'; accessRevision: number; fixedUniverse: string | null } = { userId, displayName: 'Ava Longname', joinedAt: Date.UTC(2026, 9, 25) / 1000, groupId, groupName: 'Interní beta', state: 'waiting', accessRevision: 4, fixedUniverse: 'Astronomie' };
-const group = (id: string, name: string, extras: Record<string, unknown> = {}) => ({ id, name, launchAt: null, revision: 2, countdownDurationSeconds: 600, forceStartAtEnd: false, countdownConfirmedAt: null, openedAt: null, ...extras });
+const group = (id: string, name: string, extras: Record<string, unknown> = {}) => ({ id, name, launchAt: null, revision: 2, openedAt: null, ...extras });
 let effectiveMember = member;
 let effectiveGroups = [group(groupId, 'Interní beta'), group(secondGroupId, 'Sobota')];
 
 beforeEach(() => {
   effectiveMember = member;
   effectiveGroups = [group(groupId, 'Interní beta'), group(secondGroupId, 'Sobota')];
-  api.request.mockReset().mockImplementation(async (path: string, method?: string, body?: unknown) => {
+  api.request.mockReset().mockImplementation(async (path: string, method?: string) => {
     if (path === '/app/v1/admin/launch/beta-admission') return { revision: 3, groupId, groupName: 'Interní beta', recruitmentOpen: true, fixedUniverse: null };
     if (path === '/app/v1/admin/launch/groups') return { groups: effectiveGroups };
     if (path === '/app/v1/admin/launch/waiting-room') return { members: [effectiveMember] };
@@ -29,27 +29,24 @@ beforeEach(() => {
       effectiveGroups = effectiveGroups.map(item => item.id === id ? { ...item, chronicleClosedAt: closedAt, revision: item.revision + 1 } : item);
       return { closedAt };
     }
-    if (path.endsWith('/countdown') && method === 'PUT') {
-      const request = body as { durationSeconds: number; forceStartAtEnd: boolean };
-      const id = path.split('/')[6];
-      effectiveGroups = effectiveGroups.map(item => item.id === id ? { ...item, countdownDurationSeconds: request.durationSeconds, forceStartAtEnd: request.forceStartAtEnd, revision: item.revision + 1 } : item);
-    }
     return {};
   });
 });
 
-async function independentGroupPanel() {
-  const original = api.request.getMockImplementation()!;
-  api.request.mockImplementation((path: string, ...args: unknown[]) => path === '/app/v1/admin/launch/beta-admission'
-    ? Promise.resolve({ revision: 3, groupId: secondGroupId, groupName: 'Sobota', recruitmentOpen: true, fixedUniverse: null })
-    : original(path, ...args));
-  const view = mount(BetaAdmissionPanel);
-  await flushPromises();
-  await view.get('#management-group').setValue(groupId);
-  return view;
-}
+describe('owner waiting room and shared opening schedule', () => {
+  it('requests fresh opening state when a loaded countdown expires', async () => {
+    vi.useFakeTimers();
+    effectiveGroups = [group(groupId, 'Interní beta', { launchAt: Date.now() + 1_000 })];
+    const view = mount(BetaAdmissionPanel);
+    try {
+      await flushPromises();
+      expect(view.text()).toContain('Společný odpočet');
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(view.text()).toContain('Společný termín uplynul. Obnovte stav otevření.');
+      expect(view.text()).not.toContain('Čekárna zůstává zavřená');
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
 
-describe('owner waiting room and group countdown', () => {
   it('marks previous readiness unverified after a failed refresh instead of presenting stale counts', async () => {
     const view = mount(BetaAdmissionPanel);
     try {
@@ -79,9 +76,10 @@ describe('owner waiting room and group countdown', () => {
       expect(readiness.text()).toContain('1');
       expect(readiness.text()).toContain('Přijímání hostů');
       expect(readiness.text()).toContain('Otevřené');
-      expect(readiness.text()).toContain('Produkční termín není nastavený');
+      expect(readiness.text()).toContain('Společný termín otevření zatím není nastavený');
       expect(view.find('#waiting-room').exists()).toBe(true);
       expect(view.find('#countdown-minutes').exists()).toBe(false);
+      expect(view.text()).toContain('včetně beta');
       await view.get('.waiting-room__production-schedule button').trigger('click');
       expect(view.emitted('edit-production-schedule')).toHaveLength(1);
       expect(view.find<HTMLDetailsElement>('details[aria-labelledby="waiting-room-title"]').element.open).toBe(false);
@@ -90,45 +88,21 @@ describe('owner waiting room and group countdown', () => {
     } finally { view.unmount(); }
   });
 
-  it('requires saving an initial countdown draft before confirming a new group', async () => {
-    effectiveGroups[0] = group(groupId, 'Interní beta', { countdownDurationSeconds: null });
-    const view = await independentGroupPanel();
-    try {
-      await flushPromises();
-      const confirm = () => view.findAll('button').find(button => button.text() === 'Potvrdit a spustit odpočet')!;
-      expect(confirm().attributes('disabled')).toBeDefined();
-      await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
-      await flushPromises();
-      expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/countdown`, 'PUT', {
-        expectedRevision: 2, durationSeconds: 600, forceStartAtEnd: false,
-      });
-      expect(confirm().attributes('disabled')).toBeUndefined();
-    } finally { view.unmount(); }
-  });
 
-  it('preserves the countdown draft on expired owner authentication and never automatically replays it', async () => {
-    api.reauthenticate.mockReset().mockResolvedValue(undefined);
-    const defaultRequest = api.request.getMockImplementation()!;
-    api.request.mockImplementation(async (path, method, ...args) => {
-      if (method === 'PUT') throw Object.assign(new Error('Nejprve ověřte svou totožnost.'), { code: 'recent_passkey_required' });
-      return defaultRequest(path, method, ...args);
-    });
-    const view = await independentGroupPanel();
-    try {
-      await flushPromises();
-      await view.get('#countdown-minutes').setValue(25);
-      await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
-      await flushPromises();
-      expect(view.text()).toContain('Nejprve ověřte svou totožnost.');
-      expect((view.get('#countdown-minutes').element as HTMLInputElement).value).toBe('25');
-      await view.findAll('button').find(button => button.text() === 'Ověřit totožnost přístupovým klíčem')!.trigger('click');
-      await flushPromises();
-      expect(api.reauthenticate).toHaveBeenCalledWith('reauth');
-      expect(api.request.mock.calls.filter(([, method]) => method === 'PUT')).toHaveLength(1);
-      expect(view.text()).toContain('Původní změnu nyní odešlete znovu.');
-    } finally { view.unmount(); }
+  it('offers the same shared-term editor for any selected group and exposes no independent timer controls', async () => {
+    const view = mount(BetaAdmissionPanel);
+    await flushPromises();
+    await view.get('#management-group').setValue(secondGroupId);
+    expect(view.get('.waiting-room__production-schedule').text()).toContain('včetně beta');
+    await view.find('.waiting-room__production-schedule button').trigger('click');
+    expect(view.emitted('edit-production-schedule')).toHaveLength(1);
+    expect(view.find('#countdown-minutes').exists()).toBe(false);
+    expect(view.text()).not.toContain('Potvrdit a spustit odpočet');
+    expect(view.text()).not.toContain('Uložit návrh odpočtu');
+    expect(view.findAll('button').some(button => button.text() === 'Spustit noc')).toBe(false);
+    expect(api.request.mock.calls.some(([path]) => String(path).includes('/countdown'))).toBe(false);
+    view.unmount();
   });
-
   it('loads every roster page before enabling group changes', async () => {
     const defaultRequest = api.request.getMockImplementation()!;
     api.request.mockImplementation(async (path: string, ...args: unknown[]) => {
@@ -234,45 +208,21 @@ describe('owner waiting room and group countdown', () => {
     view.unmount();
   });
 
-  it('saves a duration draft without starting the countdown and requires a separate confirmation', async () => {
-    const view = await independentGroupPanel();
-    await flushPromises();
-    await view.get('#countdown-minutes').setValue('25');
-    await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
-    await flushPromises();
-    expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/countdown`, 'PUT', {
-      expectedRevision: 2, durationSeconds: 1500, forceStartAtEnd: false,
-    });
-    expect(view.text()).toContain('Návrh je uložený');
-    expect(view.text()).toContain('zobrazuje Brzy');
-    expect(api.request).not.toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/countdown/confirm`, 'POST', expect.anything(), expect.anything(), expect.anything());
-    await view.findAll('button').find(button => button.text() === 'Potvrdit a spustit odpočet')!.trigger('click');
-    await flushPromises();
-    expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/countdown/confirm`, 'POST', { expectedRevision: 3 }, undefined, expect.stringContaining('na 25 minut'));
-    view.unmount();
-  });
 
-  it('makes Force an after-expiry action and exposes manual start only after a non-force expiry', async () => {
-    const view = await independentGroupPanel();
+  it('offers the same shared-term editor for any selected group and exposes no independent timer controls', async () => {
+    const view = mount(BetaAdmissionPanel);
     await flushPromises();
-    await view.get('.waiting-room__force input').setValue(true);
-    await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
-    await flushPromises();
-    await view.findAll('button').find(button => button.text() === 'Potvrdit a spustit odpočet')!.trigger('click');
-    await flushPromises();
-    expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/countdown/confirm`, 'POST', { expectedRevision: 3 }, undefined, expect.stringContaining('Po skončení se noc automaticky otevře.'));
+    await view.get('#management-group').setValue(secondGroupId);
+    expect(view.get('.waiting-room__production-schedule').text()).toContain('včetně beta');
+    await view.find('.waiting-room__production-schedule button').trigger('click');
+    expect(view.emitted('edit-production-schedule')).toHaveLength(1);
+    expect(view.find('#countdown-minutes').exists()).toBe(false);
+    expect(view.text()).not.toContain('Potvrdit a spustit odpočet');
+    expect(view.text()).not.toContain('Uložit návrh odpočtu');
     expect(view.findAll('button').some(button => button.text() === 'Spustit noc')).toBe(false);
+    expect(api.request.mock.calls.some(([path]) => String(path).includes('/countdown'))).toBe(false);
     view.unmount();
-
-    effectiveGroups = [group(groupId, 'Interní beta', { launchAt: Date.now() - 1000, countdownConfirmedAt: Date.now() - 601000 })];
-    const expired = await independentGroupPanel();
-    await flushPromises();
-    await expired.findAll('button').find(button => button.text() === 'Spustit noc')!.trigger('click');
-    await flushPromises();
-    expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/start`, 'POST', { expectedRevision: 2 }, undefined, `Otevřít noc pro skupinu Interní beta?`);
-    expired.unmount();
   });
-
   it('saves an explicit evening finale from revealed memories and then hides the action', async () => {
     effectiveGroups = [group(groupId, 'Interní beta', { openedAt: Date.now() - 1000 })];
     const view = mount(BetaAdmissionPanel);
