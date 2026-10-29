@@ -58,11 +58,26 @@ it('offers wand creation only after revealing the saved character', async () => 
   try {
     await flushPromises(); image.value = 'blob:portrait'; await flushPromises();
     expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
+    expect(view.find('.launch-next-step').exists()).toBe(false);
     view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
     expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true);
+    expect(view.get('.launch-next-step').attributes('href')).toBe('#prelaunch-wand-title');
     await view.findComponent({ name: 'PrelaunchWand' }).get('button').trigger('click');
     expect(view.get('.launch-card').attributes('style')).toContain('display: none');
     expect(api.request.mock.calls.some(call => call[1] === 'POST')).toBe(false);
+  } finally { view.unmount(); }
+});
+it('keeps optional character labels collapsed without changing the saved character', async () => {
+  persisted = true;
+  const view = entry();
+  try {
+    await flushPromises();
+    const details = view.get('.launch-label-options');
+    expect(details.attributes('open')).toBeUndefined();
+    await details.get('summary').trigger('click');
+    expect(details.attributes('open')).toBeDefined();
+    expect(view.find('input[maxlength="80"]').exists()).toBe(true);
+    expect(api.request.mock.calls.some(call => call[1] === 'PUT')).toBe(false);
   } finally { view.unmount(); }
 });
 it('keeps an open workshop through night opening, then presents the night when the guest returns', async () => {

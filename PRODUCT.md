@@ -85,15 +85,21 @@ náhradou za srozumitelný souhlas, chybu ani pojmenování dalšího kroku.
 
 ## Produkt a hlavní cesta
 
-Prioritou je zákaznický zážitek na telefonu: pozvánka → postava → čekárna →
-společný večer → hra a souboje → památky. Vlastník připravuje skupinu, pozvánky
+Prioritou je zákaznický zážitek na telefonu: pozvánka → postava → kufrova dílna
+přímo v aplikaci → hry a souboje → památky a žebříček. Čekání na otevření večera
+zůstává součástí pozvánkové fáze. Vlastník připravuje skupinu, pozvánky
 a otevření večera. Účet, přístupové klíče a obnova musí být snadno dostupné.
 
-Fyzický kufr je nyní pozastavený. Jeho připojení, dílna, diagnostika a servisní
+Fyzický kufr je nyní pozastavený. Jeho připojení, hardwarová dílna, diagnostika a servisní
 nástroje nepatří do běžné navigace, úvodní nabídky ani zákaznického účtu.
 Existující servisní kód a bezpečné ukončení už spuštěné relace nejsou tímto
 rozhodnutím odstraněny. Historické hardwarové specifikace nejsou roadmapou
 aktuálního mobilního rozhraní.
+
+Digitální kufr v aplikaci je hlavní dílna pro přípravu hůlky hlasem nebo psaním.
+Zákaznická navigace nabízí Dílna / Hry / Památky / Já. Starý odkaz
+`/me/conversation` vede do `/play/wand`; nenabízí Bluetooth ani nespouští
+hardwarovou relaci. Historické památky zůstávají dostupné z účtu.
 
 ## Platforma a neměnné hranice
 

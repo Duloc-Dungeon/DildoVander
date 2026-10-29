@@ -93,6 +93,7 @@ try {
         name: customerProfile.userInput.name, universe: customerProfile.userInput.world, status: customerProfile.status } : null,
       artwork: null,
     });
+    if (sessionAccount && url.pathname === '/app/v1/customer/wand/workshop') return json({ eligible: false, reason: 'wand_character_required', tier: 1, profile: null, session: null });
     if (sessionAccount && url.pathname === '/app/v1/customer/conversation-preferences') {
       if (request.method() === 'PUT') {
         const body = request.postDataJSON();
@@ -210,7 +211,7 @@ try {
     }
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
-  for (const [route, title] of [['/support', 'S čím potřebujete pomoct?'], ['/privacy', 'Ochrana soukromí']]) {
+  for (const [route, title] of [['/support', 'S čím potřebuješ pomoct?'], ['/privacy', 'Ochrana soukromí']]) {
     await page.goto(origin + route);
     await hasHeading(title);
     assert.equal(new URL(page.url()).pathname, route, 'support and privacy remain public without an account');
@@ -246,7 +247,7 @@ try {
   await lostAccessSummary.focus();
   await page.keyboard.press('Enter');
   assert.notEqual(await lostAccess.getAttribute('open'), null);
-  assert(await lostAccess.getByRole('link', { name: 'kontaktujte podporu' }).isVisible());
+  assert(await lostAccess.getByRole('link', { name: 'kontaktuj podporu' }).isVisible());
   assert.match(await lostAccess.innerText(), /pouze vlastník služby/);
   assert.equal(await page.locator('.shell-preferences').count(), 0, 'sign-in keeps the prelaunch shell free of feature navigation and preferences');
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -279,7 +280,7 @@ try {
   await page.goto(origin + '/me/character'); await hasHeading('Moje postava');
   const customerNavigation = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
   assert.equal(await customerNavigation.getByRole('link').count(), 4);
-  assert.equal(await customerNavigation.getByRole('link', { name: /Večer/ }).getAttribute('href'), '/play');
+  assert.equal(await customerNavigation.getByRole('link', { name: 'Hry', exact: true }).getAttribute('href'), '/play');
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
   await page.getByRole('heading', { name: 'Luna', exact: true }).waitFor();
   const assertCustomerReadOnly = async (target = page) => {
@@ -377,111 +378,28 @@ try {
   customerProfile = originalCustomerProfile;
   await page.goto(origin);
   await hasHeading('Moje postava');
-  await page.getByRole('link', { name: 'Pokračovat do hry', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Otevřít dílnu', exact: true }).waitFor();
   assert(await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: /Památky/ }).isVisible());
   const customerNav = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
-  assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/play', '/me/character', '/me/keepsakes', '/me/account']);
-  for (const removedEntry of ['Rozhovor', 'Kufr', 'Dílna', 'Připojení', 'Zařízení']) {
+  assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/play/wand', '/play', '/me/keepsakes', '/me/account']);
+  for (const removedEntry of ['Rozhovor', 'Kufr', 'Připojení', 'Zařízení']) {
     assert.equal(await customerNav.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not part of customer navigation`);
   }
-  await page.goto(origin + '/me/conversation'); await hasHeading('Rozhovor s kufrem');
-  assert.equal(await page.locator('#conversation-openai-consent').count(), 0, 'the conversation uses account consent without repeating registration');
-  assert(await page.getByRole('button', { name: 'Promluvit s kufrem', exact: true }).isDisabled());
-  assert(await page.getByText(/Bluetooth připojení je dostupné v instalované aplikaci/).isVisible());
-  assert.equal(requests.filter(request => request.path.includes('customerBle') || request.path.includes('start-tickets')).length, 0);
-  customerSessions = [{ id: 'browser-recovering-session', operationId: 'browser-original-operation', deviceId: 'browser-suitcase', profileId: 'browser-profile', profileRevision: 2, state: 'recovering', endRequested: false, createdAt: 1792710000, characterName: 'Obnovený rozhovor' }];
-  failedCustomerPolls = 1;
-  const readsBeforeRecovery = customerStatusReads;
-  await page.reload();
-  await page.getByText('Stav: Obnovuje se', { exact: true }).waitFor({ timeout: 10000 });
-  assert(customerStatusReads >= readsBeforeRecovery + 2, 'a failed initial poll automatically retries the authoritative restored session');
-  const refreshConversation = page.getByRole('button', { name: 'Obnovit stav rozhovoru', exact: true });
-  assert(await refreshConversation.isVisible(), 'restored sessions can refresh without a local pending operation or native BLE');
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
-    await fits();
-    await page.screenshot({ path: path.join(screenshots, `customer-recovering-${width}.png`), fullPage: true });
-  }
-  await page.getByRole('button', { name: 'Ukončit rozhovor', exact: true }).click();
-  await page.getByRole('button', { name: 'Konec požádán', exact: true }).waitFor();
-  assert(await page.getByRole('button', { name: 'Konec požádán', exact: true }).isDisabled());
-  assert.equal(customerEndRequests.length, 1, 'one user request creates only one end command');
-  assert(await page.getByText('Stav: Obnovuje se', { exact: true }).isVisible(), 'an accepted end request does not claim physical completion');
-  customerSessions = customerSessions.map(session => ({ ...session, state: 'completed' }));
-  await refreshConversation.click();
-  await page.getByText('Stav: Dokončen', { exact: true }).waitFor();
-  await page.getByText('Výsledek se připravuje.', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('link', { name: 'Otevřít památku', exact: true }).count(), 0, 'a completed session does not fabricate a result locator');
-  const refreshResult = page.getByRole('button', { name: 'Obnovit stav památky', exact: true });
-  sessionResult = {
-    ...sessionResult, resultLocator, accessKind: 'originalOwner', canManage: true, canReadPrivate: true,
-    readiness: { state: 'partial', reason: 'reconciliation_required', canRetry: false, shouldPoll: true, hasStory: true, hasArtwork: false },
-  };
-  await refreshResult.click();
-  await page.getByText('Výsledek čeká na ověření. Aplikace ho automaticky znovu nevytváří.', { exact: true }).waitFor();
-  assert(await page.getByText('Text památky je dostupný.', { exact: true }).isVisible());
+  // Retired device bookmarks lead to the in-app workshop without discovering hardware.
+  await page.goto(origin + '/me/conversation');
+  await page.waitForURL('**/play/wand');
+  await hasHeading('Kufrova dílna');
+  assert.equal(await page.getByText(/Bluetooth připojení|Najít kufr poblíž/).count(), 0);
+  assert.equal(customerEndRequests.length, 0);
+  assert.equal(requests.filter(request => request.path.includes('start-tickets')).length, 0);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
     await fits();
-    await page.screenshot({ path: path.join(screenshots, `customer-result-partial-${width}.png`), fullPage: true });
-  }
-  sessionResult = { ...sessionResult, readiness: { state: 'ready', reason: null, canRetry: false, shouldPoll: false, hasStory: true, hasArtwork: true } };
-  await refreshResult.click();
-  await page.getByText('Památka je připravená.', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('link', { name: 'Otevřít památku', exact: true }).getAttribute('href'), `/keepsake/?account=1&k=${resultLocator}`);
-  await page.goto(origin + '/me/conversation');
-  await page.getByText('Památka je připravená.', { exact: true }).waitFor();
-  sessionResult = {
-    ...sessionResult, resultLocator: null, accessKind: null, canManage: false, canReadPrivate: false,
-    readiness: { state: 'unavailable', reason: 'result_unavailable', canRetry: false, shouldPoll: false, hasStory: false, hasArtwork: false },
-  };
-  await page.getByRole('button', { name: 'Obnovit stav památky', exact: true }).click();
-  await page.getByText('Tato památka už není dostupná.', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('link', { name: 'Otevřít památku', exact: true }).count(), 0);
-  assert.equal(customerEndRequests.length, 1, 'result polling never repeats the conversation end');
-  assert.equal(requests.filter(request => request.path.includes('customerBle') || request.path.includes('start-tickets')).length, 0, 'recovery never issues a replacement start or controls BLE');
-  customerSessions = [];
-  savedPreferences.conversationLanguage = 'en-US'; // legacy stored preference, not a supported choice
-  await page.goto(origin + '/me/conversation'); await hasHeading('Rozhovor s kufrem');
-  await page.getByLabel('Styl rozhovoru', { exact: true }).waitFor();
-  await page.evaluate(() => localStorage.setItem('dildovander.interface-language.v1.account.browser-customer', 'en'));
-  await page.reload();
-  await page.getByRole('heading', { name: 'Rozhovor podle tebe', exact: true }).waitFor();
-  assert.equal(await page.getByLabel('Jazyk rozhovoru', { exact: true }).count(), 0, 'conversation has no language selector');
-  assert(await page.getByRole('heading', { name: 'Rozhovor s kufrem', exact: true }).isVisible(), 'a saved English interface value cannot switch the customer UI away from Czech');
-  assert.equal(preferenceWrites.length, 0, 'interface localization never mutates conversation preferences');
-
-  await page.getByLabel('Styl rozhovoru', { exact: true }).selectOption('gentle');
-  assert.equal(preferenceWrites.length, 0, 'editing a draft never mutates the server');
-  await page.getByRole('button', { name: 'Uložit pro příští rozhovor', exact: true }).click();
-  await page.getByText('Uloženo pro příští nový rozhovor.', { exact: true }).waitFor();
-  assert.equal(preferenceWrites.length, 1, 'one explicit save sends one profile-bound mutation');
-  assert.equal(preferenceWrites[0].conversationLanguage, 'cs-CZ', 'legacy English preference cannot be submitted as a new conversation choice');
-  await page.reload();
-  await page.getByRole('heading', { name: 'Rozhovor podle tebe', exact: true }).waitFor();
-  assert.equal(await page.getByLabel('Jazyk rozhovoru', { exact: true }).count(), 0);
-  assert.equal(await page.getByLabel('Styl rozhovoru', { exact: true }).inputValue(), 'gentle');
-  for (const theme of ['v2']) {
-    for (const width of [1440, 390, 320]) {
-      await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
-      await fits();
-      await page.screenshot({ path: path.join(screenshots, `customer-preferences-cs-${theme}-${width}.png`), fullPage: true });
-      if (width !== 1440) {
-        const save = page.getByRole('button', { name: 'Uložit pro příští rozhovor', exact: true });
-        await save.scrollIntoViewIfNeeded();
-        assert(await save.evaluate(element => {
-          const rect = element.getBoundingClientRect();
-          const target = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-          return target !== null && element.contains(target);
-        }), 'fixed navigation must not cover the reachable preference save action');
-        await page.screenshot({ path: path.join(screenshots, `customer-preferences-cs-${theme}-${width}-viewport.png`), fullPage: false });
-      }
-    }
+    await page.screenshot({ path: path.join(screenshots, `customer-workshop-${width}.png`), fullPage: true });
   }
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
   await fits();
-  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize), '32px', 'enlarged preference text is actually 200%');
-  await page.screenshot({ path: path.join(screenshots, 'customer-preferences-cs-320-large-text.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshots, 'customer-workshop-320-large-text.png'), fullPage: true });
   await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
   await customerNav.getByRole('link', { name: 'Já', exact: true }).click();
   await page.getByRole('heading', { name: 'Přístupové klíče' }).waitFor();

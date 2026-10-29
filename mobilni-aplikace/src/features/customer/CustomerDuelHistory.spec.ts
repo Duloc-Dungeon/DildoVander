@@ -31,6 +31,13 @@ describe('account battle history', () => {
     api.request.mockResolvedValue({ items: [duel, { id: 'malformed' }] }); await view.find('button').trigger('click'); await flushPromises();
     expect(view.text()).not.toContain('Luna'); expect(view.text()).toContain('Historii soubojů se nepodařilo ověřit');
   });
+
+  it('uses familiar Czech address for the signed-in guest', async () => {
+    api.request.mockResolvedValue({ items: [] });
+    const view = await render();
+    expect(view.text()).toContain('Tvoje souboje');
+    expect(view.text()).toContain('Zatím tu nemáš uložený žádný souboj.');
+  });
 });
 
 it('shows the saved optional task with the same result and keeps the detail link', async () => {

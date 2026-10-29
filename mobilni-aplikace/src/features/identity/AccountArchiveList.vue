@@ -16,48 +16,22 @@ import {
   type CollectionReadinessState,
 } from './accountCollection';
 
-const props = withDefaults(defineProps<{ locale?: 'cs' | 'en' }>(), { locale: 'cs' });
+defineProps<{ locale?: 'cs' | 'en' }>();
 
-const copy = computed(() => props.locale === 'en' ? {
-  title: 'Your collection', intro: 'Results available to this account, with access and completion status shown separately.',
-  signIn: 'Sign in to view results saved to your account.', offline: 'Account results are unavailable while offline.',
-  unavailableAccount: 'Account results are unavailable while this session is changing.',
-  loading: 'Loading your collection…', refresh: 'Refresh collection', searchLabel: 'Search your collection',
-  accessLabel: 'Access', allAccess: 'All results', ownedAccess: 'Owned by this account', linkedAccess: 'Linked for read-only access',
-  submitSearch: 'Search', loadMore: 'Load more', loadingMore: 'Loading more…', refreshing: 'Refreshing…',
-  empty: 'Your account has no available results yet.', filteredEmpty: 'No results match these filters.',
-  failure: 'The collection could not be loaded. Access may have changed, or the service may be temporarily unavailable. Try refreshing.',
-  moreFailure: 'More results could not be loaded. Try again.', noMore: 'No more results.',
-  morePaused: 'Automatic refresh pauses while older results are open. Refresh the collection to check for updates.',
-  limitReached: 'Showing at most 200 results. Narrow your search to find older items.',
-  result: 'Open result', unnamed: 'Saved result', noTitle: 'No story title', portrait: 'Portrait available',
-  owner: 'Owned by this account · management available', linked: 'Linked to this account · read-only',
-  unknownAccess: 'Access details could not be verified; unlink is unavailable.',
-  character: 'Character', evening: 'Evening', linkedAt: 'Linked',
-  unlink: 'Unlink from account', unlinking: 'Unlinking…',
-  confirmUnlink: 'Remove this read-only link from your account? This does not delete the original result or its saved files.',
-  ready: 'Ready', pending: 'Waiting', processing: 'In progress', partial: 'Partially available',
-  failed: 'Could not be completed', unavailable: 'Unavailable',
-  reasons: {
-    awaiting_result: 'Waiting for the result.', awaiting_capacity: 'Waiting for available capacity.',
-    paused_preparing: 'Preparation is paused.', reconciliation_required: 'The result is being checked.',
-    generation_failed: 'Generation failed. Open the result to check available content.', result_unavailable: 'This result is no longer available.',
-  } as Record<string, string>,
-  story: 'Story available', artwork: 'Artwork available', completedParts: 'Available parts',
-} : {
-  title: 'Vaše kolekce', intro: 'Výsledky dostupné z tohoto účtu včetně oprávnění a stavu dokončení.',
-  signIn: 'Pro zobrazení výsledků uložených k účtu se přihlaste.', offline: 'Výsledky účtu nejsou offline dostupné.',
-  unavailableAccount: 'Výsledky účtu nejsou během změny relace dostupné.',
-  loading: 'Načítám vaši kolekci…', refresh: 'Obnovit kolekci', searchLabel: 'Hledat v kolekci',
-  accessLabel: 'Přístup', allAccess: 'Všechny výsledky', ownedAccess: 'Vaše památky', linkedAccess: 'Propojené pouze ke čtení',
+const copy = computed(() => ({
+  title: 'Tvoje kolekce', intro: 'Tady najdeš dostupné výsledky, jejich přístup i stav dokončení.',
+  signIn: 'Přihlas se a zobraz výsledky uložené ke svému účtu.', offline: 'Tvoje výsledky nejsou offline dostupné.',
+  unavailableAccount: 'Výsledky nejsou dostupné, dokud se mění přihlášení.',
+  loading: 'Načítám tvoji kolekci…', refresh: 'Obnovit kolekci', searchLabel: 'Hledat v kolekci',
+  accessLabel: 'Přístup', allAccess: 'Všechny výsledky', ownedAccess: 'Tvoje památky', linkedAccess: 'Propojené pouze ke čtení',
   submitSearch: 'Hledat', loadMore: 'Načíst další', loadingMore: 'Načítám další…', refreshing: 'Obnovuji…',
-  empty: 'Tento účet zatím nemá žádné dostupné výsledky.', filteredEmpty: 'Filtrům neodpovídají žádné výsledky.',
-  failure: 'Kolekci se nepodařilo načíst. Přístup se mohl změnit nebo je služba dočasně nedostupná. Zkuste ji obnovit.',
-  moreFailure: 'Další výsledky se nepodařilo načíst. Zkuste to znovu.', noMore: 'Další výsledky nejsou k dispozici.',
-  morePaused: 'Při zobrazení starších výsledků se automatické obnovování pozastaví. Obnovením kolekce ověříte aktuální stav.',
-  limitReached: 'Zobrazuje se nejvýše 200 výsledků. Starší položky najdete upřesněním hledání.',
-  result: 'Otevřít výsledek', unnamed: 'Uložený výsledek', noTitle: 'Bez názvu příběhu', portrait: 'Výsledný portrét je k dispozici',
-  owner: 'Vaše památka · můžete ji spravovat', linked: 'Propojeno s účtem · pouze ke čtení',
+  empty: 'Zatím tu nemáš žádné dostupné výsledky.', filteredEmpty: 'Těmto filtrům žádné výsledky neodpovídají.',
+  failure: 'Kolekci se nepodařilo načíst. Přístup se mohl změnit nebo je služba dočasně nedostupná. Zkus ji obnovit.',
+  moreFailure: 'Další výsledky se nepodařilo načíst. Zkus to znovu.', noMore: 'Další výsledky nejsou k dispozici.',
+  morePaused: 'Při prohlížení starších výsledků se automatické obnovování pozastaví. Obnovením kolekce ověříš aktuální stav.',
+  limitReached: 'Zobrazuje se nejvýše 200 výsledků. Starší položky najdeš upřesněním hledání.',
+  result: 'Otevřít výsledek', unnamed: 'Uložený výsledek', noTitle: 'Bez názvu příběhu', portrait: 'Portrét je k dispozici',
+  owner: 'Tvoje památka · můžeš ji spravovat', linked: 'Propojeno s účtem · pouze ke čtení',
   unknownAccess: 'Podrobnosti přístupu nelze ověřit; odpojení není dostupné.',
   character: 'Postava', evening: 'Večer', linkedAt: 'Propojeno',
   unlink: 'Odpojit od účtu', unlinking: 'Odpojuji…',
@@ -67,10 +41,10 @@ const copy = computed(() => props.locale === 'en' ? {
   reasons: {
     awaiting_result: 'Čeká se na výsledek.', awaiting_capacity: 'Čeká se na volnou kapacitu.',
     paused_preparing: 'Příprava je pozastavená.', reconciliation_required: 'Výsledek se ověřuje.',
-    generation_failed: 'Generování selhalo. Dostupný obsah ověříte otevřením výsledku.', result_unavailable: 'Tento výsledek již není dostupný.',
+    generation_failed: 'Generování selhalo. Dostupný obsah ověříš otevřením výsledku.', result_unavailable: 'Tento výsledek už není dostupný.',
   } as Record<string, string>,
   story: 'Příběh je k dispozici', artwork: 'Výsledek obrazu je k dispozici', completedParts: 'Dostupné části',
-});
+}));
 
 const items = ref<AccountCollectionItem[]>([]);
 const searchText = ref('');
@@ -101,8 +75,8 @@ let activeAccountId: string | null = null;
 let disposed = false;
 const seenCursors = new Set<string>();
 
-const dateFormatter = computed(() => new Intl.DateTimeFormat(props.locale === 'en' ? 'en' : 'cs', { dateStyle: 'medium' }));
-const dateTimeFormatter = computed(() => new Intl.DateTimeFormat(props.locale === 'en' ? 'en' : 'cs', { dateStyle: 'medium', timeStyle: 'short' }));
+const dateFormatter = computed(() => new Intl.DateTimeFormat('cs', { dateStyle: 'medium' }));
+const dateTimeFormatter = computed(() => new Intl.DateTimeFormat('cs', { dateStyle: 'medium', timeStyle: 'short' }));
 function formatUnix(value: number | null, includeTime = false): string {
   if (value === null) return '';
   const date = new Date(value * 1000);
@@ -368,9 +342,8 @@ onBeforeUnmount(() => {
     <AwNotice v-if="!account" tone="info" :live="false">{{ copy.signIn }}</AwNotice>
     <AwNotice v-else-if="offlineSession || signingOut || accountDeletionRequested" tone="warning" :live="false">{{ copy.unavailableAccount }}</AwNotice>
     <AwNotice v-else-if="!online" tone="warning" :live="false">{{ copy.offline }}</AwNotice>
-    <AwNotice v-else-if="error" tone="warning" :live="true">{{ copy.failure }}</AwNotice>
     <template v-else>
-      <form class="collection-search" @submit.prevent="submitSearch">
+      <form v-if="!isEmpty || filterIsActive || error" class="collection-search" @submit.prevent="submitSearch">
         <label class="collection-field">
           <span>{{ copy.searchLabel }}</span>
           <input v-model="searchText" type="search" maxlength="80" autocomplete="off" />
@@ -386,9 +359,17 @@ onBeforeUnmount(() => {
         <AwButton type="submit" :disabled="loading || loadingMore || Boolean(unlinking)">{{ copy.submitSearch }}</AwButton>
       </form>
 
-      <p v-if="loading && !items.length" class="collection-status" role="status">{{ copy.loading }}</p>
-      <div v-else-if="isEmpty" class="collection-empty"><img v-if="!filterIsActive" :src="keepsakeArtwork" alt="" width="960" height="640" loading="lazy" /><p>{{ filterIsActive ? copy.filteredEmpty : copy.empty }}</p></div>
-      <ol v-else-if="items.length" class="collection-list">
+      <AwNotice v-if="error" tone="warning" :live="true">{{ copy.failure }}</AwNotice>
+      <p v-if="!error && loading && !items.length" class="collection-status" role="status">{{ copy.loading }}</p>
+      <div v-else-if="!error && isEmpty" class="collection-empty">
+        <img v-if="!filterIsActive" :src="keepsakeArtwork" alt="" width="960" height="640" loading="lazy" />
+        <p>{{ filterIsActive ? copy.filteredEmpty : copy.empty }}</p>
+        <nav v-if="!filterIsActive" class="collection-empty__actions" aria-label="Další kroky">
+          <RouterLink to="/play">Zkusit hru</RouterLink>
+          <RouterLink to="/play/ranking">Otevřít žebříček</RouterLink>
+        </nav>
+      </div>
+      <ol v-else-if="!error && items.length" class="collection-list">
         <li v-for="item in items" :key="item.locator" class="collection-card">
           <div class="collection-card__heading">
             <div>
@@ -419,11 +400,11 @@ onBeforeUnmount(() => {
           </div>
         </li>
       </ol>
-      <AwNotice v-if="moreError" tone="warning" :live="true">{{ copy.moreFailure }}</AwNotice>
-      <AwButton v-if="nextCursor && items.length < 200" :busy="loadingMore" :disabled="loading || Boolean(unlinking)" @click="loadMore">{{ loadingMore ? copy.loadingMore : copy.loadMore }}</AwButton>
-      <p v-else-if="items.length >= 200" class="collection-end">{{ copy.limitReached }}</p>
-      <p v-else-if="loaded && items.length" class="collection-end">{{ copy.noMore }}</p>
-      <p v-if="expandedPages" class="collection-poll-paused">{{ copy.morePaused }}</p>
+      <AwNotice v-if="!error && moreError" tone="warning" :live="true">{{ copy.moreFailure }}</AwNotice>
+      <AwButton v-if="!error && nextCursor && items.length < 200" :busy="loadingMore" :disabled="loading || Boolean(unlinking)" @click="loadMore">{{ loadingMore ? copy.loadingMore : copy.loadMore }}</AwButton>
+      <p v-else-if="!error && items.length >= 200" class="collection-end">{{ copy.limitReached }}</p>
+      <p v-else-if="!error && loaded && items.length" class="collection-end">{{ copy.noMore }}</p>
+      <p v-if="!error && expandedPages" class="collection-poll-paused">{{ copy.morePaused }}</p>
     </template>
   </section>
 </template>
@@ -452,6 +433,8 @@ onBeforeUnmount(() => {
 .collection-empty, .collection-status { margin: 0; }
 .collection-empty { display: grid; gap: 1rem; max-width: 38rem; }
 .collection-empty img { display: block; width: 100%; height: 16rem; object-fit: contain; padding: 12%; background: var(--wns-violet); border-radius: var(--wns-radius-hero); }
+.collection-empty__actions { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; }
+.collection-empty__actions a { display: inline-flex; align-items: center; min-height: 44px; }
 .collection-field input:focus-visible, .collection-field select:focus-visible, .collection-card__actions a:focus-visible { outline: 3px solid var(--aw-accent); outline-offset: 3px; }
 @media (max-width: 680px) {
   .collection-search { grid-template-columns: minmax(0, 1fr); }

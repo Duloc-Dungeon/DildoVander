@@ -27,14 +27,14 @@ afterEach(() => {
 describe('guest information pages', () => {
   it('localizes support while preserving contact and route destinations', async () => {
     const wrapper = mount(SupportView, { global });
-    expect(wrapper.get('h1').text()).toBe('S čím potřebujete pomoct?');
+    expect(wrapper.get('h1').text()).toBe('S čím potřebuješ pomoct?');
     expect(wrapper.text()).toContain('Přístup k účtu sám o sobě neuděluje oprávnění');
     expect(wrapper.get('a[href^="mailto:"]').attributes('href')).toBe('mailto:support@dildovander.de?subject=Wand%20Night%20Stand%20%E2%80%93%20support');
     expect(wrapper.get('a[href^="mailto:"]').text()).toBe('support@dildovander.de');
 
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
-    expect(wrapper.get('h1').text()).toBe('S čím potřebujete pomoct?');
+    expect(wrapper.get('h1').text()).toBe('S čím potřebuješ pomoct?');
     expect(wrapper.text()).toContain('Přístup k účtu sám o sobě neuděluje oprávnění');
     expect(wrapper.get('a[href="/account-deletion"]').text()).toBe('Stav smazání');
     expect(wrapper.get('a[href="/privacy"]').text()).toBe('Jak aplikace zpracovává a uchovává data');

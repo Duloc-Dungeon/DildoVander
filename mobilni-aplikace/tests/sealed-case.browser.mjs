@@ -20,12 +20,13 @@ function view(phase) {
     lobbyRevision: 9, ownState: 'Awake', ownTeam: 'Guardian', ownKit: 'Archivář', teamMembers: [], location: 'ARCHIV',
     locations: { ARCHIV: 'Archiv', SALON: 'Salon' }, adjacentLocations: ['SALON'], players, ownPlan: null,
     choices: ['Pátrat v archivu', 'Chránit sebe', 'Připravit se'].map((label, i) => ({ id: `${i}`, label, benefit: 'Pouze doložený výsledek.', cost: 'Jeden tah.', risk: 'Úspěch není zaručen.', plan: { ...plan, intent: [4, 2, 3][i], preparedIntent: i === 2 ? 4 : null } })),
-    clues: [{ id: 'A1', chain: '1', family: 'A', candidates: ['p2', 'p3', 'p4'], sourceEvent: `${caseId}:prelude` }], sources: [{ id: 'A1', label: 'Stopa A1' }],
+    clues: [{ id: 'A1', chain: '1', family: 'A', candidates: ['p2', 'p3', 'p4'], sourceEvent: `${caseId}:prelude` }], sources: [{ id: 'A1', label: 'Záznam z archivní knihy' }],
     ownOversight: true, ownItems: [], visibleItems: [], notes: ['Zaznamenaná vlastní zkušenost.'], statements: [], ownOutcomes: [], finale: null };
 }
 try {
-  for (const width of [320, 390]) {
-    const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+  for (const width of [320, 390, 1280]) {
+    const mobile = width <= 390;
+    const context = await browser.newContext({ viewport: { width, height: mobile ? 844 : 900 }, isMobile: mobile, hasTouch: mobile, reducedMotion: 'reduce' });
     const page = await context.newPage();
     page.on('pageerror', e => errors.push(e.message));
     let state = view('planning'); const requests = []; let dropAction = true; let dropCreate = true; let dropAi = true; let rejectAi = false; const aiReceipts = new Set(); let created = false;
@@ -57,11 +58,34 @@ try {
       return route.fulfill({ json: { accepted: true, replayed: true } });
     });
     await page.goto(`${origin}/play/pod-peceti/${caseId}`);
+    const screenshot = name => page.screenshot({ path: path.join(output, `${name}-${width}.png`), fullPage: true });
+    const assertNoHorizontalOverflow = async label => assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label} overflow ${width}`);
     await page.getByRole('button', { name: 'Moje akce', exact: true }).click();
     await page.getByRole('button', { name: /Pátrat v archivu/ }).click();
     assert.equal(requests.length, 0, 'draft selection is local');
+    const extraPlanOptions = page.locator('details').filter({ has: page.getByText('Další možnosti tahu', { exact: true }) });
+    await extraPlanOptions.waitFor({ state: 'attached' });
+    assert.equal(await extraPlanOptions.evaluate(element => element.open), false, 'optional plan controls start collapsed');
+    for (const label of ['Adresát / cíl', 'Místo', 'Předmět / stopa']) {
+      assert.equal(await page.locator('.sealed-draft label').filter({ hasText: label }).first().isVisible(), true, `${label} remains reachable in the core draft`);
+    }
     const confirm = page.getByRole('button', { name: /Výslovně potvrdit plán/ });
-    await page.keyboard.press('Tab'); await confirm.focus();
+    await confirm.waitFor();
+    await screenshot('planning-action-draft');
+    await extraPlanOptions.locator('summary').click();
+    for (const label of ['Zaujmu dosažitelné kryté místo', 'Jak se bránit', 'Podmínka']) {
+      assert.equal(await extraPlanOptions.locator('label').filter({ hasText: label }).first().isVisible(), true, `${label} remains reachable in optional plan controls`);
+    }
+    await screenshot('planning-action-options');
+    await extraPlanOptions.locator('summary').click();
+    await page.getByRole('button', { name: /Pátrat v archivu/ }).focus();
+    let confirmationReachedByKeyboard = false;
+    for (let index = 0; index < 40 && !confirmationReachedByKeyboard; index++) {
+      await page.keyboard.press('Tab');
+      confirmationReachedByKeyboard = await confirm.evaluate(element => element === document.activeElement);
+    }
+    assert.equal(confirmationReachedByKeyboard, true, 'keyboard can reach explicit plan confirmation');
     assert.equal(await confirm.evaluate(element => element.matches(':focus-visible')), true, 'keyboard confirmation focus is visible');
     assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true);
     await confirm.click();
@@ -74,29 +98,76 @@ try {
     await page.getByRole('button', { name: 'Deník', exact: true }).click();
     await page.getByRole('button', { name: 'Doložené stopy', exact: true }).click();
     await page.getByText('Okruh kandidátů:', { exact: false }).waitFor();
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `overflow ${width}`);
-    await page.screenshot({ path: path.join(output, `journal-${width}.png`), fullPage: true });
+    const journalText = await page.locator('.sealed-content').innerText();
+    assert.ok(journalText.includes('Záznam z archivní knihy'), 'clue source uses human-readable copy');
+    assert.equal(journalText.includes(`${caseId}:prelude`), false, 'clue source event reference stays private');
+    await assertNoHorizontalOverflow('journal');
+    await screenshot('journal');
+    state = { ...view('planning'), clues: [] };
+    await page.reload();
+    await page.getByRole('button', { name: 'Deník', exact: true }).click();
+    await page.getByRole('button', { name: 'Doložené stopy', exact: true }).click();
+    await page.getByText('Zatím nemáš novou doloženou stopu.', { exact: false }).waitFor();
+    await screenshot('journal-empty');
+    state = view('planning');
+    state.statements = [
+      { id: 'public', actor: 'two', body: 'Veřejná výpověď pro test.', recipients: [], public: true, createdAt: 1 },
+      { id: 'private', actor: 'two', body: 'Soukromý vzkaz pro test.', recipients: ['one'], public: false, createdAt: 2 },
+    ];
+    await page.reload();
+    await page.getByRole('button', { name: 'Rozhovory', exact: true }).click();
+    await page.getByText('Veřejná výpověď pro test.', { exact: true }).waitFor();
+    await page.getByText('Soukromý vzkaz pro test.', { exact: true }).waitFor();
+    await screenshot('conversations');
+    assert.equal(await page.getByLabel('Zpráva', { exact: true }).count(), 1, 'active players can compose a message');
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `large text overflow ${width}`);
-    await page.screenshot({ path: path.join(output, `large-text-${width}.png`), fullPage: true });
+    await assertNoHorizontalOverflow('large text');
+    await screenshot('large-text');
     await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+    if (mobile) {
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      const reachability = await page.evaluate(() => {
+        const content = document.querySelector('.sealed-content');
+        const navigation = document.querySelector('.wns-game-navigation');
+        if (!content || !navigation || getComputedStyle(navigation).position !== 'fixed') return null;
+        const contentBottom = content.getBoundingClientRect().bottom + scrollY;
+        const navigationHeight = navigation.getBoundingClientRect().height;
+        return { bottomGap: document.documentElement.scrollHeight - contentBottom, navigationHeight };
+      });
+      assert.ok(reachability, 'mobile game navigation is present when expected');
+      assert.ok(reachability.bottomGap >= reachability.navigationHeight - 1, 'end of content clears fixed navigation');
+    }
     state = view('quiet'); await page.reload();
     await page.getByText('Telefon teď může stranou.', { exact: false }).waitFor();
-    await page.screenshot({ path: path.join(output, `quiet-${width}.png`), fullPage: true });
+    await screenshot('quiet');
+    state = { ...view('planning'), players: players.map(player => ({ ...player, name: `${player.name} z Neuvěřitelně dlouhého svědeckého rodu`.repeat(3) })), choices: [] };
+    await page.reload();
+    await assertNoHorizontalOverflow('long roster');
+    await screenshot('long-roster');
+    state = { ...view('finished'), finale: { phase: 'ballot', ballotSize: 2, ownSubmitted: false, ownBallot: [], runoffCandidates: [], runoffPlaces: 0, selected: null, winner: null, conspirators: null, reconstruction: null } };
+    await page.reload();
+    await page.getByText('Vyber 2 ostatní hráče', { exact: false }).waitFor();
+    await screenshot('ballot');
+    assert.equal(await page.getByLabel('Host 1', { exact: true }).count(), 0, 'player cannot nominate themselves');
     state = view('finished');
     state.ownOutcomes = [{ chapter: 1, actor: 'one', target: null, intent: 'Investigate', result: 'accepted', eventRef: '' }];
     state.statements = [{ id: 'private', actor: 'one', body: 'PRIVATE_CHAT_EXPORT_CANARY', recipients: ['p2'], public: false }];
+    state.privateNarration = { text: 'STALE_PRELUDE_CANARY' };
     state.finale = { phase: 'released', ballotSize: 2, ownSubmitted: true, ownBallot: [], runoffCandidates: [], runoffPlaces: 0,
       winner: 'Strážci', selected: ['p2', 'p3'], conspirators: ['p2', 'p3'],
       reconstruction: [{ chapter: 1, actor: 'one', target: null, intent: 'Investigate', result: 'Success', eventRef: `${caseId}:event-1` }] };
     await page.reload(); await page.getByRole('heading', { name: 'Tvá stopa v případu' }).waitFor();
+    const finaleText = await page.locator('.sealed-content').innerText();
+    assert.ok(finaleText.indexOf('Vítězí Strážci') < finaleText.indexOf('Stáhnout veřejnou rekonstrukci'), 'verdict and reveal precede export controls');
+    assert.equal(finaleText.includes(`${caseId}:event-1`), false, 'event references are not shown in the reconstruction');
+    assert.equal(finaleText.includes('STALE_PRELUDE_CANARY'), false, 'finished view does not retain a stale private prelude');
     const downloaded = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Uložit vlastní vzpomínku' }).click();
     const artifact = await downloaded;
     const memory = await readFile(await artifact.path(), 'utf8');
     assert.equal(JSON.parse(memory).medallion.actions.length, 1);
     assert.equal(memory.includes('PRIVATE_CHAT_EXPORT_CANARY'), false, 'private chat never enters exported memory');
-    await page.screenshot({ path: path.join(output, `finale-${width}.png`), fullPage: true });
+    await screenshot('finale');
     created = false; state = view('lobby'); await page.goto(`${origin}/play/pod-peceti`);
     await page.getByRole('button', { name: /Založit případ/ }).click();
     await page.getByRole('alert').waitFor();
@@ -106,17 +177,27 @@ try {
     assert.deepEqual(creations[0].body, creations[1].body, 'lost create ack keeps operation id');
     state = { ...view('lobby'), readyPlayers: 1, players: [players[0]], canManageAi: true, aiAvailable: true };
     await page.reload();
+    await page.getByText('Doplnit AI hráče', { exact: true }).click();
     await page.getByLabel('Počet AI hráčů').fill('1');
     await page.getByRole('button', { name: 'Přidat AI hráče', exact: true }).click();
     await page.getByRole('button', { name: 'Ověřit původní přidání AI' }).waitFor();
     await page.reload();
+    const pendingAiDetails = page.locator('details').filter({ has: page.getByText('Doplnit AI hráče', { exact: true }) });
+    assert.equal(await pendingAiDetails.evaluate(element => element.open), false, 'AI controls return to the collapsed default after reload');
+    await page.getByText('Doplnit AI hráče', { exact: true }).click();
     await page.getByRole('button', { name: 'Ověřit původní přidání AI' }).click();
     const additions = requests.filter(r => r.pathname.endsWith('/ai-players'));
     assert.equal(additions.length, 2);
     assert.deepEqual(additions[0].body, additions[1].body, 'AI addition retry keeps the exact persisted key/revision/count');
     assert.equal(state.readyPlayers, 2, 'lost acknowledgement cannot duplicate AI seats');
-    await page.getByText('Svědek AI 1 · AI', { exact: false }).waitFor();
-    await page.screenshot({ path: path.join(output, `owner-ai-lobby-${width}.png`), fullPage: true });
+    const aiDetails = page.locator('details').filter({ has: page.getByText('Doplnit AI hráče', { exact: true }) });
+    assert.equal(await aiDetails.evaluate(element => element.open), true, 'AI controls stay open while the owner completes the task');
+    const rosterSummary = page.locator('summary').filter({ hasText: 'Postavy u stolu' });
+    assert.equal(await rosterSummary.count(), 1);
+    assert.match(await rosterSummary.innerText(), /2/, 'collapsed roster summary reflects the accepted AI seat');
+    const rosterDetails = page.locator('details').filter({ has: rosterSummary });
+    assert.equal(await rosterDetails.evaluate(element => element.open), false, 'roster details remain collapsed after membership changes');
+    await screenshot('owner-ai-lobby');
     rejectAi = true;
     await page.getByRole('button', { name: 'Přidat AI hráče', exact: true }).click();
     await page.getByText('Obsazení se mezitím změnilo.', { exact: false }).waitFor();
@@ -129,6 +210,7 @@ try {
     state.canManageAi = false; await page.reload();
     assert.equal(await page.getByRole('heading', { name: 'AI hráči', exact: true }).count(), 0, 'ordinary host sees no owner control');
     state.canManageAi = true; state.aiAvailable = false; await page.reload();
+    await page.getByText('Doplnit AI hráče', { exact: true }).click();
     await page.getByText('AI pro tento večer není zapnutá.', { exact: false }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Přidat AI hráče', exact: true }).count(), 0);
     state = { ...view('planning'), ownState: 'Operator', ownTeam: null, choices: [], clues: [], notes: [], ownOutcomes: [], canJoin: false };
@@ -140,5 +222,5 @@ try {
     await context.close();
   }
   assert.deepEqual(errors, []);
-  console.log(`PASS sealed client: 320/390px, explicit draft, lost action/create ack and reload, journal, quiet, owner-only AI addition/disabled/reload and no duplicate seats, no page errors. ${output}`);
+  console.log(`PASS sealed client: 320/390/1280px, explicit draft and retry, journal/conversations/empty/long/ballot/finale/quiet states, responsive end reachability, lost create/AI acknowledgements and reload, privacy and no page errors. ${output}`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

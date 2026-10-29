@@ -179,17 +179,19 @@ naměřenou velikost na všechny obrazovky.
 
 ## Layout
 
-Zákaznický obsah má jednu hlavní oblast. Spodní lišta má čtyři stejně široké
-destinace na mobilu i široké obrazovce. Obsah rezervuje její skutečně změřenou
+Zákaznický obsah má jednu hlavní oblast. Spodní lišta má čtyři destinace na mobilu
+i široké obrazovce. Za běžné velikosti jsou stejně široké; při zvětšení textu
+delší popisek dostane potřebnou šířku, aby se nelámal uvnitř slova.
+Obsah rezervuje její skutečně změřenou
 výšku včetně bezpečných okrajů, nikoli pevnou výšku podle obrázku.
 
 Základní mobilní okraj adaptéru je 24 px, do šířky 360 px klesá na 16 px.
 Existující shell používá hranice 720 a 1100 px; stránka představení přechází
 na dvě oblasti od 760 px. Konkrétní stránka může mít vlastní kontejner:
-například postava nejvýše 62 rem, představení 70 rem. Nejde o nový společný limit.
+například postava nejvýše 54 rem (formulář 42 rem), představení 70 rem. Nejde o nový společný limit.
 Rozestupy v záhlaví jsou používaná část škály tokenů, nikoli inventář všech hodnot.
 
-Při 200% textu se popisky zalamují. Pole, tlačítka a položky navigace mají
+Při 200% textu zůstávají popisky čitelné a nepřekrývají se. Pole, tlačítka a položky navigace mají
 nejméně 44px dotykový cíl. Pořadí a fokus ovládání zůstávají použitelné klávesnicí.
 
 ## Elevation & Depth
@@ -237,7 +239,7 @@ Fokus mění obrys a okraj. Disabled a `aria-invalid` přebírají sdílený sta
 
 ### Navigation
 
-Čtyři položky **Večer / Postava / Památky / Já** mají skutečné ikony Phosphor,
+Čtyři položky **Dílna / Hry / Památky / Já** mají skutečné ikony Phosphor,
 viditelný text a označení aktivní stránky. Lišta je přes celou šířku u spodního
 okraje, s horní linkou, bez plovoucího zaobleného obalu. Odkazy mají nejméně
 58px výšku; ikony 23 px. Aktivní text je mintový, neaktivní tlumený, ikony

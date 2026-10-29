@@ -22,7 +22,7 @@ export const router = createRouter({
     { path: '/play/team/:id', name: 'game-team', component: () => import('../features/game/TeamView.vue'), meta: { title: 'Týmový souboj', private: true, requiresAccount: true } },
     ...['/play', '/play/challenge', '/play/practice', '/play/chronicle', '/play/match/:id', '/play/boss', '/play/boss/:id', '/play/keeper', '/play/ranking', '/play/messages'].map((path, index) => ({ path, name: `game-${index}`, component: () => import('../features/game/PlayView.vue'), meta: { title: 'Hra', private: true, requiresAccount: true } })),
     { path: '/me/character', name: 'customer-character', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Moje postava', private: true, requiresAccount: true } },
-    { path: '/me/conversation', name: 'customer-conversation', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Rozhovor s kufrem', private: true, requiresAccount: true } },
+    { path: '/me/conversation', name: 'customer-conversation', redirect: '/play/wand' },
     { path: '/me/keepsakes', name: 'customer-keepsakes', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Moje památky', private: true, requiresAccount: true } },
     { path: '/me/account', name: 'customer-account', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Můj účet', private: true, requiresAccount: true } },
     { path: '/testing-sessions', name: 'testing-sessions', component: () => import('../features/testing-sessions/TestingSessionsView.vue'), meta: { title: 'Testovací relace', private: true, requiresAccount: true, tester: true } },

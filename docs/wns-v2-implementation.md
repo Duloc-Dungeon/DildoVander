@@ -1,5 +1,22 @@
 # WNS v2 — implementace a skutečně provedené kontroly
 
+## Přihlášený host — 29. října 2026
+
+- Navigace vede přímo do digitální Dílny, Her, Památek a účtu. Postava zůstává
+  dostupná z Dílny a je prvním krokem po registraci. Žebříček je pojmenovaný
+  přímo v herních odkazech i prázdné kolekci.
+- `/me/conversation` je kompatibilní přesměrování do `/play/wand` se zachovanou
+  kontrolou účtu na cílové trase. Zákaznický pohled již neimportuje Bluetooth,
+  nenačítá fyzické relace ani nenabízí jejich spouštění. Servisní části a
+  protokoly zůstávají oddělené; nejde o změnu firmware ani backendových kontraktů.
+- Památky upřednostňují kolekci. Aktualizace, tituly, případy a souboje se
+  načítají až po otevření příslušné sekce. Prázdná nevyfiltrovaná kolekce
+  neskrývá užitečný další krok za hledání a filtry; vyfiltrovaný prázdný stav
+  a chyba zachovávají ovládání hledání.
+- Zákaznické nadpisy a navigace jsou upravené pro zvětšený text. Texty účtu,
+  podpory a památek používají tykání. Ověření a jeho limity se uvádějí v dodání
+  této změny; historické výsledky níže nejsou jejím automatickým potvrzením.
+
 ## Výchozí stav
 
 - Balíček: edice 2.0, SHA-256 v `../DESIGN.md`; inventura `8c202e5`.
@@ -134,6 +151,39 @@ Lokální evidence této relace je v
 `/workspace/.tmp/dildovander/wns-design.23duwF/evidence/`.
 Browser instalace používá zapisovatelný `PLAYWRIGHT_BROWSERS_PATH` v téže
 soukromé pracovní složce; systémový cache mount nebyl měněn.
+
+### První průchod hosta — 29. října 2026
+
+`test:guest-journey:browser` spojuje sdílené UI se skutečným izolovaným HTTPS
+backendem a virtuálním WebAuthn autentikátorem. Fixture vytvoří dočasného
+vlastníka, zákaznickou pozvánku a skupinu s budoucím otevřením. Enrichment,
+portrét i obrazový fallback mají lokální testovací implementace; test nevyžaduje
+externí poskytovatele ani placenou generaci. Launcher po skončení ověří odstranění
+dočasné databáze, klíčů a soukromé pozvánky.
+
+Ověřeno: explicitní souhlas, zachování formuláře po simulovaném zrušení
+přístupového klíče, skutečná registrace hosta a uložení postavy, ztracená odpověď
+po dokončeném zápisu, obnovení stránky bez dalšího vytvoření, budoucí odpočet,
+dekódování lokálního testovacího portrétu, opětovné přihlášení stejným klíčem
+a obecné odmítnutí použité či neznámé pozvánky. Mobilní čekárna nově skrývá
+nepovinné rozlišovací označení do rozbalovací sekce a po odhalení postavy nabízí
+zkratku k hůlce; při chybě portrétu zůstává tento další krok dostupný.
+
+Spuštění z kořene app repozitáře v PowerShellu na Windows:
+
+```powershell
+dotnet build backend-tests/BackendTests.csproj -c Release -r win-x64 --self-contained false -p:RestoreLockedMode=true
+npm run build --prefix mobilni-aplikace
+$env:KUFR_TESTS_DLL = 'backend-tests/bin/Release/net10.0/win-x64/BackendTests.dll'
+$env:APP_SCREENSHOTS = Join-Path (Get-Location).Path '.codex/artifacts/guest-journey'
+npm run test:guest-journey:browser --prefix mobilni-aplikace
+```
+
+Jde o lokální přejímku s virtuálním klíčem, nikoli důkaz chování na fyzickém
+telefonu, živé AI nebo skutečné tvorby hůlky. Starší `test:accounts:fixture`
+v tomto checkoutu před změnou stále očekával po registraci `/settings`, zatímco
+aktuální aplikace přechází na `/launch`; nový zákaznický průchod tento starší
+administrátorský scénář nenahrazuje.
 
 ## Zatím neověřeno
 
