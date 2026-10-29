@@ -327,6 +327,26 @@ telefonu, iOS/Android signing a instalace, nativní export/haptika, plná hra Po
 pečetí a lidský pilot. Nic nebylo nasazeno. Stav těchto položek není „hotovo“
 jen proto, že sestavení nebo syntetický browser test projde.
 
+## YOLO lóže: jeviště a hranice generování
+
+- `GameYoloStage.vue` a `yolo.css` nahrazují kartu s příběhem třemi ručně
+  odhalovanými dějstvími. Používají stávající chráněné obrázky hůlek a původní
+  portrét komentátora. Výsledek ani úkol poraženého neprozradí před rozsudkem;
+  opakovaný polling zachová rozečtené dějství. Přístupnost zahrnuje oznámení
+  připraveného příběhu, fokus po ručním přechodu a statickou variantu střetu.
+- Backend drží nárok na generování 90 s při 60s limitu provideru. Rezerva
+  omezuje opakované převzetí během ukončování požadavku; není zárukou proti
+  libovolně dlouhému zablokování workeru. Stávající kontrola revize odmítá
+  pozdní výsledky po zrušení nebo opakování. Neúplný příběh s vítězem parser
+  odmítne a YOLO nepřiděluje bojové XP.
+- Ověření: `GameYoloStage.spec.ts`, integrační případy v `PlayView.spec.ts`,
+  `npm run test:yolo:browser --prefix mobilni-aplikace` a backendová skupina
+  `--mobile-game`. Browser scénáře pokrývají 320/390/768/1280 px, ruční
+  odhalování, celý příběh, polling, chybu, generování, zrušení, úkol pro
+  poraženého, dlouhá jména, 200% text a omezený pohyb. Data jsou syntetická;
+  živé placené generování, skutečné telefony a produkce nejsou touto přejímkou
+  potvrzené.
+
 ## Oprava CI po úklidu zdrojů
 
 - PR #321 odhalil, že `cleanup` odstranil spouštěné CI skripty, zatímco jejich

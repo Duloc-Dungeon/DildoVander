@@ -1,0 +1,55 @@
+.game-yolo-scene { --duel-player: var(--wns-amber); --duel-opponent: var(--wns-violet); }
+.game-yolo-scene .game-content { width: min(100%, 760px); }
+.game-yolo-scene .game-match-heading h1 { margin-bottom: 24px; font-size: clamp(2.25rem, 9vw, 4rem); }
+.yolo-theatre { isolation: isolate; }
+.yolo-theatre__cast { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; }
+.yolo-theatre__cast p { display: grid; gap: 4px; margin: 0; overflow-wrap: anywhere; }
+.yolo-theatre__cast p:last-child { text-align: right; }
+.yolo-theatre__cast strong { font-size: clamp(1.125rem, 4vw, 1.5rem); color: var(--duel-player); }
+.yolo-theatre__cast p:last-child strong { color: var(--duel-opponent); }
+.yolo-theatre__cast span, .yolo-theatre__versus { color: var(--wns-muted); font-size: .875rem; }
+.yolo-theatre__cast .yolo-theatre__sample { white-space: nowrap; }
+.yolo-theatre__stage { position: relative; overflow: hidden; margin-block: 8px 0; }
+.yolo-theatre__stage .game-magic-clash { height: 200px; margin: 0; border: 0; }
+.yolo-theatre__stage .game-magic-clash__origin { top: 16px; height: 165px; }
+.yolo-theatre__stage .game-magic-clash__artifact { width: clamp(120px, 29vw, 160px); }
+.yolo-theatre__stage .game-magic-clash__identities { display: none; }
+.yolo-theatre__stage .game-magic-clash__light { opacity: .45; }
+.yolo-theatre__collision { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; pointer-events: none; }
+.yolo-theatre__beam { stroke: var(--duel-player); stroke-width: 2; opacity: .22; }
+.yolo-theatre__beam--opponent { stroke: var(--duel-opponent); }
+.yolo-theatre__impact { stroke: var(--wns-muted); stroke-width: 1; opacity: .25; transform-origin: 200px 72px; }
+.yolo-theatre[data-phase='clash'] .yolo-theatre__beam { stroke-dasharray: 340; animation: yolo-beam-arrival 900ms cubic-bezier(.16, 1, .3, 1) both; }
+.yolo-theatre[data-phase='clash'] .yolo-theatre__impact { animation: yolo-impact 900ms cubic-bezier(.16, 1, .3, 1) both; }
+.yolo-theatre[data-phase='verdict'][data-result='win'] .game-magic-clash__light--player,
+.yolo-theatre[data-phase='verdict'][data-result='loss'] .game-magic-clash__light--opponent { opacity: 1; }
+.yolo-theatre__acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0; margin: 0 0 24px; list-style: none; }
+.yolo-theatre__acts li { display: flex; flex-wrap: wrap; gap: 8px; border-top: 2px solid var(--wns-line); padding-top: 12px; font-size: .875rem; color: var(--wns-muted); }
+.yolo-theatre__acts li[data-read='true'] { border-color: var(--wns-amber); color: var(--wns-text); }
+.yolo-theatre__acts li[aria-current] { font-weight: 800; }
+.yolo-theatre__acts li > span { font-variant-numeric: tabular-nums; }
+.yolo-theatre__announcer { display: flex; align-items: center; gap: 16px; margin-block: 12px 20px; }
+.game-yolo.yolo-theatre .yolo-theatre__announcer .game-character { flex: 0 0 60px; width: 60px; margin: 0; }
+.yolo-theatre__announcer p { display: grid; gap: 4px; margin: 0; }
+.yolo-theatre__announcer span { font-size: .875rem; color: var(--wns-muted); }
+.game-yolo-scene .game-content .yolo-theatre__story h2,
+.game-yolo-scene .game-content .yolo-theatre__status h2 { margin: 0 0 16px; font-size: clamp(1.75rem, 6vw, 2.5rem); }
+.yolo-theatre__story h2:focus-visible { outline: 2px solid var(--wns-focus-ring); outline-offset: 4px; }
+.game-content .yolo-theatre__beat p { font-size: 1.125rem; line-height: 1.75; overflow-wrap: anywhere; margin-block: 0 24px; max-width: 65ch; }
+.yolo-theatre__beat h3 { margin-block: 24px 8px; font-size: 1rem; color: var(--wns-muted); }
+.yolo-theatre__verdict { font-size: 1.5rem; font-weight: 800; border-top: 1px solid var(--wns-line); padding-top: 24px; overflow-wrap: anywhere; }
+.yolo-theatre__reading-controls, .yolo-theatre__recovery { display: flex; flex-wrap: wrap; gap: 12px; }
+.yolo-theatre__reading-controls > .aw-button { flex: 1 1 180px; }
+.yolo-theatre__footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--wns-line); }
+.yolo-theatre__footer > p, .yolo-theatre__waiting { color: var(--wns-muted); font-size: .875rem; }
+.yolo-theatre__recovery > .aw-button { flex: 1 1 200px; }
+@keyframes yolo-beam-arrival { from { stroke-dashoffset: 340; opacity: .2; } 50% { opacity: 1; } to { stroke-dashoffset: 0; opacity: .22; } }
+@keyframes yolo-impact { from { transform: scale(.35); opacity: 0; } 45% { opacity: .8; } to { transform: scale(1); opacity: .25; } }
+@media (min-width: 700px) {
+  .game-yolo-scene .game-content { padding-inline: 32px; }
+  .yolo-theatre__stage .game-magic-clash { height: 240px; }
+  .yolo-theatre__stage .game-magic-clash__origin { top: 28px; height: 180px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .yolo-theatre .yolo-theatre__beam, .yolo-theatre .yolo-theatre__impact { animation: none; }
+}

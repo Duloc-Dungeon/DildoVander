@@ -24,6 +24,31 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('keeps YOLO result announcements and the loser task out of the opening acts', async () => {
+    const value = snapshot({ mode: 'yolo', status: 'complete', result: 'loss',
+      yolo: { status: 'complete', beats: ['Nástup.', 'Střet.', 'Rozsudek.'].map(text => ({ text, detailRefs: [] })), verdict: 'Eliška vítězí.' },
+      partyTask: { title: 'Úkol pro poraženého', text: 'Předveď reklamu.', category: 'classic', status: 'pending' } });
+    api.transport.mockResolvedValue(Response.json(value));
+    const view = await render();
+    expect(view.get('.game-sr[role="status"]').text()).toContain('Příběh je připraven.');
+    expect(view.find('.game-task').exists()).toBe(false);
+    expect(view.text()).not.toContain('Dnes slaví soupeř.');
+    await view.findAll('.yolo-theatre__reading-controls button')[1]!.trigger('click');
+    expect(view.find('.game-task').exists()).toBe(true);
+    expect(view.text()).toContain('Eliška vítězí.');
+  });
+  it('announces an asynchronously completed YOLO story without revealing its winner', async () => {
+    const value = snapshot({ mode: 'yolo', status: 'generating', yolo: { status: 'generating', beats: [], verdict: '' } });
+    api.transport.mockImplementation(async () => Response.json(value));
+    const view = await render();
+    expect(view.get('.game-sr[role="status"]').text()).toBe('');
+    value.status = 'complete'; value.revision++;
+    value.yolo = { status: 'complete', beats: ['Nástup.', 'Střet.', 'Rozsudek.'].map(text => ({ text, detailRefs: [] })), verdict: 'Eliška vítězí.' };
+    window.dispatchEvent(new Event('online'));
+    await flushPromises();
+    expect(view.get('.game-sr[role="status"]').text()).toContain('Příběh je připraven.');
+    expect(view.text()).not.toContain('Eliška vítězí.');
+  });
   it('keeps earned game modes discoverable without exposing locked modes', async () => {
     const player = { id: 'one', displayName: 'Mira', xp: 10, matchesPlayed: 1, tacticalUnlocked: false, yoloUnlocked: false };
     let tacticalMatches = 0;

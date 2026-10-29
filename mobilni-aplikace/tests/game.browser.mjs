@@ -86,7 +86,7 @@ try {
         await page.locator('.game-clash-stage--locked').getByText('Tah uzamčený', { exact: false }).waitFor();
         assert.equal(requests.at(-1).body.choice, 'trick');
       }
-      if (state === 'yolo') { await page.getByRole('button', { name: 'Ukázat celý výsledek' }).click(); await page.getByText('Eliška vítězí díky Děrovačce osudu.', { exact: true }).waitFor(); }
+      if (state === 'yolo') { await page.getByRole('button', { name: 'Ukázat celý výsledek' }).click(); await page.getByText('Eliška vítězí s Trnovou námitkou.', { exact: true }).waitFor(); }
       if (state === 'tactical') assert.equal(await page.getByRole('radio', {name:/Štít/}).isDisabled(), true);
       if (state === 'loadout') { await page.getByRole('radio', {name:/Nátlak/}).check(); await page.getByText('Může ti zbýt jediný typ kouzla.', {exact:false}).waitFor(); }
       if (state === 'captured') assert.equal(await page.getByRole('link', {name:'Vyzvat Barona',exact:true}).count(), 1);

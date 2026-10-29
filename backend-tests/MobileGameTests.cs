@@ -532,7 +532,7 @@ internal static partial class MobileGameTests
                     new($"loadout-second-b-{round}", first.Revision, Choice: secondBob[round]), 712 + round);
             }
             Check(selected.Status == "complete", "second loadout block completes without resetting sparks");
-            VerifyYoloStoreLifecycle(reopened);
+            VerifyYoloStoreLifecycle(reopened, directory);
             try
             {
                 _ = store.Read(challenge.Id, "group-b", "alice");
@@ -676,6 +676,24 @@ internal static partial class MobileGameTests
         }
         catch (InvalidDataException) { }
 
+        var partialPayload = JsonSerializer.Serialize(new
+        {
+            winnerId = "bob",
+            verdict = "Boris wins the fictional bout.",
+            beats = providerBeats.Take(2)
+        });
+        using var partialResponse = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            status = "completed",
+            output = new[] { new { type = "message", content = new[] { new { type = "output_text", text = partialPayload } } } }
+        }));
+        try
+        {
+            _ = OpenAiGameYoloProvider.Parse(partialResponse.RootElement, left, right);
+            throw new InvalidOperationException("Mobile game test failed: YOLO accepted a partial story with a winner");
+        }
+        catch (InvalidDataException) { }
+
         var padding = string.Join(" ", Enumerable.Repeat("kufr vítal další kolo souboje", 6));
         for (var index = 0; index < 20; index++)
         {
@@ -748,7 +766,7 @@ internal static partial class MobileGameTests
         Check(current.Status == "complete", "tactical progression match completes");
     }
 
-    private static void VerifyYoloStoreLifecycle(GameStore store)
+    private static void VerifyYoloStoreLifecycle(GameStore store, string dataRoot)
     {
         var playerBefore = store.Lobby("group-a", "alice", "Alice", []).Player;
         var challenge = store.Challenge("group-a", "alice", "Alice", "bob", "Bob",
@@ -759,6 +777,21 @@ internal static partial class MobileGameTests
             "accepted YOLO match enters async generation without round choices");
         Check(store.TryClaimYolo(challenge.Id, generating.Revision)
             && !store.TryClaimYolo(challenge.Id, generating.Revision), "YOLO provider job has one durable active claim");
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(dataRoot, "mobile-game.sqlite")
+        }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT lease_until FROM game_yolo_jobs WHERE match_id=$id";
+            command.Parameters.AddWithValue("$id", challenge.Id);
+            var leaseUntil = (long)command.ExecuteScalar()!;
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            Check(leaseUntil > now + OpenAiGameYoloProvider.RequestTimeoutSeconds
+                && leaseUntil <= now + GameStore.YoloClaimLeaseSeconds,
+                "YOLO claim lease outlives the provider request deadline with bounded recovery margin");
+        }
         var frozen = store.FreezeYoloProfiles(challenge.Id, generating.Revision,
             new("alice", "Alena", "Oz", "Stříbrná", ["trpělivá"]),
             new("bob", "Boris", "Discworld", "Dubová", ["vynalézavý"]));
