@@ -51,4 +51,3 @@ test('public gateway exposes only signed callback upgrades and strips account cr
     await new Promise(resolve => backend.close(resolve));
   }
 });
-
