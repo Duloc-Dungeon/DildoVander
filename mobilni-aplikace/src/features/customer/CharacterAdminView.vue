@@ -295,11 +295,15 @@ onBeforeUnmount(reset);
 
 <style scoped>
 .character-admin { max-width: 78rem; margin-inline: auto; }
+.character-admin > header { max-width: 68ch; }
 .character-admin__toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
 .character-admin__toolbar .aw-field { flex: 1; min-width: min(100%, 16rem); }
-.character-admin__layout { display: grid; grid-template-columns: minmax(14rem, 1fr) minmax(0, 2fr); gap: 1.5rem; align-items: start; }
+.character-admin__layout { display: grid; grid-template-columns: minmax(12rem, .85fr) minmax(0, 2fr); gap: 1.5rem; align-items: start; }
+.character-admin__list,
+.character-admin__editor { min-width: 0; }
+.character-admin__list h2 small { color: var(--aw-muted); font-size: .85rem; font-weight: 600; }
 .character-admin__list ul { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
-.character-admin__list button { display: grid; width: 100%; text-align: left; gap: .25rem; padding: .85rem; color: inherit; font: inherit; border: 1px solid var(--aw-border-subtle); border-radius: .5rem; background: transparent; cursor: pointer; overflow-wrap: anywhere; }
+.character-admin__list button { display: grid; width: 100%; min-height: 64px; text-align: left; gap: .3rem; padding: .85rem; color: inherit; font: inherit; border: 1px solid var(--aw-border-subtle); border-radius: var(--wns-radius-field); background: transparent; cursor: pointer; overflow-wrap: anywhere; }
 .character-admin__list button[aria-pressed='true'] { border-color: var(--aw-accent); background: var(--aw-accent-soft); }
 .character-admin__list button:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: 3px; }
 .character-admin__list small, .character-admin__meta { color: var(--aw-muted); font-size: .85rem; }
@@ -316,5 +320,5 @@ onBeforeUnmount(reset);
 .character-admin__casting { display: grid; justify-items: center; text-align: center; padding: 2rem 1rem; }
 .character-admin__casting > img { filter: invert(1); opacity: .65; margin-bottom: 1rem; }
 .character-admin__aside { color: var(--wns-violet); max-width: 32ch; font-size: .9rem; }
-@media (max-width: 720px) { .character-admin__layout { grid-template-columns: 1fr; } .character-admin__list ul { max-height: 20rem; overflow-y: auto; } }
+@media (max-width: 720px) { .character-admin__layout { grid-template-columns: minmax(0, 1fr); } .character-admin__list ul { max-height: 20rem; overflow-y: auto; overscroll-behavior: contain; } }
 </style>

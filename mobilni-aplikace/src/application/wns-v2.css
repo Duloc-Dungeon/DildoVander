@@ -99,6 +99,18 @@ html { scrollbar-color: var(--wns-line) var(--wns-bg); }
 .aw-notice__content > strong { display: block; margin-bottom: .25rem; }
 .notification-content button { border-radius: var(--wns-radius-icon); cursor: pointer; flex: none; }
 .application-main p { line-height: var(--wns-leading-body); }
+/* Carry the entrance's reading rhythm through forms and supporting pages. */
+.application-main :is(.aw-input, .aw-select, .aw-textarea) { max-width: 100%; min-width: 0; }
+.application-main :is(input[type='checkbox'], input[type='radio']) { accent-color: var(--wns-mint); }
+.application-shell .aw-button:not(:disabled):active { filter: brightness(.92); }
+.application-main :is(time, .countdown, .identity-list, .launch-audit, .portrait-jobs) { font-variant-numeric: tabular-nums; }
+.application-main .information-page { max-width: 48rem; gap: var(--wns-space-32); }
+.application-main .information-page > h1 { max-width: 18ch; font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.08; letter-spacing: -.035em; }
+.application-main .information-page > section { padding-block-start: var(--wns-space-24); }
+.application-main .information-page p { max-width: 65ch; }
+.application-main .information-page h2 { margin-bottom: var(--wns-space-12); font-size: 1.35rem; }
+.application-main .information-page :is(a, summary) { scroll-margin-block: var(--wns-space-32); }
+.application-main .information-page a { overflow-wrap: anywhere; }
 .application-main .eyebrow, .game-eyebrow { font-family: var(--wns-font-family); letter-spacing: .12em; font-weight: 800; }
 .wns-hero { position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .8fr); align-items: center; gap: 12px; min-height: 240px; padding: 24px; margin-block: 24px; border-radius: var(--wns-radius-hero); background: var(--wns-amber); color: var(--wns-on-amber); }
 .wns-hero h2 { font-size: 1.6rem; margin: 0 0 12px; }

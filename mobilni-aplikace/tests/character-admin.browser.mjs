@@ -75,6 +75,7 @@ if (process.argv.includes('--preview')) {
       const capture = async state => {
         await page.evaluate(() => document.fonts.ready);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${width}px ${state}: no horizontal overflow`);
+        await page.evaluate(() => window.scrollTo(0, 0));
         await page.screenshot({ path: path.join(output, `${state}-${width}.png`), fullPage: true });
       };
       await page.goto(origin + '/settings/admin/characters');
@@ -97,6 +98,11 @@ if (process.argv.includes('--preview')) {
       await page.locator('.character-admin__portrait > img[src^="blob:"]').waitFor();
       assert.equal(await page.locator('#character-detail-title').evaluate(node => node === document.activeElement), true);
       await capture('editor');
+      if (width === 390) {
+        await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+        await capture('editor-text200');
+        await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+      }
       await page.getByLabel('Jméno postavy').fill('Luna upravená');
       await page.getByRole('button', { name: 'Uložit údaje', exact: true }).click();
       await page.getByText('Údaje postavy byly uloženy.').waitFor();
