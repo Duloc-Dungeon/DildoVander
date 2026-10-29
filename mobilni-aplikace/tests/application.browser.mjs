@@ -429,13 +429,19 @@ try {
     for (const [destination, heading] of [['/me/account', 'Můj účet'], ['/me/keepsakes', 'Moje památky']]) {
       await page.goto(origin + destination); await hasHeading(heading);
       if (destination === '/me/keepsakes') {
+        const archive = page.locator('.customer-keepsakes__archive');
+        assert.equal(await archive.getAttribute('open'), null, 'workshop keepsakes start collapsed below the chronicle');
+        assert.equal(await page.locator('.collection-card').count(), 0, 'workshop collection mounts only after expansion');
+        await archive.locator('summary').focus();
+        await page.keyboard.press('Enter');
         await page.locator('.collection-card').waitFor();
         assert.equal(await page.locator('.collection-tools').getAttribute('open'), null, 'search and management start collapsed');
         assert.equal(await page.locator('.collection-item-details').getAttribute('open'), null, 'access metadata starts collapsed');
         assert.equal(await page.getByRole('link', { name: 'Otevřít památku', exact: true }).count(), 1);
+        await page.locator('.collection-open').scrollIntoViewIfNeeded();
         const opening = await page.locator('.collection-open').boundingBox();
         const navigation = await customerNav.boundingBox();
-        assert(opening.y + opening.height < navigation.y, 'the latest keepsake can open from the first viewport');
+        assert(opening.y + opening.height < navigation.y, 'the expanded keepsake can open above the fixed dock');
         if (width === 390) {
           await page.locator('.collection-tools > summary').focus();
           await page.keyboard.press('Enter');
