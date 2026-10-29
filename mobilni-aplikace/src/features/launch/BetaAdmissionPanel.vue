@@ -16,6 +16,7 @@ interface LaunchGroup {
   forceStartAtEnd?: boolean;
   countdownConfirmedAt?: number | null;
   openedAt?: number | null;
+  chronicleClosedAt?: number | null;
 }
 interface Admission { revision: number; groupId: string | null; groupName?: string | null; recruitmentOpen: boolean; fixedUniverse: string | null }
 interface WaitingMember {
@@ -260,6 +261,21 @@ async function startNight(): Promise<void> {
   } catch (cause) { await reconcile('Otevření noci se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
+async function closeChronicle(): Promise<void> {
+  const group = managedGroup.value;
+  if (!group?.openedAt || group.chronicleClosedAt || busy.value) return;
+  lastActionSection.value = null;
+  busy.value = true; error.value = ''; message.value = '';
+  try {
+    const response = await accountRequest<{ closedAt: number }>(`/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}/chronicle-close`, 'POST', {
+      expectedRevision: group.revision,
+    }, undefined, `Uložit závěr večera pro skupinu ${group.name}? Kronika použije jen už odhalené vzpomínky.`);
+    if (!Number.isSafeInteger(response.closedAt) || response.closedAt <= 0) throw new Error('Server nevrátil platný čas uložení.');
+    message.value = `Závěr večera pro skupinu ${group.name} byl uložen.`;
+    await load();
+  } catch (cause) { await reconcile('Uložení závěru večera se nepodařilo potvrdit.', cause); }
+  finally { busy.value = false; }
+}
 function joinedDate(value: number): string {
   return new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium' }).format(value * 1000);
 }
@@ -297,6 +313,11 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
           <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
         </select>
         <p v-if="managedGroup" role="status">{{ countdownStatus }}</p>
+        <template v-if="managedGroup?.openedAt">
+          <p>Uloží se závěrečná kronika z už odhalených vzpomínek. Dosud neodhalené záznamy zůstanou soukromé.</p>
+          <p v-if="managedGroup.chronicleClosedAt" role="status">Závěr večera je uložený {{ joinedDate(managedGroup.chronicleClosedAt) }}.</p>
+          <AwButton v-else :disabled="busy || mutationBlocked || loading" @click="closeChronicle">Uložit závěr večera</AwButton>
+        </template>
         <div v-if="managedDefaultGroup" class="waiting-room__production-schedule">
           <p>Výchozí skupina používá datum a čas z produkčního plánu. Před termínem hosté čekají, v termínu se večer otevře automaticky.</p>
           <AwButton :disabled="busy || mutationBlocked" @click="emit('edit-production-schedule')">Nastavit datum a čas otevření</AwButton>

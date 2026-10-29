@@ -30,7 +30,7 @@ internal sealed record EffectiveLaunchAccess(bool Allowed, string Audience, long
 internal sealed record LaunchAuditEntry(string ActorId, long ChangedAt, long Revision, string ChangeSummary);
 internal sealed record LaunchGroup(string Id, string Name, long? LaunchAt, long Revision,
     long? CountdownDurationSeconds, bool ForceStartAtEnd, long? CountdownConfirmedAt, long? OpenedAt,
-    bool AdultContentEnabled = true, bool FlirtEnabled = true);
+    bool AdultContentEnabled = true, bool FlirtEnabled = true, long? ChronicleClosedAt = null);
 internal sealed record LaunchGroupCreate(string Name, long? LaunchAt,
     bool? AdultContentEnabled = null, bool? FlirtEnabled = null);
 internal sealed record LaunchGroupUpdate(long ExpectedRevision, string Name, long? LaunchAt,

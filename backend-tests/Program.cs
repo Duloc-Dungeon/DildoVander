@@ -7,6 +7,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Paid provider diagnostic is explicit and never part of normal offline CI.
+if (args is ["--chronicle"]) { PersonalChronicleTests.Run(); ChronicleSourceTests.Run(); GameChronicleBackfillTests.Run(); return; }
+if (args is ["--chronicle-http"]) { await MobileGameTests.RunChronicleHttpAsync(); return; }
 if (args is ["--push"]) { await PushTests.RunAsync(); return; }
 if (args is ["--push-http"]) { await AccountIdentityTests.RunPushHttpAsync(); return; }
 if (args is ["--application-updates"]) { await ApplicationUpdateTests.RunAsync(); return; }
@@ -39,6 +41,8 @@ if (args is ["--sealed-case-runtime"])
     await SealedCaseHttpTests.ScenarioVariantsAsync(); return;
 }
 if (args is ["--mobile-wands"]) { await MobileWandTests.RunAsync(); return; }
+if (args is ["--wand-reveal-reference", var referenceOutputDirectory, var referenceImageModel])
+{ await WandArtworkLiveTests.GenerateReferenceAsync(referenceOutputDirectory, referenceImageModel); return; }
 if (args is ["--mobile-workshop-transparent-artwork", var artSource, var artModel]) { await WandArtworkLiveTests.VerifyAsync(artSource, artModel); return; }
 if (args is ["--mobile-workshop-live-playback"]) { await WorkshopLivePlaybackSmoke.RunAsync(); return; }
 if (args is ["--mobile-workshop-live-http"]) { await MobileGameTests.RunWorkshopLiveHttpAsync(); return; }
@@ -52,7 +56,7 @@ if (args is ["--mobile-game"]) { MobileGameTests.Run(); GameYoloScenarioTests.Ru
 if (args is ["--game-wand-artwork"]) { await GameWandArtworkTests.RunAsync(); return; }
 if (args is ["--owner-player-http"]) { await MobileGameTests.RunOwnerPlayerHttpAsync(); return; }
 if (args is ["--mobile-game-http"]) { await MobileGameTests.RunHttpAsync(); await MobileGameTests.RunYoloDecisionHttpAsync(); return; }
-if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); return; }
+if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); await GameBossNarrationTests.RunAsync(); await MobileGameTests.RunBossNarrationHttpAsync(); return; }
 if (args is ["--mobile-game-teams"]) { GameTeamTests.Run(); return; }
 if (args is ["--mobile-game-progress"]) { GameProgressTests.Run(); return; }
 if (args is ["--mobile-game-yolo-live"]) { await GameYoloLiveTests.RunAsync(); return; }

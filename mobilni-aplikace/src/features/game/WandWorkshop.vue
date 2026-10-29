@@ -26,6 +26,9 @@ const title = ref<HTMLElement>();
 const caption = ref<HTMLElement>();
 const artworkDecoded = ref(false);
 const newlyCompleted = ref(false);
+const savedMoments = ref<Record<string, string>>({});
+const savingMomentId = ref('');
+const momentError = ref('');
 let controller = new AbortController(); let poll: ReturnType<typeof setTimeout> | undefined;
 let refreshInFlight: Promise<void> | null = null; let syncFailures = 0;
 let operation = ''; let artworkKey = ''; let retryId = '';
@@ -136,6 +139,20 @@ function applySession(value: WorkshopSession | null) {
   if (value?.id !== session.value?.id) { releaseArtwork(); retryId = ''; }
   session.value = value; if (value) { operation = value.id; void updateArtwork(value); }
   if (['generating', 'complete'].includes(value?.status ?? '') && active.value) { live.setMuted(true); muted.value = true; }
+}
+async function saveConversationMoment(message: WorkshopMessage): Promise<void> {
+  const current = session.value;
+  if (props.prelaunch || current?.status !== 'complete' || message.role !== 'assistant' || savingMomentId.value) return;
+  savingMomentId.value = message.messageId;
+  momentError.value = '';
+  try {
+    const result = await accountRequest<{ sourceId: string }>(`${workshopSessionPath(current.id)}/moments`, 'POST', {
+      messageId: message.messageId, expectedRevision: message.revision,
+    }, undefined, 'Uložit vybranou odpověď do osobní kroniky? Uloží se jen tato replika, celý rozhovor zůstane soukromý.');
+    if (!/^[0-9a-f]{64}$/i.test(result.sourceId)) throw new Error('Server nevrátil platný odkaz na vzpomínku.');
+    savedMoments.value = { ...savedMoments.value, [message.messageId]: result.sourceId };
+  } catch { momentError.value = 'Vzpomínku se nepodařilo uložit. Rozhovor zůstává uložený; můžeš to zkusit znovu.'; }
+  finally { savingMomentId.value = ''; }
 }
 function refresh(): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
@@ -370,7 +387,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
         <AwButton v-if="session?.status === 'failed' && session.canRetry" :disabled="busy" @click="retryManufacture">Obnovit výrobu</AwButton>
         <p v-if="status && !active && !loading && !unavailable" class="trunk-workshop__status" role="status">{{ status }}</p><p v-if="error" role="alert">{{ error }}</p><p v-if="syncError" role="status">{{ syncError }}</p>
         <AwButton v-if="error || syncError || session?.status === 'paused' || session?.status === 'failed'" :disabled="busy" @click="refresh">Obnovit stav</AwButton>
-        <details v-if="messages.length" class="trunk-workshop__transcript"><summary>Přepis rozhovoru</summary><ol><li v-for="message in messages" :key="message.messageId"><strong>{{ message.role === 'user' ? 'Ty' : 'Kufr' }}</strong><p>{{ message.text }}</p><button v-if="mode === 'text' && canAnswer && message.role === 'user'" type="button" @click="correction = message; correctionText = message.text">Opravit sdělení</button></li></ol><form v-if="correction" @submit.prevent="saveCorrection"><label for="trunk-correction">Oprava sdělení</label><textarea id="trunk-correction" v-model="correctionText" maxlength="2000" /><AwButton type="submit" :disabled="busy || !correctionText.trim()">Uložit opravu</AwButton></form></details>
+        <details v-if="messages.length" class="trunk-workshop__transcript"><summary>Přepis rozhovoru</summary><p v-if="session?.status === 'complete' && !prelaunch">Můžeš uložit jednu konkrétní odpověď do osobní kroniky. Neuloží se celý rozhovor a tato vzpomínka nepůjde sdílet.</p><p v-if="momentError" role="alert">{{ momentError }}</p><ol><li v-for="message in messages" :key="message.messageId"><strong>{{ message.role === 'user' ? 'Ty' : 'Kufr' }}</strong><p>{{ message.text }}</p><button v-if="mode === 'text' && canAnswer && message.role === 'user'" type="button" @click="correction = message; correctionText = message.text">Opravit sdělení</button><AwButton v-if="session?.status === 'complete' && !prelaunch && message.role === 'assistant' && !savedMoments[message.messageId]" variant="secondary" :disabled="savingMomentId === message.messageId" @click="saveConversationMoment(message)">{{ savingMomentId === message.messageId ? 'Ukládám…' : 'Uložit vzpomínku' }}</AwButton><RouterLink v-if="savedMoments[message.messageId]" :to="{ path: '/me/keepsakes', query: { sourceKind: 'conversation', sourceId: savedMoments[message.messageId] } }">Otevřít v osobní kronice</RouterLink></li></ol><form v-if="correction" @submit.prevent="saveCorrection"><label for="trunk-correction">Oprava sdělení</label><textarea id="trunk-correction" v-model="correctionText" maxlength="2000" /><AwButton type="submit" :disabled="busy || !correctionText.trim()">Uložit opravu</AwButton></form></details>
         <button v-if="prelaunch && session && !wand" type="button" class="trunk-workshop__text-action trunk-workshop__leave" @click="stopMedia(); emit('exit')">Odejít a později pokračovat</button>
         <RouterLink v-else-if="session && !wand" class="trunk-workshop__leave" to="/play" @click="stopMedia">Odejít a později pokračovat</RouterLink>
       </section>
@@ -407,9 +424,10 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__transcript li p { white-space: pre-wrap; margin: .5rem 0; }
 .trunk-workshop__leave { color: var(--wns-muted); min-height: 44px; display: inline-flex; align-items: center; }
 .trunk-workshop__verdict { padding: 1.25rem; border-radius: var(--wns-radius-card); background: var(--wns-violet); color: var(--wns-on-violet); }
-.trunk-workshop[data-result='true'] .trunk-workshop__presentation { display: grid; width: min(100%, 26rem); aspect-ratio: 1; margin-inline: auto; }
+.trunk-workshop[data-result='true'] .trunk-workshop__presentation { display: grid; width: min(100%, clamp(15rem, calc(66.666svh - 15rem), 30rem)); aspect-ratio: 2 / 3; padding: 0; margin-inline: auto; }
 .trunk-workshop[data-result='true'] .trunk-workshop__presentation > * { grid-area: 1 / 1; align-self: center; min-width: 0; }
-.trunk-workshop[data-result='true'] :deep(.trunk-stage__artwork) { width: 100%; min-height: 0; }
+.trunk-workshop[data-result='true'] :deep(.trunk-stage__artwork) { width: 100%; min-height: 0; aspect-ratio: 2 / 3; }
+.trunk-workshop[data-result='true'] :deep(.trunk-stage__wand) { max-height: none; }
 .trunk-workshop__announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The scene carries the expression; controls and durable state stay still. */
 .trunk-workshop { padding-inline: clamp(1rem, 3vw, 2rem); }
@@ -457,6 +475,6 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
   .trunk-workshop :deep(.trunk-stage__visual) { width: min(100%, 9rem); margin: 0; flex: 0 1 9rem; }
   .trunk-workshop[data-result='false'] .trunk-workshop__presentation :deep(.trunk-stage) { display: flex; align-items: center; justify-content: center; gap: 1rem; }
   .trunk-workshop :deep(.trunk-stage__activity) { flex-direction: column; gap: .25rem; text-align: center; min-width: 0; flex: 0 1 10rem; min-height: 5rem; }
-  .trunk-workshop[data-result='true'] .trunk-workshop__presentation { width: min(100%, 14rem); }
+  .trunk-workshop[data-result='true'] .trunk-workshop__presentation { width: min(100%, 26rem, 38svh); }
 }
 </style>

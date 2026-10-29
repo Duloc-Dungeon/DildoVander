@@ -62,7 +62,7 @@ watch(personalJoke, () => { personalSince.value = elapsed.value; });
 watch(() => props.image, () => { revealed.value = false; }, { flush: 'sync' });
 watch([elapsed, () => props.image, () => props.active], () => {
   const introductionEnds = personalJoke.value ? Math.max(900, personalSince.value) + 1800 : 1600;
-  if (props.active && props.image && elapsed.value >= introductionEnds) revealed.value = true;
+  if (!revealed.value && props.active && props.image && elapsed.value >= introductionEnds) revealed.value = true;
 }, { flush: 'sync' });
 onMounted(() => {
   heading.value?.focus({ preventScroll: true });

@@ -79,7 +79,13 @@ async function render() {
     ],
   });
   await router.push(`/play/team/${matchId}`);
-  wrapper = mount(TeamView, { global: { plugins: [router], stubs: { GameClash: true } } });
+  wrapper = mount(TeamView, { global: { plugins: [router], stubs: {
+    GameClash: true,
+    ChronicleMatchReveal: {
+      props: ['matchId', 'mode', 'status', 'verdictVisible'],
+      template: '<div data-test="chronicle-reveal" :data-match-id="matchId" :data-mode="mode" :data-status="status" :data-verdict-visible="String(verdictVisible)" />',
+    },
+  } } });
   await flushPromises();
   return wrapper;
 }
@@ -101,6 +107,15 @@ afterEach(() => {
 });
 
 describe('team duel halftime', () => {
+  it('shows the chronicle card only for a completed team result', async () => {
+    currentMatch = teamMatch({ status: 'complete', result: 'win', xpAwarded: 12 });
+    const view = await render();
+    const card = view.get('[data-test="chronicle-reveal"]');
+    expect(card.attributes()).toMatchObject({
+      'data-match-id': matchId, 'data-mode': 'team', 'data-status': 'complete', 'data-verdict-visible': 'true',
+    });
+  });
+
   it('applies live team readiness without reloading the lobby or wand profile', async () => {
     currentMatch = teamMatch({ status: 'active', allFourLocked: [false, false, false, false] });
     const view = await render();

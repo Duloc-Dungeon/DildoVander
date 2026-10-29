@@ -6,6 +6,7 @@ using System.Text.Json;
 using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
+using Kufr.Backend.Features.Customers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -39,8 +40,13 @@ internal sealed partial class GameStore
             CREATE INDEX IF NOT EXISTS ix_boss_owner ON game_boss_attempts(group_id,user_id);
             CREATE TABLE IF NOT EXISTS game_boss_operations(
                 operation_id TEXT PRIMARY KEY, actor TEXT NOT NULL, fingerprint TEXT NOT NULL, target TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS game_boss_narration(
+                attempt_id TEXT PRIMARY KEY REFERENCES game_boss_attempts(id) ON DELETE CASCADE,
+                revision INTEGER NOT NULL, context_key TEXT NOT NULL, text TEXT, audio BLOB, audio_key TEXT,
+                claim TEXT, claim_until INTEGER NOT NULL DEFAULT 0);
             """;
         command.ExecuteNonQuery();
+        EnsureBossNarrationAudioSchema(connection);
     }
 
     internal GameBossView ReadBoss(string groupId, string? userId = null)
@@ -101,6 +107,7 @@ internal sealed partial class GameStore
             insert.CommandText = "INSERT INTO game_boss_groups(group_id,reference_xp,rescued,revision) VALUES($group,$xp,0,1)";
             insert.Parameters.AddWithValue("$group", groupId); insert.Parameters.AddWithValue("$xp", median);
             insert.ExecuteNonQuery();
+            EnqueueBossArrivalChronicle(connection, transaction, groupId, eligible, median);
             RecordBossOperation(connection, transaction, request.OperationId, actor, fingerprint, groupId);
             transaction.Commit();
             return new(true, false, median, 1);
@@ -123,7 +130,8 @@ internal sealed partial class GameStore
         return new(profile, median, values.Count, values.Count == 0 ? null : values[0], values.Count == 0 ? null : values[^1]);
     }
 
-    internal GameBossAttemptView StartBoss(string groupId, string userId, GameBossCommand request)
+    internal GameBossAttemptView StartBoss(string groupId, string userId, GameBossCommand request,
+        GameYoloProfile? frozenProfile = null)
     {
         lock (_writeGate)
         {
@@ -153,6 +161,7 @@ internal sealed partial class GameStore
                 Strength = BossStrength(stats.Xp, profile.ReferenceXp),
                 Exhibition = stats.Xp < 30,
                 Seed = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
+                ChronicleProfile = frozenProfile,
             };
             PrepareBossChoice(attempt);
             SaveBossAttempt(connection, transaction, attempt, insert: true);
@@ -168,7 +177,8 @@ internal sealed partial class GameStore
         return BossProjection(ReadBossAttempt(connection, null, groupId, userId, id));
     }
 
-    internal GameBossAttemptView ChooseBoss(string groupId, string userId, string id, GameBossCommand request)
+    internal GameBossAttemptView ChooseBoss(string groupId, string userId, string id, GameBossCommand request,
+        IReadOnlySet<string>? eligibleMembers = null)
     {
         lock (_writeGate)
         {
@@ -203,11 +213,17 @@ internal sealed partial class GameStore
             if (attempt.BossEnergy == 0 || attempt.PlayerEnergy == 0 || attempt.Rounds.Count == 12)
             {
                 attempt.Status = "complete"; attempt.Result = attempt.BossEnergy == 0 ? "win" : "loss";
+                attempt.CompletedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 if (attempt.Result == "win")
                 {
                     using var rescue = connection.CreateCommand(); rescue.Transaction = transaction;
                     rescue.CommandText = "UPDATE game_boss_groups SET rescued=1,revision=revision+1 WHERE group_id=$group AND rescued=0";
-                    rescue.Parameters.AddWithValue("$group", groupId); rescue.ExecuteNonQuery();
+                    rescue.Parameters.AddWithValue("$group", groupId);
+                    if (rescue.ExecuteNonQuery() == 1)
+                    {
+                        EnqueueBossRescueChronicle(connection, transaction, attempt,
+                            eligibleMembers ?? new HashSet<string>([userId], StringComparer.Ordinal));
+                    }
                 }
             }
             else
@@ -216,6 +232,7 @@ internal sealed partial class GameStore
                 PrepareBossChoice(attempt);
             }
             SaveBossAttempt(connection, transaction, attempt, insert: false);
+            if (attempt.Status == "complete") { EnqueuePersonalBossChronicle(connection, transaction, attempt); }
             RecordBossOperation(connection, transaction, request.OperationId, userId, fingerprint, id);
             transaction.Commit();
             return BossProjection(attempt);
@@ -350,10 +367,12 @@ internal sealed partial class GameStore
         public string Seed { get; set; } = "";
         public string Status { get; set; } = "active";
         public long Revision { get; set; } = 1;
+        public long? CompletedAt { get; set; }
         public decimal PlayerEnergy { get; set; } = 6;
         public decimal BossEnergy { get; set; } = 5;
         public decimal Strength { get; set; }
         public bool Exhibition { get; set; }
+        public GameYoloProfile? ChronicleProfile { get; set; }
         public int PlayerSparks { get; set; } = 2;
         public int BossSparks { get; set; } = 2;
         public string BossChoice { get; set; } = "strike";
@@ -386,14 +405,26 @@ internal static class GameBossEndpoints
             catch (GameFault fault) { return ApiProblem.Create(context, fault.Status, fault.Code); }
         });
         group.MapGet("", (HttpContext context, GameStore store) => Results.Ok(store.ReadBoss((string)context.Items["boss-group"]!, User(context))));
-        group.MapPost("/attempts", (GameBossCommand request, HttpContext context, GameStore store) =>
-            Results.Ok(store.StartBoss((string)context.Items["boss-group"]!, User(context), request)));
+        group.MapPost("/attempts", async (GameBossCommand request, HttpContext context, GameStore store,
+            AccountDatabase db, CharacterProfileStore profiles, WandGenerationStore wands) =>
+        {
+            var userId = User(context);
+            var frozenProfile = await GameYoloWorker.ReadPublicProfile(userId, userId, profiles, wands, db, context.RequestAborted);
+            return Results.Ok(store.StartBoss((string)context.Items["boss-group"]!, userId, request, frozenProfile));
+        });
         group.MapGet("/attempts/{id}", (string id, HttpContext context, GameStore store) =>
             Results.Ok(store.ReadBossAttempt((string)context.Items["boss-group"]!, User(context), id)));
-        group.MapPost("/attempts/{id}/choose", (string id, GameBossCommand request, HttpContext context, GameStore store) =>
-            Results.Ok(store.ChooseBoss((string)context.Items["boss-group"]!, User(context), id, request)));
+        group.MapPost("/attempts/{id}/choose", async (string id, GameBossCommand request, HttpContext context,
+            GameStore store, AccountDatabase db) =>
+        {
+            var groupId = (string)context.Items["boss-group"]!;
+            var eligible = await EligibleBossPlayersAsync(db, groupId, context.RequestAborted);
+            return Results.Ok(store.ChooseBoss(groupId, User(context), id, request, eligible));
+        });
         group.MapPost("/attempts/{id}/cancel", (string id, GameBossCommand request, HttpContext context, GameStore store) =>
             Results.Ok(store.CancelBoss((string)context.Items["boss-group"]!, User(context), id, request)));
+        group.MapPost("/attempts/{id}/narration", GameBossNarrationEndpoints.NarrateAsync);
+        group.MapPost("/attempts/{id}/audio", GameBossNarrationEndpoints.AudioAsync);
 
         app.MapPost("/app/v1/admin/game/groups/{id}/boss", RevealAsync).RequireAuthorization().RequireRateLimiting("account");
         app.MapGet("/app/v1/admin/game/groups/{id}/boss", async (string id, HttpContext context, AccountDatabase db, GameStore store) =>
@@ -431,7 +462,7 @@ internal static class GameBossEndpoints
         var bossAttemptAction = context.Request.Method == "POST"
             && (path == "/app/v1/game/boss/attempts"
                 || System.Text.RegularExpressions.Regex.IsMatch(path,
-                    @"^/app/v1/game/boss/attempts/[0-9a-fA-F]{32}/(?:choose|cancel)$",
+                    @"^/app/v1/game/boss/attempts/[0-9a-fA-F]{32}/(?:choose|cancel|narration|audio)$",
                     System.Text.RegularExpressions.RegexOptions.CultureInvariant));
         if (requireWand && context.Request.Method != "GET" && !bossAttemptAction
             && !path.EndsWith("/cancel", StringComparison.Ordinal)

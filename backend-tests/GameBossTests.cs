@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Kufr.Backend.Features.Game;
+using Kufr.Backend.Features.Chronicle;
 using Microsoft.Data.Sqlite;
 
 internal static class GameBossTests
@@ -48,6 +49,18 @@ internal static class GameBossTests
             }
             Check(novice.Result == "win" && store.ReadBoss("rookie").Rescued,
                 "the zero-XP no-wand rescue can actually free a captured group");
+            var chronicle = new ChronicleStore(root);
+            store.DrainChronicleOutbox(chronicle);
+            var arrival = chronicle.FindSource("veteran-a", "boss", "arrival-rookie");
+            var rescueMemory = chronicle.FindSource("newbie", "boss", "rescue-rookie");
+            var personalMemory = chronicle.FindSource("newbie", "boss", novice.Id);
+            Check(arrival is { Revealed: false, Summary: "" }
+                && rescueMemory is { Revealed: false, Summary: "" }
+                && personalMemory is { Revealed: false, Summary: "" },
+                "boss arrival, personal attempt and common rescue are durably queued as spoiler-safe memories");
+            Check(chronicle.Reveal("newbie", personalMemory!.Id)
+                && chronicle.Read("newbie", personalMemory.Id) is { Result: "win", WinnerId: "newbie" },
+                "a boss victory can be revealed only from the owner’s saved personal attempt");
             var start = new GameBossCommand(Guid.NewGuid().ToString(), boss.Revision);
             var attempt = store.StartBoss("g", "a", start);
             Check(store.StartBoss("g", "a", start).Id == attempt.Id, "start is idempotent");

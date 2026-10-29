@@ -22,7 +22,7 @@ uveď původní licenci a zachovej jejich oznámení.
 5. V PR uveď problém, změnu chování, skutečně provedené příkazy a výsledky.
    Rozlišuj fake/simulaci, hardware, iPhone a živý provider. Chybějící hardware
    nebo Apple identita nebrání příspěvku do nezávislého softwaru.
-   Ještě před založením nebo aktualizací PR spusť
+   Pro volitelnou souhrnnou lokální kontrolu můžeš spustit
    `python scripts/ci/preflight.py --profile quick --scope local`. Výchozí režim
    spouští npm testy a typecheck; backend sestaví a otestuje jen při změně jeho
    zdrojů nebo sdílených vstupů vůči `origin/development`. Podle změny přidej
@@ -30,7 +30,9 @@ uveď původní licenci a zachovej jejich oznámení.
    release CI nebo ve volitelném režimu `--profile full`. Návod
    [lokálních kontrol](docs/local-preflight.md) popisuje reporty, instalaci
    připnutých závislostí a zbývající ověření pro Linux, macOS a nativní buildy.
-   Lokální chyby oprav před odesláním; nedostupné platformy v PR výslovně uveď.
+   Preflight ani jeho report nejsou podmínkou založení, aktualizace nebo sloučení
+   PR. Povinné CI a review zůstávají zachované. Lokální chyby oprav před odesláním;
+   nedostupné platformy v PR výslovně uveď.
 6. U dokumentace zkontroluj místní odkazy, správnost příkazů a
    `git diff --check`. Po změně generátoru CAD použij skutečný postup
    [regenerace F2](mechanika/final/README.md), ne ruční úpravu exportů.

@@ -1,4 +1,4 @@
-// Synthetic loopback regression for the real reveal -> workshop -> waiting UI.
+// Fictional loopback session with the saved paid portrait reference; no provider calls.
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,7 +6,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { createWorkshopFixtureServer } from './fixtures/wand-workshop.mjs';
 
-const { server, origin, requests } = await createWorkshopFixtureServer();
+const { server, origin, requests } = await createWorkshopFixtureServer(0, { reference: true });
 const output = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'dildovander-prelaunch-wand');
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true });
@@ -17,8 +17,8 @@ const character = { profileId: 'synthetic-profile', revision: 1, name: 'Sever', 
 const welcome = { joke: 'Tvá pověst dorazila před tebou. Už jsme se jí omluvili.', identity: 'Sever z Půlnočního přístavu.', teaser: 'Večer se připravuje.' };
 const loadingJoke = 'Portrét má zachytit tvoji povahu. Plátno požádalo o příplatek za riziko.';
 try {
-  for (const width of [320, 390, 1280]) {
-    const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: 'reduce' });
+  for (const width of process.env.WNS_REVEAL_PC_ONLY ? [1280] : [320, 390, 1280]) {
+    const context = await browser.newContext({ viewport: { width, height: 844 }, deviceScaleFactor: width === 1280 ? 1.25 : 1, reducedMotion: 'reduce' });
     const page = await context.newPage();
     // Headless Chromium starts with notifications denied. Exercise the eligible
     // waiting-room state without requesting any real browser permission.
@@ -66,6 +66,7 @@ try {
     portraitStatus = 'ready';
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
     await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
+    assert.equal(await page.locator('.viewport-curtain').count(), 0, 'portrait and wand reveal without a curtain overlay');
     await page.locator('.portrait-stage[data-curtain="open"]').waitFor();
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -141,8 +142,12 @@ try {
     assert.deepEqual(await artworkFrame(), failedArtworkFrame, `${width}: artwork recovery keeps the same frame`);
     assert.equal(await page.getByRole('button', { name: 'Přehrát verdikt kufru', exact: true }).count(), 0);
     await page.evaluate(() => window.scrollTo(0, 0));
-    const returnBox = await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).boundingBox();
-    assert(returnBox && returnBox.y + returnBox.height <= 844, `${width}: saved result includes its next action in the first viewport`);
+    const headerReturn = await page.getByRole('button', { name: 'Zpět k odpočtu', exact: true }).boundingBox();
+    assert(headerReturn && headerReturn.y + headerReturn.height <= 844, `${width}: header return stays in the first viewport`);
+    const returnAction = page.getByRole('button', { name: 'Počkat na začátek večera', exact: true });
+    await returnAction.focus();
+    const returnBox = await returnAction.boundingBox();
+    assert(returnBox && returnBox.y >= 0 && returnBox.y + returnBox.height <= 844, `${width}: next action is reachable with keyboard focus beside the larger portrait scene`);
     await page.screenshot({ path: path.join(output, `result-${width}.png`), fullPage: true }); captures++;
     assert.equal(await overflow(), false, `${width}: saved wand fits`);
     await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).click();
@@ -152,7 +157,7 @@ try {
     assert.equal(await page.evaluate(() => window.notificationPermissionRequests), 0, 'waiting-room entry offers opt-in without requesting permission automatically');
     await page.getByText(welcome.joke, { exact: true }).waitFor();
     assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Čekárna');
-    await page.locator('.prelaunch-wand-keepsake').getByText('Tichý přístav', { exact: false }).waitFor();
+    await page.locator('.prelaunch-wand-keepsake').getByText('Referenční hůlka', { exact: false }).waitFor();
     assert.equal(new URL(page.url()).pathname, '/launch');
     await page.reload();
     await page.getByRole('button', { name: 'Prohlédnout hůlku', exact: true }).waitFor();
@@ -165,8 +170,19 @@ try {
       await page.screenshot({ path: path.join(output, 'waiting-text-200-percent.png'), fullPage: true }); captures++;
       await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
     }
+    if (width === 390) await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.getByRole('button', { name: 'Prohlédnout hůlku', exact: true }).click();
-    await page.getByRole('heading', { name: 'Tichý přístav', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Referenční hůlka', exact: true }).waitFor();
+    if (width === 390) {
+      const field = page.locator('.wand-reveal-field');
+      await page.waitForFunction(() => document.querySelector('.wand-reveal-field')?.dataset.state === 'active');
+      await page.waitForFunction(() => document.querySelector('.wand-reveal-object')?.getAnimations().some(a => a.currentTime > 1300));
+      await page.screenshot({ path: path.join(output, 'waiting-reveal-active-390.png'), fullPage: true }); captures++;
+      await page.waitForFunction(() => document.querySelector('.wand-reveal-field')?.dataset.state === 'settled');
+      await page.locator('.trunk-stage__wand').click();
+      assert.equal(await field.getAttribute('data-state'), 'settled', 'waiting-room reveal never replays on returning pointer');
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+    }
     await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).click();
     assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1, 'viewing the saved wand does not manufacture a second one');
     await page.unrouteAll({ behavior: 'wait' });

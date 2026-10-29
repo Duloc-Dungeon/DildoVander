@@ -2,6 +2,9 @@
 
 Wand Night Stand: mobilní zážitek od pozvánky a vlastní postavy přes společný večer a hru až po památky. Závazné zaměření, češtinu, humor a vzhled určuje [profil aplikace](PRODUCT.md).
 
+Osobní [ilustrovaná kronika](docs/keepsakes-chronicle.md) propojuje dokončené
+události, historickou podobu postav, odznaky s původem a sdílení karty z telefonu.
+
 Vývoj fyzického kufru je pozastavený. Níže zachované technické podklady popisují existující hardware a jeho kontrakty; nejsou zadáním běžného mobilního rozhraní.
 
 [Push oznámení](docs/push-notifications.md) pokrývají herní výzvy, pozvánky existujících hostů a změny večera na webu, Androidu a iOS. Před aktivací vyžadují nastavení doručovacích služeb.

@@ -15,6 +15,13 @@ afterEach(async () => {
 });
 
 describe('customer entry routes', () => {
+  it('redirects the old game chronicle route to the shared Keepsakes timeline', async () => {
+    expect(router.resolve('/play/chronicle').matched[0]?.redirect).toBe('/me/keepsakes');
+    await router.push('/play/chronicle');
+    expect(router.currentRoute.value.path).toBe('/signin');
+    expect(router.currentRoute.value.query.return).toBe('/me/keepsakes');
+  });
+
   it.each(['/', '/demo', '/demo/', '/DEMO'])('sends retired entry %s to the sign-in experience', async path => {
     await router.push(path);
     expect(router.currentRoute.value.path).toBe('/signin');

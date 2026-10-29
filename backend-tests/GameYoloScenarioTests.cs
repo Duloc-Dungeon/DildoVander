@@ -9,6 +9,13 @@ internal static class GameYoloScenarioTests
     internal static void Run()
     {
         CheckScenarioRules();
+        Check(GameStore.HasMindReaderEvidence(true, "challenger", 0, 1)
+            && GameStore.HasMindReaderEvidence(false, "opponent", 1, 0),
+            "mind-reader title preserves own winning-round and opponent-spark provenance");
+        Check(!GameStore.HasMindReaderEvidence(true, "opponent", 0, 1)
+            && !GameStore.HasMindReaderEvidence(false, "challenger", 1, 0)
+            && !GameStore.HasMindReaderEvidence(true, "challenger", 0, 0),
+            "mind-reader title is not awarded for a lost round or without opponent sparks");
         var root = Path.Combine(Path.GetTempPath(), "game-yolo-scenario-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
@@ -21,7 +28,10 @@ internal static class GameYoloScenarioTests
             Check(store.TryClaimYolo(generating.Id, generating.Revision)
                 && !store.TryClaimYolo(generating.Id, generating.Revision), "only the completed scenario can claim one generation job");
             var frozen = store.FreezeYoloProfiles(generating.Id, generating.Revision,
-                new("alice", "Alice", "", "", []), new("bob", "Bob", "", "", []))
+                new("alice", "Alice", "", "", [])
+                {
+                    ProfileId = "later-profile", ProfileRevision = 99, WandId = "later-wand"
+                }, new("bob", "Bob", "", "", []))
                 ?? throw new InvalidOperationException("Scenario profiles did not freeze.");
             Check(frozen.Challenger.Decisions?.Length == 3 && frozen.Opponent.Decisions?.Length == 3,
                 "the generation snapshot includes all six authored decisions");
@@ -35,6 +45,9 @@ internal static class GameYoloScenarioTests
                 && JsonSerializer.Serialize(retried.Yolo!.Scenario!.Revealed) == scenarioJson,
                 "retry changes the generation revision and preserves all six decisions and consequences");
             var frozenAgain = store.ReadFrozenYoloProfiles(retried.Id, retried.Revision);
+            Check(frozenAgain?.Challenger is { ProfileId: "alice-profile", ProfileRevision: 7, WandId: "original-wand",
+                    PortraitReferenceBase64: "AAECAw==", PortraitSha256: "frozen-sha", Wand.Material: "Ořechové dřevo" },
+                "persisted restart retains exact frozen portrait bytes/hash and physical wand design");
             Check(frozenAgain is not null
                 && JsonSerializer.Serialize(new { frozenAgain.Value.Challenger, frozenAgain.Value.Opponent }) == frozenJson,
                 "restart and retry preserve the original public profiles and decision snapshot");
@@ -55,8 +68,29 @@ internal static class GameYoloScenarioTests
             var complete = store.Read(retried.Id, Group, "alice");
             Check(complete.Status == "complete" && complete.Result == "win"
                 && complete.Yolo?.Outcome == "winner" && complete.Yolo.WinnerId == "alice"
+                && complete.Yolo.DecisiveChoice == "alice:3"
                 && complete.Yolo.Scenario?.Revealed.Count == 3 && complete.XpAwarded == 0,
                 "a valid final verdict retains the replay and awards no XP");
+            var chronicle = new Kufr.Backend.Features.Chronicle.ChronicleStore(root);
+            store.DrainChronicleOutbox(chronicle);
+            var lockedMemory = chronicle.FindSource("alice", "yolo", retried.Id)
+                ?? throw new InvalidOperationException("Completed YOLO event was not durably delivered to the chronicle.");
+            Check(!lockedMemory.Revealed && lockedMemory.Result is null && lockedMemory.Participants.Count == 0,
+                "completion outbox retains one event without revealing the verdict");
+            Check(chronicle.Reveal("alice", lockedMemory.Id), "match owner can reveal the saved event");
+            var memory = chronicle.Read("alice", lockedMemory.Id)!;
+            Check(memory.DecisiveChoice?.StartsWith("Alice:", StringComparison.Ordinal) == true && memory.Decisions.Count == 6
+                && memory.Awards.Any(award => award.Id == "expert-victim")
+                && memory.Awards.Any(award => award.Id == "first-win-yolo")
+                && memory.Awards.Any(award => award.Id == "protection-paid-off")
+                && memory.Awards.All(award => award.EventId == memory.Id),
+                $"YOLO memory preserves decisive choice, six decisions and sourced achievements ({memory.DecisiveChoice}; {memory.Decisions.Count}; {string.Join(',', memory.Awards.Select(award => award.Id))})");
+            Check(memory.Participants.Count == 2
+                && memory.Participants.Single(participant => participant.AccountId == "alice").CharacterName == "Alice"
+                && memory.Participants.Single(participant => participant.AccountId == "bob").CharacterName == "Bob",
+                "revealed match uses the immutable profiles frozen before the game, including their provenance");
+            Check(chronicle.Read("bob", lockedMemory.Id) is { Revealed: false },
+                "each participant receives independent reveal state");
             var saved = JsonSerializer.Serialize(complete);
             store.CompleteYolo(retried.Id, retried.Revision, Result("bob"));
             Check(JsonSerializer.Serialize(store.Read(retried.Id, Group, "alice")) == saved,
@@ -148,7 +182,16 @@ internal static class GameYoloScenarioTests
     private static GameMatchView PlayScenario(GameStore store, string[] left, string[] right, string? restartRoot = null)
     {
         var challenge = store.Challenge(Group, "alice", "Alice", "bob", "Bob", new("bob", "yolo", Operation()), 2000);
-        var state = store.Mutate(challenge.Id, Group, "bob", "accept", Command(challenge.Revision), 2001);
+        var state = store.Mutate(challenge.Id, Group, "bob", "accept", Command(challenge.Revision), 2001,
+            yoloSetup: new(
+                new GameYoloProfile("alice", "Alice", "", "Ořech", ["klid"])
+                {
+                    ProfileId = "alice-profile", ProfileRevision = 7, WandId = "original-wand",
+                    PortraitReferenceBase64 = "AAECAw==", PortraitSha256 = "frozen-sha", PortraitMediaType = "image/png",
+                    Wand = new("original-wand", 1, "Ořech", "Ořechové dřevo", "Jádro z uhlíku", "Klidná", "Historie", "Celá štíhlá hůlka s měděným koncem", "Saze", "Déšť", [])
+                },
+                new GameYoloProfile("bob", "Bob", "", "Jasan", ["spěch"]) { ProfileId = "bob-profile" },
+                TestSetting()));
         Check(state.Status == "active" && state.Yolo?.Status == "choosing"
             && state.Yolo.Scenario?.Act == 1 && !store.PendingYolo().Any(),
             "acceptance starts the authored first act without a generation job");
@@ -226,6 +269,13 @@ internal static class GameYoloScenarioTests
     private static GameYoloResult Result(string? winner, string outcome = "winner") =>
         new(winner, "Synthetic authored verdict.", [new("Act one.", ["alice:name"]),
             new("Act two.", ["bob:name"]), new("Act three.", ["alice:name"])], outcome, "alice:3");
+
+    private static GameYoloSetting TestSetting()
+    {
+        var plans = GameYoloScenario.Options(1, [], []);
+        return new(GameYoloScenario.Id, GameYoloScenario.Title, GameYoloScenario.Objective,
+            GameYoloScenario.Situation, "čaj", "stůl", "kontrolor uznal čaj", plans, plans, "authored test fixture");
+    }
 
     private static string Operation() => Guid.NewGuid().ToString("N");
     private static GameCommand Command(long revision, string? choice = null) => new(Operation(), revision, Choice: choice);

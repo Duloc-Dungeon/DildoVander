@@ -228,6 +228,10 @@ internal static partial class SealedCaseHttpTests
             Equal("finale", final.GetProperty("phase").GetString());
             var unreleasedRewards = await clients[0].GetFromJsonAsync<JsonElement>("/app/v1/sealed-cases/rewards");
             Equal(0, unreleasedRewards.GetProperty("items").GetArrayLength());
+            var caseChronicle = fixture.Services.GetRequiredService<SealedCaseStore>();
+            var chronicle = new Kufr.Backend.Features.Chronicle.ChronicleStore(Path.Combine(fixture.DataRoot, "personal-chronicle"));
+            caseChronicle.CaptureReleasedChronicles();
+            Equal(0, caseChronicle.DrainCaseChronicle(chronicle));
             Check(final.GetProperty("finale").GetProperty("conspirators").ValueKind == JsonValueKind.Null, "truth remains withheld before final ballot closes");
             await Task.WhenAll(clients.Select(async client =>
             {
@@ -247,6 +251,21 @@ internal static partial class SealedCaseHttpTests
             var released = await clients[0].GetFromJsonAsync<JsonElement>(prefix + "/play");
             Equal("released", released.GetProperty("finale").GetProperty("phase").GetString());
             Equal(schedule.Chapters * count, released.GetProperty("finale").GetProperty("reconstruction").GetArrayLength());
+            caseChronicle.CaptureReleasedChronicles();
+            Equal(1, caseChronicle.DrainCaseChronicle(chronicle));
+            Equal(0, caseChronicle.DrainCaseChronicle(chronicle));
+            var caseRecord = caseChronicle.Read(id);
+            var owner = caseChronicle.ReadRoster(id, caseRecord.GroupId).Members.First(member => !member.IsAi).AccountId;
+            var caseMemory = chronicle.FindSource(owner, "case", id)!;
+            Check(!caseMemory.Revealed && caseMemory.Summary.Length == 0, "case memory is not revealed by generation or delivery");
+            chronicle.Reveal(owner, caseMemory.Id);
+            caseMemory = chronicle.Read(owner, caseMemory.Id)!;
+            Equal(count, caseMemory.Participants.Count);
+            Equal(schedule.Chapters * count, caseMemory.Decisions.Count);
+            Check(caseMemory.Awards.Single().Id == "seal_released" && caseMemory.ShareAllowed,
+                "released public reconstruction awards a source-linked shareable memory");
+            Check(!JsonSerializer.Serialize(caseMemory).Contains("private-only-", StringComparison.Ordinal),
+                "private messages never enter the public case memory or image facts");
             Equal(SealedCaseRules.Conspirators(count), released.GetProperty("finale").GetProperty("conspirators").GetArrayLength());
             var rewards = await clients[0].GetFromJsonAsync<JsonElement>("/app/v1/sealed-cases/rewards");
             Check(HasExactProperties(rewards, "schemaVersion", "items")

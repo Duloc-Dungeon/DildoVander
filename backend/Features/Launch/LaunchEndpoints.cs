@@ -288,7 +288,7 @@ internal static class LaunchEndpoints
             groups = store.ReadGroups().Select(group => group.LaunchAt is not null
                 && group.ForceStartAtEnd && group.LaunchAt <= timeProvider.GetUtcNow().ToUnixTimeMilliseconds()
                     ? store.CompleteForcedCountdown(group.Id, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) ?? group
-                    : group).ToArray()
+                    : group).Select(group => group with { ChronicleClosedAt = store.ReadChronicleClosure(group.Id) }).ToArray()
         }));
         admin.MapGet("/waiting-room", ReadWaitingRoomAsync);
         admin.MapPut("/waiting-room/{userId}/group", MoveWaitingRoomMemberAsync);
@@ -515,6 +515,7 @@ internal static class LaunchEndpoints
         || path.Equals("/twin", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsPrelaunchSafe(PathString path) =>
+        path.StartsWithSegments("/app/v1/chronicle", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWithSegments("/app/v1/push", StringComparison.OrdinalIgnoreCase) ||
         path.Equals("/app/v1/session", StringComparison.OrdinalIgnoreCase)
         || path.Equals("/app/v1/account/ai-consent", StringComparison.OrdinalIgnoreCase)
@@ -533,6 +534,7 @@ internal static class LaunchEndpoints
         || path.StartsWithSegments("/app/v1/admin/launch", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsRevokedSafe(PathString path) =>
+        path.StartsWithSegments("/app/v1/chronicle", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWithSegments("/app/v1/push", StringComparison.OrdinalIgnoreCase) ||
         path.Equals("/app/v1/session", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/app/v1/passkeys", StringComparison.OrdinalIgnoreCase)

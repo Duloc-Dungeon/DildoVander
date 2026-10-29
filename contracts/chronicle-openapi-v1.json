@@ -1,0 +1,84 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Wand Night Stand personal chronicle",
+    "version": "1.0.0",
+    "description": "Immutable confirmed events, owner-specific reveal and source-linked cosmetic awards. All routes require an enabled account session; mutations also require the normal account CSRF/origin policy. Responses are private/no-store. Reads never start generation."
+  },
+  "security": [{ "AccountSession": [] }],
+  "paths": {
+    "/app/v1/chronicle": {
+      "get": {
+        "summary": "List owned event previews across historical groups",
+        "parameters": [
+          { "name": "kind", "in": "query", "schema": { "$ref": "#/components/schemas/Kind" } },
+          { "name": "participant", "in": "query", "schema": { "type": "string", "maxLength": 100 } },
+          { "name": "badge", "in": "query", "schema": { "type": "string", "maxLength": 100 } },
+          { "name": "before", "in": "query", "description": "Opaque keyset cursor from the preceding response.", "schema": { "type": "string", "maxLength": 100 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 30 } }
+        ],
+        "responses": { "200": { "description": "Locked previews contain no outcome, image or award evidence; detailed stories are fetched separately.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Page" } } } }, "401": { "description": "Account session unavailable" }, "400": { "description": "Invalid filter or cursor" } }
+      }
+    },
+    "/app/v1/chronicle/source/{kind}/{sourceId}": {
+      "parameters": [ { "name": "kind", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/Kind" } }, { "name": "sourceId", "in": "path", "required": true, "schema": { "type": "string", "maxLength": 100 } } ],
+      "get": { "summary": "Locate an owned event after its source verdict; this does not reveal it", "responses": { "200": { "description": "Event or locked preview", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Event" } } } }, "404": { "description": "Source not delivered or not owned" } } }
+    },
+    "/app/v1/chronicle/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "get": { "summary": "Read owned event detail", "responses": { "200": { "description": "Owner-specific revealed detail or safe locked placeholder", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Event" } } } }, "404": { "description": "Not owned or erased" } } }
+    },
+    "/app/v1/chronicle/{id}/reveal": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "post": { "summary": "Idempotently acknowledge the current owner's source verdict or explicit archive opening", "responses": { "200": { "description": "Revealed item", "content": { "application/json": { "schema": { "type": "object", "required": ["revealed", "item"], "properties": { "revealed": { "const": true }, "item": { "$ref": "#/components/schemas/Event" } } } } } }, "404": { "description": "Not owned" } } }
+    },
+    "/app/v1/chronicle/{id}/illustration": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "post": { "summary": "Explicitly request or retry one illustration from the same frozen facts", "responses": { "202": { "description": "Accepted or already pending; existing game result is unchanged" }, "404": { "description": "Not owned or not revealed" } } }
+    },
+    "/app/v1/chronicle/{id}/image": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "get": { "summary": "Read ready owner-authorized illustration", "responses": { "200": { "description": "Bounded raster image", "content": { "image/png": { "schema": { "type": "string", "contentEncoding": "binary" } } } }, "404": { "description": "Not owned, not revealed or image not ready" } } }
+    },
+    "/app/v1/chronicle/{id}/share": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "get": { "summary": "Read permitted image card for the system phone share sheet; private conversations are excluded", "responses": { "200": { "description": "Ready card with exact application-rendered names and result", "content": { "image/png": { "schema": { "type": "string", "contentEncoding": "binary" } } } }, "404": { "description": "No revealed, ready and share-permitted card" } } }
+    },
+    "/app/v1/chronicle/{id}/badges/{badgeId}/image": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }, { "name": "badgeId", "in": "path", "required": true, "schema": { "type": "string", "maxLength": 100 } }],
+      "get": { "summary": "Read a personal scene badge with a shared frame and achievement symbol", "responses": { "200": { "description": "Transparent PNG; requires this owner's earned award and ready revealed event image" }, "404": { "description": "Award or image unavailable" } } }
+    },
+    "/app/v1/chronicle/export": {
+      "get": { "summary": "Export sanitized revealed chronicle metadata, distinct from the existing scoped account-data export", "responses": { "200": { "description": "Own recorded event metadata and award origins; excludes raw visual snapshots and media" } } }
+    },
+    "/app/v1/admin/launch/groups/{id}/chronicle-close": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "summary": "Admin freezes a personal finale from already revealed moments, once per group; gameplay remains available", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["expectedRevision"], "properties": { "expectedRevision": { "type": "integer" } } } } } }, "responses": { "200": { "description": "Original closedAt epoch seconds, including on replay" }, "403": { "description": "Admin authority required" }, "409": { "description": "Group is not opened or revision changed" } } }
+    },
+    "/app/v1/customer/wand/workshop/sessions/{id}/moments": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "summary": "Explicitly save one selected assistant reply from a completed own workshop; never copy the full conversation or enable sharing", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["messageId", "expectedRevision"], "properties": { "messageId": { "type": "string", "maxLength": 120 }, "expectedRevision": { "type": "integer", "minimum": 1 } } } } } }, "responses": { "200": { "description": "Stable sourceId" }, "409": { "description": "Conversation not complete or message changed" } } }
+    }
+  },
+  "components": {
+    "securitySchemes": { "AccountSession": { "type": "apiKey", "in": "cookie", "name": "__Host-dv-account" } },
+    "parameters": { "Id": { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } } },
+    "schemas": {
+      "Kind": { "type": "string", "enum": ["yolo", "duel", "team", "boss", "case", "wand", "evening", "conversation"] },
+      "Award": { "type": "object", "required": ["id", "title", "scope", "evidence", "eventId", "acquiredAt"], "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "scope": { "type": "string" }, "evidence": { "type": "string" }, "eventId": { "type": "string", "format": "uuid" }, "acquiredAt": { "type": "integer", "description": "Confirmed source occurrence, epoch seconds" } } },
+      "Participant": { "type": "object", "additionalProperties": false, "required": ["accountId", "displayName", "role", "characterName", "wandName", "visualReferenceVersion"], "properties": { "accountId": { "type": "string" }, "displayName": { "type": "string" }, "role": { "type": "string" }, "characterName": { "type": ["string", "null"] }, "wandName": { "type": ["string", "null"] }, "visualReferenceVersion": { "type": "string" } } },
+      "Decision": { "type": "object", "required": ["accountId", "choice", "consequence"], "properties": { "accountId": { "type": "string" }, "choice": { "type": "string" }, "consequence": { "type": "string" }, "evidence": { "type": ["string", "null"] } } },
+      "Event": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "sourceKind", "sourceId", "groupId", "occurredAt", "title", "summary", "participants", "result", "winnerId", "story", "decisions", "awards", "illustrationState", "revealed", "shareText", "revision", "decisiveChoice", "illustrationSynthetic", "shareAllowed"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "sourceKind": { "$ref": "#/components/schemas/Kind" }, "sourceId": { "type": "string" }, "groupId": { "type": "string" }, "groupName": { "type": ["string", "null"] }, "occurredAt": { "type": "integer" }, "title": { "type": "string" }, "summary": { "type": "string" },
+          "participants": { "type": "array", "maxItems": 32, "items": { "$ref": "#/components/schemas/Participant" } },
+          "result": { "type": ["string", "null"] }, "winnerId": { "type": ["string", "null"] }, "story": { "type": "array", "items": { "type": "string" } }, "decisions": { "type": "array", "items": { "$ref": "#/components/schemas/Decision" } }, "awards": { "type": "array", "items": { "$ref": "#/components/schemas/Award" } },
+          "illustrationState": { "type": "string" }, "revealed": { "type": "boolean" }, "shareText": { "type": ["string", "null"] }, "revision": { "type": "integer" }, "decisiveChoice": { "type": ["string", "null"] }, "illustrationSynthetic": { "type": "boolean" }, "shareAllowed": { "type": "boolean" }
+        }
+      },
+      "Page": { "type": "object", "required": ["items", "nextCursor", "badges"], "properties": { "items": { "type": "array", "maxItems": 50, "items": { "$ref": "#/components/schemas/Event" } }, "nextCursor": { "type": ["string", "null"] }, "badges": { "type": "array", "items": { "$ref": "#/components/schemas/Award" } } } }
+    }
+  }
+}

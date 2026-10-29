@@ -21,7 +21,7 @@ class BackendSelectionTests(unittest.TestCase):
         for name, content in {
             "backend/core.cs": "original", "mobilni-aplikace/view.vue": "original",
             "global.json": '{"sdk":{"version":"10.0.303","rollForward":"latestPatch"}}',
-            "contracts/.nvmrc": "24.21.0",
+            "contracts/.nvmrc": "25.9.0",
         }.items():
             self.write(name, content)
         self.commit()
@@ -355,11 +355,12 @@ class PreflightExecutionTests(unittest.TestCase):
         self.assertTrue({check.group for check in checks} <= {"repository", "contracts"})
         node = next(check for check in checks if check.name == "Pinned Node.js version")
         dotnet = next(check for check in checks if check.name == "global.json .NET SDK version")
-        self.assertEqual("exact:24.21.0", node.expected_version)
+        self.assertEqual("exact:25.9.0", node.expected_version)
         self.assertEqual("latest-patch:10.0.303", dotnet.expected_version)
         self.assertTrue(preflight.version_matches(dotnet.expected_version, "10.0.304"))
         self.assertFalse(preflight.version_matches(dotnet.expected_version, "10.1.303"))
-        self.assertFalse(preflight.version_matches(node.expected_version, "v25.9.0"))
+        self.assertTrue(preflight.version_matches(node.expected_version, "v25.9.0"))
+        self.assertFalse(preflight.version_matches(node.expected_version, "v24.21.0"))
         self.assertTrue(preflight.version_matches("xcode:26.3", "Xcode 26.3\nBuild version 17C52"))
         self.assertFalse(preflight.version_matches("xcode:26.3", "Xcode 26.2\nBuild version 17C52"))
 

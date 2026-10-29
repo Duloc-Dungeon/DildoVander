@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, type CSSProperties } from 'vue';
 import type { TrunkStageProps } from './TrunkStage.types';
+import WandRevealField from './WandRevealField.vue';
 
 /** Presentation only. Progress and sound levels come from the workshop adapter. */
 const props = withDefaults(defineProps<TrunkStageProps>(), {
@@ -140,9 +141,11 @@ function onArtworkError(event: Event) {
           :alt="wandName ? `Digitální ilustrace hůlky ${wandName}` : 'Digitální ilustrace tvé hůlky'"
           decoding="async"
           referrerpolicy="no-referrer"
+          draggable="false"
           @load="onArtworkLoad"
           @error="onArtworkError"
         />
+        <WandRevealField v-if="showArtwork && decoded" :key="artworkSource ?? undefined" :artwork-url="artworkSource" :wand-name="wandName" />
         <p v-if="showArtworkStatus && (!showArtwork || !decoded)" class="trunk-stage__artwork-state" role="status">
           {{ artworkMessage }}
         </p>
@@ -183,7 +186,7 @@ function onArtworkError(event: Event) {
   transition: transform 100ms linear;
   user-select: none;
 }
-/* A single local scene: no canvas, ambient loop, microphone sampling or timers. */
+/* Manufacturing follows the confirmed phase; the reveal field is a separate finite effect. */
 .trunk-stage__seam {
   position: absolute;
   inset: 65% 18% auto;
@@ -198,6 +201,8 @@ function onArtworkError(event: Event) {
 .trunk-stage__meter i { width: 3px; height: 100%; border-radius: 2px; background: currentColor; transform: scaleY(calc(.14 + var(--trunk-level, 0) * var(--strength))); transition: transform 100ms linear; }
 .trunk-handoff-enter-active { transition: opacity 650ms cubic-bezier(.16, 1, .3, 1), transform 650ms cubic-bezier(.16, 1, .3, 1), clip-path 650ms cubic-bezier(.16, 1, .3, 1); }
 .trunk-handoff-enter-from { opacity: 0; transform: translateY(1rem); clip-path: inset(0 0 12%); }
+.trunk-stage__result.trunk-handoff-enter-active { transition: opacity 180ms ease-out; }
+.trunk-stage__result.trunk-handoff-enter-from { transform: none; clip-path: none; }
 .trunk-handoff-leave-active { position: absolute; inset: 0; pointer-events: none; transition: opacity 200ms ease-out; }
 .trunk-handoff-leave-to { opacity: 0; }
 @keyframes trunk-work { to { transform: scaleX(1); opacity: .3; } }
@@ -230,8 +235,8 @@ function onArtworkError(event: Event) {
   object-fit: contain;
   opacity: 0;
 }
-.trunk-stage__artwork[data-loaded='true'] .trunk-stage__wand { opacity: 1; animation: trunk-arrival 850ms cubic-bezier(.16, 1, .3, 1) both; }
-@keyframes trunk-arrival { from { opacity: 0; transform: translateY(1rem) rotate(-4deg) scale(.94); clip-path: inset(0 0 15%); } to { opacity: 1; transform: none; clip-path: inset(0); } }
+.trunk-stage__artwork[data-loaded='true'] .trunk-stage__wand { opacity: 1; }
+.trunk-stage__artwork:has(.wand-reveal-anchor[data-state='active']) .trunk-stage__wand { opacity: 0; }
 .trunk-stage__artwork[data-with-tray='true'] .trunk-stage__wand {
   width: var(--trunk-tray-artwork-width);
   justify-self: center;

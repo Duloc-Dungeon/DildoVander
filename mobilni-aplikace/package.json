@@ -35,6 +35,7 @@
     "test:game:browser": "node tests/game.browser.mjs",
     "test:game-live:browser": "node tests/game-live.browser.mjs",
     "preview:sealed-case": "node tests/sealed-case.preview.mjs",
+    "preview:chronicle": "node tests/chronicle.preview.mjs",
     "test:sealed-case:browser": "node tests/sealed-case.browser.mjs",
     "test:sealed-dossier:browser": "node tests/sealed-dossier.browser.mjs",
     "test:boss:browser": "node tests/boss.browser.mjs",
@@ -44,7 +45,8 @@
     "test:yolo:browser": "node tests/yolo.browser.mjs",
     "test:wand:browser": "node tests/wand-workshop.browser.mjs",
     "test:wand-upgrade-voice:browser": "node tests/wand-upgrade-voice.browser.mjs",
-    "test:living-trunk:browser": "node tests/living-trunk.browser.mjs"
+    "test:living-trunk:browser": "node tests/living-trunk.browser.mjs",
+    "preview:wand-reveal": "node tests/wand-reveal.preview.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.3",

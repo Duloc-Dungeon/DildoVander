@@ -213,15 +213,16 @@ typografie a skutečné herní postavy tvoří jednotný profesionální celek.
 - Jemné rychlé odezvy při výběru, potvrzení a výsledku; žádné blokující intro,
   náhodné konfety, přetékání nebo pohyb funkčního textu. Omezený pohyb má
   plnohodnotný statický stav. Výsledek není závislý na `animationend`.
-  Výslovná výjimka vlastníka z 28. října 2026: při představení postavy po
-  „Vstoupit“ se „Pokračovat“ zobrazí až po alespoň 10 sekundách představení
-  v popředí. Potom lze pokračovat i bez portrétu; tato výjimka se nerozšiřuje
-  na jiné funkční akce ani herní výsledky.
+  Aktuální implementace představení po „Vstoupit“ dovolí pokračovat při
+  připravené postavě a dekódovaném portrétu. Při nedokončené přípravě nabídne
+  pokračování po pěti minutách v popředí; dokončený ruční pokus o obnovu
+  umožní pokračovat i bez hotového portrétu. Ověřování vstupu zůstává samostatné;
+  tyto podmínky se nerozšiřují na jiné funkční akce nebo herní výsledky.
 - Odhalení postavy i čekárna používají stejný nástup živého zrcadla a osobního
   textu podle volby vlastníka z 29. října 2026. Správný portrét je dekódovaný
   pod mlhou; hotový obraz, chyba a povolený
-  vstup mají přednost před nepovinnými efekty; časová výjimka pro představení
-  postavy je vymezena výše.
+  vstup mají přednost před nepovinnými efekty; dostupnost pokračování
+  určuje připravenost a ověření podle podmínek výše.
 - Ověř 320 a 390 px, širší obrazovku, 200% text, klávesnici, kontrast,
   safe areas, chyby a omezený pohyb. Browser fixture není nativní ani živý AI důkaz.
 
@@ -230,7 +231,8 @@ typografie a skutečné herní postavy tvoří jednotný profesionální celek.
 Tento profil nahrazuje starší hnědofialový salon, patkové titulky jako výchozí
 styl celé aplikace, česko-anglické přepínání, plošný zákaz žertovného náznaku
 a technické nástroje v běžné zákaznické navigaci. Staré snímky zůstávají jen
-datovanou evidencí. Opona a kompatibilní identifikátory témat se zachovávají.
+datovanou evidencí. Kompatibilní identifikátory témat se zachovávají;
+samostatnou oponu nahrazují vlastní animace portrétu a hůlky.
 
 DV01 specifikuje samostatný živý hardwarový rozhovor. Jeho fyzické kontrakty
 se nemažou, ale jeho volby dospělý/chaos se nepřidávají jako volba humoru do

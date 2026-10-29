@@ -60,6 +60,10 @@ internal static class GameCombatNarrationTests
             store.FinishCombatNarration(duel.Id, work.ClaimId, "Alena obešla Borisův štít. Zápas skončil 7 : 0.");
             store.FinishCombatNarration(duel.Id, work.ClaimId, "A different result.");
             var saved = store.Read(duel.Id, "group", "left");
+            Check(store.ReadChronicleNarration(duel.Id, "group", "left") == saved.CombatNarration?.Text
+                && store.ReadChronicleNarration(duel.Id, "other-group", "left") is null
+                && store.ReadChronicleNarration(duel.Id, "group", "stranger") is null,
+                "chronicle reads the exact saved tactical story only for the original group and participant");
             Check(saved.Status == "complete" && saved.CombatNarration?.Text == "Alena obešla Borisův štít. Zápas skončil 7 : 0."
                 && saved.Revision > duel.Revision && store.Lobby("group", "left", "Alena", []).Player.Xp == xp,
                 "saved narration survives restart, is immutable, and never awards XP twice");

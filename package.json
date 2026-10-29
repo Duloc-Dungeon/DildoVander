@@ -1,0 +1,15 @@
+{
+  "name": "wand-night-stand-server-tools",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "baron:check": "node --env-file=.env.local scripts/elevenlabs-baron.mjs check",
+    "baron:test": "node --env-file=.env.local scripts/elevenlabs-baron.mjs test",
+    "backend:dev": "node --env-file=.env.local scripts/elevenlabs-baron.mjs serve"
+  },
+  "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.75.0"
+  }
+}

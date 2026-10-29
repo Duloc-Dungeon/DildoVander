@@ -1410,6 +1410,8 @@ internal static partial class MobileGameTests
         private readonly SafeWorkshopLogProvider liveLog;
         private readonly Dictionary<HttpClient, CookieContainer> clientCookies = new();
         internal string BaseAddress => baseAddress;
+        internal IServiceProvider ChronicleServices => app.Services;
+        internal Kufr.Backend.Features.Chronicle.ChronicleStore Chronicle => app.Services.GetRequiredService<Kufr.Backend.Features.Chronicle.ChronicleStore>();
         internal ScriptedLiveSocketFactory? LiveSocketFactory { get; private set; }
         internal WandGenerationStore Wands => app.Services.GetRequiredService<WandGenerationStore>();
         internal KeepsakeStore Keepsakes => app.Services.GetRequiredService<KeepsakeStore>();
@@ -1437,7 +1439,8 @@ internal static partial class MobileGameTests
 
         internal static async Task<HttpFixture> StartAsync(bool withLiveTransport = false, GptLiveClient? liveClient = null,
             TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true,
-            bool includeLiveDelegations = true, bool withKeepsakes = false, IGameYoloProvider? yoloProvider = null)
+            bool includeLiveDelegations = true, bool withKeepsakes = false, IGameYoloProvider? yoloProvider = null,
+            IGameBossNarrator? bossNarrator = null, IGameBossSpeech? bossSpeech = null)
         {
             var root = Path.Combine(Path.GetTempPath(), "mobile-game-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
             using var rsa = RSA.Create(2048);
@@ -1474,7 +1477,10 @@ internal static partial class MobileGameTests
             builder.Services.AddAccountIdentity(builder.Configuration);
             builder.Services.AddLaunchManagement(builder.Configuration);
             builder.Services.AddMobileGame(builder.Configuration);
+            builder.Services.AddSingleton(new Kufr.Backend.Features.Chronicle.ChronicleStore(Path.Combine(root, "chronicle")));
             if (yoloProvider is not null) builder.Services.AddSingleton<IGameYoloProvider>(yoloProvider);
+            if (bossNarrator is not null) builder.Services.AddSingleton<IGameBossNarrator>(bossNarrator);
+            if (bossSpeech is not null) builder.Services.AddSingleton<IGameBossSpeech>(bossSpeech);
             if (withKeepsakes)
                 builder.Services.AddSingleton(new KeepsakeStore(builder.Configuration, TimeProvider.System));
             builder.Services.AddSingleton(new CharacterProfileStore(Path.Combine(root, "profiles")));
@@ -1494,6 +1500,8 @@ internal static partial class MobileGameTests
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
             app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapGameLive(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
+            Kufr.Backend.Features.Chronicle.ChronicleEndpoints.MapMobileChronicle(app);
+            app.MapLaunchChronicle();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
             app.MapGet("/test/csrf", (HttpContext context, IAntiforgery antiforgery) => Results.Json(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
             app.MapPost("/test/login/{id}", async (string id, HttpContext context, AccountDatabase db, SignInManager<AccountUser> signIn) =>

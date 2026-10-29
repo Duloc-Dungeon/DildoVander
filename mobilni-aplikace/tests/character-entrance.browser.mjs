@@ -15,8 +15,8 @@ const welcome = { joke: 'Tvoje ego už dorazilo. Zabralo dvě židle.', identity
 const browser = await chromium.launch();
 const errors = [];
 try {
-  for (const [width, reducedMotion] of [[320, 'reduce'], [390, 'reduce'], [1280, 'reduce'], [390, 'no-preference']]) {
-    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion });
+  for (const [width, reducedMotion] of [[320, 'reduce'], [390, 'reduce'], [1280, 'reduce'], [390, 'no-preference'], [1280, 'no-preference']]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: width === 1280 ? 1.25 : 1, reducedMotion });
     const page = await context.newPage();
     await page.clock.install({ time: new Date('2026-10-28T12:00:00Z') });
     await page.clock.pauseAt(new Date('2026-10-28T12:00:01Z'));
@@ -69,6 +69,7 @@ try {
     await page.locator('.entrance-portrait').waitFor({ state: 'attached' });
     await page.clock.fastForward(2000);
     await page.locator('[data-entrance="portrait"]').waitFor();
+    assert.equal(await page.locator('.viewport-curtain').count(), 0, 'the portrait uses its mirror without a curtain overlay');
     await page.getByRole('heading', { name: `${character.name} · ${character.label}`, exact: true }).waitFor();
     assert.equal(await page.locator('.entrance-portrait').getAttribute('aria-hidden'), 'false');
     assert.equal(await page.getByRole('button', { name: 'Pokračovat', exact: true }).isEnabled(), true);
