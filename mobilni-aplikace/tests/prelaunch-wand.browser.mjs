@@ -57,6 +57,14 @@ try {
     assert.equal(await overflow(), false, `${width}: reveal fits`);
     await page.screenshot({ path: path.join(output, `reveal-${width}.png`), fullPage: true }); captures++;
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).focus();
+    const focus = await prepareButton.evaluate(button => ({
+      color: getComputedStyle(button).outlineColor,
+      width: getComputedStyle(button).outlineWidth,
+      panel: getComputedStyle(button.closest('.prelaunch-wand')).backgroundColor,
+    }));
+    assert.equal(focus.color, 'rgb(16, 36, 25)', 'handoff focus uses the dark mint foreground');
+    assert.notEqual(focus.color, focus.panel, 'keyboard focus remains visible on the mint handoff');
+    assert.equal(focus.width, '3px');
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Kufrova dílna', exact: true }).waitFor();
     assert.equal(await page.locator('.launch-card').isVisible(), false, 'portrait yields to workshop');

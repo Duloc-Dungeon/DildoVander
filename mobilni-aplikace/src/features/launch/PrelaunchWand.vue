@@ -79,7 +79,7 @@ onBeforeUnmount(() => { controller.abort(); });
 .prelaunch-wand .return-reassurance { grid-column: 1 / -1; font-size: .8rem; line-height: 1.5; }
 .prelaunch-wand > :deep(.aw-button--primary) { justify-self: start; min-height: 52px; background: var(--wns-on-mint); color: var(--wns-mint); }
 .prelaunch-wand > :deep(.aw-button--primary:hover) { background: var(--wns-surface-raised); }
-.prelaunch-wand :deep(:focus-visible) { outline: 3px solid var(--wns-on-mint); outline-offset: 4px; }
+.prelaunch-wand[data-open='false'] :deep(:focus-visible) { outline: 3px solid var(--wns-on-mint); outline-offset: 4px; }
 .prelaunch-wand-keepsake { overflow-wrap: anywhere; font-size: 1.15rem; font-weight: 750; }
 .prelaunch-wand-keepsake span { display: block; font-size: .875rem; font-weight: 500; }
 @media (min-width: 760px) { .prelaunch-wand[data-open='false'] { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 32px; } }
