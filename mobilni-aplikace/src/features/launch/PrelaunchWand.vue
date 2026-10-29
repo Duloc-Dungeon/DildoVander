@@ -71,6 +71,7 @@ onBeforeUnmount(() => { controller.abort(); });
 
 <style scoped>
 .prelaunch-wand { width: min(100%, 62rem); min-width: 0; display: grid; gap: var(--aw-space-3); margin: var(--aw-space-4) auto; }
+.prelaunch-wand[data-open='true'] { margin-block: 0; }
 .prelaunch-wand[data-open='false'] { width: min(100%, 62rem); padding: clamp(20px, 4vw, 32px); border-radius: 16px; background: var(--wns-mint); color: var(--wns-on-mint); }
 .prelaunch-wand h2, .prelaunch-wand p { margin: 0; }
 .prelaunch-wand h2 { max-width: 28ch; font-size: clamp(1.3rem, 4.5vw, 1.8rem); line-height: 1.2; letter-spacing: -.025em; text-wrap: balance; }

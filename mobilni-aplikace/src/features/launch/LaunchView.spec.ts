@@ -126,7 +126,7 @@ it('offers wand creation only after revealing the saved character', async () => 
     view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
     expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true);
     expect(view.find('.launch-next-step').exists()).toBe(false);
-    expect(view.html().indexOf('Vytvořit hůlku')).toBeLessThan(view.html().indexOf('portrait-stage'));
+    expect(view.html().indexOf('portrait-stage')).toBeLessThan(view.html().indexOf('Vytvořit hůlku'));
     expect(view.text()).toContain('Večer se otevře');
     expect(view.findAllComponents({ name: 'PushNotifications' })).toHaveLength(1);
     expect(view.get('.launch-notifications summary').text()).toContain('Nastavit oznámení');
@@ -353,6 +353,8 @@ it('does not announce running portrait preparation when none has been requested'
     await flushPromises();
     expect(view.get('.launch-status').text()).toBe('Postava je uložená. Portrét zatím není připravený.');
     expect(view.get('form button').text()).toBe('Připravit překvapení');
+    await view.get('form button').trigger('focusin');
+    expect(view.get('.launch-page').classes()).not.toContain('keyboard-priority');
     expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
     expect(api.request.mock.calls.some(([, method]) => method === 'POST')).toBe(false);
   } finally { view.unmount(); }
@@ -389,6 +391,28 @@ it('shows the loading joke before the portrait and preserves the welcome in the 
     await view.get('.group-opening-copy button').trigger('click');
     await flushPromises();
     expect(view.get('[aria-current="step"]').text()).not.toBe('Čekárna');
+  } finally { view.unmount(); }
+});
+it('shows the ready welcome joke before portrait visibility unlocks the workshop', async () => {
+  persisted = true; artworkStatus = 'ready';
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    const result = await original(path, method);
+    return path === '/app/v1/prelaunch/character' ? { ...result, artwork: {
+      status: artworkStatus, loadingMessage: 'Přípravná věta.',
+      welcome: { joke: 'Hotový osobní vtip.' },
+    } } : result;
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('Hotový osobní vtip.');
+    expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
+    image.value = 'blob:portrait'; await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('Hotový osobní vtip.');
+    view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('Hotový osobní vtip.');
+    expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true);
   } finally { view.unmount(); }
 });
 it('reads the personal joke from welcome when only the loading field is invalid', async () => {

@@ -546,6 +546,7 @@ internal static class LaunchPolicyTests
         app.UseLaunchAccessPolicy();
         app.MapGet("/app/v1/customer/character", () => Results.Ok());
         app.MapGet("/app/v1/prelaunch/character", () => Results.Ok());
+        app.MapGet("/app/v1/customer/wand/workshop/sessions/{id}/live", () => Results.Unauthorized());
         app.MapGet("/app/v1/launch", () => Results.Ok());
         app.MapGet("/app/v1/account/deletion", () => Results.Ok());
         app.MapGet("/v1/conversations/private", () => Results.Ok());
@@ -560,6 +561,15 @@ internal static class LaunchPolicyTests
         {
             var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
             using var client = new HttpClient { BaseAddress = new Uri(address) };
+            var workshopLive = "/app/v1/customer/wand/workshop/sessions/" + new string('b', 32) + "/live";
+            Check((await client.GetAsync(workshopLive)).StatusCode == HttpStatusCode.Unauthorized,
+                "cookie-less workshop Live reaches ticket authentication while launch is locked");
+            foreach (var blocked in new[] { workshopLive.Replace(new string('b', 32), "invalid"),
+                workshopLive + "/extra", workshopLive.Replace("/live", "/ticket") })
+            {
+                Check((int)(await client.GetAsync(blocked)).StatusCode == 423,
+                    "anonymous workshop exception is limited to the exact Live route with a valid operation ID");
+            }
             using var regular = new HttpRequestMessage(HttpMethod.Get, "/app/v1/customer/character");
             regular.Headers.Add("X-Test-Role", AccountRoles.Customer);
             regular.Headers.Add("X-Test-Session", "yes");

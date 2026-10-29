@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.WebSockets;
 using System.Text.Json;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Game;
@@ -41,7 +42,11 @@ internal static partial class AccountIdentityTests
                     ["Keepsake:ProviderMode"] = "openai", ["Keepsake:ImageModel"] = "gpt-image-1.5",
                     ["OPENAI_API_KEY"] = "synthetic-offline-workshop-key"
                 }),
-            configureEndpoints: app => app.MapMobileWands());
+            configureEndpoints: app =>
+            {
+                app.MapMobileWands();
+                app.MapWorkshopLive();
+            });
         Check(!fixture.App.Services.GetServices<IHostedService>()
             .Any(service => service is KeepsakeWorker or MobileWandWorkshopWorker),
             "workshop scenario exclusively controls its manufacture and artwork queues");
@@ -89,6 +94,35 @@ internal static partial class AccountIdentityTests
         await fixture.App.Services.GetRequiredService<MobileWorkshopLiveRuntime>().RequireAuthorityAsync(admission, default);
         Check((await guest.PostAsJsonAsync(sessionPath + "/ticket", new { socketOrigin = "https://localhost" })).IsSuccessStatusCode,
             "closed-night guest can obtain the same protected Live admission as text");
+        using (var anonymous = fixture.Client())
+        using (var response = await anonymous.GetAsync(sessionPath + "/live"))
+        {
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Check(response.StatusCode == HttpStatusCode.Forbidden
+                && problem.GetProperty("code").GetString() == "account_origin_required",
+                "cookie-less Live reaches the mapped workshop endpoint and still requires an HTTPS WebSocket with an allowed origin");
+        }
+        using (var socket = new ClientWebSocket())
+        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+        {
+            socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+            socket.Options.CollectHttpResponseDetails = true;
+            socket.Options.SetRequestHeader("Origin", "https://localhost");
+            var address = new UriBuilder(guest.BaseAddress!)
+            {
+                Scheme = "wss", Path = sessionPath + "/live", Query = "ticket=invalid-offline-ticket"
+            }.Uri;
+            try
+            {
+                await socket.ConnectAsync(address, timeout.Token);
+                throw new InvalidOperationException("An invalid workshop ticket was admitted.");
+            }
+            catch (WebSocketException)
+            {
+                Check(socket.HttpStatusCode == HttpStatusCode.Unauthorized,
+                    "cookie-less prelaunch Live reaches ticket validation and rejects an invalid ticket without a provider call");
+            }
+        }
         var messageId = Guid.NewGuid().ToString("N");
         const string messageText = "I find a new route before asking for directions.";
         Check((await guest.PostAsJsonAsync(sessionPath + "/messages",

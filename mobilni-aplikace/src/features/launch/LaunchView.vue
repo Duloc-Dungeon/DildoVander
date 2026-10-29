@@ -111,7 +111,7 @@ const statusMessage = computed(() => {
   return copy.value.saved;
 });
 const receptionJoke = computed(() => {
-  const personal = characterIntroductionText(state.value?.artwork ?? null, canPrepareWand.value);
+  const personal = characterIntroductionText(state.value?.artwork ?? null, state.value?.artwork?.status === 'ready' || phase.value === 'failed');
   return personal || characterIntroductionFallback;
 });
 const receptionStatus = computed(() => {
@@ -204,9 +204,12 @@ function onWorkshopOpen(open: boolean): void {
 function rememberDraft(): void {
   if (account.value && !state.value?.character && !writing.value && !uncertain.value) setInvitationDraft(account.value.id, name.value, universe.value);
 }
+function formFocusIn(event: FocusEvent): void {
+  formFocused.value = event.target instanceof HTMLInputElement;
+}
 function formFocusOut(event: FocusEvent): void {
   const form = event.currentTarget;
-  if (form instanceof HTMLElement && event.relatedTarget instanceof Node && form.contains(event.relatedTarget)) return;
+  if (form instanceof HTMLElement && event.relatedTarget instanceof HTMLInputElement && form.contains(event.relatedTarget)) return;
   formFocused.value = false;
 }
 async function refreshPolicy(): Promise<void> {
@@ -540,7 +543,7 @@ onBeforeUnmount(() => {
     <footer class="launch-footer"><AwButton v-if="account" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
   <SceneShell v-else-if="!rickrollActive" class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
-    <header class="launch-masthead">
+    <header v-show="!workshopOpen" class="launch-masthead">
       <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><span>Wand<br />Night Stand</span></RouterLink>
       <AwButton v-if="account" class="launch-signout" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton>
     </header>
@@ -562,15 +565,14 @@ onBeforeUnmount(() => {
         <span>{{ step }}<small v-if="index === 1 && phase === 'failed'">Bez portrétu</small><span v-if="index < receptionStep" class="sr-only">{{ index === 1 && phase === 'failed' ? ' — přeskočeno' : ' — hotovo' }}</span></span>
       </li>
     </ol>
-    <PushNotifications v-if="wandComplete && !workshopOpen" context="waiting" class="launch-push-offer" />
-    <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" @complete-change="wandComplete = $event" />
     <section v-show="!workshopOpen" class="launch-card" :class="{ 'launch-card--reception': writing || state?.character }">
+      <PortraitCurtain v-if="!readError || state?.character || writing" class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation || portrait.pending.value" :unavailable="phase === 'failed'" @revealed="revealed = $event" @replay="portraitReplay++" @failed="portrait.fail()" />
       <PaperSurface class="launch-copy">
         <h1 v-if="!state?.character" id="launch-title">{{ readError && account ? copy.waitingTitle : writing ? 'Tvoje postava se připravuje.' : draftProvided ? name : copy.title }}</h1>
         <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <AwNotice v-if="phase === 'failed'" tone="warning" role="alert">{{ copy.failed }} <button class="launch-retry" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
         <template v-if="!account"><RouterLink class="aw-button aw-button--primary" to="/signin">{{ copy.invitation }}</RouterLink></template>
-        <form v-else-if="characterVerified && !state?.character && !writing" class="launch-form" @submit.prevent="saveCharacter" @focusin="formFocused = true" @focusout="formFocusOut">
+        <form v-else-if="characterVerified && !state?.character && !writing" class="launch-form" @submit.prevent="saveCharacter" @focusin="formFocusIn" @focusout="formFocusOut">
           <p v-if="draftProvided && !uncertain">{{ copy.accountReady }}</p>
           <template v-if="!draftProvided">
             <AwField id="character-name" :label="copy.name" :hint="copy.nameHint"><input id="character-name" aria-describedby="character-name-hint" v-model="name" class="aw-input" maxlength="80" autocomplete="nickname" required @input="rememberDraft" /></AwField>
@@ -579,7 +581,7 @@ onBeforeUnmount(() => {
           </template>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
-        <form v-else-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait" @focusin="formFocused = true" @focusout="formFocusOut">
+        <form v-else-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait" @focusin="formFocusIn" @focusout="formFocusOut">
           <p>{{ copy.missingPortrait }}</p>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
@@ -588,8 +590,8 @@ onBeforeUnmount(() => {
           <p>{{ state.character.universe }}</p>
         </header>
         <div v-if="writing || state?.character" class="reception-introduction" :class="{ 'launch-final': canPrepareWand }">
-          <p class="launch-status" role="status" aria-atomic="true">{{ receptionStatus }}</p>
           <CharacterIntroduction class="launch-joke" :active="presentationForeground" :replay-key="portraitReplay" :text="receptionJoke" />
+          <p class="launch-status" role="status" aria-atomic="true">{{ receptionStatus }}</p>
           <template v-if="canPrepareWand && state?.artwork?.welcome">
             <p v-if="characterWelcomeText(state.artwork.welcome.identity)" class="launch-identity">{{ characterWelcomeText(state.artwork.welcome.identity) }}</p>
             <p v-if="characterWelcomeText(state.artwork.welcome.teaser)" class="launch-teaser">{{ characterWelcomeText(state.artwork.welcome.teaser) }}</p>
@@ -597,9 +599,10 @@ onBeforeUnmount(() => {
           <p v-if="portraitSource && revealed && hasPortrait" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
         </div>
       </PaperSurface>
-      <PortraitCurtain v-if="!readError || state?.character || writing" class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation || portrait.pending.value" :unavailable="phase === 'failed'" @revealed="revealed = $event" @replay="portraitReplay++" @failed="portrait.fail()" />
       <p v-if="!writing && !state?.character" class="launch-text launch-status" role="status">{{ statusMessage }}</p>
     </section>
+    <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" @complete-change="wandComplete = $event" />
+    <PushNotifications v-if="wandComplete && !workshopOpen" context="waiting" class="launch-push-offer" />
     <section v-if="state?.character || account && policy && !policy.allowed && !characterVerified" v-show="!workshopOpen" class="reception-waiting" aria-label="Čekání na večer">
       <CharacterCountdown class="countdown" heading-as="h2" :name="wandComplete ? 'Vítej v čekárně.' : 'Večer se chystá.'" :universe="''" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
       <div class="reception-options">
@@ -720,15 +723,15 @@ onBeforeUnmount(() => {
 .reception-steps .is-current { border-color: var(--wns-amber); color: var(--wns-amber); font-weight: 750; }
 .reception-steps .is-done { border-color: var(--wns-mint); color: var(--wns-mint); }
 .reception-steps small { display: block; font-size: .75rem; font-weight: 500; }
-.launch-card--reception { width: min(100%, 62rem); margin-block: 32px; }
+.launch-card--reception { width: min(100%, 62rem); margin-block: 24px 40px; gap: 28px; }
 .launch-card--reception .launch-copy { background: transparent; border: 0; padding: 0; border-radius: 0; }
-.launch-card--reception .launch-art { width: min(100%, 300px); align-self: center; }
-.reception-identity h1 { text-wrap: balance; }
-.reception-identity > p { margin: 8px 0 28px; color: var(--wns-muted); }
+.launch-card--reception .launch-art { order: 0; width: min(100%, 440px); max-width: none; align-self: center; margin-inline: auto; }
+.reception-identity h1 { max-width: 14ch; font-size: clamp(2.2rem, 8vw, 4rem); line-height: 1.06; letter-spacing: -.035em; text-wrap: balance; }
+.reception-identity > p { margin: 12px 0 24px; color: var(--wns-muted); }
 .reception-introduction { display: grid; gap: 20px; }
 .reception-introduction p { margin: 0; overflow-wrap: anywhere; }
 .reception-introduction .launch-status { color: var(--wns-mint); max-width: 48ch; }
-.reception-introduction .launch-joke { max-width: 28ch; font-size: clamp(1.4rem, 5vw, 2.1rem); line-height: 1.4; font-weight: 650; letter-spacing: -.02em; }
+.reception-introduction .launch-joke { max-width: 34ch; font-size: clamp(1.1rem, 3.8vw, 1.4rem); line-height: 1.55; font-weight: 500; letter-spacing: normal; }
 .reception-introduction .launch-identity { color: var(--wns-muted); font-size: 1rem; }
 .reception-waiting { display: grid; gap: 28px; width: min(100%, 62rem); margin: 40px auto 0; padding-top: 28px; border-top: 1px solid var(--wns-line); }
 .launch-push-offer { width: min(100%, 62rem); margin: 24px auto; }
@@ -741,5 +744,6 @@ onBeforeUnmount(() => {
 .reception-options .reception-seat { color: var(--wns-text); max-width: 42ch; line-height: 1.5; }
 .reception-options summary { cursor: pointer; min-height: 44px; padding-block: 12px; }
 .launch-page ::selection { background: var(--wns-violet); color: var(--wns-on-violet); }
-@media (min-width: 760px) { .launch-card--reception { grid-template-columns: minmax(0, 1fr) minmax(240px, .7fr); gap: 64px; } .reception-waiting { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; } }
+@media (min-width: 760px) { .launch-card--reception { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 64px; } .reception-waiting { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; } }
+@media (max-width: 759px) { .launch-card--reception .launch-art { width: min(100%, 340px, 46svh); } }
 </style>
