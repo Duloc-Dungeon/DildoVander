@@ -298,23 +298,25 @@ onBeforeUnmount(resetPrivateState);
 
 <style scoped>
 .customer-page { --wns-display: var(--wns-font-family); container: customer-page / inline-size; width: 100%; margin-inline: auto; gap: var(--wns-space-32); color: var(--wns-text, #f5f5f0); }
-.customer-page--character, .customer-page--account { max-width: 48rem; }
+.customer-page--character { max-width: 62rem; }
+.customer-page--account { max-width: 48rem; }
 .customer-page > header { display: grid; gap: var(--wns-space-12); padding: 0; }
-.customer-page > header h1 { max-width: 20ch; margin: 0; font: 800 clamp(1.75rem, 1.2rem + 3vw, 3rem)/1.12 var(--wns-display); letter-spacing: -.035em; text-wrap: balance; overflow-wrap: normal; }
+.customer-page > header h1 { max-width: 20ch; margin: 0; font: 800 clamp(2rem, 1.25rem + 3vw, 3.5rem)/1.08 var(--wns-display); letter-spacing: -.035em; text-wrap: balance; overflow-wrap: anywhere; }
 .customer-page > header p { max-width: 65ch; margin: 0; color: var(--wns-muted, #b2b9b6); }
 .customer-page .eyebrow { color: var(--wns-mint, #b8f3d4); font: 700 .75rem/1.3 var(--wns-display); text-transform: uppercase; letter-spacing: .12em; }
-.customer-page :deep(.aw-card) { color: var(--wns-text, #f5f5f0); background: var(--wns-surface, #191b1b); border: 1px solid var(--wns-line, #343939); border-radius: 24px; box-shadow: none; }
+.customer-page :deep(.aw-card) { color: var(--wns-text, #f5f5f0); background: var(--wns-surface, #191b1b); border: 1px solid var(--wns-line, #343939); border-radius: var(--wns-radius-card); box-shadow: none; }
 .customer-page :deep(.aw-input) { color: var(--wns-text, #f5f5f0); background: var(--wns-surface-raised, #222626); border-color: var(--wns-line, #343939); border-radius: 14px; }
-.customer-page :deep(a) { color: var(--wns-text, #f5f5f0); }
+.customer-page :deep(a:not(.aw-button)) { color: var(--wns-mint); }
 .customer-page :deep(.aw-muted), .customer-page :deep(small) { color: var(--wns-muted, #b2b9b6); }
 .customer-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
-.customer-form { max-width: 42rem; display: grid; gap: 1rem; }
+.customer-form { width: 100%; min-width: 0; max-width: 42rem; display: grid; gap: var(--wns-space-20); }
+.customer-form :deep(.aw-input) { width: 100%; min-width: 0; }
 .character-overview { display: grid; gap: var(--wns-space-20); padding-block-end: var(--wns-space-24); border-bottom: 1px solid var(--wns-line); }
 .character-overview__identity { display: grid; gap: var(--wns-space-8); }
-.character-overview h2 { margin: 0; font-size: clamp(1.5rem, 5vw, 2rem); line-height: 1.2; }
+.character-overview h2 { margin: 0; font-size: clamp(1.6rem, 5vw, 2.5rem); line-height: 1.12; letter-spacing: -.025em; }
 .character-overview p { margin: 0; max-width: 65ch; }
 .character-overview__status { color: var(--wns-mint); }
-.customer-page .character-next-step { justify-self: start; border-color: transparent; box-shadow: none; }
+.customer-page .character-next-step { width: 100%; max-width: 24rem; justify-self: start; border-color: transparent; box-shadow: none; }
 .character-details { border-top: 1px solid var(--wns-line); }
 .character-details > summary { min-height: 48px; padding-block: var(--wns-space-12); cursor: pointer; font-weight: 700; line-height: 1.5; }
 .character-details[open] > summary { margin-bottom: var(--wns-space-16); }
@@ -322,6 +324,6 @@ onBeforeUnmount(resetPrivateState);
 .character-extra > summary { min-height: 44px; padding-block: .65rem; cursor: pointer; }
 .character-extra-fields { display: grid; gap: 1rem; padding-top: .5rem; }
 .customer-actions { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
-.character-enrichment { white-space: pre-line; padding: 1rem; border-left: 2px solid var(--wns-violet, #c8b9fc); background: var(--wns-surface-raised, #222626); }
+.character-enrichment { white-space: pre-line; padding: var(--wns-space-20); border-radius: var(--wns-radius-field); background: var(--wns-surface-raised); }
 @media (max-width: 720px) { .customer-actions { display: grid; grid-template-columns: minmax(0, 1fr); } }
 </style>

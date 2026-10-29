@@ -133,14 +133,20 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.launch-admin { border-top: 1px solid var(--aw-border-subtle); padding-top: 2rem; margin-top: 2rem; }
+.launch-admin { min-width: 0; border-top: 1px solid var(--aw-border-subtle); padding-top: 2rem; margin-top: 2rem; }
 .launch-admin h3 { margin-top: 0; }
-.launch-admin__personalization { display: grid; gap: 1rem; }
-.launch-admin__preview-copy { padding: 1rem; border: 1px solid var(--aw-border-subtle); color: var(--aw-muted); line-height: 1.6; }
+.launch-admin__preview-copy { padding: 1rem; border: 1px solid var(--aw-border-subtle); background: var(--aw-void); color: var(--aw-muted); line-height: 1.6; overflow-wrap: anywhere; }
 .launch-admin__actions { display: flex; gap: .75rem; flex-wrap: wrap; }
-.launch-jobs, .launch-audit { list-style: none; padding: 0; }
+.launch-jobs, .launch-audit { list-style: none; padding: 0; margin-block: 1rem 0; }
 .launch-jobs li, .launch-audit li { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .8rem 0; border-top: 1px solid var(--aw-border-subtle); }
-.launch-audit li { align-items: flex-start; flex-direction: column; }
+.launch-jobs li > span { min-width: 0; overflow-wrap: anywhere; }
+.launch-audit li { align-items: flex-start; flex-direction: column; overflow-wrap: anywhere; }
 .launch-jobs small, .launch-audit small { color: var(--aw-muted); }
-@media (max-width: 520px) { .launch-jobs li { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 520px) {
+  .launch-jobs li { align-items: flex-start; flex-direction: column; }
+}
+.launch-admin__disclosure { min-width: 0; border-top: 1px solid var(--aw-border-subtle); padding-block: .5rem; }
+.launch-admin__disclosure > summary { min-height: 48px; display: list-item; list-style-position: inside; padding-block: .75rem; cursor: pointer; font-weight: 700; overflow-wrap: anywhere; }
+.launch-admin__disclosure[open] > .aw-card { margin-top: .75rem; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.launch-admin__personalization { display: grid; gap: 1rem; }
 </style>

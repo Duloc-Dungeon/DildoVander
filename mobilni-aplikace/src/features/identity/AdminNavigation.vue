@@ -26,9 +26,9 @@ const links = [
 
 <style scoped>
 .admin-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; padding-block: 1rem; border-block: 1px solid var(--aw-border-subtle); }
-.admin-navigation__title { color: var(--aw-muted); font-size: .9rem; font-weight: 600; }
-.admin-navigation__links { display: flex; flex: 1; gap: .5rem; }
-.admin-navigation a { display: flex; align-items: center; justify-content: center; gap: .65rem; min-height: 48px; padding: .65rem 1rem; border-radius: var(--wns-radius-field); color: var(--aw-muted); text-decoration: none; font-weight: 700; }
+.admin-navigation__title { color: var(--aw-muted); font-size: .9rem; font-weight: 700; }
+.admin-navigation__links { display: flex; flex: 1; gap: .5rem; min-width: 0; }
+.admin-navigation a { display: flex; flex: 1 1 auto; align-items: center; justify-content: center; gap: .65rem; min-width: 0; min-height: 48px; padding: .65rem 1rem; border-radius: var(--wns-radius-field); color: var(--aw-muted); text-decoration: none; font-weight: 700; text-align: center; }
 .admin-navigation img { filter: invert(1); opacity: .75; }
 .admin-navigation a:hover { background: var(--aw-elevated); color: var(--aw-ivory); }
 .admin-navigation a[aria-current='page'] { background: var(--wns-mint); color: var(--wns-on-mint); }
@@ -38,6 +38,7 @@ const links = [
   .admin-navigation { gap: .65rem; }
   .admin-navigation__title { width: 100%; }
   .admin-navigation__links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .admin-navigation a { flex-direction: column; gap: .4rem; padding: .65rem .4rem; }
+  .admin-navigation a { flex-direction: column; gap: .4rem; padding: .55rem .25rem; overflow-wrap: anywhere; }
+  .admin-navigation img { width: 20px; height: 20px; }
 }
 </style>

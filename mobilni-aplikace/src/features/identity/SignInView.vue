@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { consumeEnrollment } from '../../application/guestClaim';
 import AwButton from '../../components/AwButton.vue';
+import WnsWordmark from '../../components/WnsWordmark.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AwField from '../../components/AwField.vue';
 import LostAccessHelp from './LostAccessHelp.vue';
@@ -254,7 +255,7 @@ async function submit(): Promise<void> {
   <SceneShell class="signin-scene">
   <section class="signin-page" aria-labelledby="sign-in-title">
     <header class="signin-masthead">
-      <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><span>Wand<br />Night Stand</span></RouterLink>
+      <RouterLink to="/" class="signin-wordmark" :aria-label="customerCopy.text('home.title')"><WnsWordmark /></RouterLink>
       <AwButton v-if="arrival && !account" class="signin-code-entry" @click="setEnrollmentMode()">{{ customerCopy.text('signin.have-invite') }}</AwButton>
     </header>
     <div v-if="arrival && !account && !logoutUnconfirmed && !sessionUnavailable" class="arrival-content">

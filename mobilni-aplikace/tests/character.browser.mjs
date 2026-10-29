@@ -59,6 +59,7 @@ try {
     const fits=async label=>{
       await page.evaluate(()=>document.fonts.ready);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,label+' overflow');
+      await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({path:path.join(output,`${label}-${width}.png`),fullPage:true});captures++;
     };
     await page.goto(origin+'/me/character');
@@ -69,13 +70,26 @@ try {
     assert.equal(await page.getByRole('checkbox').count(),0,'registration consent is not asked again');
     await fits('failed-portrait-with-joke');
     await page.locator('.private-character-avatar').getByRole('button',{name:'Zkusit znovu',exact:true}).click();
-    await page.locator('.private-character-avatar > img[src^="blob:"]').waitFor();
+    await page.locator('.private-character-avatar .portrait-mirror[data-mirror="open"] > img[src^="blob:"]').waitFor();
     assert.equal(retryCount,1);
     assert.equal(requests.filter(r=>r.method==='PUT').length,0,'retry never edits or replaces character');
     await fits('recovered-portrait');
+    if (width === 390) {
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      const portraitRequests = () => requests.filter(request => request.path.startsWith('/app/v1/prelaunch/character')).length;
+      const readsBeforeReplay = portraitRequests();
+      await page.getByRole('button', { name: 'Přehrát odhalení znovu', exact: true }).click();
+      await page.locator('.private-character-avatar .portrait-mirror[data-mirror="open"]').waitFor();
+      assert.equal(portraitRequests(), readsBeforeReplay, 'mirror replay reuses the saved portrait without a new request');
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      assert.equal(await page.getByRole('button', { name: 'Přehrát odhalení znovu', exact: true }).count(), 0);
+      await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+      await fits('portrait-text200');
+      await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+    }
     status='missing'; await page.reload();
     await page.getByRole('button',{name:'Připravit portrét',exact:true}).click();
-    await page.locator('.private-character-avatar > img[src^="blob:"]').waitFor();
+    await page.locator('.private-character-avatar .portrait-mirror[data-mirror="open"] > img[src^="blob:"]').waitFor();
     assert.equal(retryCount,2);
     await page.goto(origin+'/play');
     await page.getByRole('heading',{name:'Nejdřív vlastní hůlku.',exact:true}).waitFor();

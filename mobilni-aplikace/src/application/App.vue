@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { androidNavigationKey } from '../platform/androidAppLinks';
 import { useRoute, useRouter } from 'vue-router';
 import AwButton from '../components/AwButton.vue';
+import WnsWordmark from '../components/WnsWordmark.vue';
 import AwNotice from '../components/AwNotice.vue';
 import { notifications, dismissNotice, notify } from './notifications';
 import { startPushRuntime } from './pushRuntime';
@@ -210,17 +211,17 @@ onBeforeUnmount(() => {
   <a class="skip-link" href="#main-content">{{ customerCopy.text('shell.skip') }}</a>
   <div class="application-shell" :class="{ 'launch-mode': launchExperience, 'game-mode': gameExperience, 'customer-mode': customerAccount, 'has-customer-navigation': showCustomerNavigation }" :style="{ '--application-navigation-height': navigationHeight, '--application-navigation-count': navigation.length }">
     <aside v-if="!customerAccount && !launchExperience && !gameExperience" class="application-sidebar" :aria-label="customerCopy.text('shell.navigation')">
-      <RouterLink class="application-brand" to="/" :aria-label="customerCopy.text('shell.brand-home')"><img class="brand-mark" src="../assets/brand/emblem-small.webp" alt="" width="44" height="44" /><span>Wand Night Stand<small>{{ customerCopy.text('shell.brand-tagline') }}</small></span></RouterLink>
+      <RouterLink class="application-brand" to="/" :aria-label="customerCopy.text('shell.brand-home')"><img class="brand-mark" src="../assets/brand/emblem-small.webp" alt="" width="44" height="44" /><WnsWordmark /></RouterLink>
       <nav ref="navigationElement" class="primary-navigation" :aria-label="customerCopy.text('shell.sections')">
         <RouterLink v-for="item in navigation" :key="item.to" :to="item.to" :class="{ selected: item.to === activeNavigationPath }" :aria-current="item.to === activeNavigationPath ? 'page' : undefined">
           <span aria-hidden="true">{{ item.symbol }}</span><span>{{ item.label }}</span>
         </RouterLink>
       </nav>
-      <div class="sidebar-details"><span class="eyebrow">{{ customerAccount ? customerCopy.text('shell.my-space') : account ? 'Pro hostitele' : 'Wand Night Stand' }}</span><p>{{ customerCopy.text(customerAccount ? 'shell.customer-guidance' : 'shell.public-guidance') }}</p></div>
+      <div class="sidebar-details"><span class="eyebrow">{{ customerCopy.text('shell.my-space') }}</span><p>{{ customerCopy.text(customerAccount ? 'shell.customer-guidance' : 'shell.public-guidance') }}</p></div>
     </aside>
     <div class="application-body">
       <header v-if="!launchExperience && !gameExperience" class="application-header">
-        <p class="connection-context">{{ customerAccount ? customerCopy.text('shell.customer-area') : account ? 'Hostitelský prostor' : customerCopy.text('shell.public') }}</p>
+        <p class="connection-context"><WnsWordmark /></p>
         <div class="header-actions">
           <RouterLink v-if="!account" class="account-link" to="/signin">{{ customerCopy.text('shell.sign-in') }}</RouterLink><RouterLink v-else class="account-link" :to="customerAccount || account.roles.includes('Owner') ? '/me/account' : '/settings'">{{ account.displayName }}</RouterLink>
           <AwButton v-if="!launchExperience && !gameExperience && (deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>

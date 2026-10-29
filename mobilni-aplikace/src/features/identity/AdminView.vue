@@ -73,7 +73,7 @@ async function reauthenticate() {
 }
 </script>
 <template>
-  <section class="page-stack" aria-labelledby="admin-title">
+  <section class="page-stack admin-accounts" aria-labelledby="admin-title">
     <header><h1 id="admin-title">Uživatelé a oprávnění</h1><p>Vlastník spravuje účty a pozvánky. Správci přidělují přístup ke konkrétním prostředkům.</p><p class="admin-aside">Večer se tváří jako spontánní. Tady se mu to pečlivě plánuje.</p></header>
     <AwNotice v-if="error" tone="danger" role="alert">{{ error }}
       <p v-if="failureStatus || failureCode">{{ failureStatus ? `HTTP ${failureStatus}` : '' }}{{ failureStatus && failureCode ? ' · ' : '' }}{{ failureCode }}</p>
@@ -88,14 +88,38 @@ async function reauthenticate() {
       <OperationsPanel />
       <ModelReleasesPanel />
       <section class="aw-card"><h2>Postavy a portréty</h2><p>Seznam postav, úpravy jejich údajů a nahrání náhradního obrázku.</p><RouterLink class="aw-button" to="/settings/admin/characters">Spravovat postavy</RouterLink></section>
-      <section class="aw-card"><h2>Řízení spuštění</h2><p>Beta a produkční plán, uzamčení přístupu, předspouštěcí stránka a portréty.</p><RouterLink class="aw-button aw-button--primary" to="/settings/admin/launch">Otevřít správu spuštění</RouterLink></section>
-      <section v-if="hasRole('Owner')" id="invitations" class="aw-card"><h2>Pozvánka</h2><p>Pozvánka přidá účastníka do vybrané skupiny. <RouterLink to="/settings/admin/launch#waiting-room">Nastavit odpočet a otevření večera</RouterLink></p><form class="identity-form" @submit.prevent="invite"><label for="invite-role">Role nového účtu</label><select id="invite-role" v-model="inviteRole" class="aw-select"><option v-for="role in roles" :key="role" :value="role">{{ roleLabels[role] }}</option></select><InvitationGroupFields v-model="launchGroupId" :disabled="busy" /><AwButton type="submit" :busy="busy">Vytvořit pozvánku</AwButton></form><div v-if="token" class="invite-output"><p>Kód platí jednu hodinu a lze ho použít jednou. Předávejte ho soukromě. Znovu ho nelze zobrazit.</p><label v-if="invitationLink" for="invitation-link">Soukromý odkaz pro přijetí</label><input v-if="invitationLink" id="invitation-link" :value="invitationLink" readonly class="aw-input" autocomplete="off" /><label for="invitation-token">Jednorázový kód</label><input id="invitation-token" :value="token" readonly class="aw-input" autocomplete="off" /><AwButton @click="token = ''">Skrýt kód</AwButton></div></section>
+      <section class="aw-card"><h2>Řízení spuštění</h2><p>Náborová skupina, spuštění aplikace, čekárna a příprava portrétů.</p><RouterLink class="aw-button aw-button--primary" to="/settings/admin/launch">Otevřít správu spuštění</RouterLink></section>
+      <section v-if="hasRole('Owner')" id="invitations" class="aw-card"><h2>Pozvánka</h2><p>Pozvánka přidá účastníka do vybrané skupiny. <RouterLink to="/settings/admin/launch#waiting-room">Nastavit skupinu a spuštění aplikace</RouterLink></p><form class="identity-form" @submit.prevent="invite"><label for="invite-role">Role nového účtu</label><select id="invite-role" v-model="inviteRole" class="aw-select"><option v-for="role in roles" :key="role" :value="role">{{ roleLabels[role] }}</option></select><InvitationGroupFields v-model="launchGroupId" :disabled="busy" /><AwButton type="submit" :busy="busy">Vytvořit pozvánku</AwButton></form><div v-if="token" class="invite-output"><p>Kód platí jednu hodinu a lze ho použít jednou. Předávejte ho soukromě. Znovu ho nelze zobrazit.</p><label v-if="invitationLink" for="invitation-link">Soukromý odkaz pro přijetí</label><input v-if="invitationLink" id="invitation-link" :value="invitationLink" readonly class="aw-input" autocomplete="off" /><label for="invitation-token">Jednorázový kód</label><input id="invitation-token" :value="token" readonly class="aw-input" autocomplete="off" /><AwButton @click="token = ''">Skrýt kód</AwButton></div></section>
       <section class="aw-card"><h2>Účty</h2><p v-if="!users.length">Žádné účty k zobrazení.</p><ul class="identity-list"><li v-for="user in users" :key="user.id"><h3>{{ user.displayName }} <small v-if="user.id === account?.id">· váš účet</small></h3><form v-if="hasRole('Owner')" class="user-controls" @submit.prevent="action(() => accountRequest(`/app/v1/admin/users/${encodeURIComponent(user.id)}`, 'PUT', { role: user.roles[0], disabled: user.disabled }))"><label :for="`role-${user.id}`">Role</label><select :id="`role-${user.id}`" v-model="user.roles[0]" class="aw-select"><option v-for="role in roles" :key="role" :value="role">{{ roleLabels[role] }}</option></select><label><input v-model="user.disabled" type="checkbox" /> Účet je zablokován</label><AwButton type="submit" :disabled="busy">Uložit a odhlásit relace</AwButton></form><p v-else>{{ user.roles.map(role => roleLabels[role] ?? role).join(', ') }} · {{ user.disabled ? 'zablokován' : 'aktivní' }}</p></li></ul></section>
       <section class="aw-card"><h2>Přidělit prostředek</h2><form class="identity-form" @submit.prevent="action(() => accountRequest('/app/v1/admin/grants', 'POST', { userId: selectedUser, resourceType, resourceId, permission }))"><label for="grant-user">Uživatel</label><select id="grant-user" v-model="selectedUser" required class="aw-select"><option value="" disabled>Vyberte účet</option><option v-for="user in users.filter(u => !u.disabled)" :key="user.id" :value="user.id">{{ user.displayName }}</option></select><label for="grant-type">Typ prostředku</label><select id="grant-type" v-model="resourceType" class="aw-select"><option value="device">Kufr</option><option value="workshop">Dílna</option></select><label for="grant-id">Identifikátor prostředku</label><input id="grant-id" v-model="resourceId" required maxlength="128" class="aw-input" /><label for="grant-permission">Oprávnění</label><select id="grant-permission" v-model="permission" class="aw-select"><option value="read">Prohlížet</option><option value="operate">Ovládat</option><option value="manage">Spravovat</option></select><AwButton type="submit" :busy="busy">Přidělit</AwButton></form><ul class="identity-list"><li v-for="grant in grants" :key="grant.id"><p>{{ users.find(u => u.id === grant.userId)?.displayName ?? grant.userId }} · {{ grant.resourceType }} · {{ grant.resourceId }} · {{ grant.permission }}</p><AwButton variant="danger" :disabled="busy" @click="action(() => accountRequest(`/app/v1/admin/grants/${encodeURIComponent(grant.id)}`, 'DELETE'))">Odebrat oprávnění</AwButton></li></ul></section>
     </template>
   </section>
 </template>
 <style scoped>
+.admin-accounts { container: admin-accounts / inline-size; max-width: 74rem; margin-inline: auto; }
+.admin-accounts > header { max-width: 68ch; }
 .admin-aside { max-width: 48ch; color: var(--wns-violet); }
-.identity-form { display: grid; gap: .75rem; max-width: 36rem; }.identity-list { list-style: none; padding: 0; }.identity-list li { border-top: 1px solid var(--aw-border-subtle); padding-block: 1rem; }.user-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }.invite-output { margin-top: 1.5rem; display: grid; gap: .75rem; }small { font-size: .8rem; }
+.identity-form { display: grid; gap: .75rem; max-width: 36rem; }
+.identity-form > label,
+.user-controls > label:first-child { color: var(--aw-muted); font-weight: 700; }
+.identity-list { list-style: none; padding: 0; margin-block: 1rem 0; }
+.identity-list li { min-width: 0; border-top: 1px solid var(--aw-border-subtle); padding-block: 1rem; }
+.identity-list h3 { margin-block: 0 .75rem; overflow-wrap: anywhere; }
+.identity-list p { overflow-wrap: anywhere; }
+.user-controls { display: grid; grid-template-columns: auto minmax(10rem, 1fr) auto auto; align-items: center; gap: .75rem; }
+.user-controls .aw-button { min-height: 44px; }
+.user-controls > label:has(input[type='checkbox']) { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
+.invite-output { margin-top: 1.5rem; display: grid; gap: .75rem; max-width: 42rem; }
+.invite-output input { min-width: 0; }
+small { font-size: .85rem; }
+@media (max-width: 760px) {
+  .user-controls { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .user-controls .aw-select,
+  .user-controls .aw-button { width: 100%; }
+}
+@container admin-accounts (max-width: 48rem) {
+  .user-controls { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .user-controls .aw-select,
+  .user-controls .aw-button { width: 100%; }
+}
 </style>
