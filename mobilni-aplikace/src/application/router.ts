@@ -20,6 +20,7 @@ export const router = createRouter({
     { path: '/play/wand', name: 'wand-workshop', component: () => import('../features/game/WandWorkshopView.vue'), meta: { title: 'Kufrova dílna', private: true, requiresAccount: true } },
     { path: '/play/teams', name: 'game-teams', component: () => import('../features/game/TeamView.vue'), meta: { title: 'Spojenci', private: true, requiresAccount: true } },
     { path: '/play/team/:id', name: 'game-team', component: () => import('../features/game/TeamView.vue'), meta: { title: 'Týmový souboj', private: true, requiresAccount: true } },
+    { path: '/play/chronicle', name: 'game-chronicle-redirect', redirect: '/me/keepsakes' },
     ...['/play', '/play/challenge', '/play/practice', '/play/chronicle', '/play/match/:id', '/play/boss', '/play/boss/:id', '/play/keeper', '/play/ranking', '/play/messages'].map((path, index) => ({ path, name: `game-${index}`, component: () => import('../features/game/PlayView.vue'), meta: { title: 'Hra', private: true, requiresAccount: true } })),
     { path: '/me/character', name: 'customer-character', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Moje postava', private: true, requiresAccount: true } },
     { path: '/me/conversation', name: 'customer-conversation', redirect: '/play/wand' },

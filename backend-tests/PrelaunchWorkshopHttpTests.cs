@@ -25,6 +25,8 @@ internal static partial class AccountIdentityTests
             {
                 services.AddSingleton(sp => new GameStore(sp.GetRequiredService<AccountConfiguration>().DataRoot));
                 services.AddSingleton<WandGenerationStore>();
+                services.AddSingleton(sp => new Kufr.Backend.Features.Chronicle.ChronicleStore(
+                    sp.GetRequiredService<AccountConfiguration>().DataRoot));
                 services.AddSingleton<IWandGenerationProvider>(generation);
                 services.AddSingleton<IMobileWandQuestionProvider, PrelaunchWorkshopDialogue>();
                 services.AddSingleton<WandGenerationService>();
@@ -203,6 +205,11 @@ internal static partial class AccountIdentityTests
             "portrait-only revision preserves protected completed-session and artwork reads");
         Check((await guest.PostAsJsonAsync(sessionPath + "/messages", new { messageId = Guid.NewGuid().ToString("N"), text = "Edit old work." })).StatusCode == HttpStatusCode.Conflict,
             "portrait-only completed projection does not authorize editing the older workshop revision");
+        var savedReply = wands.ReadWorkshopMessages(guestId, operation).First(message => message.Role == "assistant");
+        Check((await guest.PostAsJsonAsync(sessionPath + "/moments",
+            new { messageId = savedReply.MessageId, expectedRevision = savedReply.Revision })).IsSuccessStatusCode,
+            "portrait-only revision permits saving an exact reply from the completed historical workshop");
+
         var currentGroup = launch.ReadGroup(group.Id) ?? throw new InvalidOperationException("Workshop group disappeared.");
         var openingTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var countdownDraft = launch.SaveCountdown("test-owner", group.Id,
@@ -219,6 +226,9 @@ internal static partial class AccountIdentityTests
         Check((await guest.GetAsync(artworkPath)).StatusCode == HttpStatusCode.Conflict
             && (await guest.PostAsJsonAsync(sessionPath + "/artwork/retry", new { })).StatusCode == HttpStatusCode.Conflict,
             "a changed character revision cannot read or regenerate artwork for the old workshop");
+        Check((await guest.PostAsJsonAsync(sessionPath + "/moments",
+            new { messageId = savedReply.MessageId, expectedRevision = savedReply.Revision })).StatusCode == HttpStatusCode.Conflict,
+            "changed character input cannot save a reply from the old completed workshop");
         await ChangeWorkshopMemberAsync(guestId, user => { user.LaunchGroupRevokedAt = AccountEndpoints.Now(); user.LaunchGroupAccessRevision++; });
         Check((await guest.GetAsync(sessionPath)).StatusCode == HttpStatusCode.Forbidden
             && (await guest.GetAsync(artworkPath)).StatusCode == HttpStatusCode.Forbidden,

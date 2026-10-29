@@ -36,7 +36,7 @@ ve Visual Studio Developer Command Prompt z kořene repozitáře:
 cl /nologo /std:c++14 /W4 /WX /EHsc firmware\src\features\safety\SafetyController.cpp firmware\src\features\wand_selection\SelectionSequence.cpp firmware\src\features\device_control\DeviceControl.cpp firmware\src\features\conversation\ConversationSession.cpp firmware\simulator\bridge.cpp /Fe:<docasna-slozka>\bridge.exe
 ```
 
-Node verze 24.21.0 je v `.nvmrc`. V `contracts` i `firmware/simulator`
+Node verze 25.9.0 je v `.nvmrc`. V `contracts` i `firmware/simulator`
 spusťte `npm ci`. V `firmware/simulator` nastavte `KUFR_SIMULATOR_BRIDGE` na
 absolutní cestu sestaveného procesu a `OPENSSL` na dostupné `openssl` CLI;
 `npm test` v dočasné složce vytvoří jednodenní certifikát pro localhost a

@@ -5,6 +5,7 @@ import { account, accountRequest } from '../identity/session';
 import SceneShell from '../../components/scene/SceneShell.vue';
 import PaperSurface from '../../components/scene/PaperSurface.vue';
 import AwButton from '../../components/AwButton.vue';
+import ChronicleMatchReveal from '../customer/ChronicleMatchReveal.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import GameSpellToken from './GameSpellToken.vue';
 import GameRules from './GameRules.vue';
@@ -282,7 +283,10 @@ onBeforeUnmount(() => { alive = false; controller.abort(); stopLiveUpdates(); })
       <template v-else-if="match.status === 'active'">
         <PaperSurface class="game-paper game-controls"><p v-if="match.ownChoiceLocked" role="status">Tvůj tah je uzamčený. Čekáme na zbývající hráče.</p><template v-else><fieldset class="game-spells"><legend>Vyber své kouzlo</legend><label v-for="action in actions" :key="action.id" :class="{selected: choice === action.id, exhausted: !match.ownInventory[action.id]}"><input v-model="choice" type="radio" name="team-spell" :value="action.id" :disabled="busy || uncertain || !match.ownInventory[action.id]" /><GameSpellToken :action="action.id" /><strong>{{ action.name }}</strong><small>{{ action.beats }}</small><span>{{ match.ownInventory[action.id] }} použití</span></label></fieldset><label class="game-spark"><input v-model="spark" type="checkbox" :disabled="busy || uncertain || !match.ownSparks" /><span>Přisadit jiskru · zbývá {{ match.ownSparks }}<small>Když prohraješ, její bod získají soupeři.</small></span></label><AwButton variant="primary" :busy="busy" :disabled="!choice || uncertain" @click="send('choose', {choice, sparkBid: spark ? 1 : 0})">Potvrdit vlastní tah</AwButton></template></PaperSurface>
       </template>
-      <PaperSurface v-else class="game-paper game-result"><h2>{{ match.status === 'complete' ? match.result === 'win' ? 'Tohle byla souhra.' : match.result === 'draw' ? 'Vyrovnaná magie.' : 'Příště to otočíte.' : 'Zápas nebyl dokončen.' }}</h2><p>+{{ match.xpAwarded }} XP</p><RouterLink class="aw-button aw-button--primary" to="/play/teams">Další společná výzva</RouterLink></PaperSurface>
+      <template v-else>
+        <PaperSurface class="game-paper game-result"><h2>{{ match.status === 'complete' ? match.result === 'win' ? 'Tohle byla souhra.' : match.result === 'draw' ? 'Vyrovnaná magie.' : 'Příště to otočíte.' : 'Zápas nebyl dokončen.' }}</h2><p>+{{ match.xpAwarded }} XP</p><RouterLink class="aw-button aw-button--primary" to="/play/teams">Další společná výzva</RouterLink></PaperSurface>
+        <ChronicleMatchReveal v-if="match.status === 'complete'" :match-id="match.id" mode="team" status="complete" :verdict-visible="true" />
+      </template>
       <AwButton v-if="['incoming','active','halftime'].includes(match.status)" class="game-exit" :busy="busy" :disabled="uncertain" @click="send('cancel')">Ukončit zápas bez výsledku</AwButton>
     </template>
     <template v-else-if="lobby">

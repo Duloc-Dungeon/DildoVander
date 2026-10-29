@@ -93,6 +93,7 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
         CAPPluginMethod(name: "guestRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareGuestFile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareAccountDataFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "shareChronicleImage", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareAuthenticatedResource", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareGuestLink", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "accountTransport", returnType: CAPPluginReturnPromise),
@@ -431,6 +432,14 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
     }
 
     @objc public func shareAccountDataFile(_ call: CAPPluginCall) {
+        sharePreparedAccountFile(call, chronicleImage: false)
+    }
+
+    @objc public func shareChronicleImage(_ call: CAPPluginCall) {
+        sharePreparedAccountFile(call, chronicleImage: true)
+    }
+
+    private func sharePreparedAccountFile(_ call: CAPPluginCall, chronicleImage: Bool) {
         performAccountRequest(call) { [self] requestId in
             guard accountDataShare == nil else { throw AccountDataFileFailure.busy }
             let lifecycle = AccountDataShareLifecycle()
@@ -445,7 +454,10 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                     let mediaType = call.getString("mediaType") ?? ""
                     let encoded = call.getString("bodyBase64") ?? ""
                     let file = try await Task.detached(priority: .userInitiated) {
-                        try AccountDataTemporaryFile.prepare(filename: filename, mediaType: mediaType, bodyBase64: encoded)
+                        if chronicleImage {
+                            return try AccountDataTemporaryFile.prepareChronicleImage(filename: filename, mediaType: mediaType, bodyBase64: encoded)
+                        }
+                        return try AccountDataTemporaryFile.prepare(filename: filename, mediaType: mediaType, bodyBase64: encoded)
                     }.value
                     try lifecycle.ownCleanup { try file.cleanup() }
                     try Task.checkCancellation()

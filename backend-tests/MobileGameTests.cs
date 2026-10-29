@@ -1410,6 +1410,8 @@ internal static partial class MobileGameTests
         private readonly SafeWorkshopLogProvider liveLog;
         private readonly Dictionary<HttpClient, CookieContainer> clientCookies = new();
         internal string BaseAddress => baseAddress;
+        internal IServiceProvider ChronicleServices => app.Services;
+        internal Kufr.Backend.Features.Chronicle.ChronicleStore Chronicle => app.Services.GetRequiredService<Kufr.Backend.Features.Chronicle.ChronicleStore>();
         internal ScriptedLiveSocketFactory? LiveSocketFactory { get; private set; }
         internal WandGenerationStore Wands => app.Services.GetRequiredService<WandGenerationStore>();
         internal KeepsakeStore Keepsakes => app.Services.GetRequiredService<KeepsakeStore>();
@@ -1475,6 +1477,7 @@ internal static partial class MobileGameTests
             builder.Services.AddAccountIdentity(builder.Configuration);
             builder.Services.AddLaunchManagement(builder.Configuration);
             builder.Services.AddMobileGame(builder.Configuration);
+            builder.Services.AddSingleton(new Kufr.Backend.Features.Chronicle.ChronicleStore(Path.Combine(root, "chronicle")));
             if (yoloProvider is not null) builder.Services.AddSingleton<IGameYoloProvider>(yoloProvider);
             if (bossNarrator is not null) builder.Services.AddSingleton<IGameBossNarrator>(bossNarrator);
             if (bossSpeech is not null) builder.Services.AddSingleton<IGameBossSpeech>(bossSpeech);
@@ -1497,6 +1500,8 @@ internal static partial class MobileGameTests
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
             app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapGameLive(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
+            Kufr.Backend.Features.Chronicle.ChronicleEndpoints.MapMobileChronicle(app);
+            app.MapLaunchChronicle();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
             app.MapGet("/test/csrf", (HttpContext context, IAntiforgery antiforgery) => Results.Json(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
             app.MapPost("/test/login/{id}", async (string id, HttpContext context, AccountDatabase db, SignInManager<AccountUser> signIn) =>

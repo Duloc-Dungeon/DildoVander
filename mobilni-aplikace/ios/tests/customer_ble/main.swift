@@ -1,6 +1,8 @@
 import Foundation
 
 let gameMatch = String(repeating: "a", count: 32)
+precondition(AccountTransportPolicy.account(path: "/app/v1/chronicle/source/conversation/\(String(repeating: "c", count: 64))", method: "GET"))
+precondition(AccountTransportPolicy.account(path: "/app/v1/chronicle/source/boss/baron:123456789abcdef0123456789abcdef0", method: "GET"))
 precondition(AccountTransportPolicy.account(path: "/app/v1/game", method: "GET"))
 precondition(AccountTransportPolicy.account(path: "/app/v1/game/matches", method: "POST"))
 precondition(AccountTransportPolicy.account(path: "/app/v1/game/matches/\(gameMatch)", method: "GET"))
@@ -22,6 +24,8 @@ precondition(AccountTransportPolicy.account(path: workshopSession + "/answers", 
 precondition(AccountTransportPolicy.account(path: workshopSession + "/skip", method: "POST"))
 precondition(AccountTransportPolicy.account(path: workshopSession + "/audio", method: "POST"))
 precondition(AccountTransportPolicy.account(path: workshopSession + "/transcribe", method: "POST"))
+precondition(AccountTransportPolicy.account(path: workshopSession + "/moments", method: "POST"))
+precondition(!AccountTransportPolicy.account(path: workshopSession + "/moments", method: "GET"))
 precondition(AccountTransportPolicy.account(path: workshopSession + "/artwork/retry", method: "POST"))
 precondition(AccountTransportPolicy.account(path: workshopSession + "/answers/\(String(repeating: "b", count: 32))", method: "PUT"))
 precondition(!AccountTransportPolicy.account(path: workshopSession + "/answers", method: "GET"))
@@ -124,6 +128,9 @@ precondition(!AccountTransportPolicy.account(path: "/app/v1/admin/launch/waiting
 precondition(AccountTransportPolicy.account(path: "/app/v1/admin/launch/waiting-room/abcdef0123456789abcdef0123456789/group", method: "PUT"))
 precondition(AccountTransportPolicy.account(path: "/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/countdown", method: "PUT"))
 precondition(AccountTransportPolicy.account(path: "/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/countdown/confirm", method: "POST"))
+precondition(AccountTransportPolicy.account(path: "/app/v1/admin/launch/groups/group-a/chronicle-close", method: "POST"))
+precondition(!AccountTransportPolicy.account(path: "/app/v1/admin/launch/groups/group-a/chronicle-close", method: "GET"))
+precondition(!AccountTransportPolicy.account(path: "/app/v1/admin/launch/groups/../chronicle-close", method: "POST"))
 precondition(AccountTransportPolicy.account(path: "/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/start", method: "POST"))
 precondition(!AccountTransportPolicy.account(path: "/app/v1/admin/launch/waiting-room", method: "POST"))
 precondition(!AccountTransportPolicy.account(path: "/app/v1/admin/launch/waiting-room/not-a-user/group", method: "PUT"))

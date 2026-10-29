@@ -18,6 +18,7 @@ interface IdentityBridge {
   passkey(options: { mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth'; token?: string; displayName?: string; openAiConsent?: boolean }): Promise<void>;
   accountTransport(options: { requestId: string; path: string; method: string; headers: Record<string, string>; bodyBase64?: string }): Promise<{ status: number; headers: Record<string, string>; bodyBase64: string }>;
   shareAccountDataFile(options: { requestId: string; filename: string; mediaType: 'application/json'; bodyBase64: string }): Promise<{ completed: boolean }>;
+  shareChronicleImage(options: { requestId: string; filename: string; mediaType: 'image/png' | 'image/jpeg' | 'image/webp'; bodyBase64: string }): Promise<{ completed: boolean }>;
   cancelAccountRequest(options: { requestId: string }): Promise<{ cancelled: boolean }>;
 }
 const nativeIdentity = registerPlugin<IdentityBridge>('KufrIdentity');
@@ -25,6 +26,7 @@ const native = Capacitor.isNativePlatform();
 const archiveUuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const ownedPortraitUpload = new RegExp(`^/app/v1/archive/owned/${archiveUuid}/portrait-uploads$`, 'i');
 const archiveAsset = new RegExp(`^/app/v1/archive/(?:owned|associations)/${archiveUuid}/assets/${archiveUuid}$`, 'i');
+const chronicleImage = new RegExp(`^/app/v1/chronicle/${archiveUuid}/(?:image|share|badges/[A-Za-z0-9._:-]{1,100}/image)$`, 'i');
 const testingAsset = new RegExp(`^/app/v1/testing-sessions/[0-9a-f]{32}/keepsakes/${archiveUuid}/assets/${archiveUuid}$`);
 const portraitProfile = '(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})';
 const portraitRevision = '[1-9][0-9]{0,18}';
@@ -58,6 +60,7 @@ export function accountTransportBodyLimit(path: string, method: string, contentT
 }
 
 export function accountTransportResponseLimit(path: string, method: string): number {
+  if (method === 'GET' && matchesExactTransportPath(chronicleImage, path)) return 8 * 1024 * 1024;
   if ((method === 'GET' && (matchesExactTransportPath(adminCharacterList, path) || matchesExactTransportPath(adminCharacterProfile, path)))
     || (method === 'PUT' && matchesExactTransportPath(adminCharacterProfile, path))
     || (method === 'PUT' && matchesExactTransportPath(adminCharacterPortrait, path))) return 262144;
@@ -66,6 +69,7 @@ export function accountTransportResponseLimit(path: string, method: string): num
   if (method !== 'GET') return 1024 * 1024;
   if (matchesExactTransportPath(prelaunchPortrait, path) || /^\/app\/v1\/sealed-cases\/sc_[a-f0-9]{32}\/portraits\/[A-Za-z0-9_-]{1,128}$/.test(path)) return 8 * 1024 * 1024;
   return matchesExactTransportPath(archiveAsset, path)
+    || matchesExactTransportPath(chronicleImage, path)
     || matchesExactTransportPath(opponentWandArtwork, path)
     || matchesExactTransportPath(workshopArtwork, path)
     || matchesExactTransportPath(testingAsset, path)
@@ -147,6 +151,54 @@ export async function shareNativeAccountDataFile(
     throw new Error('Nativní sdílení vrátilo neplatný výsledek.');
   }
   return {completed: result.completed};
+}
+
+export async function shareNativeChronicleImage(
+  blob: Blob,
+  filename: string,
+  context: NativeAccountFileContext = {},
+): Promise<{ completed: boolean }> {
+  const generation = authGeneration;
+  const accountId = account.value?.id;
+  const checkCurrent = () => {
+    context.check?.();
+    throwIfAborted(context.signal);
+    requireCurrentAuthentication(generation);
+    if (!accountId || account.value?.id !== accountId || signingOut.value || logoutPending
+      || deletionRequested.value || authenticationPending) throw new AccountContextChangedError();
+  };
+  checkCurrent();
+  if (!native || typeof nativeIdentity.shareChronicleImage !== 'function') {
+    throw new Error('Nativní sdílení obrázku není dostupné.');
+  }
+  if (!(blob instanceof Blob) || !/^vzpominka-[0-9a-f-]{36}\.(?:png|jpg|webp)$/i.test(filename)) {
+    throw new Error('Neplatný obrázek vzpomínky.');
+  }
+  const mediaType = blob.type.split(';', 1)[0].trim().toLowerCase();
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(mediaType)
+    || blob.size <= 0 || blob.size > 8 * 1024 * 1024) throw new Error('Obrázek vzpomínky má neplatný formát nebo velikost.');
+  const buffer = await blob.arrayBuffer();
+  checkCurrent();
+  if (buffer.byteLength !== blob.size) throw new Error('Velikost obrázku vzpomínky se změnila.');
+  const bytes = new Uint8Array(buffer);
+  const png = mediaType === 'image/png' && bytes.length >= 8
+    && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+  const jpeg = mediaType === 'image/jpeg' && bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const webp = mediaType === 'image/webp' && bytes.length >= 12
+    && String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP';
+  if (!png && !jpeg && !webp) throw new Error('Obsah souboru neodpovídá obrázku.');
+  const bodyBase64 = encodeAccountBody(bytes);
+  checkCurrent();
+  const result = await nativeAccountCall(context.signal, requestId => {
+    checkCurrent();
+    return nativeIdentity.shareChronicleImage({ requestId, filename, mediaType, bodyBase64 });
+  });
+  checkCurrent();
+  if (!result || typeof result !== 'object' || typeof result.completed !== 'boolean') {
+    throw new Error('Nativní sdílení vrátilo neplatný výsledek.');
+  }
+  return { completed: result.completed };
 }
 
 export const account = ref<Account | null>(null);
@@ -242,7 +294,7 @@ async function sendAccountTransport(path: string, init: RequestInit): Promise<Re
   throwIfAborted(init.signal);
   const method = init.method ?? 'GET';
   const headers = correlationHeaders(init.headers);
-  headers.set('Accept', 'application/json');
+  headers.set('Accept', chronicleImage.test(path) ? 'image/png, image/jpeg, image/webp' : 'application/json');
   if (method !== 'GET') headers.set('X-DV-CSRF', csrfToken);
   if (!native) {
     const response = await fetch(path, { ...init, method, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error' });

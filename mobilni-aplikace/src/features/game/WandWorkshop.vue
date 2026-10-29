@@ -26,6 +26,9 @@ const title = ref<HTMLElement>();
 const caption = ref<HTMLElement>();
 const artworkDecoded = ref(false);
 const newlyCompleted = ref(false);
+const savedMoments = ref<Record<string, string>>({});
+const savingMomentId = ref('');
+const momentError = ref('');
 let controller = new AbortController(); let poll: ReturnType<typeof setTimeout> | undefined;
 let refreshInFlight: Promise<void> | null = null; let syncFailures = 0;
 let operation = ''; let artworkKey = ''; let retryId = '';
@@ -136,6 +139,20 @@ function applySession(value: WorkshopSession | null) {
   if (value?.id !== session.value?.id) { releaseArtwork(); retryId = ''; }
   session.value = value; if (value) { operation = value.id; void updateArtwork(value); }
   if (['generating', 'complete'].includes(value?.status ?? '') && active.value) { live.setMuted(true); muted.value = true; }
+}
+async function saveConversationMoment(message: WorkshopMessage): Promise<void> {
+  const current = session.value;
+  if (props.prelaunch || current?.status !== 'complete' || message.role !== 'assistant' || savingMomentId.value) return;
+  savingMomentId.value = message.messageId;
+  momentError.value = '';
+  try {
+    const result = await accountRequest<{ sourceId: string }>(`${workshopSessionPath(current.id)}/moments`, 'POST', {
+      messageId: message.messageId, expectedRevision: message.revision,
+    }, undefined, 'Uložit vybranou odpověď do osobní kroniky? Uloží se jen tato replika, celý rozhovor zůstane soukromý.');
+    if (!/^[0-9a-f]{64}$/i.test(result.sourceId)) throw new Error('Server nevrátil platný odkaz na vzpomínku.');
+    savedMoments.value = { ...savedMoments.value, [message.messageId]: result.sourceId };
+  } catch { momentError.value = 'Vzpomínku se nepodařilo uložit. Rozhovor zůstává uložený; můžeš to zkusit znovu.'; }
+  finally { savingMomentId.value = ''; }
 }
 function refresh(): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
@@ -370,7 +387,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
         <AwButton v-if="session?.status === 'failed' && session.canRetry" :disabled="busy" @click="retryManufacture">Obnovit výrobu</AwButton>
         <p v-if="status && !active && !loading && !unavailable" class="trunk-workshop__status" role="status">{{ status }}</p><p v-if="error" role="alert">{{ error }}</p><p v-if="syncError" role="status">{{ syncError }}</p>
         <AwButton v-if="error || syncError || session?.status === 'paused' || session?.status === 'failed'" :disabled="busy" @click="refresh">Obnovit stav</AwButton>
-        <details v-if="messages.length" class="trunk-workshop__transcript"><summary>Přepis rozhovoru</summary><ol><li v-for="message in messages" :key="message.messageId"><strong>{{ message.role === 'user' ? 'Ty' : 'Kufr' }}</strong><p>{{ message.text }}</p><button v-if="mode === 'text' && canAnswer && message.role === 'user'" type="button" @click="correction = message; correctionText = message.text">Opravit sdělení</button></li></ol><form v-if="correction" @submit.prevent="saveCorrection"><label for="trunk-correction">Oprava sdělení</label><textarea id="trunk-correction" v-model="correctionText" maxlength="2000" /><AwButton type="submit" :disabled="busy || !correctionText.trim()">Uložit opravu</AwButton></form></details>
+        <details v-if="messages.length" class="trunk-workshop__transcript"><summary>Přepis rozhovoru</summary><p v-if="session?.status === 'complete' && !prelaunch">Můžeš uložit jednu konkrétní odpověď do osobní kroniky. Neuloží se celý rozhovor a tato vzpomínka nepůjde sdílet.</p><p v-if="momentError" role="alert">{{ momentError }}</p><ol><li v-for="message in messages" :key="message.messageId"><strong>{{ message.role === 'user' ? 'Ty' : 'Kufr' }}</strong><p>{{ message.text }}</p><button v-if="mode === 'text' && canAnswer && message.role === 'user'" type="button" @click="correction = message; correctionText = message.text">Opravit sdělení</button><AwButton v-if="session?.status === 'complete' && !prelaunch && message.role === 'assistant' && !savedMoments[message.messageId]" variant="secondary" :disabled="savingMomentId === message.messageId" @click="saveConversationMoment(message)">{{ savingMomentId === message.messageId ? 'Ukládám…' : 'Uložit vzpomínku' }}</AwButton><RouterLink v-if="savedMoments[message.messageId]" :to="{ path: '/me/keepsakes', query: { sourceKind: 'conversation', sourceId: savedMoments[message.messageId] } }">Otevřít v osobní kronice</RouterLink></li></ol><form v-if="correction" @submit.prevent="saveCorrection"><label for="trunk-correction">Oprava sdělení</label><textarea id="trunk-correction" v-model="correctionText" maxlength="2000" /><AwButton type="submit" :disabled="busy || !correctionText.trim()">Uložit opravu</AwButton></form></details>
         <button v-if="prelaunch && session && !wand" type="button" class="trunk-workshop__text-action trunk-workshop__leave" @click="stopMedia(); emit('exit')">Odejít a později pokračovat</button>
         <RouterLink v-else-if="session && !wand" class="trunk-workshop__leave" to="/play" @click="stopMedia">Odejít a později pokračovat</RouterLink>
       </section>

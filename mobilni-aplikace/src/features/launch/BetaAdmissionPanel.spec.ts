@@ -23,6 +23,12 @@ beforeEach(() => {
     if (path === '/app/v1/admin/launch/beta-admission') return { revision: 3, groupId, groupName: 'Interní beta', recruitmentOpen: true, fixedUniverse: null };
     if (path === '/app/v1/admin/launch/groups') return { groups: effectiveGroups };
     if (path === '/app/v1/admin/launch/waiting-room') return { members: [effectiveMember] };
+    if (path.endsWith('/chronicle-close') && method === 'POST') {
+      const id = path.split('/')[6];
+      const closedAt = 1790000000;
+      effectiveGroups = effectiveGroups.map(item => item.id === id ? { ...item, chronicleClosedAt: closedAt, revision: item.revision + 1 } : item);
+      return { closedAt };
+    }
     if (path.endsWith('/countdown') && method === 'PUT') {
       const request = body as { durationSeconds: number; forceStartAtEnd: boolean };
       const id = path.split('/')[6];
@@ -265,6 +271,22 @@ describe('owner waiting room and group countdown', () => {
     await flushPromises();
     expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/start`, 'POST', { expectedRevision: 2 }, undefined, `Otevřít noc pro skupinu Interní beta?`);
     expired.unmount();
+  });
+
+  it('saves an explicit evening finale from revealed memories and then hides the action', async () => {
+    effectiveGroups = [group(groupId, 'Interní beta', { openedAt: Date.now() - 1000 })];
+    const view = mount(BetaAdmissionPanel);
+    await flushPromises();
+    expect(view.text()).toContain('Uloží se závěrečná kronika');
+    const close = view.findAll('button').find(button => button.text() === 'Uložit závěr večera');
+    expect(close).toBeDefined();
+    await close!.trigger('click');
+    await flushPromises();
+    expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/chronicle-close`, 'POST', { expectedRevision: 2 }, undefined,
+      'Uložit závěr večera pro skupinu Interní beta? Kronika použije jen už odhalené vzpomínky.');
+    expect(view.text()).toContain('Závěr večera pro skupinu Interní beta byl uložen.');
+    expect(view.findAll('button').some(button => button.text() === 'Uložit závěr večera')).toBe(false);
+    view.unmount();
   });
 
   it('reconciles an ambiguous assignment before enabling another mutation', async () => {

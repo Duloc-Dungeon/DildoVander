@@ -27,6 +27,7 @@ using Kufr.Backend.Features.Game;
 using Kufr.Backend.Features.SealedCase;
 using Kufr.Backend.Features.Push;
 using Kufr.Backend.Features.ApplicationUpdates;
+using Kufr.Backend.Features.Chronicle;
 
 var provisioning = args.Contains("--memory-provision");
 var accountProvisioning = AccountProvisioning.IsCommand(args);
@@ -110,6 +111,13 @@ builder.Services.AddSingleton(GptLiveOptions.Read(builder.Configuration));
 builder.Services.AddSingleton(sp => HybridMemoryOptions.Read(builder.Configuration, sp.GetRequiredService<OperationJournal>()));
 builder.Services.AddSingleton<WandDecisionService>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.WandGenerationStore>();
+if (AccountConfiguration.Read(builder.Configuration).Enabled)
+{
+    builder.Services.AddSingleton(sp => new ChronicleStore(sp.GetRequiredService<AccountConfiguration>().DataRoot));
+    builder.Services.AddSingleton<IChronicleIllustrator, ChronicleIllustrator>();
+    builder.Services.AddHostedService<ChronicleSourcesWorker>();
+    builder.Services.AddHostedService<ChronicleWorker>();
+}
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IWandGenerationProvider, Kufr.Backend.Features.Wands.OpenAiWandGenerationProvider>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IMobileWandQuestionProvider, Kufr.Backend.Features.Wands.OpenAiMobileWandQuestionProvider>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.WandGenerationService>();
@@ -206,6 +214,8 @@ app.MapApplicationUpdateEndpoints();
 Kufr.Backend.Features.Wands.MobileWandEndpoints.MapMobileWands(app);
 Kufr.Backend.Features.Wands.MobileWandWorkshopEndpoints.MapWorkshopLive(app);
 app.MapMobileGame();
+app.MapMobileChronicle();
+app.MapLaunchChronicle();
 app.MapGameLive();
 app.MapSealedCase();
 app.MapMobileGameBoss();

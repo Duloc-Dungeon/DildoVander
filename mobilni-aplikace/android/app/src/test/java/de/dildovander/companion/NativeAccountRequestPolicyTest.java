@@ -14,6 +14,28 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void chronicleRoutesAreOwnerSessionScopedAndImageBytesAreBounded() {
+        String id = "12345678-1234-4234-8234-123456789abc";
+        String event = "/app/v1/chronicle/" + id;
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/chronicle?kind=yolo&limit=50", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(event, "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(event + "/reveal", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(event + "/illustration", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows(event + "/image", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(event + "/share", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows(event + "/badges/badge-first-win/image", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/chronicle/source/yolo/12345678123442348234123456789abc", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/chronicle/source/conversation/" + "c".repeat(64), "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/chronicle/source/boss/baron:123456789abcdef0123456789abcdef0", "GET"));
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(event + "/image", "GET"));
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(event + "/share", "GET"));
+        assertEquals(8 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(event + "/badges/badge-first-win/image", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(event + "/image?other=1", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(event + "/reveal", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/chronicle?kind=unknown&limit=50", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/customer/wand/workshop/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/moments", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/customer/wand/workshop/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/moments", "GET"));
+    }
     @Test public void gameLiveAllowsOnlyBoundedSignalRTransportRequests() {
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/live/negotiate?negotiateVersion=1", "POST"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/live?id=connection_1-abc&_=1793275200000", "GET"));
@@ -309,6 +331,9 @@ public final class NativeAccountRequestPolicyTest {
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room/abcdef0123456789abcdef0123456789/group", "PUT"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/countdown", "PUT"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/countdown/confirm", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/chronicle-close", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/chronicle-close", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/../chronicle-close", "POST"));
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/groups/0123456789abcdef0123456789abcdef/start", "POST"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room", "POST"));
         assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/launch/waiting-room/not-a-user/group", "PUT"));

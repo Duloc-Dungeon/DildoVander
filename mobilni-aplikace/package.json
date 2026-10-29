@@ -34,6 +34,7 @@
     "test:game:browser": "node tests/game.browser.mjs",
     "test:game-live:browser": "node tests/game-live.browser.mjs",
     "preview:sealed-case": "node tests/sealed-case.preview.mjs",
+    "preview:chronicle": "node tests/chronicle.preview.mjs",
     "test:sealed-case:browser": "node tests/sealed-case.browser.mjs",
     "test:sealed-dossier:browser": "node tests/sealed-dossier.browser.mjs",
     "test:boss:browser": "node tests/boss.browser.mjs",

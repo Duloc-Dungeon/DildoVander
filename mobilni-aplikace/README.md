@@ -541,7 +541,7 @@ označená a sama se znovu neodešle.
 
 ### Spuštění a kontroly
 
-Ve složce `mobilni-aplikace` použijte Node.js 24.21.0 z `.nvmrc`:
+Ve složce `mobilni-aplikace` použijte Node.js 25.9.0 z `.nvmrc`:
 
 ```text
 npm ci
