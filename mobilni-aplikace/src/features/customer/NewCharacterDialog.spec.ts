@@ -27,7 +27,7 @@ describe('NewCharacterDialog', () => {
     expect((wrapper.get('#new-character-openai-consent').element as HTMLInputElement).checked).toBe(false);
     expect(wrapper.get('dialog').attributes('aria-label')).toBe('Vytvořit novou postavu');
     expect(wrapper.text()).toContain('Aktuální postava: Luna');
-    expect(wrapper.text()).toContain('Historie rozhovorů a památky předchozí postavy zůstanou uložené.');
+    expect(wrapper.text()).toContain('rozhovory a památky té předchozí zůstanou uložené.');
     expect(wrapper.text()).toContain('založí nový');
     wrapper.unmount();
   });
@@ -108,8 +108,8 @@ describe('NewCharacterDialog', () => {
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
     expect(wrapper.get('dialog').attributes('aria-label')).toBe('Vytvořit novou postavu');
-    expect(wrapper.text()).toContain('Nová postava vytvoří samostatnou identitu. Historie rozhovorů a památky předchozí postavy zůstanou uložené.');
-    expect(wrapper.text()).toContain('Neuložené úpravy aktuální postavy se do nové nepřenesou. Volbou Zrušit se k nim vrátíte.');
+    expect(wrapper.text()).toContain('Nová postava dostane vlastní identitu; rozhovory a památky té předchozí zůstanou uložené.');
+    expect(wrapper.text()).toContain('Neuložené úpravy aktuální postavy se do nové nepřenesou. Volbou Zrušit se k nim vrátíš.');
     expect(wrapper.text()).toContain('Souhlasím s odesláním údajů této nové postavy službě AI');
     expect((wrapper.get('#new-character-openai-consent').element as HTMLInputElement).checked).toBe(false);
     await wrapper.get('form').trigger('submit');

@@ -397,7 +397,7 @@ async function openAction() {
                   <small>Přijetí nepotvrzuje úspěch.</small>
                 </div>
               </div>
-              <p v-else>Žádný potvrzený plán. Při uzávěrce vyčkáváš na svém místě.</p>
+              <p v-else>Bez potvrzeného plánu při uzávěrce vyčkáváš na svém místě. Hra má pro nerozhodnost pevně stanovený postup.</p>
               <p v-if="view.phase !== 'planning'" class="sealed-muted">Teď se nové tahy nepotvrzují. {{ view.phase === 'quiet' ? 'Telefon může stranou; potvrzený plán zůstává uložený.' : 'Další postup určuje aktuální fáze případu.' }}</p>
 
               <template v-if="view.phase === 'planning'">

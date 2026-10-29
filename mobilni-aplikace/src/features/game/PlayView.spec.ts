@@ -240,7 +240,7 @@ describe('mobile game interaction', () => {
     const boss = await render('/play/boss');
     expect(boss.text()).toContain('V exhibici dostaneš neomezená kouzla');
     expect(boss.text()).toContain('6 energie proti 3');
-    expect(boss.findAll('button').some(button => button.text() === 'Vyzvat bosse')).toBe(true);
+    expect(boss.findAll('button').some(button => button.text() === 'Vyzvat Barona')).toBe(true);
     expect(boss.find('a[href="/play/wand"]').exists()).toBe(false);
   });
 
