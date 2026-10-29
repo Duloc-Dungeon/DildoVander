@@ -57,7 +57,33 @@ try {
       await page.unroute('**/app/v1/customer/wand/workshop');
     }
     await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).focus(); await page.keyboard.press('Enter');
-    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    await page.getByText('Hůlka je uložená a připravená ke hře.', { exact: true }).waitFor();
+
+    if (width === 390) {
+      let artworkFailure = 'fetch';
+      await page.route('**/artwork/assets/*', route => artworkFailure === 'fetch'
+        ? route.fulfill({ status: 503, body: '' })
+        : artworkFailure === 'decode'
+          ? route.fulfill({ contentType: 'image/png', body: 'invalid image bytes' })
+          : route.continue());
+      await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
+      await page.getByText('Ilustraci se nepodařilo načíst.', { exact: true }).waitFor();
+      artworkFailure = 'decode';
+      await page.evaluate(() => {
+        window.__artworkDecodeFailures = 0;
+        document.addEventListener('error', event => {
+          if (event.target instanceof HTMLImageElement && event.target.classList.contains('trunk-stage__wand')) window.__artworkDecodeFailures++;
+        }, true);
+      });
+      await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
+      await page.waitForFunction(() => window.__artworkDecodeFailures > 0);
+      await page.waitForFunction(() => document.querySelector('.trunk-stage')?.getAttribute('data-stage') === 'revealed'
+        && document.querySelector('.trunk-workshop__scene')?.getAttribute('data-artwork-visible') === 'false');
+      await page.getByText('Ilustraci se nepodařilo načíst.', { exact: true }).waitFor();
+      await page.screenshot({ path: path.join(output, 'artwork-decode-failed-390.png'), fullPage: true }); captures++;
+      assert.equal(await page.getByRole('heading', { name: 'Tichý přístav', exact: true }).count(), 1);
+      artworkFailure = '';
+    }
 
     await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
     await page.locator('.trunk-stage__wand').waitFor();
@@ -80,9 +106,9 @@ try {
       await page.waitForFunction(() => !document.querySelector('textarea')?.disabled);
     }
     await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).click();
-    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    await page.getByText('Hůlka je uložená a připravená ke hře.', { exact: true }).waitFor();
     await page.reload();
-    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    await page.getByText('Hůlka je uložená a připravená ke hře.', { exact: true }).waitFor();
     assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1);
     assert.equal(await overflow(), false, `${width}: upgraded wand result no overflow`);
     await page.screenshot({ path: path.join(output, `upgrade-result-${width}.png`), fullPage: true }); captures++;

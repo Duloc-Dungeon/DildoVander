@@ -24,6 +24,11 @@ try {
     await page.goto(`${origin}/__workshop/prelaunch`);
     await page.locator('.portrait-stage[data-curtain="open"]').waitFor();
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
+    const prepareButton = page.getByRole('button', { name: 'Vytvořit hůlku', exact: true });
+    const prepareBox = await prepareButton.boundingBox();
+    assert(prepareBox && prepareBox.y + prepareBox.height <= 844, `${width}: prepare action is in the first viewport`);
+    assert.equal(await page.locator('.launch-next-step').count(), 0, 'there is one state-aware wand action');
+    await page.getByText(/Večer se otevře/).waitFor();
     assert.equal(requests.filter(request => request.method !== 'GET').length, 0, 'reveal and entry only read state');
     assert.equal(await overflow(), false, `${width}: reveal fits`);
     await page.screenshot({ path: path.join(output, `reveal-${width}.png`), fullPage: true }); captures++;
@@ -34,6 +39,8 @@ try {
     assert.equal(await page.locator('#workshop-title').evaluate(element => element === document.activeElement), true);
     assert.equal(await page.locator('a[href="/play"]').count(), 0, 'prelaunch workshop stays outside the game');
     await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
+    assert.equal(await page.getByText('Mikrofon je vypnutý.', { exact: true }).count(), 0, 'text mode does not announce an unused microphone');
+    assert.equal(await page.getByLabel('Tvoje sdělení kufru').getAttribute('aria-describedby'), 'trunk-answer-hint');
     await page.getByLabel('Tvoje sdělení kufru').fill('Hůlka má zachránit cestu přes mlhu.');
     await page.getByRole('button', { name: 'Odeslat', exact: true }).click();
     await page.getByRole('heading', { name: /Kufr si pamatuje/ }).waitFor();
@@ -53,9 +60,16 @@ try {
     await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
     await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).click();
     await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).waitFor();
+    assert.equal(await page.locator('.trunk-stage').isVisible(), false, 'failed artwork does not reserve an empty stage');
+    assert.equal(await page.getByText('Ilustrace se nezdařila.', { exact: true }).count(), 1, 'artwork failure has one recovery message');
+    assert.equal(await page.locator('#workshop-title').evaluate(element => element === document.activeElement), true, 'completion moves focus to the saved wand');
     await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
     await page.locator('.trunk-stage__wand').waitFor();
     await page.waitForFunction(() => document.querySelector('.trunk-stage__wand')?.naturalWidth > 0);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const returnBox = await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).boundingBox();
+    assert(returnBox && returnBox.y + returnBox.height <= 844, `${width}: saved result includes its next action in the first viewport`);
+    await page.screenshot({ path: path.join(output, `result-${width}.png`), fullPage: true }); captures++;
     assert.equal(await overflow(), false, `${width}: saved wand fits`);
     await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).click();
     await page.getByText('Hůlka je uložená. Ollivander Industries™ děkuje za důvěru. Považuje ji za odvážnou.', { exact: true }).waitFor();

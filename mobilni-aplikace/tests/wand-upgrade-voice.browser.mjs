@@ -88,7 +88,7 @@ try {
     socket.send(JSON.stringify({ type: 'state', session: fixture.finishVoice() }));
     await page.getByRole('heading', { name: 'Hůlka dostává tvar', exact: true }).waitFor();
     socket.send(JSON.stringify({ type: 'ended' }));
-    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    await page.getByText('Hůlka je uložená a připravená ke hře.', { exact: true }).waitFor();
     assert.equal(await page.getByRole('link', { name: 'Pokračovat s hůlkou', exact: true }).getAttribute('href'), '/play');
     await page.waitForFunction(() => window.__upgradeVoiceTracks.length > 0 && window.__upgradeVoiceTracks.every(track => track.readyState === 'ended'));
     await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
@@ -99,7 +99,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: path.join(output, `upgrade-wand-${width}.png`), fullPage: true });
     await page.reload();
-    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    await page.getByText('Hůlka je uložená a připravená ke hře.', { exact: true }).waitFor();
     await page.waitForFunction(() => document.querySelector('.trunk-stage__wand')?.naturalWidth > 0);
     assert.equal(fixture.requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1);
     assert.equal(fixture.requests.some(request => request.path.endsWith('/finish')), false, 'Voice completion arrives from the server, without a text-mode finish request.');

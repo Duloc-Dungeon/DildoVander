@@ -8,6 +8,8 @@ const props = withDefaults(defineProps<TrunkStageProps>(), {
   artworkStatus: 'not-requested',
   wandName: '',
   wandArtworkUrl: null,
+  showCaption: true,
+  showArtworkStatus: true,
   trunkWidth: 960,
   trunkHeight: 960,
   artworkPlacement: 'standalone',
@@ -139,11 +141,11 @@ function onArtworkError(event: Event) {
           @load="onArtworkLoad"
           @error="onArtworkError"
         />
-        <p v-if="!showArtwork || !decoded" class="trunk-stage__artwork-state" role="status">
+        <p v-if="showArtworkStatus && (!showArtwork || !decoded)" class="trunk-stage__artwork-state" role="status">
           {{ artworkMessage }}
         </p>
       </div>
-      <figcaption v-if="wandName" class="trunk-stage__name">{{ wandName }}</figcaption>
+      <figcaption v-if="showCaption && wandName" class="trunk-stage__name">{{ wandName }}</figcaption>
     </figure>
   </div>
 </template>

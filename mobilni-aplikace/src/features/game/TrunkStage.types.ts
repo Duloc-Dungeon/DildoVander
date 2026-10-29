@@ -38,6 +38,9 @@ export interface TrunkStageProjection {
   artworkStatus?: WandArtworkStatus;
   /** Confirmed stored name, not a predicted model transcript. */
   wandName?: string;
+  /** Hide when the owning result view already presents the name or status. */
+  showCaption?: boolean;
+  showArtworkStatus?: boolean;
 }
 
 export interface TrunkStageAssets {
