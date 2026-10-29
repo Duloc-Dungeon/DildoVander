@@ -20,9 +20,18 @@ try {
   for (const width of [320, 390, 1280]) {
     const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: 'reduce' });
     const page = await context.newPage();
+    // Headless Chromium starts with notifications denied. Exercise the eligible
+    // waiting-room state without requesting any real browser permission.
+    await page.addInitScript(() => {
+      window.notificationPermissionRequests = 0;
+      Object.defineProperty(window, 'Notification', { configurable: true, value: {
+        permission: 'default', requestPermission: async () => { window.notificationPermissionRequests++; return 'denied'; },
+      } });
+    });
     page.on('pageerror', error => errors.push(error.message));
     page.on('response', response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); });
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    await page.route('**/app/v1/push', route => route.fulfill({ json: { web: true, android: false, ios: false, publicKey: 'offline-fixture', enabled: false } }));
     let portraitStatus = 'running';
     await page.route('**/app/v1/prelaunch/character', route => route.fulfill({ json: {
       character, artwork: { status: portraitStatus, loadingMessage: loadingJoke, welcome },
@@ -119,6 +128,8 @@ try {
     await page.getByRole('button', { name: 'Počkat na začátek večera', exact: true }).click();
     await page.getByText('Hůlka je uložená. Ollivander Industries™ děkuje za důvěru. Považuje ji za odvážnou.', { exact: true }).waitFor();
     await page.getByRole('heading', { name: 'Vítej v čekárně.', exact: true }).waitFor();
+    await page.locator('.push-offer').getByRole('button', { name: 'Zapnout oznámení', exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.notificationPermissionRequests), 0, 'waiting-room entry offers opt-in without requesting permission automatically');
     await page.getByText(welcome.joke, { exact: true }).waitFor();
     assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Čekárna');
     await page.locator('.prelaunch-wand-keepsake').getByText('Tichý přístav', { exact: false }).waitFor();

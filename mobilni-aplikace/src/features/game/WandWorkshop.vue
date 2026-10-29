@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
 import { RouterLink } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
+import PushNotifications from '../identity/PushNotifications.vue';
 import { account, accountOrigin, accountRequest, accountTransport } from '../identity/session';
 import { secureUuid } from '../../application/identifiers.mjs';
 import { projectMobileGeneratedWand } from '../archive/generatedWand';
@@ -307,6 +308,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
           <AwButton v-if="prelaunch" variant="primary" @click="stopMedia(); emit('exit')">Počkat na začátek večera</AwButton>
           <RouterLink v-else class="aw-button aw-button--primary" to="/play" @click="stopMedia">Pokračovat s hůlkou</RouterLink>
           <p v-if="session?.verdict" class="trunk-workshop__verdict">{{ session.verdict }}</p>
+          <PushNotifications v-if="!prelaunch && !active" context="wand" />
         </template>
         <template v-else-if="session?.status === 'generating'"><h2 class="trunk-workshop__greeting">Hůlka dostává tvar</h2><p role="status">Výroba poběží i po odchodu z obrazovky. Rozhovor už je uložený.</p><p class="trunk-workshop__hint">Až bude hotová, objeví se tady. Ilustrace se může dokončit později.</p></template>
         <template v-else-if="session?.status === 'failed'"><h2>Výroba se zastavila</h2><p>Rozhovor zůstává uložený. Obnov stav dílny{{ session.canRetry ? ' nebo zkus výrobu znovu' : '' }}.</p></template>

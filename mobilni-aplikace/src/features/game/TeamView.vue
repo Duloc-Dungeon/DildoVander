@@ -10,6 +10,7 @@ import GameSpellToken from './GameSpellToken.vue';
 import GameRules from './GameRules.vue';
 import GameClash from './GameClash.vue';
 import { useGameWandArtwork } from './useGameWandArtwork';
+import { useGameLiveUpdates } from './useGameLiveUpdates';
 import { useOpponentWandArtwork, type OpponentWandMetadata } from './useOpponentWandArtwork';
 import { actions, actionName, gameRequest, gameErrorText, GameError, operation, practiceRound, type Choice, type Inventory, type Lobby, type Round } from './game';
 import './game.css';
@@ -106,7 +107,9 @@ const halftimeSecondsRemaining = computed(() => {
 });
 const canTransfer = computed(() => halftimeSecondsRemaining.value !== null && halftimeSecondsRemaining.value > 0);
 const controller = new AbortController();
-let alive = true; let refreshing = false; let timer: ReturnType<typeof setInterval> | undefined;
+let alive = true;
+const refreshing = ref(false);
+let timer: ReturnType<typeof setInterval> | undefined;
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 let expiredRefreshKey = '';
 let listenersAttached = false;
@@ -117,8 +120,8 @@ function update(value: TeamMatch) {
   match.value = value;
 }
 async function refresh() {
-  if (refreshing || busy.value) return;
-  refreshing = true;
+  if (refreshing.value || busy.value) return;
+  refreshing.value = true;
   try {
     const [players, result, wandStatus] = await Promise.all([
       gameRequest<Lobby>('', undefined, controller.signal),
@@ -131,13 +134,30 @@ async function refresh() {
     void playerWand.refresh(wandStatus?.wand?.wandId);
     error.value = ''; uncertain.value = false;
   } catch (cause) {
-    if (alive) {
-      error.value = gameErrorText(cause);
-      if (cause instanceof GameError && [401, 403, 404].includes(cause.status)) { match.value = undefined; matches.value = []; lobby.value = undefined; }
-    }
+    handleRefreshError(cause);
   }
-  finally { if (alive) { refreshing = false; loading.value = false; } }
+  finally { if (alive) { refreshing.value = false; loading.value = false; } }
 }
+function handleRefreshError(cause: unknown) {
+  if (alive) {
+    error.value = gameErrorText(cause);
+    if (cause instanceof GameError && [401, 403, 404].includes(cause.status)) { match.value = undefined; matches.value = []; lobby.value = undefined; }
+  }
+}
+async function refreshLive() {
+  if (!id.value) return refresh();
+  if (refreshing.value || busy.value) return;
+  refreshing.value = true;
+  try {
+    const value = await gameRequest<TeamMatch>(`/teams/${id.value}`, undefined, controller.signal);
+    if (alive) {
+      update(value);
+      error.value = ''; uncertain.value = false;
+    }
+  } catch (cause) { handleRefreshError(cause); }
+  finally { if (alive) refreshing.value = false; }
+}
+useGameLiveUpdates(refreshLive, () => busy.value || refreshing.value);
 async function send(action: string, fields: Record<string, unknown> = {}) {
   if (busy.value || uncertain.value) return;
   if (action === 'transfer' && (match.value?.halftimeEndsAt == null || Date.now() >= match.value.halftimeEndsAt * 1000)) {
@@ -165,7 +185,7 @@ function updateHalftimeClock() {
   if (countdownTimer) clearInterval(countdownTimer);
   countdownTimer = undefined;
   const refreshKey = `${match.value.id}:${match.value.halftimeEndsAt}`;
-  if (expiredRefreshKey === refreshKey || refreshing || busy.value) return;
+  if (expiredRefreshKey === refreshKey || refreshing.value || busy.value) return;
   expiredRefreshKey = refreshKey;
   void refresh();
 }
@@ -196,7 +216,7 @@ function stopLiveUpdates() {
 watch(() => account.value?.id, () => {
   alive = false; controller.abort(); stopLiveUpdates(); match.value = undefined; matches.value = []; lobby.value = undefined;
 }, { flush: 'sync' });
-onMounted(() => { void refresh(); timer = setInterval(visible, 3000); document.addEventListener('visibilitychange', visible); window.addEventListener('online', visible); listenersAttached = true; });
+onMounted(() => { void refresh(); timer = setInterval(() => { if (!document.hidden) void refreshLive(); }, 3000); document.addEventListener('visibilitychange', visible); window.addEventListener('online', visible); listenersAttached = true; });
 onBeforeUnmount(() => { alive = false; controller.abort(); stopLiveUpdates(); });
 </script>
 <template>

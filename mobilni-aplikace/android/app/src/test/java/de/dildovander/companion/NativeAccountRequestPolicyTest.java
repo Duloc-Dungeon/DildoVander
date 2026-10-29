@@ -14,6 +14,18 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void gameLiveAllowsOnlyBoundedSignalRTransportRequests() {
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/live/negotiate?negotiateVersion=1", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/live?id=connection_1-abc&_=1793275200000", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/live?id=connection_1-abc", "POST"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/live?id=connection_1-abc", "DELETE"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/live", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/live/negotiate?negotiateVersion=1", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/live?id=one&id=two", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/live?id=one&access_token=secret", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/live?id=one&_=123", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/live?id=one", "PUT"));
+    }
     @Test public void opponentWandArtworkIsMatchAndRevisionBound() {
         String path = "/app/v1/game/matches/" + String.join("", Collections.nCopies(32, "a"))
             + "/opponent/wand-artwork?revision=" + String.join("", Collections.nCopies(64, "b"));

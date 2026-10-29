@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 const api = vi.hoisted(() => ({ request: vi.fn(), transport: vi.fn(), connect: vi.fn(), dispose: vi.fn(), interrupt: vi.fn(), observer: null as any }));
 vi.mock('../identity/session', async () => { const { ref } = await import('vue'); return { account: ref({ id: 'alice', openAiConsent: true }), accountOrigin: ref('https://example.test'), accountRequest: api.request, accountTransport: api.transport }; });
 vi.mock('../persona-lab/voice', () => ({ LabVoice: class { constructor(observer: unknown) { api.observer = observer; } connect = api.connect; dispose = api.dispose; interrupt = api.interrupt; setMuted = vi.fn(); end() { api.observer.phase('ended'); } } }));
+vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div />' } }));
 import WandWorkshop from './WandWorkshop.vue';
 import { account } from '../identity/session';
 const base = '/app/v1/customer/wand/workshop'; const id = 'b'.repeat(32);

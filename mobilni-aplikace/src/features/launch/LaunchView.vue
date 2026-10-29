@@ -523,6 +523,7 @@ onBeforeUnmount(() => {
         <span>{{ step }}<small v-if="index === 1 && phase === 'failed'">Bez portrétu</small><span v-if="index < receptionStep" class="sr-only">{{ index === 1 && phase === 'failed' ? ' — přeskočeno' : ' — hotovo' }}</span></span>
       </li>
     </ol>
+    <PushNotifications v-if="wandComplete && !workshopOpen" context="waiting" class="launch-push-offer" />
     <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" @complete-change="wandComplete = $event" />
     <section v-show="!workshopOpen" class="launch-card" :class="{ 'launch-card--reception': writing || state?.character }">
       <PaperSurface class="launch-copy">
@@ -691,6 +692,7 @@ onBeforeUnmount(() => {
 .reception-introduction .launch-joke { max-width: 28ch; font-size: clamp(1.4rem, 5vw, 2.1rem); line-height: 1.4; font-weight: 650; letter-spacing: -.02em; }
 .reception-introduction .launch-identity { color: var(--wns-muted); font-size: 1rem; }
 .reception-waiting { display: grid; gap: 28px; width: min(100%, 62rem); margin: 40px auto 0; padding-top: 28px; border-top: 1px solid var(--wns-line); }
+.launch-push-offer { width: min(100%, 62rem); margin: 24px auto; }
 .reception-waiting .countdown { text-align: left; }
 .reception-waiting :deep(.character-countdown-identity p) { display: none; }
 .reception-waiting :deep(.character-countdown-title) { margin-top: 16px; color: var(--wns-muted); }
