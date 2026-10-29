@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
@@ -109,6 +109,41 @@ try {
     await checkLayout(page, `ordinary duel ${width}`);
     await context.close();
     console.log(`Boss states checked at ${width} px (${reducedMotion}).`);
+  }
+  if (process.env.RICKROLL_TEST_MP4) {
+    const media = await readFile(process.env.RICKROLL_TEST_MP4);
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    let claimed = false;
+    await context.route('**/app/v1/launch/rickroll', route => route.fulfill({ json: { available: true, url: '/app/v1/launch/rickroll.mp4' } }));
+    await context.route('**/app/v1/launch/rickroll.mp4', route => route.fulfill({ contentType: 'video/mp4', body: media }));
+    await context.route('**/app/v1/game/boss/rickroll/claim', route => {
+      const play = !claimed;
+      claimed = true;
+      return route.fulfill({ json: { play } });
+    });
+    const page = await context.newPage();
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${origin}/__game/captured`);
+    await page.getByRole('link', { name: 'Vyzvat Barona', exact: true }).click();
+    await page.locator('.rickroll-video').waitFor();
+    await page.waitForFunction(() => {
+      const video = document.querySelector('.rickroll-video video');
+      return video && !video.paused && video.currentTime > 0 && video.volume === 0.8 && !video.muted;
+    });
+    assert.equal(await page.getByRole('button', { name: 'Vyzvat Barona', exact: true }).count(), 0, 'boss actions are replaced while the surprise plays');
+    await checkLayout(page, 'boss Rickroll 390');
+    await page.screenshot({ path: path.join(output, 'rickroll-390.png'), fullPage: true });
+    await page.getByRole('button', { name: 'Pokračovat', exact: true }).click();
+    await page.getByRole('button', { name: 'Vyzvat Barona', exact: true }).waitFor();
+    await page.reload();
+    await page.getByRole('button', { name: 'Vyzvat Barona', exact: true }).waitFor();
+    assert.equal(await page.locator('.rickroll-video').isVisible(), false, 'reopening does not replay the player claim');
+    await page.getByRole('button', { name: 'Vyzvat Barona', exact: true }).click();
+    await page.waitForURL(`**/play/boss/${bossId}`);
+    await page.getByRole('button', { name: 'Potvrdit tah' }).waitFor();
+    assert.equal(await page.locator('.rickroll-video').isVisible(), false, 'entering the attempt also respects the same player claim');
+    await context.close();
+    console.log('Boss Rickroll: real MP4 plays on entry at 80%, then skips on reload and attempt entry.');
   }
   assert.deepEqual(errors, [], 'no uncaught browser errors');
   assert.deepEqual(failedRequests, [], 'no failed requests');

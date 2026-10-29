@@ -49,4 +49,14 @@ assert.equal(teamArtwork.responses['200'].headers['X-Content-Type-Options'].sche
 const boss = ajv.getSchema('urn:game:GameBossCommand');
 assert.ok(boss({ operationId: uuid, expectedRevision: 1, choice: 'shield', sparkBid: 1 }));
 assert.equal(boss({ operationId: 'not-a-guid', expectedRevision: 1 }), false);
+const bossRickroll = ajv.getSchema('urn:game:GameBossRickrollCommand');
+assert.ok(bossRickroll({ operationId: uuid, expectedRevision: 0, enabled: true }));
+assert.equal(bossRickroll({ operationId: uuid, expectedRevision: -1, enabled: true }), false);
+assert.equal(bossRickroll({ operationId: uuid, expectedRevision: 0, enabled: true, extra: true }), false);
+const bossClaim = ajv.getSchema('urn:game:GameBossRickrollClaim');
+assert.ok(bossClaim({ play: true }));
+assert.equal(bossClaim({ play: 'true' }), false);
+assert.deepEqual(document.paths['/app/v1/admin/game/groups/{id}/boss/rickroll'].post.responses['200'].content['application/json'].schema,
+  { $ref: '#/components/schemas/GameBossProfile' });
+assert.ok(document.paths['/app/v1/game/boss/rickroll/claim'].post.parameters.some(parameter => parameter.name === 'X-DV-CSRF' && parameter.required));
 console.log('Mobile game OpenAPI: schemas, cookie/CSRF boundaries, account ingress and command bounds passed.');

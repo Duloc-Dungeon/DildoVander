@@ -33,7 +33,7 @@ export interface Match {
   ownLoadoutLocked?: boolean; opponentLoadoutLocked?: boolean; rulesVersion?: string;
   needsLoadout?: boolean; loadoutsAvailable?: boolean;
 }
-export interface BossProfile { revealed: boolean; rescued: boolean; referenceXp: number; revision: number; activeAttemptId?: string }
+export interface BossProfile { revealed: boolean; rescued: boolean; referenceXp: number; revision: number; activeAttemptId?: string; rickrollEnabled?: boolean; rickrollRevision?: number; rickrollSeen?: boolean }
 export interface Milestone { id: string; title: string; text: string; action: string; destination: string }
 export interface Ranking { id: string; displayName: string; xp: number; wins: number; rank: number }
 export interface Progress {

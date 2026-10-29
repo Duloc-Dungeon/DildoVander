@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createRouter, createMemoryHistory } from 'vue-router';
 vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div />' } }));
+vi.mock('../media/RickrollVideo.vue', () => ({ default: { name: 'RickrollVideo', props: ['src', 'active'], emits: ['dismiss'], template: '<section v-if="active" class="rickroll-video"><button @click="$emit(\'dismiss\')">Pokračovat</button></section>' } }));
 const api = vi.hoisted(() => ({ transport: vi.fn(), request: vi.fn(), setAccount: (_value: unknown) => {}, changed: () => {} }));
 vi.mock('./gameLive', () => ({ connectGameLive: (changed: () => void) => { api.changed = changed; return () => {}; } }));
 vi.mock('../identity/session', async () => {
@@ -26,6 +27,29 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('claims the boss surprise immediately on screen entry and does not replay it after reopening', async () => {
+    let seen = false;
+    api.request.mockImplementation(async (path: string) => path === '/app/v1/launch/rickroll'
+      ? { available: true, url: '/app/v1/launch/rickroll.mp4' }
+      : { hasCharacter: true, wand: { wandId: 'saved' }, tier: 1 });
+    api.transport.mockImplementation(async (path: string) => {
+      if (path.endsWith('/rickroll/claim')) { const play = !seen; seen = true; return Response.json({ play }); }
+      if (path.endsWith('/boss')) return Response.json({ revealed: true, rescued: false, referenceXp: 10, revision: 1, rickrollEnabled: true, rickrollSeen: seen });
+      if (path.endsWith('/progress')) return Response.json({ pending: [], messages: [], combatRanking: [], yoloRanking: [] });
+      return Response.json({ player: { id: 'one', xp: 10, displayName: 'Host', tacticalUnlocked: true }, opponents: [], incoming: [], active: [], history: [] });
+    });
+    let view = await render('/play/boss');
+    await flushPromises();
+    expect(view.find('.rickroll-video').exists()).toBe(true);
+    await view.get('.rickroll-video button').trigger('click');
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+    expect(view.text()).toContain('Baron');
+    view.unmount();
+    view = await render('/play/boss');
+    await flushPromises();
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+  });
+
   it('applies a live opponent action without waiting for polling or loading wand metadata again', async () => {
     let current = snapshot();
     api.transport.mockImplementation(async () => Response.json(current));

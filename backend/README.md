@@ -17,6 +17,40 @@ to the canonical URL and retains its `KUFR_BACKEND_URL` override.
 
 # Backend kufru
 
+## Rickroll video
+
+Set `Rickroll__FilePath` in the server's environment file to an absolute path to
+an MP4 in durable storage outside Git checkouts, webroot and release folders.
+The file must be readable by the backend service. Do not add the video to source
+control, release packages or GitHub artifacts. Missing configuration or a missing
+file disables the optional surprise; it does not block entry or gameplay.
+
+`GET /app/v1/launch/rickroll` returns authenticated availability metadata. The
+fixed `GET`/`HEAD /app/v1/launch/rickroll.mp4` route serves this non-confidential
+asset publicly, including before launch, with byte ranges, conditional caching
+and `video/mp4`. Requests never select an arbitrary file. Native clients stream
+from their authenticated backend origin without copying video through the JSON
+identity bridge. No YouTube scripts, embeds or third-party player are used.
+
+The waiting screen preloads the video and starts it at 80% player volume only
+when a foreground countdown crosses zero. Arriving, returning or restarting
+after expiry follows normal entry. Browser/device restrictions can still block
+audible autoplay or programmatic volume control.
+
+An Owner/Administrator can enable the group option in the boss controls. Entering
+the boss screen then atomically claims one playback per account across groups
+and devices. Disabling and re-enabling does not reset claims. Claims commit
+before playback, so a lost response or blocked player can skip the surprise
+rather than replay it. Account deletion removes the claim. The toggle has its
+own revision and does not change boss strength or combat state.
+
+Focused validation: backend harness `--rickroll-media`, `--mobile-game-boss` and
+`--application-updates`; frontend media, launch and boss specs. Set
+`RICKROLL_TEST_MP4` to a local file outside the repository when running
+`npm run test:launch:browser` to verify real MP4 playback without checking in the
+asset. Publishing application code and restarting services remain separate
+release operations from installing the media file.
+
 ## Limity požadavků účtu
 
 `ApplicationIdentity:ReadRequestsPerMinute` nastavuje limit běžného čtení na

@@ -699,6 +699,8 @@ enum AccountTransportPolicy {
         if path.range(of: "^/app/v1/game/teams/[0-9a-f]{32}\\z", options: .regularExpression) != nil { return method == "GET" }
         if path.range(of: "^/app/v1/game/teams/[0-9a-f]{32}/(accept|decline|cancel|choose|transfer)\\z", options: .regularExpression) != nil { return method == "POST" }
         if path == "/app/v1/game/boss" { return method == "GET" }
+        if path == "/app/v1/game/boss/rickroll/claim" { return method == "POST" }
+        if path.range(of: "^/app/v1/admin/game/groups/[0-9a-f]{32}/boss/rickroll\\z", options: .regularExpression) != nil { return method == "POST" }
         if path == "/app/v1/game/boss/attempts" { return method == "POST" }
         if path.range(of: "^/app/v1/game/boss/attempts/[0-9a-f]{32}\\z", options: .regularExpression) != nil { return method == "GET" }
         if path.range(of: "^/app/v1/game/boss/attempts/[0-9a-f]{32}/(choose|cancel)\\z", options: .regularExpression) != nil { return method == "POST" }
@@ -895,6 +897,7 @@ enum AccountTransportPolicy {
     private static func prelaunchAccount(path: String, method: String, query: [URLQueryItem]) -> Bool {
         if query.isEmpty && sealedCase(path: path, method: method) { return true }
         if path == "/app/v1/launch" { return method == "GET" && query.isEmpty }
+        if path == "/app/v1/launch/rickroll" { return method == "GET" && query.isEmpty }
         if path == "/app/v1/application-version" { return method == "GET" && query.isEmpty }
         if path == "/app/v1/prelaunch/character" { return query.isEmpty && ["GET", "PUT"].contains(method) }
         if path == "/app/v1/prelaunch/character/retry" { return method == "POST" && query.isEmpty }

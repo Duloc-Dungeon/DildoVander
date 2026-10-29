@@ -12,6 +12,8 @@ import GameCharacter from './GameCharacter.vue';
 import GameBossStage from './GameBossStage.vue';
 import GameBossNarration from './GameBossNarration.vue';
 import GameBossEnergy from './GameBossEnergy.vue';
+import RickrollVideo from '../media/RickrollVideo.vue';
+import { readRickrollVideo } from '../media/rickrollMedia';
 import GameLoadouts from './GameLoadouts.vue';
 import GameRanking from './GameRanking.vue';
 import GameRules from './GameRules.vue';
@@ -40,6 +42,9 @@ const wandStatus = ref<GameWandStatus>();
 const playerWand = useGameWandArtwork();
 const opponentWand = useOpponentWandArtwork();
 const bossProfile = ref<BossProfile>();
+const rickrollSource = ref<string>();
+const rickrollActive = ref(false);
+let rickrollClaimStarted = false;
 const progress = ref<Progress>();
 const progressError = ref('');
 const milestoneDismissed = ref(false);
@@ -196,12 +201,25 @@ async function refresh() {
         else if (loading.value && route.path === '/play' && route.query.browse !== '1' && value.boss?.activeAttemptId) void router.replace(`/play/boss/${value.boss.activeAttemptId}`);
       }
     }
-    if (token === generation) { error.value = ''; uncertain.value = false; }
+    if (token === generation) { error.value = ''; uncertain.value = false; void offerBossRickroll(token); }
   } catch (cause) {
     handleRefreshError(cause, token);
   } finally {
     if (token === generation) { refreshing.value = false; loading.value = false; }
   }
+}
+async function offerBossRickroll(token: number): Promise<void> {
+  if (rickrollClaimStarted || document.hidden || !bossSetup.value && !bossAttempt.value) return;
+  rickrollClaimStarted = true;
+  const source = await readRickrollVideo(controller.signal);
+  if (!source || token !== generation || document.hidden) return;
+  try {
+    const claim = await gameRequest<{ play: boolean }>('/boss/rickroll/claim', {}, controller.signal);
+    if (claim.play && token === generation && !document.hidden) {
+      rickrollSource.value = source;
+      rickrollActive.value = true;
+    }
+  } catch { /* The optional surprise must never interrupt the boss fight. */ }
 }
 function handleRefreshError(cause: unknown, token: number) {
   if (token === generation && !controller.signal.aborted) {
@@ -307,8 +325,9 @@ function available(choice: Choice) {
   if (practice.value) return practiceRounds.value.length !== 0 || choice === 'shield';
   return match.value?.mode !== 'tactical' && match.value?.mode !== 'boss' || (match.value?.playerInventory?.[choice] ?? 2) > 0;
 }
-function onVisible() { if (!document.hidden) void refresh(); }
+function onVisible() { if (document.hidden) rickrollActive.value = false; else void refresh(); }
 watch(() => route.fullPath, () => {
+  rickrollActive.value = false; rickrollSource.value = undefined; rickrollClaimStarted = false;
   playerWand.clear();
   opponentWand.clear();
   generation++; controller.abort(); controller = new AbortController();
@@ -322,6 +341,7 @@ watch(() => route.fullPath, () => {
 });
 watch(() => account.value?.id, (value, previous) => {
   if (value === previous) return;
+  rickrollActive.value = false; rickrollSource.value = undefined; rickrollClaimStarted = false;
   generation++; controller.abort(); controller = new AbortController(); wandStatus.value = undefined;
   match.value = undefined; lobby.value = undefined; bossProfile.value = undefined; progress.value = undefined; refreshing.value = false;
   error.value = ''; notice.value = ''; progressError.value = '';
@@ -344,7 +364,9 @@ onBeforeUnmount(() => {
   <SceneShell class="game-scene game-experience"
     :class="{ 'responsive-table': tableDuel, 'game-duel-scene': theatricalDuel, 'game-practice-scene': practice, 'game-yolo-scene': match?.mode === 'yolo', 'game-boss-scene': bossSetup && bossProfile?.revealed || match?.mode === 'boss' }"
     :data-duel-result="theatricalDuel ? duelResult : undefined"
-    :data-boss-phase="match?.mode === 'boss' ? match.phase : undefined" labelled-by="game-title">
+    :data-boss-phase="match?.mode === 'boss' ? match.phase : undefined" :labelled-by="rickrollActive ? 'rickroll-title' : 'game-title'">
+    <RickrollVideo v-if="rickrollSource" :src="rickrollSource" :active="rickrollActive" @dismiss="rickrollActive = false" />
+    <template v-if="!rickrollActive">
     <div v-if="bossSetup && bossProfile?.revealed || match?.mode === 'boss'" :key="match?.phase" class="boss-scene-light" aria-hidden="true" />
     <div class="game-content">
       <header class="game-header">
@@ -595,5 +617,6 @@ onBeforeUnmount(() => {
         </template>
       </template>
     </div>
+    </template>
   </SceneShell>
 </template>

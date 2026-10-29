@@ -1783,6 +1783,134 @@
           }
         }
       }
+    },
+    "/app/v1/game/boss/rickroll/claim": {
+      "post": {
+        "summary": "Claim the enabled boss Rickroll once per player account",
+        "x-source": "Features/Game/GameBoss.cs",
+        "description": "Active same-group Customer session. The durable claim is global to the player account and is consumed before the response is returned.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossRickrollClaim"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "409": {
+            "description": "Eligibility conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/admin/game/groups/{id}/boss/rickroll": {
+      "post": {
+        "summary": "Set the group boss Rickroll toggle",
+        "x-source": "Features/Game/GameBossRickroll.cs",
+        "description": "Owner/Administrator session; requires a recent passkey and the active group. The independent Rickroll revision protects concurrent configuration updates.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameBossRickrollCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Administrator or recent passkey required"
+          },
+          "409": {
+            "description": "Revision or operation conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2772,6 +2900,16 @@
                 "type": "null"
               }
             ]
+          },
+          "rickrollEnabled": {
+            "type": "boolean"
+          },
+          "rickrollRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rickrollSeen": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3386,6 +3524,40 @@
           "opponentChoiceLocked",
           "options",
           "revealed"
+        ],
+        "additionalProperties": false
+      },
+      "GameBossRickrollCommand": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedRevision",
+          "enabled"
+        ],
+        "additionalProperties": false
+      },
+      "GameBossRickrollClaim": {
+        "type": "object",
+        "properties": {
+          "play": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "play"
         ],
         "additionalProperties": false
       }
