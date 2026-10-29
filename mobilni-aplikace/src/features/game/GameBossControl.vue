@@ -7,12 +7,13 @@ import { operation, type BossProfile } from './game';
 const props = defineProps<{ groupId: string }>();
 interface Preview { profile: BossProfile; proposedReferenceXp: number | null; activePlayers: number; minXp: number | null; maxXp: number | null }
 const preview = ref<Preview>(); const busy = ref(false); const error = ref('');
+const rickrollEnabled = ref(false);
 let generation = 0;
 async function read() {
   const token = ++generation;
   try {
     const value = await accountRequest<Preview>(`/app/v1/admin/game/groups/${encodeURIComponent(props.groupId)}/boss`);
-    if (token === generation) { preview.value = value; error.value = ''; }
+    if (token === generation) { preview.value = value; rickrollEnabled.value = value.profile.rickrollEnabled === true; error.value = ''; }
   } catch { if (token === generation) error.value = 'Herní výzvu se nepodařilo načíst.'; }
 }
 async function reveal() {
@@ -27,6 +28,21 @@ async function reveal() {
   finally { busy.value = false; }
 }
 async function reauthenticate() { try { await authenticatePasskey('reauth'); error.value = ''; } catch { error.value = 'Ověření nebylo dokončeno.'; } }
+async function toggleRickroll(event: Event) {
+  if (busy.value || !preview.value) return;
+  const enabled = (event.target as HTMLInputElement).checked;
+  const groupId = props.groupId;
+  busy.value = true;
+  error.value = '';
+  try {
+    await accountRequest(`/app/v1/admin/game/groups/${encodeURIComponent(groupId)}/boss/rickroll`, 'POST', {
+      operationId: operation(), expectedRevision: preview.value.profile.rickrollRevision ?? 0, enabled,
+    });
+    if (groupId === props.groupId) await read();
+  } catch {
+    if (groupId === props.groupId) { await read(); error.value = 'Změna překvapení nebyla potvrzena. Obnov náhled a ověř se přístupovým klíčem.'; }
+  } finally { busy.value = false; }
+}
 watch(() => props.groupId, () => { preview.value = undefined; void read(); }, { immediate: true });
 onBeforeUnmount(() => { generation++; });
 </script>
@@ -35,6 +51,8 @@ onBeforeUnmount(() => { generation++; });
     <h4>Společný herní boss</h4>
     <AwNotice v-if="error" tone="warning">{{ error }}</AwNotice>
     <template v-if="preview?.profile">
+      <label><input v-model="rickrollEnabled" type="checkbox" :disabled="busy" @change="toggleRickroll" /> Rickroll při vstupu k bossovi</label>
+      <p>Je-li zapnutý, při vstupu na obrazovku bosse se každému hráči jednou přehraje video. Další návštěvy ani přepnutí zařízení ho neopakují.</p>
       <p v-if="preview.profile.revealed" role="status">Baron je odhalený. Referenční síla je pevně {{ preview.profile.referenceXp }} XP. Ollivander {{ preview.profile.rescued ? 'je volný' : 'je v zajetí' }}.</p>
       <template v-else><p>Aktivních hráčů: {{ preview.activePlayers }}. Jejich XP: {{ preview.minXp ?? '—' }} až {{ preview.maxXp ?? '—' }}. Navržený medián: {{ preview.proposedReferenceXp ?? '—' }} XP.</p><p>Odhalení uzamkne obtížnost pro skupinu a přepne digitální dílnu do zajetí. První potvrzená výhra osvobodí Ollivandera všem. Fyzická cena není součástí této výzvy.</p><AwButton :busy="busy" :disabled="!preview.proposedReferenceXp" @click="reveal">Odhalit bosse a uzamknout sílu</AwButton></template>
     </template>

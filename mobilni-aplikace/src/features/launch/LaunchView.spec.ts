@@ -11,6 +11,7 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
 vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', props: ['image'], template: '<div class="portrait-stage" />' } }));
 vi.mock('./PrelaunchWand.vue', () => ({ default: { name: 'PrelaunchWand', emits: ['open-change', 'complete-change'], template: '<section><button @click="$emit(\'open-change\', true)">Vytvořit hůlku</button><button @click="$emit(\'open-change\', false)">Zpět k odpočtu</button></section>' } }));
+vi.mock('../media/RickrollVideo.vue', () => ({ default: { name: 'RickrollVideo', props: ['src', 'active'], template: '<section v-if="active" class="rickroll-video" />' } }));
 vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div class="push-notifications-stub" />' } }));
 vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
@@ -47,6 +48,7 @@ beforeEach(() => {
   character.status = 'queued';
   memberState = 'active'; memberUniverse = null; customerMembershipState.value = null; customerFixedUniverse.value = null;
   api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/launch/rickroll') return { available: true, url: '/app/v1/launch/rickroll.mp4' };
     if (path === '/app/v1/launch') return { allowed, audience: revokedAudience ? 'revoked' : 'beta', launchAt: Date.now() + 86400000, serverNow: Date.now() };
     if (path === '/app/v1/customer/access') return { state: memberState, accessRevision: 1, fixedUniverse: memberUniverse };
     if (path === '/app/v1/enrollment/default') return { available: true };
@@ -461,8 +463,9 @@ it('routes an unconfirmed logout to a public recovery screen even after local id
   } finally { view.unmount(); }
 });
 
-it('K: entering starts the character presentation and only continuing completes entry', async () => {
-  const deadline=Date.now()+4000;
+it('K: arriving after opening starts the character presentation and only continuing completes entry', async () => {
+  const deadline=Date.now()-1000;
+  allowed=true;
   persisted=true; savedCreation();
   const original=api.request.getMockImplementation()!;
   api.request.mockImplementation(async(path:string,method?:string)=>path==='/app/v1/launch'
@@ -473,6 +476,7 @@ it('K: entering starts the character presentation and only continuing completes 
     allowed=true; await vi.advanceTimersByTimeAsync(1000); await flushPromises();
     expect(api.replace).not.toHaveBeenCalled();
     expect(view.text()).toContain('Večer začíná.');
+    expect(view.find('.rickroll-video').exists()).toBe(false);
     await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
     expect(view.find('[data-entrance]').exists()).toBe(true);
     expect(api.replace).not.toHaveBeenCalled();
@@ -636,5 +640,68 @@ it('shows Soon after a non-force countdown expires until the server opens the ni
     expect(view.get('.character-countdown-wait').text()).toBe('Brzy');
     expect(view.find('.character-countdown-grid').exists()).toBe(false);
     expect(api.replace).not.toHaveBeenCalled();
+  } finally { view.unmount(); }
+});
+
+it.each(['production', 'beta'])('automatically Rickrolls a waiting %s guest at zero, then allows normal entry after restart', async audience => {
+  persisted = true;
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: Date.now() >= deadline, audience, launchAt: deadline, serverNow: Date.now() } : original(path, method));
+  let view = entry();
+  try {
+    await flushPromises();
+    expect(view.find('.character-countdown-grid').exists()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(view.find('.rickroll-video').exists()).toBe(true);
+    expect(api.replace).not.toHaveBeenCalled();
+    view.unmount();
+    view = entry();
+    await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(true);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+  } finally { view.unmount(); }
+});
+
+it('skips the Rickroll when a guest returns after zero', async () => {
+  persisted = true;
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: Date.now() >= deadline, audience: 'production', launchAt: deadline, serverNow: Date.now() } : original(path, method));
+  const view = entry();
+  try {
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    presentationForeground.value = false;
+    await vi.advanceTimersByTimeAsync(3_000);
+    presentationForeground.value = true;
+    await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(true);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+  } finally { view.unmount(); }
+});
+
+it('stops the surprise on backgrounding and enters normally on return', async () => {
+  persisted = true;
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: Date.now() >= deadline, audience: 'production', launchAt: deadline, serverNow: Date.now() } : original(path, method));
+  const view = entry();
+  try {
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(view.find('.rickroll-video').exists()).toBe(true);
+    presentationForeground.value = false;
+    await flushPromises();
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+    presentationForeground.value = true;
+    await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(true);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
   } finally { view.unmount(); }
 });

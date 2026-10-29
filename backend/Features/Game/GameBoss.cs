@@ -12,7 +12,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Game;
 
-internal sealed record GameBossView(bool Revealed, bool Rescued, int ReferenceXp, long Revision, string? ActiveAttemptId = null);
+internal sealed record GameBossView(bool Revealed, bool Rescued, int ReferenceXp, long Revision, string? ActiveAttemptId = null,
+    bool RickrollEnabled = false, long RickrollRevision = 0, bool RickrollSeen = false);
 internal sealed record GameBossCommand(string OperationId, long ExpectedRevision,
     string? Choice = null, int SparkBid = 0, int? ExpectedReferenceXp = null);
 internal sealed record GameBossPreview(GameBossView Profile, int? ProposedReferenceXp, int ActivePlayers, int? MinXp, int? MaxXp);
@@ -40,6 +41,12 @@ internal sealed partial class GameStore
             CREATE INDEX IF NOT EXISTS ix_boss_owner ON game_boss_attempts(group_id,user_id);
             CREATE TABLE IF NOT EXISTS game_boss_operations(
                 operation_id TEXT PRIMARY KEY, actor TEXT NOT NULL, fingerprint TEXT NOT NULL, target TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS game_boss_rickroll_groups(
+                group_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL, revision INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS game_boss_rickroll_operations(
+                operation_id TEXT PRIMARY KEY, actor TEXT NOT NULL, fingerprint TEXT NOT NULL, group_id TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS game_boss_rickroll_claims(
+                user_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, claimed_at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS game_boss_narration(
                 attempt_id TEXT PRIMARY KEY REFERENCES game_boss_attempts(id) ON DELETE CASCADE,
                 revision INTEGER NOT NULL, context_key TEXT NOT NULL, text TEXT, audio BLOB, audio_key TEXT,
@@ -54,7 +61,13 @@ internal sealed partial class GameStore
         using var connection = Open();
         EnsureBossTables(connection);
         var profile = ReadBossProfile(connection, null, groupId);
+        profile = profile with
+        {
+            RickrollEnabled = ReadBossRickrollEnabled(connection, null, groupId),
+            RickrollRevision = ReadBossRickrollRevision(connection, null, groupId)
+        };
         if (userId is null) { return profile; }
+        profile = profile with { RickrollSeen = HasBossRickrollClaim(connection, null, userId) };
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT id,state_json FROM game_boss_attempts WHERE group_id=$group AND user_id=$user";
         command.Parameters.AddWithValue("$group", groupId); command.Parameters.AddWithValue("$user", userId);
@@ -118,6 +131,7 @@ internal sealed partial class GameStore
     {
         using var connection = Open(); EnsureBossTables(connection);
         var profile = ReadBossProfile(connection, null, groupId);
+        profile = profile with { RickrollEnabled = ReadBossRickrollEnabled(connection, null, groupId), RickrollRevision = ReadBossRickrollRevision(connection, null, groupId) };
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT user_id,xp FROM game_players WHERE group_id=$group AND matches>0 AND xp>0";
         command.Parameters.AddWithValue("$group", groupId);
@@ -265,8 +279,14 @@ internal sealed partial class GameStore
         using var exists = connection.CreateCommand(); exists.Transaction = transaction;
         exists.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='game_boss_attempts'";
         if (Convert.ToInt32(exists.ExecuteScalar()) == 0) { return; }
+        using (var ensure = connection.CreateCommand())
+        {
+            ensure.Transaction = transaction;
+            ensure.CommandText = "CREATE TABLE IF NOT EXISTS game_boss_rickroll_operations(operation_id TEXT PRIMARY KEY, actor TEXT NOT NULL, fingerprint TEXT NOT NULL, group_id TEXT NOT NULL); CREATE TABLE IF NOT EXISTS game_boss_rickroll_claims(user_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, claimed_at INTEGER NOT NULL);";
+            ensure.ExecuteNonQuery();
+        }
         using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "DELETE FROM game_boss_attempts WHERE user_id=$user; DELETE FROM game_boss_operations WHERE actor=$user;";
+        command.CommandText = "DELETE FROM game_boss_attempts WHERE user_id=$user; DELETE FROM game_boss_operations WHERE actor=$user; DELETE FROM game_boss_rickroll_operations WHERE actor=$user; DELETE FROM game_boss_rickroll_claims WHERE user_id=$user;";
         command.Parameters.AddWithValue("$user", userId); command.ExecuteNonQuery();
     }
 
@@ -397,7 +417,9 @@ internal static class GameBossEndpoints
             var context = invocation.HttpContext;
             try
             {
-                var groupId = await ParticipantGroupAsync(context);
+                var claimRickroll = context.Request.Method == "POST"
+                    && context.Request.Path == "/app/v1/game/boss/rickroll/claim";
+                var groupId = await ParticipantGroupAsync(context, requireWand: !claimRickroll);
                 context.Items["boss-group"] = groupId;
                 context.Response.Headers.CacheControl = "no-store";
                 return await next(invocation);
@@ -405,6 +427,8 @@ internal static class GameBossEndpoints
             catch (GameFault fault) { return ApiProblem.Create(context, fault.Status, fault.Code); }
         });
         group.MapGet("", (HttpContext context, GameStore store) => Results.Ok(store.ReadBoss((string)context.Items["boss-group"]!, User(context))));
+        group.MapPost("/rickroll/claim", (HttpContext context, GameStore store, RickrollMedia media) =>
+            Results.Ok(store.ClaimBossRickroll((string)context.Items["boss-group"]!, User(context), media.Available)));
         group.MapPost("/attempts", async (GameBossCommand request, HttpContext context, GameStore store,
             AccountDatabase db, CharacterProfileStore profiles, WandGenerationStore wands) =>
         {
@@ -436,6 +460,7 @@ internal static class GameBossEndpoints
             context.Response.Headers.CacheControl = "no-store";
             return Results.Ok(store.PreviewBoss(id, eligible));
         }).RequireAuthorization().RequireRateLimiting("account");
+        app.MapBossRickroll();
     }
     private static string User(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
         ?? throw new GameFault(401, "account_required");

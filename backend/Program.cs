@@ -44,6 +44,7 @@ builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 
 builder.Services.AddBackendTelemetry(builder.Configuration, builder.Environment);
 builder.Services.AddAccountIdentity(builder.Configuration);
 builder.Services.AddLaunchManagement(builder.Configuration);
+builder.Services.AddSingleton<RickrollMedia>();
 builder.Services.AddMobileGame(builder.Configuration);
 builder.Services.AddPushNotifications(builder.Configuration);
 builder.Services.AddSealedCase(builder.Configuration);
@@ -209,6 +210,7 @@ app.UseAccountIdentity();
 app.UseLaunchAccessPolicy();
 app.MapAccountEndpoints();
 app.MapLaunchEndpoints();
+app.MapRickrollMedia();
 app.MapPushEndpoints();
 app.MapApplicationUpdateEndpoints();
 Kufr.Backend.Features.Wands.MobileWandEndpoints.MapMobileWands(app);

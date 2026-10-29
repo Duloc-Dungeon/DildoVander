@@ -144,6 +144,7 @@ internal static class ApplicationUpdateTests
             });
             app.UseLaunchAccessPolicy();
             app.MapApplicationUpdateEndpoints();
+            app.MapMethods(RickrollMedia.VideoPath, ["GET", "HEAD"], () => Results.Ok());
             app.MapGet("/app/v1/customer/character", () => Results.Ok());
             await app.StartAsync();
 
@@ -156,6 +157,14 @@ internal static class ApplicationUpdateTests
                 using var anonymous = await client.GetAsync("/app/v1/application-version");
                 Check(anonymous.StatusCode == HttpStatusCode.OK,
                     "anonymous app version request bypasses a locked production launch gate");
+                using var video = await client.GetAsync(RickrollMedia.VideoPath);
+                Check(video.StatusCode == HttpStatusCode.OK, "public fixed MP4 can preload before launch without an account cookie");
+                using var videoHead = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, RickrollMedia.VideoPath));
+                Check(videoHead.StatusCode == HttpStatusCode.OK, "public fixed MP4 supports HEAD before launch");
+                using var videoPost = await client.PostAsync(RickrollMedia.VideoPath, null);
+                Check((int)videoPost.StatusCode == 423, "public media exception cannot bypass the launch gate for mutations");
+                using var otherMedia = await client.GetAsync("/app/v1/launch/other.mp4");
+                Check((int)otherMedia.StatusCode == 423, "public media exception is restricted to the single configured asset");
 
                 using var lockedRequest = new HttpRequestMessage(HttpMethod.Get, "/app/v1/application-version");
                 lockedRequest.Headers.Add("X-Test-User", "locked-user");

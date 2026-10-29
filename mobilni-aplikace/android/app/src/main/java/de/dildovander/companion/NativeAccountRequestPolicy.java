@@ -215,6 +215,8 @@ final class NativeAccountRequestPolicy {
         if (query == null && path.matches("^/app/v1/game/teams/[0-9a-f]{32}$")) return "GET".equals(method);
         if (query == null && path.matches("^/app/v1/game/teams/[0-9a-f]{32}/(accept|decline|cancel|choose|transfer)$")) return "POST".equals(method);
         if (query == null && "/app/v1/game/boss".equals(path)) return "GET".equals(method);
+        if (query == null && "/app/v1/game/boss/rickroll/claim".equals(path)) return "POST".equals(method);
+        if (query == null && path.matches("^/app/v1/admin/game/groups/[0-9a-f]{32}/boss/rickroll$")) return "POST".equals(method);
         if (query == null && "/app/v1/game/boss/attempts".equals(path)) return "POST".equals(method);
         if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}$")) return "GET".equals(method);
         if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}/(choose|cancel)$")) return "POST".equals(method);
@@ -234,6 +236,7 @@ final class NativeAccountRequestPolicy {
             return false;
         }
         if ("/app/v1/launch".equals(path)) return "GET".equals(method);
+        if ("/app/v1/launch/rickroll".equals(path)) return "GET".equals(method);
         if ("/app/v1/push".equals(path)) return "GET".equals(method) || "PUT".equals(method) || "DELETE".equals(method);
         if ("/app/v1/push/test".equals(path)) return "POST".equals(method);
         if ("/app/v1/application-version".equals(path)) return "GET".equals(method);

@@ -472,8 +472,10 @@ internal static class LaunchEndpoints
         app.Use(async (context, next) =>
         {
             var path = context.Request.Path;
-            if (HttpMethods.IsGet(context.Request.Method)
+            if ((HttpMethods.IsGet(context.Request.Method)
                 && path.Equals("/app/v1/application-version", StringComparison.OrdinalIgnoreCase))
+                || (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))
+                && path.Equals(RickrollMedia.VideoPath, StringComparison.OrdinalIgnoreCase))
             {
                 await next(context);
                 return;

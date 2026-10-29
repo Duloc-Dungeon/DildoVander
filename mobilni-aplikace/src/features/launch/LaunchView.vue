@@ -27,6 +27,9 @@ import type { PrelaunchCharacterResponse as PrelaunchState } from './generatedPr
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { customerFixedUniverse, customerMembershipState, refreshCustomerMembership } from '../../application/launchAccess';
 import { isCustomerAccount } from '../../application/access';
+import { CountdownRickroll } from './countdownRickroll';
+import RickrollVideo from '../media/RickrollVideo.vue';
+import { readRickrollVideo } from '../media/rickrollMedia';
 
 interface LaunchPolicy { allowed: boolean; audience: string; launchAt: number | null; serverNow: number }
 const router = useRouter();
@@ -55,6 +58,11 @@ const canPrepareWand = computed(() => isCustomerAccount(account.value)
   && customerMembershipState.value === 'active' && !!state.value?.character
   && (revealed.value && hasPortrait.value || phase.value === 'failed'));
 const groupOpening = ref(false);
+const rickrollActive = ref(false);
+const rickrollSource = ref<string>();
+const countdownRickroll = new CountdownRickroll(() => { rickrollActive.value = true; });
+const countdownVisible = computed(() => !rickrollActive.value && !groupOpening.value && !requiresBetaAdmission.value && !workshopOpen.value
+  && (!!state.value?.character || !!account.value && !!policy.value && !policy.value.allowed && !characterVerified.value));
 const groupPresenting = ref(false);
 const groupBusy = ref(false);
 const entranceRetryAttempted = ref(false);
@@ -147,6 +155,9 @@ watch(() => account.value?.id, id => {
   policyRead++;
   policy.value = null;
   remaining.value = 0;
+  countdownRickroll.reset();
+  rickrollActive.value = false;
+  rickrollSource.value = undefined;
   lastLaunchCheck = Number.NEGATIVE_INFINITY;
   if (pollTimer) clearTimeout(pollTimer);
   pollTimer = undefined;
@@ -169,7 +180,7 @@ watch(() => account.value?.id, id => {
   draftProvided.value = !!draft?.name && !!draft?.universe;
   selectInvitationPresentation(id, draft?.writeStarted ? draft.creationId : undefined);
   readError.value = '';
-  if (controller && id) void retryRead();
+  if (controller && id) { refreshRickrollSource(); void retryRead(); }
 }, { immediate: true, flush: 'sync' });
 watch(customerFixedUniverse, fixed => {
   if (!fixed || state.value?.character) return;
@@ -224,6 +235,7 @@ async function refreshPolicy(): Promise<void> {
     }
   }
   updateCountdown();
+  if (rickrollActive.value) return;
   // Server permission always wins over local presentation, including staff/testers.
   if (value.allowed && account.value && !isCustomerAccount(account.value)) {
     // Operational accounts keep their established destination. The consumer
@@ -311,6 +323,14 @@ async function refreshCharacter(signal?: AbortSignal): Promise<void> {
 function updateCountdown(): void {
   const now = performance.now();
   remaining.value = policy.value?.launchAt == null ? 0 : Math.max(0, policy.value.launchAt - (serverTimeAnchor + now - monotonicAnchor));
+  countdownRickroll.observe({
+    launchAt: policy.value?.launchAt ?? null,
+    remaining: remaining.value,
+    now,
+    watching: !!rickrollSource.value && countdownVisible.value && presentationForeground.value && !document.hidden,
+    waiting: !!account.value && policy.value?.allowed === false && policy.value.audience !== 'revoked',
+  });
+  if (rickrollActive.value) return;
   if (remaining.value === 0 && policy.value?.launchAt != null && now - lastLaunchCheck > 15_000) {
     lastLaunchCheck = now; void refreshPolicy().catch(() => {});
   }
@@ -444,11 +464,21 @@ function onOffline(): void {
   pollTimer = undefined;
 }
 function onOnline(): void { void retryRead(); }
+function refreshRickrollSource(): void {
+  const owner = account.value?.id;
+  void readRickrollVideo(controller?.signal).then(source => { if (owner === account.value?.id) rickrollSource.value = source; });
+}
+function dismissRickroll(): void {
+  rickrollActive.value = false;
+  void refreshPolicy().catch(() => {});
+}
 function onVisibility(): void {
+  countdownRickroll.reset();
   if (presentationForeground.value) {
     void retryRead();
     startPolicyPolling();
   } else {
+    rickrollActive.value = false;
     if (pollTimer) clearTimeout(pollTimer); pollTimer = undefined;
     if (policyTimer) clearInterval(policyTimer); policyTimer = undefined;
   }
@@ -459,9 +489,11 @@ function startPolicyPolling(): void {
     else void refreshPolicy().catch(() => {});
   }, 15_000);
 }
-watch(presentationForeground, onVisibility);
+watch(presentationForeground, onVisibility, { flush: 'sync' });
+watch(countdownVisible, visible => { if (!visible) countdownRickroll.reset(); }, { flush: 'sync' });
 onMounted(async () => {
   controller = new AbortController();
+  refreshRickrollSource();
   window.addEventListener('offline', onOffline);
   window.addEventListener('online', onOnline);
   await retryRead();
@@ -482,7 +514,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SceneShell v-if="groupOpening" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
+  <RickrollVideo v-if="rickrollSource" :src="rickrollSource" :active="rickrollActive" @dismiss="dismissRickroll" />
+  <SceneShell v-if="!rickrollActive && groupOpening" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
     <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!displayedError" :active="presentationForeground" :busy="groupBusy" :retrying="entranceRetrying" :retry-attempted="entranceRetryAttempted" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
       <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }}</AwNotice>
       <p v-if="portraitSource && hasPortrait" class="launch-attribution">Obrázek z internetu: <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> · {{ portraitSource.author }} · <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
@@ -497,7 +530,7 @@ onBeforeUnmount(() => {
     </template>
     <footer class="launch-footer"><AwButton v-if="account" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
-  <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
+  <SceneShell v-else-if="!rickrollActive" class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
     <header class="launch-masthead">
       <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><span>Wand<br />Night Stand</span></RouterLink>
       <AwButton v-if="account" class="launch-signout" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton>

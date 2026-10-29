@@ -14,6 +14,17 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void rickrollUsesNarrowMetadataAndBossCommandsWithoutBufferingVideoInTheBridge() {
+        String group = "0123456789abcdef0123456789abcdef";
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/launch/rickroll", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/launch/rickroll", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/launch/rickroll?path=other", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/launch/rickroll.mp4", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/game/boss/rickroll/claim", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/game/boss/rickroll/claim", "GET"));
+        assertTrue(NativeAccountRequestPolicy.allows("/app/v1/admin/game/groups/" + group + "/boss/rickroll", "POST"));
+        assertFalse(NativeAccountRequestPolicy.allows("/app/v1/admin/game/groups/" + group + "/boss/rickroll", "PUT"));
+    }
     @Test public void chronicleRoutesAreOwnerSessionScopedAndImageBytesAreBounded() {
         String id = "12345678-1234-4234-8234-123456789abc";
         String event = "/app/v1/chronicle/" + id;

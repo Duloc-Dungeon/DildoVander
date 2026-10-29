@@ -24,3 +24,17 @@ test('early capability capture CSP uses HTML parser line endings on every checko
     assert.ok(!meta.attrs.content.includes('unsafe-inline'));
   }
 });
+
+test('the MP4 player keeps third-party scripts and frames disabled', () => {
+  const [meta] = applicationCsp().transformIndexHtml.handler('');
+  const directives = new Map(meta.attrs.content.split(';').map(directive => {
+    const [name, ...sources] = directive.trim().split(/\s+/);
+    return [name, sources];
+  }));
+  assert.deepEqual(directives.get('script-src'), ["'self'"]);
+  assert.deepEqual(directives.get('frame-src'), ["'none'"]);
+  assert.deepEqual(directives.get('media-src'), ["'self'", 'blob:', 'https://dildovander.de']);
+  assert.deepEqual(directives.get('object-src'), ["'none'"]);
+  assert.ok(!meta.attrs.content.includes('unsafe-inline'));
+  assert.ok(!meta.attrs.content.includes('unsafe-eval'));
+});
