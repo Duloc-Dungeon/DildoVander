@@ -62,6 +62,8 @@ jobs:
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-boss
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-teams
           dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --mobile-game-progress
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --chronicle
+          dotnet run --project backend-tests/BackendTests.csproj -c Release -r linux-x64 --no-build --no-restore -- --chronicle-http
       - name: Sealed case privacy, plans and timing (offline providers)
         if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |
