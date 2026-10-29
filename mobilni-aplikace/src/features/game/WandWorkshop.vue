@@ -381,9 +381,10 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__transcript li p { white-space: pre-wrap; margin: .5rem 0; }
 .trunk-workshop__leave { color: var(--wns-muted); min-height: 44px; display: inline-flex; align-items: center; }
 .trunk-workshop__verdict { padding: 1.25rem; border-radius: var(--wns-radius-card); background: var(--wns-violet); color: var(--wns-on-violet); }
-.trunk-workshop[data-result='true'] .trunk-workshop__presentation { display: grid; width: min(100%, 26rem); aspect-ratio: 1; margin-inline: auto; }
+.trunk-workshop[data-result='true'] .trunk-workshop__presentation { display: grid; width: min(100%, clamp(15rem, calc(66.666svh - 15rem), 30rem)); aspect-ratio: 2 / 3; padding: 0; margin-inline: auto; }
 .trunk-workshop[data-result='true'] .trunk-workshop__presentation > * { grid-area: 1 / 1; align-self: center; min-width: 0; }
-.trunk-workshop[data-result='true'] :deep(.trunk-stage__artwork) { width: 100%; min-height: 0; }
+.trunk-workshop[data-result='true'] :deep(.trunk-stage__artwork) { width: 100%; min-height: 0; aspect-ratio: 2 / 3; }
+.trunk-workshop[data-result='true'] :deep(.trunk-stage__wand) { max-height: none; }
 .trunk-workshop__announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The scene carries the expression; controls and durable state stay still. */
 .trunk-workshop { padding-inline: clamp(1rem, 3vw, 2rem); }
@@ -431,6 +432,6 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
   .trunk-workshop :deep(.trunk-stage__visual) { width: min(100%, 9rem); margin: 0; flex: 0 1 9rem; }
   .trunk-workshop[data-result='false'] .trunk-workshop__presentation :deep(.trunk-stage) { display: flex; align-items: center; justify-content: center; gap: 1rem; }
   .trunk-workshop :deep(.trunk-stage__activity) { flex-direction: column; gap: .25rem; text-align: center; min-width: 0; flex: 0 1 10rem; min-height: 5rem; }
-  .trunk-workshop[data-result='true'] .trunk-workshop__presentation { width: min(100%, 14rem); }
+  .trunk-workshop[data-result='true'] .trunk-workshop__presentation { width: min(100%, 26rem, 38svh); }
 }
 </style>

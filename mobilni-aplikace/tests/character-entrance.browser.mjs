@@ -15,8 +15,8 @@ const welcome = { joke: 'Tvoje ego už dorazilo. Zabralo dvě židle.', identity
 const browser = await chromium.launch();
 const errors = [];
 try {
-  for (const [width, reducedMotion] of [[320, 'reduce'], [390, 'reduce'], [1280, 'reduce'], [390, 'no-preference']]) {
-    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion });
+  for (const [width, reducedMotion] of [[320, 'reduce'], [390, 'reduce'], [1280, 'reduce'], [390, 'no-preference'], [1280, 'no-preference']]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: width === 1280 ? 1.25 : 1, reducedMotion });
     const page = await context.newPage();
     await page.clock.install({ time: new Date('2026-10-28T12:00:00Z') });
     await page.clock.pauseAt(new Date('2026-10-28T12:00:01Z'));
@@ -69,6 +69,22 @@ try {
     await page.locator('.entrance-portrait').waitFor({ state: 'attached' });
     await page.clock.fastForward(2000);
     await page.locator('[data-entrance="portrait"]').waitFor();
+    if (reducedMotion === 'no-preference') {
+      const curtain = page.locator('.viewport-curtain');
+      await curtain.waitFor({ state: 'attached' });
+      const coverage = await curtain.evaluate(layer => {
+        const rect = layer.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+          viewportWidth: innerWidth, viewportHeight: innerHeight, inBody: layer.parentElement === document.body };
+      });
+      assert.equal(coverage.inBody, true);
+      assert.deepEqual([coverage.left, coverage.top, coverage.width, coverage.height],
+        [0, 0, coverage.viewportWidth, coverage.viewportHeight], 'entrance curtain covers the window on mobile and PC');
+      await page.clock.runFor(64);
+      assert(await curtain.evaluate(layer => layer.getAnimations({ subtree: true }).length > 0), 'entrance curtain animates after a closed paint');
+      await page.clock.runFor(1400);
+      await curtain.waitFor({ state: 'detached' });
+    } else assert.equal(await page.locator('.viewport-curtain').count(), 0, 'reduced motion skips the viewport curtain');
     await page.getByRole('heading', { name: `${character.name} · ${character.label}`, exact: true }).waitFor();
     assert.equal(await page.locator('.entrance-portrait').getAttribute('aria-hidden'), 'false');
     assert.equal(await page.getByRole('button', { name: 'Pokračovat', exact: true }).isEnabled(), true);

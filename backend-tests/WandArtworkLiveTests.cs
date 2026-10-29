@@ -11,6 +11,170 @@ using SkiaSharp;
 internal static class WandArtworkLiveTests
 {
     private const string WandId = "0196ee0d47164407b457b3906a482d49";
+    private const string ReferenceAttemptFileName = ".wand-reveal-reference-attempted";
+
+    internal static async Task GenerateReferenceAsync(string outputDirectory, string imageModel)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException("OPENAI_API_KEY is required for paid wand reference generation.");
+        }
+        if (!OpenAiKeepsakeProvider.SupportsTransparentWandArtwork(imageModel))
+        {
+            throw new InvalidOperationException("The configured image model is not documented for transparent output.");
+        }
+
+        var output = Path.GetFullPath(outputDirectory);
+        if (Directory.Exists(output) || File.Exists(output))
+        {
+            throw new InvalidOperationException("Reference output already exists; refusing to risk a second paid generation.");
+        }
+
+        Directory.CreateDirectory(output);
+        var attemptedPath = Path.Combine(output, ReferenceAttemptFileName);
+        await using (var attempt = new FileStream(attemptedPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        {
+            await JsonSerializer.SerializeAsync(attempt, new
+            {
+                attemptedAtUtc = DateTimeOffset.UtcNow,
+                provider = "openai",
+                model = imageModel,
+                promptVersion = KeepsakeStore.WandArtworkPromptVersion
+            }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            await attempt.FlushAsync();
+        }
+        if (Directory.EnumerateFileSystemEntries(output).Any(path => !string.Equals(
+            Path.GetFullPath(path), Path.GetFullPath(attemptedPath), StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Reference output changed during setup; refusing provider dispatch.");
+        }
+
+        var generatedWand = new GeneratedWandPublicSnapshot(
+            WandId: "fictional-wand-reference",
+            PhysicalSlot: 1,
+            Name: "Fictional Reference Wand",
+            Material: "Ash and dark wood",
+            Core: "Pale crystalline core",
+            Temperament: "Fictional visual reference only",
+            Lore: "",
+            DesignDescription: "A slender vertical wand with a silver carved grip and a pale crystalline core; ash and dark wood form the shaft.",
+            Affinity: "",
+            Weakness: "",
+            Spells: []);
+        var snapshot = new KeepsakeIssueSnapshot(
+            OutcomeId: "fictional-reference-outcome",
+            DeviceId: "fictional-reference-device",
+            Slot: 1,
+            CatalogId: "fictional-reference-catalog",
+            OfficialName: "Fictional Reference",
+            CatalogFacts: "",
+            PhysicalEvidence: "",
+            GeneratedWand: generatedWand);
+        var request = new KeepsakeProviderRequest(
+            KeepsakeId: "fictional-reference-keepsake",
+            Snapshot: snapshot,
+            Brief: new KeepsakeBrief(),
+            JobId: "fictional-reference-job",
+            EditionId: null,
+            UploadId: null,
+            Variant: null,
+            NormalizedPhoto: null,
+            ExistingStory: null)
+        {
+            GenerationKind = "wand_artwork"
+        };
+
+        using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+        {
+            Timeout = Timeout.InfiniteTimeSpan
+        };
+        using var provider = new OpenAiKeepsakeProvider(http, apiKey, "unused-story-model", imageModel);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await File.WriteAllTextAsync(Path.Combine(output, "prompt.txt"),
+            OpenAiKeepsakeProvider.BuildWandImagePrompt(generatedWand));
+        var generated = await provider.GenerateAsync(request, timeout.Token);
+        if (generated.Provider != "openai" || generated.Model != imageModel
+            || generated.MediaType != "image/png" || generated.Synthetic)
+        {
+            throw new InvalidDataException("Provider returned unexpected image metadata.");
+        }
+        var imageBytes = generated.ImageBytes;
+        var imagePath = Path.Combine(output, "wand-reference.png");
+        // Keep a returned paid artifact even if the subsequent acceptance check fails.
+        await File.WriteAllBytesAsync(imagePath, imageBytes);
+        var imageInfo = ValidateReferencePng(imageBytes);
+        await File.WriteAllTextAsync(Path.Combine(output, "prompt.txt"), generated.Prompt);
+
+        using var response = JsonDocument.Parse(generated.ContentResponse);
+        var usage = response.RootElement.TryGetProperty("usage", out var usageElement)
+            ? usageElement.Clone()
+            : (JsonElement?)null;
+        var receipt = new
+        {
+            provider = generated.Provider,
+            model = generated.Model,
+            promptVersion = KeepsakeStore.WandArtworkPromptVersion,
+            promptSha256 = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(generated.Prompt))).ToLowerInvariant(),
+            input = new
+            {
+                visualOnly = new
+                {
+                    material = generatedWand.Material,
+                    core = generatedWand.Core,
+                    designDescription = generatedWand.DesignDescription
+                }
+            },
+            generationParameters = generated.GenerationParameters is null
+                ? (JsonElement?)null
+                : JsonDocument.Parse(generated.GenerationParameters).RootElement.Clone(),
+            image = new
+            {
+                file = Path.GetFileName(imagePath),
+                mediaType = generated.MediaType,
+                sha256 = Convert.ToHexString(SHA256.HashData(imageBytes)).ToLowerInvariant(),
+                bytes = imageBytes.Length,
+                width = imageInfo.Width,
+                height = imageInfo.Height,
+                alpha = new { present = true, fullyTransparentPixels = imageInfo.FullyTransparentPixels }
+            },
+            usage
+        };
+        await File.WriteAllTextAsync(Path.Combine(output, "receipt.json"),
+            JsonSerializer.Serialize(receipt, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+        Console.WriteLine($"One fictional wand reference saved to {output}");
+    }
+
+    private static (int Width, int Height, long FullyTransparentPixels) ValidateReferencePng(byte[] bytes)
+    {
+        using var bitmap = SKBitmap.Decode(bytes)
+            ?? throw new InvalidDataException("Provider image could not be decoded as PNG.");
+        if (bitmap.Width != 1024 || bitmap.Height != 1536)
+        {
+            throw new InvalidDataException($"Expected a 1024x1536 2:3 image; received {bitmap.Width}x{bitmap.Height}.");
+        }
+        if (bitmap.AlphaType == SKAlphaType.Opaque)
+        {
+            throw new InvalidDataException("Generated PNG has no alpha channel.");
+        }
+
+        long fullyTransparentPixels = 0;
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                if (bitmap.GetPixel(x, y).Alpha == 0)
+                {
+                    fullyTransparentPixels++;
+                }
+            }
+        }
+        if (fullyTransparentPixels == 0)
+        {
+            throw new InvalidDataException("Generated PNG contains no fully transparent pixels.");
+        }
+        return (bitmap.Width, bitmap.Height, fullyTransparentPixels);
+    }
 
     internal static async Task VerifyAsync(string sourceDatabase, string imageModel)
     {

@@ -1,0 +1,46 @@
+{
+  "provider": "openai",
+  "model": "gpt-image-2.5-flare",
+  "promptVersion": "personal-wand-art-v3-visual-only-transparent",
+  "promptSha256": "e0948ae2507c627924302b9b87c5a36a95f0d4c294827133d335a6eece4fc309",
+  "input": {
+    "visualOnly": {
+      "material": "Ash and dark wood",
+      "core": "Pale crystalline core",
+      "designDescription": "A slender vertical wand with a silver carved grip and a pale crystalline core; ash and dark wood form the shaft."
+    }
+  },
+  "generationParameters": {
+    "model": "gpt-image-2.5-flare",
+    "size": "1024x1536",
+    "output_format": "png",
+    "background": "transparent",
+    "moderation": "low",
+    "prompt_version": "personal-wand-art-v3-visual-only-transparent"
+  },
+  "image": {
+    "file": "wand-reference.png",
+    "mediaType": "image/png",
+    "sha256": "3054d938a82932590baad64334c23e863975c9747c6bd13f0f4dbea8c8321cf7",
+    "bytes": 1292406,
+    "width": 1024,
+    "height": 1536,
+    "alpha": {
+      "present": true,
+      "fullyTransparentPixels": 1132522
+    }
+  },
+  "usage": {
+    "input_tokens": 207,
+    "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 207
+    },
+    "output_tokens": 601,
+    "output_tokens_details": {
+      "image_tokens": 601,
+      "text_tokens": 0
+    },
+    "total_tokens": 808
+  }
+}
