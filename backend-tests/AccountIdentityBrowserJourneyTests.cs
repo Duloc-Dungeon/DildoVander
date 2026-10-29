@@ -2,6 +2,11 @@ using System.Net.Http.Json;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
+using Kufr.Backend.Features.Game;
+using Kufr.Backend.Features.GptLive;
+using Kufr.Backend.Features.Keepsakes;
+using Kufr.Backend.Features.Wands;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -23,7 +28,25 @@ internal static partial class AccountIdentityTests
                 services.AddSingleton<ICharacterPortraitProvider>(portrait);
                 services.RemoveAll<ICharacterPortraitFallbackProvider>();
                 services.AddSingleton<ICharacterPortraitFallbackProvider>(fallback);
-            });
+                services.AddSingleton(sp => new GameStore(sp.GetRequiredService<AccountConfiguration>().DataRoot));
+                services.AddSingleton<WandGenerationStore>();
+                services.AddSingleton<IWandGenerationProvider, PrelaunchWandProvider>();
+                services.AddSingleton<IMobileWandQuestionProvider, PrelaunchWorkshopDialogue>();
+                services.AddSingleton<WandGenerationService>();
+                services.AddSingleton<MobileWandRuntime>();
+                services.AddSingleton<MobileWorkshopLiveRuntime>();
+                services.AddSingleton<GptLiveClient>();
+                services.AddSingleton(sp => GptLiveOptions.Read(sp.GetRequiredService<IConfiguration>()));
+                services.AddSingleton<IKeepsakeProvider, FakeKeepsakeProvider>();
+                services.AddHostedService<MobileWandWorkshopWorker>();
+                services.AddHostedService<KeepsakeWorker>();
+            }, configureConfiguration: config => ((IConfigurationBuilder)config).AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    // Real issuance gate, exclusively synthetic provider implementations above.
+                    ["Keepsake:ProviderMode"] = "openai", ["Keepsake:ImageModel"] = "gpt-image-1.5",
+                    ["OPENAI_API_KEY"] = "synthetic-offline-browser-workshop-key"
+                }), configureEndpoints: app => app.MapMobileWands());
         var origin = fixture.App.Urls.Single().Replace("127.0.0.1", "localhost");
         using var owner = fixture.Client();
         owner.DefaultRequestHeaders.Remove("Origin");

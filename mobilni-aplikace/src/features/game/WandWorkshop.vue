@@ -28,7 +28,8 @@ const artworkDecoded = ref(false);
 const newlyCompleted = ref(false);
 let controller = new AbortController(); let poll: ReturnType<typeof setTimeout> | undefined;
 let refreshInFlight: Promise<void> | null = null; let syncFailures = 0;
-let operation = ''; let artworkKey = ''; let retryId = ''; let messageId = '';
+let operation = ''; let artworkKey = ''; let retryId = '';
+let pendingMessage: { messageId: string; sessionId: string; text: string } | undefined;
 const live = new LabVoice({
   phase(value) { livePhase.value = value; },
   transcript(role, delta) {
@@ -216,13 +217,38 @@ async function useText() {
 async function submit() {
   if (!canAnswer.value || !draft.value.trim()) return;
   busy.value = true; error.value = ''; const scope = controller;
-  messageId ||= secureUuid().replaceAll('-', '');
+  const sessionId = session.value!.id;
+  const text = draft.value.trim();
+  // An unchanged retry keeps its identity; edited content is a new message.
+  if (pendingMessage?.sessionId !== sessionId || pendingMessage.text !== text) {
+    pendingMessage = { messageId: secureUuid().replaceAll('-', ''), sessionId, text };
+  }
+  const message = pendingMessage;
   try {
-    const value = await workshopSessionRequest(`${workshopSessionPath(session.value!.id)}/messages`, 'POST', { messageId, text: draft.value.trim() }, scope.signal);
+    const value = await workshopSessionRequest(`${workshopSessionPath(sessionId)}/messages`, 'POST', { messageId: message.messageId, text: message.text }, scope.signal);
     if (scope !== controller || scope.signal.aborted) return;
-    applySession(value); draft.value = ''; messageId = ''; partial.value = '';
+    applySession(value); draft.value = ''; pendingMessage = undefined; partial.value = '';
   } catch { if (!scope.signal.aborted) { await refresh(); error.value = 'Stav byl ověřen. Pokud sdělení není uložené, odešli ho znovu; průběh zůstává zachovaný.'; } }
   finally { if (scope === controller) busy.value = false; }
+}
+async function retryCharacterPreparation() {
+  const profile = entry.value?.profile;
+  if (busy.value || !profile || !account.value?.openAiConsent
+    || entry.value?.reason !== 'wand_character_preparation_failed') return;
+  const scope = controller;
+  busy.value = true; error.value = '';
+  try {
+    await accountRequest('/app/v1/prelaunch/character/retry', 'POST', {
+      expectedProfileId: profile.profileId, expectedRevision: profile.revision,
+    }, scope.signal);
+    if (scope === controller && !scope.signal.aborted) {
+      await refresh();
+      await nextTick();
+      if (scope === controller && !scope.signal.aborted) title.value?.focus({ preventScroll: true });
+    }
+  } catch {
+    if (scope === controller && !scope.signal.aborted) error.value = 'Přípravu postavy se nepodařilo obnovit. Zkus to znovu.';
+  } finally { if (scope === controller) busy.value = false; }
 }
 async function finish() {
   if (!canAnswer.value) return;
@@ -268,7 +294,7 @@ function resetWorkshopContext() {
   syncFailures = 0; syncError.value = ''; error.value = ''; artworkError.value = '';
   stopMedia(); releaseArtwork(); session.value = null; entry.value = undefined;
   newlyCompleted.value = false;
-  operation = ''; messageId = ''; retryId = ''; draft.value = ''; partial.value = ''; partialRole = ''; partialComplete = false;
+  operation = ''; pendingMessage = undefined; retryId = ''; draft.value = ''; partial.value = ''; partialRole = ''; partialComplete = false;
   correction.value = null; correctionText.value = ''; mode.value = 'voice'; busy.value = false;
 }
 watch([() => account.value?.id, () => account.value?.openAiConsent, () => props.upgrade], () => {
@@ -301,7 +327,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
       <section class="trunk-workshop__conversation" :aria-label="wand ? 'Hotová hůlka' : 'Rozhovor s magickým kufrem'">
         <p class="trunk-workshop__announcement" aria-live="polite" aria-atomic="true">{{ mode === 'text' && session?.status === 'asking' ? confirmedReply : '' }}</p>
         <p v-if="loading" role="status">Ověřujeme tvoji postavu a dílnu…</p>
-        <template v-else-if="unavailable"><p role="status">{{ unavailable }}</p><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k postavě</AwButton><RouterLink v-else class="aw-button aw-button--primary" to="/me/character">Upravit nebo dokončit přípravu postavy</RouterLink><RouterLink v-if="!prelaunch && entry?.reason?.includes('boss')" to="/play">Pomoci osvobodit dílnu</RouterLink></template>
+        <template v-else-if="unavailable"><p role="status">{{ unavailable }}</p><AwButton v-if="entry?.reason === 'wand_character_preparation_failed' && account?.openAiConsent" :busy="busy" @click="retryCharacterPreparation">Zopakovat přípravu postavy</AwButton><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k postavě</AwButton><RouterLink v-else class="aw-button aw-button--primary" to="/me/character">Upravit nebo dokončit přípravu postavy</RouterLink><RouterLink v-if="!prelaunch && entry?.reason?.includes('boss')" to="/play">Pomoci osvobodit dílnu</RouterLink></template>
         <template v-else-if="wand">
           <AwNotice class="trunk-workshop__saved" tone="success">{{ prelaunch ? 'Hůlka je uložená. Tvoje příprava je hotová.' : 'Hůlka je uložená a připravená ke hře.' }}</AwNotice>
           <p>{{ wand.material }} · {{ wand.core }}</p>

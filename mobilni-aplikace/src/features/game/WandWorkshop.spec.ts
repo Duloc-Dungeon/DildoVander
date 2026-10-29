@@ -30,6 +30,56 @@ beforeEach(() => {
 });
 afterEach(() => { view?.unmount(); view = undefined; vi.useRealTimers(); });
 describe('customer Live workshop', () => {
+  it('explicitly retries failed character preparation before allowing a workshop', async () => {
+    reason = 'wand_character_preparation_failed';
+    const original = api.request.getMockImplementation()!;
+    api.request.mockImplementation(async (path: string, method = 'GET', body?: any) => {
+      if (path === '/app/v1/prelaunch/character/retry') { reason = null; return {}; }
+      return original(path, method, body);
+    });
+    await render(true);
+    expect(api.request.mock.calls.some(call => call[1] === 'POST')).toBe(false);
+    await click('Zopakovat přípravu postavy');
+    expect(api.request).toHaveBeenCalledWith('/app/v1/prelaunch/character/retry', 'POST',
+      { expectedProfileId: 'profile', expectedRevision: 1 }, expect.any(AbortSignal));
+    expect(view!.text()).toContain('Raději psát');
+    expect(api.request.mock.calls.some(call => call[0] === `${base}/sessions`)).toBe(false);
+  });
+
+  it.each([false, true])('preserves an uncertain message and safely retries edited=%s content', async edited => {
+    session = saved();
+    session.messages.push({ messageId: 'welcome', revision: 1, role: 'assistant', text: 'Co má hůlka zachránit?' });
+    const original = api.request.getMockImplementation()!;
+    const accepted = new Set<string>();
+    const attempts: { messageId: string; text: string }[] = [];
+    api.request.mockImplementation(async (path: string, method = 'GET', body?: any) => {
+      if (!path.endsWith('/messages') || method !== 'POST') return original(path, method, body);
+      attempts.push({ ...body });
+      if (accepted.has(body.messageId)) return { session: structuredClone(session) };
+      const response = await original(path, method, body);
+      accepted.add(body.messageId);
+      if (attempts.length === 1) throw new Error('Response lost after persistence');
+      return response;
+    });
+    await render();
+    await click('Raději psát');
+    await view!.get('#trunk-answer').setValue('Najdi cestu v mlze.');
+    await view!.get('form').trigger('submit');
+    await flushPromises();
+    expect(view!.text()).toContain('Stav byl ověřen.');
+    expect((view!.get('#trunk-answer').element as HTMLTextAreaElement).value).toBe('Najdi cestu v mlze.');
+
+    const retryText = edited ? 'Doveď mě domů.' : 'Najdi cestu v mlze.';
+    await view!.get('#trunk-answer').setValue(retryText);
+    await view!.get('form').trigger('submit');
+    await flushPromises();
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0].messageId === attempts[1].messageId).toBe(!edited);
+    expect(session.messages.filter((message: any) => message.role === 'user').map((message: any) => message.text))
+      .toEqual(edited ? ['Najdi cestu v mlze.', 'Doveď mě domů.'] : ['Najdi cestu v mlze.']);
+    expect((view!.get('#trunk-answer').element as HTMLTextAreaElement).value).toBe('');
+  });
+
   it('acknowledges completion observed in this workshop and keeps a restored result quiet', async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
     session = { ...saved(), status: 'generating' };
