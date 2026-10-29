@@ -1,5 +1,16 @@
 import Foundation
 
+let opponentArtwork = "/app/v1/game/matches/" + String(repeating: "a", count: 32) + "/opponent/wand-artwork?revision=" + String(repeating: "b", count: 64)
+require(AccountTransportPolicy.account(path: opponentArtwork, method: "GET"), "approved opponent art route unavailable")
+require(AccountTransportPolicy.accountResponseLimit(path: opponentArtwork, method: "GET") == 32 * 1024 * 1024, "opponent PNG size cap changed")
+require(AccountTransportPolicy.accountResponseContentTypeAllowed(path: opponentArtwork, method: "GET", contentType: "image/png"), "opponent PNG denied")
+require(!AccountTransportPolicy.accountResponseContentTypeAllowed(path: opponentArtwork, method: "GET", contentType: "text/html"), "opponent HTML accepted")
+for invalid in [opponentArtwork + "&x=1", opponentArtwork + "\n", opponentArtwork + "/extra", opponentArtwork.replacingOccurrences(of: "revision=", with: "asset=")] {
+    require(!AccountTransportPolicy.account(path: invalid, method: "GET"), "invalid opponent art route admitted")
+    require(AccountTransportPolicy.accountResponseLimit(path: invalid, method: "GET") == 1024 * 1024, "invalid opponent art route received binary limit")
+}
+require(!AccountTransportPolicy.account(path: opponentArtwork, method: "POST"), "opponent art became mutable")
+
 require(AccountTransportPolicy.account(path: "/app/v1/application-version", method: "GET"), "application version policy unavailable")
 for method in ["POST", "PUT", "DELETE"] {
     require(!AccountTransportPolicy.account(path: "/app/v1/application-version", method: method), "application version policy became mutable")

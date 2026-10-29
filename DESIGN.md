@@ -313,6 +313,19 @@ Zdroje: `WandWorkshop.vue`, `TrunkStage.vue` a
 [průchod dílnou](docs/magicky-kufr-workshop.md), sloučeno v `e938775`.
 Browserové kontroly používají syntetická data; nedokládají živou AI ani nativní telefon.
 
+### Souboje v Hrách
+
+Scéna staví dvě celé hůlky proti sobě. Osobní ilustrace mají svislou kompozici
+2:3, skutečnou průhlednost a rozdílné okraje; scéna je natočí hroty ke středu,
+zachová rukojeť i hrot a nepřebarvuje jejich materiál. Název patří pod příslušnou
+hůlku. Nedostupný obrázek zastupuje jednoduchý neutrální obrys.
+
+Zveřejněná výměna spustí nejvýše dvousekundový střet: úder má ostrou stopu,
+lest vlnivý proud a štít oblouk v místě nárazu. Jantar a fialová rozlišují
+strany; světlé jádro a krátký rozlet částic patří pouze nárazu. Výsledek je
+čitelný okamžitě a ovládání na efekt nečeká. Omezený pohyb ponechá celou
+statickou scénu; historie ani opakované načtení stejné výměny efekt nepřehrává.
+
 ### Kaskáda a rozsah
 
 `src/main.ts` načítá aplikační základ, starší `consumer-brand.css` a nakonec

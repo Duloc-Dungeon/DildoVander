@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T02:30:56.297Z",
+  "generatedAt": "2026-10-29T02:38:19.226Z",
   "title": "Wand Night Stand — schválený design v2",
   "extensions": {
     "colorMeta": {
@@ -350,6 +350,11 @@
         "name": "workshop-manufacture",
         "value": "2.4s cubic-bezier(.16,1,.3,1) infinite alternate",
         "purpose": "Místní indikátor pouze při serverem potvrzené výrobě; neudává procenta ani zbývající čas. Při omezeném pohybu je statický."
+      },
+      {
+        "name": "duel-impact",
+        "value": "2000ms",
+        "purpose": "Místní jednorázový střet zveřejněné výměny. Celé průhledné osobní hůlky, odlišná stopa úderu/lsti/štítu, statický omezený pohyb a zrušení mimo viditelnou scénu. Ovládání ani výsledek nečekají na animaci."
       }
     ],
     "breakpoints": [

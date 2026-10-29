@@ -155,7 +155,7 @@
 .responsive-table .game-controls .aw-button--primary:not(:disabled):active { transform: scale(.985); filter: brightness(1.1); }
 .responsive-table .game-paper.game-reveal { margin: 0 0 14px; padding: 12px 16px; color: var(--wns-text); border: 1px solid var(--wns-line); border-radius: var(--wns-radius-card); background: var(--wns-surface); box-shadow: none; animation: table-score-in .2s ease-out; }
 .responsive-table .game-table-stage .game-reveal { position: static; margin-block: 16px; }
-.responsive-table .game-table-stage--complete .game-clash-stage { display: none; }
+.responsive-table .game-table-stage--complete .game-magic-clash { display: grid; }
 .responsive-table .game-table-stage--complete .game-reveal { position: static; margin-block: 16px; }
 .responsive-table .game-reveal p { font-size: .83rem; }
 .responsive-table .game-reveal .game-eyebrow { color: var(--wns-muted); font-size: .65rem; }
