@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
 using Microsoft.Data.Sqlite;
@@ -6,21 +7,25 @@ using Microsoft.Data.Sqlite;
 namespace Kufr.Backend.Features.SealedCase;
 
 internal sealed record SealedPlayerCard(string Id, string Name, string Seat, string State, string? Location, string? Mask, string? PortraitUrl, bool IsAi = false);
-internal sealed record SealedClueView(string Id, string Chain, string Family, string[] Candidates, string SourceEvent);
+internal sealed record SealedClueView(string Id, string Chain, string Family, string[] Candidates, string SourceEvent,
+    string? Label = null, string? Description = null);
 internal sealed record SealedSource(string Id, string Label);
 internal sealed record SealedChoice(string Id, string Label, string Benefit, string Cost, string Risk, SealedPlanConfirmation Plan);
 internal sealed record SealedStatement(string Id, string Actor, string Body, string[] Recipients, bool Public, long CreatedAt);
 internal sealed record SealedRecap(int Chapter, string Actor, string? Target, string Intent, string Result, string EventRef,
     string? Reason = null, SealedModifiers? Modifiers = null, SealedRolls? Rolls = null, bool TraceCreated = false);
 internal sealed record SealedFinaleView(string Phase, int BallotSize, bool OwnSubmitted, string[] OwnBallot,
-    string[] RunoffCandidates, int RunoffPlaces, string[]? Selected, string? Winner, string[]? Conspirators, SealedRecap[]? Reconstruction);
+    string[] RunoffCandidates, int RunoffPlaces, string[]? Selected, string? Winner, string[]? Conspirators, SealedRecap[]? Reconstruction,
+    string? Message = null);
 internal sealed record SealedPlayView(string Id, string Phase, long ServerNow, int Chapter, int Chapters,
     long? PlanningEndsAt, long? QuietEndsAt, long? FinaleEndsAt, int ExpectedPlayers, int ReadyPlayers,
     string OwnId, bool OwnReady, bool OwnScenarioConsent, bool CanManage, bool CanStart, long? LobbyRevision,
     string OwnState, string? OwnTeam, string? OwnKit, string[] TeamMembers, string? Location,
     Dictionary<string, string> Locations, string[] AdjacentLocations, SealedPlayerCard[] Players,
     SealedAction? OwnPlan, SealedChoice[] Choices, SealedClueView[] Clues, SealedItem[] OwnItems, SealedItem[] VisibleItems,
-    string[] Notes, SealedStatement[] Statements, SealedRecap[] OwnOutcomes, SealedFinaleView? Finale, SealedSource[]? Sources = null, bool OwnOversight = false, bool CanManageAi = false, bool AiAvailable = false, bool CanJoin = true)
+    string[] Notes, SealedStatement[] Statements, SealedRecap[] OwnOutcomes, SealedFinaleView? Finale, SealedSource[]? Sources = null, bool OwnOversight = false, bool CanManageAi = false, bool AiAvailable = false, bool CanJoin = true,
+    SealedScenarioSummary? Scenario = null, string? OwnObjective = null, string? ChapterTitle = null,
+    [property: JsonIgnore] SealedScenarioPresentation? Presentation = null)
 {
     public SealedNarration PublicNarration => SealedCaseAi.Factual(this, true);
     public SealedNarration PrivateNarration => SealedCaseAi.Factual(this, false);
@@ -89,7 +94,8 @@ internal sealed partial class SealedCaseStore
         string seed; long frozenAt;
         using (var reader = rosterQuery.ExecuteReader()) { reader.Read(); seed = reader.GetString(0); frozenAt = reader.GetInt64(1); }
         var variant = setup.RootElement.GetProperty("variant").GetString()!;
-        var game = SealedScenario.Create(new(caseId, seed, members, frozenAt), variant);
+        var presentation = SealedScenarioCatalog.FromSetup(setup.RootElement);
+        var game = SealedScenario.Create(new(caseId, seed, members, frozenAt), variant, presentation);
         var now = clock.GetUtcNow().ToUnixTimeSeconds(); var next = revision + 1;
         using var create = connection.CreateCommand(); create.Transaction = transaction;
         create.CommandText = """
@@ -99,14 +105,15 @@ internal sealed partial class SealedCaseStore
             INSERT INTO sealed_case_events(event_id,case_id,actor_id,idempotency_key,expected_revision,revision,kind,payload_json,created_at)
                 VALUES($event,$case,$actor,$key,$old,$next,'case-started',$payload,$now);
             """;
-        create.Parameters.AddWithValue("$case", caseId); create.Parameters.AddWithValue("$version", ContentVersionJson);
+        create.Parameters.AddWithValue("$case", caseId); create.Parameters.AddWithValue("$version", ContentVersionFor(game.Scenario));
         create.Parameters.AddWithValue("$world", JsonSerializer.Serialize(game.Checkpoint(), Json)); create.Parameters.AddWithValue("$next", next);
         create.Parameters.AddWithValue("$now", now); create.Parameters.AddWithValue("$variant", variant); create.Parameters.AddWithValue("$players", expected);
         var schedule = SealedCaseRules.Schedule(variant, expected);
         create.Parameters.AddWithValue("$deadline", now + schedule.IntroductionSeconds + schedule.PlanningSeconds);
         create.Parameters.AddWithValue("$event", caseId + ":prelude"); create.Parameters.AddWithValue("$actor", actor);
         create.Parameters.AddWithValue("$key", operationId); create.Parameters.AddWithValue("$old", revision);
-        create.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(new { scenario = game.Scenario!.ScenarioId, prelude = SealedScenario.Definition.GetProperty("prelude").GetProperty("public_facts") }, Json));
+        create.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(new { scenario = game.Scenario!.ScenarioId,
+            scenarioVersion = presentation.Version, prelude = presentation.PublicFacts }, Json));
         create.ExecuteNonQuery(); transaction.Commit(); return new(caseId + ":prelude", next, false, "running");
     }
 
@@ -213,12 +220,17 @@ internal sealed partial class SealedCaseStore
         }
         foreach (var bot in bots) { names[bot.Key] = bot.Value; }
         var now = clock.GetUtcNow().ToUnixTimeSeconds();
-        var locations = SealedScenario.Definition.GetProperty("map").GetProperty("zones").EnumerateArray()
-            .ToDictionary(z => z.GetProperty("id").GetString()!, z => z.GetProperty("name").GetString()!, StringComparer.Ordinal);
         var schedule = SealedCaseRules.Schedule(variant, expected);
         SealedStoredWorld? world = null;
         try { world = ReadWorld(connection, transaction, caseId, revision); }
         catch (SealedCasePersistenceException error) when (error.Code == "world_not_initialized") { }
+        var presentation = world?.Checkpoint.Scenario?.Presentation ?? SealedScenarioCatalog.FromSetup(setup.RootElement);
+        var locations = new Dictionary<string, string>(presentation.Locations, StringComparer.Ordinal);
+        SealedPlayView Present(SealedPlayView view, string? objective = null) => view with
+        {
+            Scenario = presentation.Describe(), OwnObjective = objective, Presentation = presentation,
+            ChapterTitle = view.Chapter > 0 ? presentation.ChapterTitles[presentation.ChapterIndex(view.Chapter, variant)] : null
+        };
         var ready = latest.Values.Count(entry => entry.Ready && entry.Consent && entry.SnapshotRef is not null && eligible.Contains(entry.PlayerId));
         if (world is null)
         {
@@ -226,10 +238,10 @@ internal sealed partial class SealedCaseStore
                 new SealedPlayerCard(e.PlayerId, names.GetValueOrDefault(e.PlayerId, "Host"), "", "Připraven", null, null,
                     portraits.Contains(e.PlayerId) ? $"/app/v1/sealed-cases/{caseId}/portraits/{e.PlayerId}" : null, bots.ContainsKey(e.PlayerId))).ToArray();
             transaction.Commit();
-            return new(caseId, "lobby", now, 0, schedule.Chapters, null, null, null, expected, ready, actor,
+            return Present(new(caseId, "lobby", now, 0, schedule.Chapters, null, null, null, expected, ready, actor,
                 ownEntry is { Ready: true, Consent: true, SnapshotRef: not null }, ownEntry?.ScenarioConsent == true,
                 canManage, canManage && members.Length == expected && members.All(m => eligible.Contains(m.AccountId) && latest.GetValueOrDefault(m.AccountId)?.ScenarioConsent == true), revision,
-                "Awake", null, null, [], null, locations, [], lobbyPlayers, null, [], [], [], [], [], [], [], null, CanManageAi: canManageAi, CanJoin: playerAdmission is CustomerAdmissionGuard ownHuman && ownHuman.Proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal));
+                "Awake", null, null, [], null, locations, [], lobbyPlayers, null, [], [], [], [], [], [], [], null, CanManageAi: canManageAi, CanJoin: playerAdmission is CustomerAdmissionGuard ownHuman && ownHuman.Proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)));
         }
         var member = playerAdmission is CustomerAdmissionGuard cookie && !cookie.Proof.Roles.Contains(AccountRoles.Customer, StringComparer.Ordinal)
             ? null : members.SingleOrDefault(m => m.AccountId == actor);
@@ -241,9 +253,9 @@ internal sealed partial class SealedCaseStore
             var publicMessages = Statements(connection, transaction, caseId, actor).Where(m => m.Public).ToArray();
             var operatorFinale = operatorTiming.Phase == "finished" ? ReadFinale(connection, transaction, caseId, members, actor, operatorTiming) : null;
             transaction.Commit();
-            return new(caseId, operatorTiming.Phase, now, operatorTiming.Chapter, operatorTiming.Chapters, operatorTiming.PlanningEndsAt,
+            return Present(new(caseId, operatorTiming.Phase, now, operatorTiming.Chapter, operatorTiming.Chapters, operatorTiming.PlanningEndsAt,
                 operatorTiming.QuietEndsAt, operatorTiming.FinaleEndsAt, expected, ready, actor, false, true, true, false, null,
-                "Operator", null, null, [], null, locations, [], publicPlayers, null, [], [], [], [], [], publicMessages, [], operatorFinale, CanJoin: false);
+                "Operator", null, null, [], null, locations, [], publicPlayers, null, [], [], [], [], [], publicMessages, [], operatorFinale, CanJoin: false));
         }
         var player = world.Checkpoint.Players.Single(p => p.Id == member.PlayerId);
         var scene = world.Checkpoint.Scenario ?? throw new SealedCasePersistenceException("sealed_case_scenario_unavailable", 409);
@@ -262,7 +274,8 @@ internal sealed partial class SealedCaseStore
         }).ToArray();
         var ownPlan = ReadConfirmedPlans(connection, transaction, caseId, timing.Chapter).GetValueOrDefault(player.Id);
         var clues = scene.Clues.Where(c => scene.KnownClues.GetValueOrDefault(player.Id, []).Contains(c.Id))
-            .Select(c => new SealedClueView(c.Id, c.Chain, c.Family, c.Candidates.ToArray(), c.SourceEvent)).ToArray();
+            .Select(c => new SealedClueView(c.Id, c.Chain, c.Family, c.Candidates.ToArray(), c.SourceEvent,
+                presentation.ClueLabels[c.Family], presentation.ClueDescription)).ToArray();
         var statements = Statements(connection, transaction, caseId, actor).Where(m => m.Public || m.Actor == actor || m.Recipients.Contains(actor))
             .Select(m => m.Actor == actor ? m : m with { Recipients = [] }).ToArray();
         var outcomes = Recap(connection, transaction, caseId).Where(e => e.Actor == player.Id && ReadConfirmedPlans(connection, transaction, caseId, e.Chapter).ContainsKey(player.Id))
@@ -270,7 +283,7 @@ internal sealed partial class SealedCaseStore
         var finale = timing.Phase is "finale" or "finished" ? ReadFinale(connection, transaction, caseId, members, actor, timing) : null;
         var choices = Choices(player.Id, state, player.Location, timing.Chapter, ownPlan?.Revision ?? 0, clues, scene, timing.Variant);
         transaction.Commit();
-        return new(caseId, timing.Phase, now, timing.Chapter, timing.Chapters, timing.PlanningEndsAt, timing.QuietEndsAt, timing.FinaleEndsAt,
+        return Present(new(caseId, timing.Phase, now, timing.Chapter, timing.Chapters, timing.PlanningEndsAt, timing.QuietEndsAt, timing.FinaleEndsAt,
             expected, ready, actor, true, true, canManage, false, null, state.ToString(), member.Team.ToString(), member.Kit.ToString(),
             member.Team == SealedSecretTeam.Conspirator ? members.Where(m => m.Team == SealedSecretTeam.Conspirator).Select(m => m.PlayerId).ToArray() : [],
             player.Location, locations, world.Checkpoint.Adjacency.GetValueOrDefault(player.Location, []), cards, ownPlan, choices, clues,
@@ -278,8 +291,9 @@ internal sealed partial class SealedCaseStore
             scene.Items.Values.Where(i => i.OwnerId != player.Id && scene.Observations?.GetValueOrDefault(player.Id, [])
                 .Any(o => o.PlayerId == i.OwnerId && o.Chapter == world.LastChapter && o.Location == player.Location) == true).ToArray(),
             scene.Notes.GetValueOrDefault(player.Id, []), statements, outcomes, finale,
-            scene.Clues.Where(c => c.Location == player.Location && c.ReleaseChapter <= timing.Chapter).Select(c => new SealedSource(c.Id, "Otisk " + c.Id)).ToArray(),
-            scene.Oversight?.GetValueOrDefault(timing.Chapter) == player.Id);
+            scene.Clues.Where(c => c.Location == player.Location && c.ReleaseChapter <= timing.Chapter).Select(c => new SealedSource(c.Id, presentation.ClueLabels[c.Family] + " · " + c.Id)).ToArray(),
+            scene.Oversight?.GetValueOrDefault(timing.Chapter) == player.Id),
+            member.Team == SealedSecretTeam.Guardian ? presentation.GuardianObjective : presentation.ConspiratorObjective);
     }
 
     private static SealedChoice[] Choices(string actor, SealedPlayerState state, string location, int chapter, int actionRevision,

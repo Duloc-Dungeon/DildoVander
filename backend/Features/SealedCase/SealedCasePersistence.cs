@@ -76,15 +76,17 @@ internal sealed partial class SealedCaseStore
         InvalidateLegacySelections();
     }
 
-    internal SealedCaseSnapshot Create(string groupId, string actorId, long now, int expectedPlayers = 8, string variant = "full", string? operationId = null, Func<IDisposable>? authorizeWrite = null)
+    internal SealedCaseSnapshot Create(string groupId, string actorId, long now, int expectedPlayers = 8, string variant = "full", string? operationId = null, Func<IDisposable>? authorizeWrite = null, string? scenarioId = null)
     {
         if (string.IsNullOrWhiteSpace(groupId) || string.IsNullOrWhiteSpace(actorId)) throw new SealedCasePersistenceException("invalid_setup", 400);
         if (expectedPlayers is < 8 or > 30) throw new SealedCasePersistenceException("player_count_out_of_range", 400);
         try { _ = SealedCaseRules.Schedule(variant, expectedPlayers); }
         catch (SealedCaseRuleException) { throw new SealedCasePersistenceException("invalid_setup", 400); }
         if (operationId is not null && (string.IsNullOrWhiteSpace(operationId) || operationId.Length is < 8 or > 128)) throw new SealedCasePersistenceException("invalid_operation_id", 400);
+        var scenario = SealedScenarioCatalog.Resolve(scenarioId);
         var id = "sc_" + (operationId is null ? Guid.NewGuid().ToString("N") : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[] { groupId, actorId, operationId }, Json)))).ToLowerInvariant()[..32]);
-        var setupJson = JsonSerializer.Serialize(new { createdBy = actorId, expectedPlayers, variant }, Json);
+        var setupJson = JsonSerializer.Serialize(new { createdBy = actorId, expectedPlayers, variant,
+            scenarioId = scenario.Id, scenarioVersion = scenario.Version, scenarioSnapshot = scenario }, Json);
         var empty = "{}";
         using var c = Open(); using var tx = c.BeginTransaction(deferred: false);
         // Lock order for this independent store: lobby -> identity. Reserve only
@@ -102,12 +104,19 @@ internal sealed partial class SealedCaseStore
                 {
                     throw new SealedCasePersistenceException("case_not_found", 404);
                 }
-                if (reader.GetString(0) != groupId || reader.GetString(6) != setupJson) throw new SealedCasePersistenceException("idempotency_key_reused", 409);
+                var priorSetupJson = reader.GetString(6);
+                using var priorSetup = JsonDocument.Parse(priorSetupJson);
+                var prior = priorSetup.RootElement;
+                var priorScenario = prior.TryGetProperty("scenarioId", out var priorId) ? priorId.GetString() : SealedScenarioCatalog.DefaultId;
+                if (reader.GetString(0) != groupId || prior.GetProperty("createdBy").GetString() != actorId
+                    || prior.GetProperty("expectedPlayers").GetInt32() != expectedPlayers
+                    || prior.GetProperty("variant").GetString() != variant || priorScenario != scenario.Id)
+                { throw new SealedCasePersistenceException("idempotency_key_reused", 409); }
                 // Creation replay returns the original setup receipt. The HTTP
                 // view separately reads current state; an old operation never
                 // changes its persisted result after subsequent transitions.
-                var prior = new SealedCaseSnapshot(id, groupId, "setup", 1, null, 0, null, setupJson, empty);
-                reader.Close(); tx.Commit(); return prior;
+                var receipt = new SealedCaseSnapshot(id, groupId, "setup", 1, null, 0, null, priorSetupJson, empty);
+                reader.Close(); tx.Commit(); return receipt;
             }
         }
         using var cmd = c.CreateCommand(); cmd.Transaction = tx;

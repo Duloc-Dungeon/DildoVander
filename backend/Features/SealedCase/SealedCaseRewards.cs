@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Kufr.Backend.Features.Identity;
 using Microsoft.Data.Sqlite;
 
@@ -6,12 +7,14 @@ namespace Kufr.Backend.Features.SealedCase;
 
 internal sealed record SealedCaseRewardCollection(int SchemaVersion, IReadOnlyList<SealedCaseReward> Items);
 internal sealed record SealedCaseReward(string CaseId, DateTimeOffset ReleasedAt, string Team,
-    int ConfirmedPlans, int SuccessfulPlans);
+    int ConfirmedPlans, int SuccessfulPlans,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SealedCaseRewardScenario? Scenario = null);
+internal sealed record SealedCaseRewardScenario(string Id, string Title, string TeamLabel);
 
 internal sealed partial class SealedCaseStore
 {
     internal SealedCaseRewardCollection ReadPersonalRewards(string groupId, string accountId,
-        Func<CustomerAdmissionGuard> authorize)
+        Func<CustomerAdmissionGuard> authorize, bool scenarioMetadata = false)
     {
         var items = new List<SealedCaseReward>(100);
         long? beforeCreatedAt = null;
@@ -23,6 +26,7 @@ internal sealed partial class SealedCaseStore
             foreach (var (caseId, member, _, _) in candidates)
             {
                 var play = ReadPlay(caseId, groupId, accountId, authorize);
+                if (!scenarioMetadata && play.Scenario?.Id is { } scenarioId && scenarioId != SealedScenarioCatalog.DefaultId) { continue; }
                 if (play.Finale is not { Phase: "released", Reconstruction: { } reconstruction }
                     || play.FinaleEndsAt is not { } finaleEndsAt
                     || play.OwnTeam != member.Team.ToString())
@@ -40,7 +44,8 @@ internal sealed partial class SealedCaseStore
                 var successfulPlans = confirmedChapters.Count(chapter => reconstructedOwnChapters[chapter]
                     .Any(result => result.Result == nameof(SealedResult.Success)));
                 items.Add(new(caseId, DateTimeOffset.FromUnixTimeSeconds(finaleEndsAt), member.Team.ToString(),
-                    confirmedChapters.Length, successfulPlans));
+                    confirmedChapters.Length, successfulPlans, scenarioMetadata && play.Scenario is { } scenario
+                        ? new(scenario.Id, scenario.Title, member.Team == SealedSecretTeam.Guardian ? scenario.GuardianLabel : scenario.ConspiratorLabel) : null));
                 if (items.Count == 100) { break; }
             }
 

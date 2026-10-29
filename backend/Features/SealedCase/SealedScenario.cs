@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Kufr.Backend.Features.SealedCase;
 
@@ -13,14 +14,15 @@ internal sealed record SealedScenarioState(string ScenarioId, string Variant, Se
     Dictionary<string, string[]> KnownClues, Dictionary<string, string[]> Notes,
     Dictionary<string, SealedItem> Items, Dictionary<string, string> Masks,
     Dictionary<string, SealedObservation[]>? Observations = null, Dictionary<string, SealedExperience[]>? Experiences = null, string? CaseId = null,
-    Dictionary<int, string?>? Oversight = null)
+    Dictionary<int, string?>? Oversight = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SealedScenarioPresentation? Presentation = null)
 {
     internal SealedScenarioState Copy() => new(ScenarioId, Variant, Clues.Select(c => c with { Candidates = [.. c.Candidates] }).ToArray(),
         KnownClues.ToDictionary(p => p.Key, p => p.Value.ToArray(), StringComparer.Ordinal),
         Notes.ToDictionary(p => p.Key, p => p.Value.ToArray(), StringComparer.Ordinal),
         new(Items, StringComparer.Ordinal), new(Masks, StringComparer.Ordinal),
         Observations?.ToDictionary(p => p.Key, p => p.Value.ToArray(), StringComparer.Ordinal),
-        Experiences?.ToDictionary(p => p.Key, p => p.Value.ToArray(), StringComparer.Ordinal), CaseId, Oversight is null ? [] : new(Oversight));
+        Experiences?.ToDictionary(p => p.Key, p => p.Value.ToArray(), StringComparer.Ordinal), CaseId, Oversight is null ? [] : new(Oversight), Presentation?.Copy());
 }
 
 // Embedded server content. Never return a catalog, target assignment or candidate
@@ -39,8 +41,9 @@ internal static class SealedScenario
     internal static string Digest(string seed, string purpose, string value)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(seed + "|" + purpose + "|" + value)));
 
-    internal static SealedGame Create(SealedStoredRoster roster, string variant)
+    internal static SealedGame Create(SealedStoredRoster roster, string variant, SealedScenarioPresentation? presentation = null)
     {
+        presentation = presentation?.Copy() ?? SealedScenarioCatalog.Resolve();
         var zones = Definition.GetProperty("map").GetProperty("zones").EnumerateArray().ToArray();
         var adjacency = zones.ToDictionary(z => z.GetProperty("id").GetString()!,
             z => z.GetProperty("adjacent").EnumerateArray().Select(x => x.GetString()!).ToArray(), StringComparer.Ordinal);
@@ -75,12 +78,12 @@ internal static class SealedScenario
                     roster.CaseId + ":prelude"));
             }
         }
-        var state = new SealedScenarioState(Definition.GetProperty("scenario_id").GetString()!, variant, clues.ToArray(),
+        var state = new SealedScenarioState(presentation.Id, variant, clues.ToArray(),
             players.ToDictionary(p => p.Id, _ => Array.Empty<string>(), StringComparer.Ordinal),
-            players.ToDictionary(p => p.Id, _ => new[] { "Přijal jsi scénářovou minulost. Pečeť byla narušena před začátkem tvých tahů." }, StringComparer.Ordinal),
+            players.ToDictionary(p => p.Id, _ => new[] { presentation.AcceptedPast }, StringComparer.Ordinal),
             players.ToDictionary(p => "token-" + members.Single(m => m.PlayerId == p.Id).SeatId,
-                p => new SealedItem("token-" + members.Single(m => m.PlayerId == p.Id).SeatId, "Scénářový žeton", p.Id), StringComparer.Ordinal), new(StringComparer.Ordinal));
-        state = state with { CaseId = roster.CaseId, Observations = [], Experiences = [], Oversight = [] };
+                p => new SealedItem("token-" + members.Single(m => m.PlayerId == p.Id).SeatId, presentation.ItemName, p.Id), StringComparer.Ordinal), new(StringComparer.Ordinal));
+        state = state with { CaseId = roster.CaseId, Observations = [], Experiences = [], Oversight = [], Presentation = presentation };
         foreach (var player in players) { player.ObservedPlayers.UnionWith(players.Where(other => other.Id != player.Id && other.Location == player.Location).Select(other => other.Id)); }
         SealedGame.CaptureObservations(state, players.ToDictionary(p => p.Id, StringComparer.Ordinal), 0);
         var game = new SealedGame(players, roster.ServerSeed, adjacency) { Scenario = state };
@@ -99,7 +102,7 @@ internal sealed partial class SealedGame
             state.Observations[observer.Id] = players.Values.Where(p => p.Id != observer.Id && p.Location == observer.Location)
                 .Select(p => new SealedObservation(p.Id, p.Location,
                     p.FeigningSleep || p.State == SealedPlayerState.Sleeping ? "Zdá se, že spí" : p.State switch
-                    { SealedPlayerState.Echo => "Ozvěna", SealedPlayerState.Unconscious => "V bezvědomí", _ => "Bdělý" },
+                    { SealedPlayerState.Echo => state.Presentation?.EchoLabel ?? "Ozvěna", SealedPlayerState.Unconscious => "V bezvědomí", _ => "Bdělý" },
                     chapter, chapter == 0 ? state.CaseId + ":prelude" : state.CaseId + ":chapter-" + chapter + "-commit", state.Oversight?.GetValueOrDefault(chapter) == p.Id ? null : state.Masks.GetValueOrDefault(p.Id))).ToArray();
         }
     }

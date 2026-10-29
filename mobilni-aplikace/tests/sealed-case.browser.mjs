@@ -12,6 +12,21 @@ const { server, origin } = await createGameFixtureServer();
 const browser = await chromium.launch();
 const errors = [];
 const caseId = 'sc_' + 'a'.repeat(32);
+const originalScenario = {
+  id: 'POD_PECETI_POSLEDNI_ZVON_V1', version: '1.0', title: 'Případ posledního zvonu',
+  summary: 'Pečeť byla narušena před začátkem vašich tahů.', universe: 'Harry Potter', tone: 'Tajemství a stopy',
+  guardianLabel: 'Strážci', conspiratorLabel: 'Spiklenci', echoLabel: 'Ozvěna',
+  echoExplanation: 'Jako Ozvěna dál pátráš a hlasuješ.', extremeActionLabel: 'Krajní čin',
+  extremeConsequence: 'Tento čin může usmrtit postavu.',
+};
+// Only the catalog allowlist crosses the synthetic player API. Full narrative
+// packs stay in the Node harness, just as the real backend filters its catalog.
+const packs = JSON.parse(await readFile(new URL('../../backend/Features/SealedCase/Content/scenario-variants.json', import.meta.url), 'utf8')).variants;
+const catalogFields = ['id', 'version', 'title', 'summary', 'universe', 'tone', 'guardianLabel', 'conspiratorLabel', 'echoLabel', 'echoExplanation', 'extremeActionLabel', 'extremeConsequence'];
+const scenarioCatalog = { defaultScenarioId: originalScenario.id, scenarios: [originalScenario,
+  ...packs.map(pack => Object.fromEntries(catalogFields.map(key => [key, pack[key]])))] };
+const neighbours = scenarioCatalog.scenarios.find(scenario => scenario.id === 'HP_SPOLECENSTVI_KRBU_V1');
+assert.ok(neighbours);
 const players = Array.from({ length: 8 }, (_, i) => ({ id: i ? `p${i + 1}` : 'one', name: `Host ${i + 1}`, seat: `S${i + 1}`, state: i ? 'Stav neznáš' : 'Awake', location: i ? null : 'ARCHIV', mask: null, portraitUrl: null }));
 const plan = { chapter: 1, expectedActionRevision: 0, confirmed: true, intent: 4 };
 function view(phase) {
@@ -33,6 +48,7 @@ try {
     await page.route('**/app/v1/sealed-cases**', async route => {
       const request = route.request(); const pathname = new URL(request.url()).pathname;
       if (request.method() === 'GET') {
+        if (pathname.endsWith('/scenarios')) return route.fulfill({ json: scenarioCatalog });
         return route.fulfill({ json: pathname.endsWith('/current') ? { id: created ? caseId : null } : state });
       }
       const body = request.postDataJSON(); requests.push({ pathname, body });
@@ -52,6 +68,7 @@ try {
       }
       if (pathname === '/app/v1/sealed-cases') {
         created = true;
+        state.scenario = scenarioCatalog.scenarios.find(scenario => scenario.id === body.scenarioId);
         if (dropCreate) { dropCreate = false; return route.abort('failed'); }
         return route.fulfill({ json: { id: caseId } });
       }
@@ -150,15 +167,18 @@ try {
     await screenshot('ballot');
     assert.equal(await page.getByLabel('Host 1', { exact: true }).count(), 0, 'player cannot nominate themselves');
     state = view('finished');
+    state.scenario = neighbours;
     state.ownOutcomes = [{ chapter: 1, actor: 'one', target: null, intent: 'Investigate', result: 'accepted', eventRef: '' }];
     state.statements = [{ id: 'private', actor: 'one', body: 'PRIVATE_CHAT_EXPORT_CANARY', recipients: ['p2'], public: false }];
     state.privateNarration = { text: 'STALE_PRELUDE_CANARY' };
     state.finale = { phase: 'released', ballotSize: 2, ownSubmitted: true, ownBallot: [], runoffCandidates: [], runoffPlaces: 0,
-      winner: 'Strážci', selected: ['p2', 'p3'], conspirators: ['p2', 'p3'],
+      winner: neighbours.guardianLabel, selected: ['p2', 'p3'], conspirators: ['p2', 'p3'], message: 'Společný krb zůstal společným.',
       reconstruction: [{ chapter: 1, actor: 'one', target: null, intent: 'Investigate', result: 'Success', eventRef: `${caseId}:event-1` }] };
     await page.reload(); await page.getByRole('heading', { name: 'Tvá stopa v případu' }).waitFor();
     const finaleText = await page.locator('.sealed-content').innerText();
-    assert.ok(finaleText.indexOf('Vítězí Strážci') < finaleText.indexOf('Stáhnout veřejnou rekonstrukci'), 'verdict and reveal precede export controls');
+    assert.ok(finaleText.indexOf(`Vítězí ${neighbours.guardianLabel}`) < finaleText.indexOf('Stáhnout veřejnou rekonstrukci'), 'verdict and reveal precede export controls');
+    assert.ok(finaleText.includes(neighbours.title), 'released story retains its scenario title');
+    assert.equal(finaleText.includes(originalScenario.title), false, 'a different scenario does not become the last bell at finale');
     assert.equal(finaleText.includes(`${caseId}:event-1`), false, 'event references are not shown in the reconstruction');
     assert.equal(finaleText.includes('STALE_PRELUDE_CANARY'), false, 'finished view does not retain a stale private prelude');
     const downloaded = page.waitForEvent('download');
@@ -166,14 +186,38 @@ try {
     const artifact = await downloaded;
     const memory = await readFile(await artifact.path(), 'utf8');
     assert.equal(JSON.parse(memory).medallion.actions.length, 1);
+    assert.equal(JSON.parse(memory).scenarioId, neighbours.id);
+    assert.equal(JSON.parse(memory).title, `Pod pečetí · ${neighbours.title}`);
     assert.equal(memory.includes('PRIVATE_CHAT_EXPORT_CANARY'), false, 'private chat never enters exported memory');
+    const publicDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Stáhnout veřejnou rekonstrukci' }).click();
+    const publicArtifact = await publicDownload;
+    const publicMemory = JSON.parse(await readFile(await publicArtifact.path(), 'utf8'));
+    assert.equal(publicMemory.scenarioId, neighbours.id);
+    assert.equal('ownNotes' in publicMemory, false, 'public reconstruction excludes personal experiences');
     await screenshot('finale');
-    created = false; state = view('lobby'); await page.goto(`${origin}/play/pod-peceti`);
+    created = true; // /current continues to reference this released case.
+    await page.getByRole('button', { name: 'Založit další případ' }).click();
+    await page.waitForURL('**/play/pod-peceti?new=1');
+    state = view('lobby');
+    const scenarioSelect = page.getByLabel('Scénář', { exact: true });
+    await scenarioSelect.waitFor();
+    assert.equal(await scenarioSelect.locator('option').count(), 3, 'all three public scenarios are selectable');
+    await scenarioSelect.selectOption('HP_SMRTIJEDI_BYSTROZOROVE_V1');
+    await assertNoHorizontalOverflow('long scenario title');
+    await scenarioSelect.selectOption(neighbours.id);
+    await page.getByLabel('Délka hry', { exact: false }).selectOption('full');
+    await page.getByText(neighbours.summary, { exact: true }).waitFor();
+    await assertNoHorizontalOverflow('scenario selection');
+    await screenshot('scenario-selection');
     await page.getByRole('button', { name: /Založit případ/ }).click();
     await page.getByRole('alert').waitFor();
-    await page.getByRole('button', { name: /Založit případ/ }).click();
+    assert.equal(await scenarioSelect.isDisabled(), true, 'pending creation pins the selected scenario');
+    await page.getByRole('button', { name: 'Ověřit původní založení' }).click();
     const creations = requests.filter(r => r.pathname === '/app/v1/sealed-cases');
     assert.equal(creations.length, 2);
+    assert.equal(creations[0].body.scenarioId, neighbours.id);
+    assert.equal(creations[0].body.variant, 'full', 'duration remains independent of story');
     assert.deepEqual(creations[0].body, creations[1].body, 'lost create ack keeps operation id');
     state = { ...view('lobby'), readyPlayers: 1, players: [players[0]], canManageAi: true, aiAvailable: true };
     await page.reload();
@@ -222,5 +266,5 @@ try {
     await context.close();
   }
   assert.deepEqual(errors, []);
-  console.log(`PASS sealed client: 320/390/1280px, explicit draft and retry, journal/conversations/empty/long/ballot/finale/quiet states, responsive end reachability, lost create/AI acknowledgements and reload, privacy and no page errors. ${output}`);
+  console.log(`PASS sealed client: 320/390/1280px, scenario catalog and separate duration, scenario finale/exports, explicit draft and retry, journal/conversations/empty/long/ballot/quiet states, responsive end reachability, lost create/AI acknowledgements and reload, privacy and no page errors. ${output}`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
