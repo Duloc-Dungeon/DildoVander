@@ -120,6 +120,51 @@ describe('bounded audio playback', () => {
     await voice.connect(async () => { throw new Error('wand_character_preparing'); }, 'test', 'https://lab.example', { purpose: 'workshop' });
     expect(microphone).not.toHaveBeenCalled(); expect(observer.error).toHaveBeenCalled();
   });
+  it('keeps workshop microphone frames flowing during playback and a pending Stop acknowledgement', async () => {
+    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '' }), 'test', 'https://lab.example', { purpose: 'workshop' });
+    ready('stream'); message(new Int16Array(6000).fill(500).buffer);
+    expect(observer.phase).toHaveBeenLastCalledWith('speaking');
+    capture(new Float32Array(960).fill(.1));
+    const frames = () => send.mock.calls.filter(([value]) => value instanceof ArrayBuffer).length;
+    expect(frames()).toBeGreaterThan(0);
+    voice.interrupt();
+    const before = frames();
+    capture(new Float32Array(960).fill(.1));
+    expect(frames()).toBeGreaterThan(before);
+    expect(controls('cancel')).toHaveLength(1);
+  });
+  it('applies output volume independently of microphone capture and output mute', () => {
+    ready('stream');
+    voice.setOutputVolume(.6);
+    const gain = (voice as unknown as { outputGain: { gain: { value: number } } }).outputGain;
+    expect(gain.gain.value).toBe(.6);
+    voice.setOutputEnabled(false); expect(gain.gain.value).toBe(0);
+    voice.setOutputEnabled(true); expect(gain.gain.value).toBe(.6);
+    capture(new Float32Array(960).fill(.1));
+    expect(send.mock.calls.some(([value]) => value instanceof ArrayBuffer)).toBe(true);
+    expect(() => voice.setOutputVolume(Number.NaN)).toThrow();
+  });
+  it('forwards full transcript revisions during duplex playback and Stop without changing the text', async () => {
+    observer.workshopTranscript = vi.fn();
+    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '' }), 'test', 'https://lab.example', { purpose: 'workshop' });
+    ready('stream');
+    event({ type: 'workshop_transcript', role: 'user', sequence: 1, text: 'Chci', final: false });
+    event({ type: 'workshop_transcript', role: 'user', sequence: 1, text: 'Chci chránit most.', final: true });
+    voice.interrupt();
+    const snapshot = { role: 'assistant', sequence: 2, text: 'Takže most potřebuje', final: false };
+    event({ type: 'workshop_transcript', ...snapshot });
+    expect(observer.workshopTranscript).toHaveBeenCalledTimes(3);
+    expect(observer.workshopTranscript).toHaveBeenLastCalledWith(snapshot);
+    expect(observer.transcript).not.toHaveBeenCalled();
+  });
+  it.each([{ sequence: -1 }, { sequence: 1.1 }, { text: 'x'.repeat(1801) }, { final: 'yes' }, { role: 'system' }])('rejects malformed workshop transcript snapshots %j', async invalid => {
+    observer.workshopTranscript = vi.fn();
+    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '' }), 'test', 'https://lab.example', { purpose: 'workshop' });
+    ready('stream');
+    event({ type: 'workshop_transcript', role: 'user', sequence: 1, text: 'Česky', final: false, ...invalid });
+    expect(observer.workshopTranscript).not.toHaveBeenCalled();
+    expect(observer.error).toHaveBeenCalledWith('invalid_server_event', false);
+  });
   it('routes workshop audio to its exact customer socket and emits backend state independently', async () => {
     observer.workshopSession = vi.fn();
     await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '' }), 'test', 'https://lab.example', { purpose: 'workshop' });

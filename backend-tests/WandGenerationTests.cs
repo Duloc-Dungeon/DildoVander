@@ -206,6 +206,12 @@ internal static class WandGenerationTests
         Check(!root.GetProperty("store").GetBoolean() && root.GetProperty("text").GetProperty("format").GetProperty("strict").GetBoolean(),
             "strict structured outputs and store=false");
         var instructions = root.GetProperty("instructions").GetString()!;
+        Check(instructions.Contains("explicit limitation or cost", StringComparison.Ordinal)
+            && instructions.Contains("all confirmed workshop answers", StringComparison.Ordinal),
+            "spell effects require a price or limitation and use the actual conversation without a fixed answer quota");
+        Check(instructions.Contains("self-contained natural-language paragraph", StringComparison.Ordinal)
+            && instructions.Contains("No JSON, key-value list", StringComparison.Ordinal),
+            "Terra authors a complete visual description that can go directly to image generation as text");
         Check(instructions.Contains("separate illustrator without the character profile", StringComparison.Ordinal)
             && instructions.Contains("purely visual construction details", StringComparison.Ordinal)
             && instructions.Contains("Never put the character name, fictional universe or world name", StringComparison.Ordinal)

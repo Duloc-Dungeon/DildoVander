@@ -73,12 +73,44 @@ export function applicationCsp() {
   };
 }
 
+export function localWebSocketForwarding(proxy) {
+  proxy.on('proxyReqWs', (proxyRequest, request) => {
+    // http-proxy uses ws/wss here, while ASP.NET's HTTPS check expects
+    // http/https. Derive it from this TLS socket, never a client header.
+    proxyRequest.setHeader('X-Forwarded-Proto', request.socket.encrypted ? 'https' : 'http');
+  });
+}
+
 export default defineConfig({
   define: { __DV_APPLICATION_BUILD__: JSON.stringify(applicationBuildIdentity()) },
   plugins: [themeBootstrap(), vue(), captureWorkletAsset(), applicationCsp()],
   base: '/',
   optimizeDeps: { entries: ['index.html'] },
   server: {
+    https: process.env.DV_LOCAL_HTTPS_PFX_BASE64
+      ? { pfx: Buffer.from(process.env.DV_LOCAL_HTTPS_PFX_BASE64, 'base64') }
+      : undefined,
+    proxy: {
+      ...(process.env.DV_LOCAL_SESSION_SECRET ? {
+        '/local-try-api': {
+          target: process.env.DV_LOCAL_BACKEND_ORIGIN ?? 'http://127.0.0.1:5082',
+          changeOrigin: false,
+          xfwd: true,
+          headers: { 'X-DV-Local-Try': process.env.DV_LOCAL_SESSION_SECRET },
+        },
+      } : {}),
+      '/app/v1': {
+        target: process.env.DV_LOCAL_BACKEND_ORIGIN ?? 'http://127.0.0.1:5082',
+        changeOrigin: false,
+        xfwd: true,
+        ws: true,
+        configure: localWebSocketForwarding,
+      },
+      '/healthz': {
+        target: process.env.DV_LOCAL_BACKEND_ORIGIN ?? 'http://127.0.0.1:5082',
+        changeOrigin: false,
+      },
+    },
     fs: {
       // Shared CSS imports reference fonts outside the application root. Keep
       // the dev server confined to the app and its public source dependencies.

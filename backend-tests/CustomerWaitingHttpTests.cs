@@ -28,7 +28,7 @@ internal static partial class AccountIdentityTests
         await CsrfAsync(owner);
 
         await CsrfAsync(customer);
-        using (var optionsResponse = await customer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Waiting customer", openAiConsent = true }))
+        using (var optionsResponse = await customer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Waiting customer", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }))
         {
             Check(optionsResponse.IsSuccessStatusCode, "waiting HTTPS customer enrollment options");
             var options = await JsonAsync(optionsResponse);
@@ -309,7 +309,7 @@ internal static partial class AccountIdentityTests
         using var secondCustomer = fixture.Client();
         using var secondCustomerKey = new VirtualPasskey();
         await CsrfAsync(secondCustomer);
-        using (var optionsResponse = await secondCustomer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Second waiting customer", openAiConsent = true }))
+        using (var optionsResponse = await secondCustomer.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Second waiting customer", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }))
         {
             var options = await JsonAsync(optionsResponse);
             using var complete = await secondCustomer.PostAsJsonAsync("/app/v1/customer/enrollment/complete",

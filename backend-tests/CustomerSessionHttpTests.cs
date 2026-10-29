@@ -78,7 +78,7 @@ internal static partial class AccountIdentityTests
         Check(denied.StatusCode == HttpStatusCode.Conflict
             && (await denied.Content.ReadAsStringAsync()).Contains("ai_consent_required"),
             "client boolean cannot bypass missing persisted registration consent");
-        Check((await first.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true })).StatusCode
+        Check((await first.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode
             == HttpStatusCode.NoContent, "legacy account explicitly confirms processing consent before issuing a ticket");
         var issuedFirst = await TicketAsync(first, firstProfile, firstOp);
         await SavePreferencesAsync(first, firstProfile, 1, "cs-CZ", "gentle");
@@ -185,7 +185,7 @@ internal static partial class AccountIdentityTests
     private static async Task<JsonElement> CustomerAsync(HttpClient client, VirtualPasskey key)
     {
         await CsrfAsync(client);
-        var options = await JsonAsync(await client.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Same character", openAiConsent = true }));
+        var options = await JsonAsync(await client.PostAsJsonAsync("/app/v1/customer/enrollment/options", new { displayName = "Same character", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         var credential = key.Create(options);
         Check((await client.PostAsJsonAsync("/app/v1/customer/enrollment/complete", new { credential })).IsSuccessStatusCode, "customer enrolls");
         await CsrfAsync(client);

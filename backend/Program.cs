@@ -7,6 +7,7 @@ using Kufr.Backend.Features.Conversations;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.CustomerData;
 using Kufr.Backend.Features.VoiceTurns;
+using Kufr.Backend.Features.Voices;
 using Kufr.Backend.Features.Realtime;
 using Kufr.Backend.Features.Diagnostics;
 using Kufr.Backend.Features.Memory;
@@ -123,6 +124,11 @@ builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IWandGenerationProvide
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IMobileWandQuestionProvider, Kufr.Backend.Features.Wands.OpenAiMobileWandQuestionProvider>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.WandGenerationService>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.MobileWandRuntime>();
+builder.Services.AddSingleton<Kufr.Backend.Features.Identity.LocalTryHubExperimentStore>();
+builder.Services.AddSingleton<Kufr.Backend.Features.Voices.ActorVoiceSettings>();
+builder.Services.AddSingleton(Kufr.Backend.Features.Wands.ElevenLabsWorkshopOptions.Read(builder.Configuration));
+builder.Services.AddSingleton<Kufr.Backend.Features.Wands.IWorkshopSpeechProvider, Kufr.Backend.Features.Wands.ElevenLabsWorkshopProvider>();
+builder.Services.AddSingleton<Kufr.Backend.Features.Wands.ElevenLabsWorkshopRuntime>();
 builder.Services.AddSingleton<Kufr.Backend.Features.Wands.MobileWorkshopLiveRuntime>();
 builder.Services.AddHostedService<Kufr.Backend.Features.Wands.MobileWandWorkshopWorker>();
 builder.Services.AddSingleton<OpenAiVectorMemoryProvider>();
@@ -200,6 +206,7 @@ logs.Write("info", "server_started");
 app.Lifetime.ApplicationStopping.Register(() => logs.Write("info", "server_stopping"));
 
 app.Use((context, next) => ServerLogEvents.RequestAsync(context, next, logs));
+app.MapLocalTryHubSession();
 if (keepsakeArchiveConfigured || builder.Configuration.GetValue<bool>("ApplicationIdentity:Enabled")) { app.UseForwardedHeaders(); }
 app.UseMobileGameAuthentication();
 app.UseSealedCaseAuthentication();
@@ -224,6 +231,7 @@ app.MapMobileGameBoss();
 app.MapMobileGameProgress();
 app.MapMobileGameTeams();
 app.MapCustomerCharacters();
+app.MapActorVoiceSettings();
 app.MapCustomerSessions(includeSessionResults: keepsakeArchiveConfigured);
 app.MapCustomerConversationPreferences();
 app.MapTonightEndpoints();

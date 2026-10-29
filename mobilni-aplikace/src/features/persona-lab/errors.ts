@@ -22,6 +22,13 @@ function failure(category: LabErrorCategory, message: string, action: string, re
 
 /** Only application-owned codes establish a cause; arbitrary provider strings do not. */
 export function classifyLabFailure(code: string, status = 0): LabFailure {
+  if (code === 'elevenlabs_consent_required') return failure('Auth',
+    'Hlas vyžaduje souhlas s předáním zvuku službě ElevenLabs.', 'Potvrď souhlas před spuštěním hlasu, nebo pokračuj psaním.');
+  if (code === 'elevenlabs_not_configured') return failure('Infrastructure',
+    'Hlas ElevenLabs není na serveru nastavený.', 'Pokračuj psaním. Správce musí nastavit serverový přístup k ElevenLabs.');
+  if (['elevenlabs_connection_failed', 'elevenlabs_transcription_failed', 'elevenlabs_speech_failed'].includes(code))
+    return failure('AudioVideo', 'Hlasové zpracování u ElevenLabs se nepodařilo.',
+      'Rozhovor zůstává uložený. Pokračuj psaním; správce může ověřit připojení a oprávnění ElevenLabs.');
   if (code === 'recent_passkey_required') return failure('Auth',
     'Změna konfigurace vyžaduje nové ověření přístupovým klíčem.', 'Ověřte přihlášení a potom akci znovu výslovně odešlete.', false, false, true);
   if (['lab_decision_provider_auth', 'lab_provider_auth'].includes(code)) return failure('Auth',

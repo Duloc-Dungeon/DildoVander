@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using SkiaSharp;
 
 internal static class CharacterPortraitTests
 {
@@ -16,6 +17,7 @@ internal static class CharacterPortraitTests
             await AccountIdentityTests.RunPortraitFallbackAsync();
             await AttributionMigrationAsync(Path.Combine(root, "attribution"));
             await ExperienceWireContractAsync();
+            await ImagePromptWireContractAsync();
             WelcomeContract();
             await ConsentAndDurabilityAsync(Path.Combine(root, "durable"));
             await ProfileIdentityFenceAsync(Path.Combine(root, "identity"));
@@ -76,6 +78,53 @@ internal static class CharacterPortraitTests
         {
             SqliteConnection.ClearAllPools();
             if (Directory.Exists(root)) { Directory.Delete(root, true); }
+        }
+    }
+
+    private static async Task ImagePromptWireContractAsync()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        { ["OPENAI_API_KEY"] = "offline-image-transport-only" }).Build();
+        var enrichment = new CharacterEnrichment("Raven", "Original fiction",
+            "Raven wears a copper cloak. Source: https://example.invalid/private. Hidden account detail.",
+            [new("private researched fact", ["https://example.invalid/private"])], [], ["private ambiguity"], false,
+            [new("Private source", "https://example.invalid/private")], "fixture", "fixture", 1, 1, "synthetic");
+        var job = new CharacterPortraitJob("private-account-id", "private-profile-id", 1, "private-lease", 1,
+            new("Raven", "Original fiction", "private version", "private personal description"), enrichment);
+        var handler = new PortraitImageHandler();
+        using var provider = new OpenAiCharacterPortraitProvider(configuration, new HttpClient(handler));
+        var bytes = await provider.GeneratePortraitAsync(job, default);
+        using var image = SKBitmap.Decode(bytes);
+        Check(handler.Calls == 1 && image is not null, "portrait generation uses one offline image request and keeps image decoding intact");
+        var prompt = handler.Prompt!;
+        Check(prompt.Contains("Fictional character: „Raven“", StringComparison.Ordinal)
+            && prompt.Contains("Original fiction", StringComparison.Ordinal)
+            && prompt.Contains("Raven wears a copper cloak", StringComparison.Ordinal)
+            && !prompt.Contains('{') && !prompt.Contains('}') && !prompt.Contains("untrusted JSON", StringComparison.Ordinal),
+            "actual image request receives a readable visual brief instead of serialized character JSON");
+        foreach (var excluded in new[] { "private-account-id", "private-profile-id", "private-lease", "private version",
+            "private personal description", "private researched fact", "private ambiguity", "example.invalid", "Hidden account detail" })
+        {
+            Check(!prompt.Contains(excluded, StringComparison.Ordinal), "image visual brief retains the existing portrait privacy whitelist");
+        }
+    }
+
+    private sealed class PortraitImageHandler : HttpMessageHandler
+    {
+        internal int Calls;
+        internal string? Prompt;
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Calls++;
+            Check(request.RequestUri?.AbsolutePath == "/v1/images/generations", "portrait fixture never calls a text provider");
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            Prompt = body.RootElement.GetProperty("prompt").GetString();
+            using var bitmap = new SKBitmap(128, 128);
+            bitmap.Erase(new SKColor(184, 115, 51));
+            using var image = SKImage.FromBitmap(bitmap);
+            using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+            var json = JsonSerializer.Serialize(new { data = new[] { new { b64_json = Convert.ToBase64String(encoded.ToArray()) } } });
+            return new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
         }
     }
 

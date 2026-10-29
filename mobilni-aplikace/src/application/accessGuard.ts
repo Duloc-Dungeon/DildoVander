@@ -23,7 +23,8 @@ export function waitingRoomRedirect(route: Pick<RouteLocationNormalized, 'meta' 
 
 export function installAccessGuard(router: Router): void {
   router.beforeEach(async to => {
-    const publicPath = ['/signin', '/privacy', '/support', '/account-deletion'].includes(to.path);
+    const publicPath = ['/signin', '/privacy', '/support', '/account-deletion'].includes(to.path)
+      || import.meta.env.DEV && to.path === '/local-try-hub';
     if (publicPath) return;
     if (to.meta.offlineLocal && offlineSession.value && offlineSessionExpiresAt.value > Date.now()
       && account.value?.roles.some(role => ['Owner', 'Administrator', 'Operator', 'Tester'].includes(role))) {

@@ -50,6 +50,9 @@ if (args is ["--mobile-workshop-runtime-live"]) { await MobileGameTests.RunWorks
 if (args is ["--mobile-workshop-runtime-live", "--case", var evidenceCase] && evidenceCase is "v2" or "v3") { await MobileGameTests.RunWorkshopRuntimeLiveSmokeAsync(evidenceCase); return; }
 if (args is ["--mobile-workshop-live"]) { await MobileWorkshopLiveTests.RunAsync(); return; }
 if (args is ["--mobile-workshop-socket"]) { await MobileWorkshopSocketTests.RunAsync(); return; }
+if (args is ["--elevenlabs-workshop"]) { await ElevenLabsWorkshopTests.RunAsync(); WorkshopPresentationTests.Run(); return; }
+if (args is ["--image-prompts"]) { ImageVisualizerTests.Run(); return; }
+if (args is ["--actor-voices"]) { await ActorVoiceSettingsTests.RunAsync(); return; }
 if (args is ["--mobile-workshop-voice-verify"]) { await MobileWorkshopLiveTests.VerifySpokenTurnsAsync(); return; }
 if (args is ["--mobile-workshop-artwork-verify", var sourceDatabase, var imageModel]) { await MobileWorkshopLiveTests.VerifyArtworkAsync(sourceDatabase, imageModel); return; }
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); GameYoloScenarioTests.Run(); GameYoloPreparationTests.Run(); GameYoloPreparedGameTests.Run(); GameCombatNarrationTests.Run(); return; }
@@ -67,6 +70,7 @@ if (args is ["--character-administration"]) { await CharacterAdministrationTests
 if (args is ["--prelaunch-http"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(); return; }
 if (args is ["--prelaunch-http-slow-artwork"]) { await AccountIdentityTests.RunPrelaunchHttpAsync(delayArtwork: true); return; }
 if (args is ["--prelaunch-workshop-http"]) { await AccountIdentityTests.RunPrelaunchWorkshopHttpAsync(); return; }
+if (args is ["--local-try-hub"]) { await AccountIdentityTests.RunLocalTryHubAsync(); return; }
 if (args is ["--observability"]) { await ObservabilityTests.RunAsync(); await AiObservabilityTests.RunAsync(); await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--observability-logs"]) { await ObservabilityLogTests.RunAsync(); return; }
 if (args is ["--ai-observability"]) { await AiObservabilityTests.RunAsync(); return; }

@@ -18,7 +18,8 @@ it('requires an explicit choice and persists before refreshing identity', async 
   await view.get('input').setValue(true);
   await view.get('form').trigger('submit');
   await flushPromises();
-  expect(api.request).toHaveBeenCalledExactlyOnceWith('/app/v1/account/ai-consent', 'POST', { openAiConsent: true });
+  expect(api.request).toHaveBeenCalledExactlyOnceWith('/app/v1/account/ai-consent', 'POST', { openAiConsent: true, consentVersion: 2 });
+  expect(view.text()).toContain('OpenAI a ElevenLabs');
   expect(api.refresh).toHaveBeenCalledOnce();
   view.unmount();
 });

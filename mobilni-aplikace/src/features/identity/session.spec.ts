@@ -730,7 +730,7 @@ describe('customer passkey enrollment', () => {
     bridge.request.mockResolvedValue({ status: 200, body: JSON.stringify(user('new-customer')) });
     const identity = await import('./session');
     await identity.authenticatePasskey('customer-enroll', '', 'Guest', true);
-    expect(bridge.passkey).toHaveBeenCalledExactlyOnceWith({ mode: 'customer-enroll', token: '', displayName: 'Guest', openAiConsent: true });
+    expect(bridge.passkey).toHaveBeenCalledExactlyOnceWith({ mode: 'customer-enroll', token: '', displayName: 'Guest', openAiConsent: true, consentVersion: 2 });
     expect(identity.account.value?.id).toBe('new-customer');
   });
 });

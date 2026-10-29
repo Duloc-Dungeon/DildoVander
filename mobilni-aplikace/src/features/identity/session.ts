@@ -4,6 +4,7 @@ import { isTwinAccountPath, isShowAccountPath, isChronicleAdminPath } from './ac
 import { throwIfAborted } from '../../application/cancellation.mjs';
 import { secureUuid } from '../../application/identifiers.mjs';
 import { customerCopy } from '../../application/customerCopy';
+import { aiConsentVersion } from './aiConsent';
 import { beginRequestDiagnostic, clearRequestDiagnostics, diagnosticRequestId } from '../../application/requestDiagnostics';
 import { correlationHeaders } from '../../application/requestCorrelation.mjs';
 
@@ -15,7 +16,7 @@ export interface AccountDetails { devices?: {deviceId: string; canOperate: boole
 export interface NativeAccountFileContext { signal?: AbortSignal; check?: () => void }
 interface IdentityBridge {
   request(options: { requestId: string; path: string; method: string; body?: string; confirmed?: boolean }): Promise<{ status: number; body: string }>;
-  passkey(options: { mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth'; token?: string; displayName?: string; openAiConsent?: boolean }): Promise<void>;
+  passkey(options: { mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth'; token?: string; displayName?: string; openAiConsent?: boolean; consentVersion?: number }): Promise<void>;
   accountTransport(options: { requestId: string; path: string; method: string; headers: Record<string, string>; bodyBase64?: string }): Promise<{ status: number; headers: Record<string, string>; bodyBase64: string }>;
   shareAccountDataFile(options: { requestId: string; filename: string; mediaType: 'application/json'; bodyBase64: string }): Promise<{ completed: boolean }>;
   shareChronicleImage(options: { requestId: string; filename: string; mediaType: 'image/png' | 'image/jpeg' | 'image/webp'; bodyBase64: string }): Promise<{ completed: boolean }>;
@@ -591,7 +592,7 @@ export function authenticatePasskey(mode: 'signin' | 'enroll' | 'customer-enroll
 async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'customer-enroll' | 'add' | 'reauth', token: string, displayName: string, openAiConsent: boolean): Promise<void> {
   const generation = advanceAuthentication();
   if (native) {
-    await nativeIdentity.passkey({ mode, token, displayName, openAiConsent });
+    await nativeIdentity.passkey({ mode, token, displayName, openAiConsent, consentVersion: aiConsentVersion });
     requireCurrentAuthentication(generation);
     advanceAuthentication();
     try { await refreshIdentity(); }
@@ -605,7 +606,9 @@ async function performPasskeyAuthentication(mode: 'signin' | 'enroll' | 'custome
   await refreshIdentity();
   requireCurrentAuthentication(generation);
   const optionsPath = mode === 'reauth' ? '/passkeys/reauthentication-options' : mode === 'signin' ? '/passkeys/request-options' : mode === 'add' ? '/passkeys/options' : mode === 'customer-enroll' ? '/customer/enrollment/options' : '/enrollment/options';
-  const raw = await accountRequest<Record<string, unknown>>('/app/v1' + optionsPath, 'POST', mode === 'enroll' ? { token, displayName, openAiConsent } : mode === 'customer-enroll' ? { displayName, openAiConsent } : undefined);
+  const raw = await accountRequest<Record<string, unknown>>('/app/v1' + optionsPath, 'POST', mode === 'enroll'
+    ? { token, displayName, openAiConsent, consentVersion: aiConsentVersion }
+    : mode === 'customer-enroll' ? { displayName, openAiConsent, consentVersion: aiConsentVersion } : undefined);
   requireCurrentAuthentication(generation);
   const options = { ...raw, challenge: decode(raw.challenge as string) };
   let credential: PublicKeyCredential | null;

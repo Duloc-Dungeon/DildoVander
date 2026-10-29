@@ -17,6 +17,55 @@ to the canonical URL and retains its `KUFR_BACKEND_URL` override.
 
 # Backend kufru
 
+## Hlas mobilní Kufrovy dílny
+
+Zákaznická dílna `/play/wand` používá ElevenLabs Scribe pro český přepis,
+stávající GPT provider pro text a rozhodnutí o výrobě a ElevenLabs pro hlas.
+Prohlížeč stále používá chráněný jednorázový WebSocket ticket a PCM24; klíče
+poskytovatelů zůstávají na serveru. Ticket vyžaduje uložený jednotný AI souhlas
+verze 2 pro OpenAI i ElevenLabs; starší souhlas se jednou obnoví. Při dalším
+hovoru se nový checkbox nezobrazuje. Rozmluvená odpověď zneplatní starší rozhodnutí
+o výrobě. Stop ruší přehrávání, ale již přijatá výroba pokračuje.
+
+| Serverové nastavení | Výchozí hodnota / význam |
+| --- | --- |
+| `OPENAI_API_KEY` | GPT rozhovor a výroba hůlky |
+| `ELEVENLABS_API_KEY` | Serverové připojení ElevenLabs; chybějící klíč nevynutí návrat ke GPT-Live |
+| `Wands__Voice__Provider` | `elevenlabs`; `gpt-live` je výslovná kompatibilní volba pro starší testy |
+| `Wands__Voice__VoiceId` | Výchozí český hlas Zazy, `U48DQ1c9SVmD2BVCSiHL`; správce může uložit vlastní hlas Kufra |
+| `Wands__Voice__Speed` | `1.0` (normální rychlost); povolený rozsah `0.7` až `1.2` |
+| `Wands__Voice__Model` | `eleven_v4`; ostatní nastavení hlasu používají výchozí hodnoty poskytovatele |
+| `Wands__Model` | Stávající volba GPT pro textový rozhovor a výrobu |
+| `Keepsake__ElevenLabsArtworkFallback` | `true`; aktivní pouze s klíčem ElevenLabs a primárním OpenAI poskytovatelem |
+
+Pokud OpenAI selže při tvorbě ilustrace uložené hůlky nebo vrátí neplatný
+průhledný PNG, následuje nejvýše jeden pokus přes ElevenLabs Image API.
+Používá `gpt-image-1.5` s průhledným pozadím a stejnou kontrolou PNG jako hlavní
+cesta. Předává jen materiál, jádro a vizuální popis hůlky, ne profil hosta,
+fotografii nebo přepis. Zrušení, ztráta oprávnění a odmítnutí obsahu nespouštějí
+záložní pokus. Opakované čtení stavu jedné generace nevytváří další obrázek.
+
+Pro zkoušení bez nasazení použij [místní hub](../docs/local-try-hub.md).
+Správa `/settings/admin` obsahuje nezávislá ID hlasů Kufra a Barona.
+`GET/PUT /app/v1/admin/actor-voices` používá oprávnění správce; zápis vyžaduje
+aktuální ověření přístupovým klíčem, potvrzení a shodnou revizi. Nastavení
+zůstává v `actor-voices.json` pod datovým adresářem identity. Kufr zachytí hlas
+na začátku spojení, Baron na začátku zvukového požadavku; klíč cache obsahuje
+zvolený hlas, takže změna nepřepíše již rozmluvenou repliku.
+
+Všechna generování a editace obrázků používají společný `ImageVisualizer`.
+Obrazový prompt obsahuje slovní popis, nikoli serializovaný profil nebo JSON
+návrhu. Terra vytváří samostatný vizuální odstavec `designDescription`;
+ilustrátor hůlky dostává tento popis, materiál a jádro. Ostatní obrazové větve
+převádějí vlastní povolené vizuální údaje na prózu. Přenosový obal API nadále
+používá JSON podle protokolu poskytovatele; pravidlo se týká obsahu promptu.
+
+Offline kontrola: `dotnet run --project backend-tests/BackendTests.csproj -c Release -- --elevenlabs-workshop`
+a `-- --wand-artwork` z kořene repozitáře. Tyto kontroly nevolají poskytovatele.
+Protokoly: [Scribe Realtime](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime),
+[streamovaný hlas](https://elevenlabs.io/docs/api-reference/text-to-speech/stream),
+[Image API](https://elevenlabs.io/docs/api-reference/flows/image/create).
+
 ## Rickroll video
 
 Set `Rickroll__FilePath` in the server's environment file to an absolute path to

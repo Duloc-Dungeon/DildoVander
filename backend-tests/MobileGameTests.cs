@@ -1647,6 +1647,9 @@ internal static partial class MobileGameTests
             builder.Services.AddSingleton<WandDecisionService>();
             builder.Services.AddSingleton(new GptLiveOptions());
             builder.Services.AddSingleton<MobileWandRuntime>();
+            builder.Services.AddSingleton(new ElevenLabsWorkshopOptions { UseLegacyGptLive = withLiveTransport });
+            builder.Services.AddSingleton<IWorkshopSpeechProvider, ElevenLabsWorkshopProvider>();
+            builder.Services.AddSingleton<ElevenLabsWorkshopRuntime>();
             builder.Services.AddSingleton<IMobileWandQuestionProvider>(textWorkshopProvider);
             builder.Services.AddSingleton<MobileWorkshopLiveRuntime>();
             var app = builder.Build();

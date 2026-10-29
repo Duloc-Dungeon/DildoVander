@@ -7,6 +7,7 @@ import { customerCopy, type CustomerCopyKey } from './customerCopy';
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    ...(import.meta.env.DEV ? [{ path: '/local-try-hub', name: 'local-try-hub', component: () => import('../features/local-try-hub/LocalTryHubView.vue'), meta: { title: 'Místní zkoušení' } }] : []),
     { path: '/', name: 'home', redirect: to => ({ path: '/signin', query: to.query, hash: to.hash === '#director' ? '' : to.hash }) },
     { path: '/demo', redirect: '/' },
     { path: '/support', name: 'support', component: () => import('../features/information/SupportView.vue'), meta: { title: 'Podpora' } },

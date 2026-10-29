@@ -89,7 +89,7 @@ internal static partial class AccountIdentityTests
         var character = await JsonAsync(await tester.PostAsJsonAsync("/app/v1/testing-sessions/characters", new
         {
             userInput = new { name="Clockmaker", world="Original fiction", description="Repairs clocks" },
-            openAiConsent=true, longTermConsent=false, expectedRevision=0
+            openAiConsent = true, longTermConsent=false, expectedRevision=0
         }));
         var characterId=character.GetProperty("id").GetString()!;
         var labeledCharacter = await JsonAsync(await tester.PutAsJsonAsync(

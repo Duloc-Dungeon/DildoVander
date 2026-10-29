@@ -13,6 +13,7 @@ internal sealed record WorkshopMessageRequest(string MessageId, string Text);
 internal sealed record WorkshopMessageCorrection(int ExpectedRevision, string Text);
 internal sealed record WorkshopRepairRequest(int ExpectedVersion, string SourceAssetId, string SourceSha256);
 internal sealed record WorkshopMomentRequest(string MessageId, int ExpectedRevision);
+internal sealed record WorkshopTicketRequest(string SocketOrigin, bool ElevenLabsConsent = false);
 
 internal static partial class MobileWandWorkshopEndpoints
 {
@@ -57,7 +58,9 @@ internal static partial class MobileWandWorkshopEndpoints
                 wands.AppendWorkshopMessage(owner, id, request.MessageId, "user",
                     text, "text");
                 var observed = wands.ReadWorkshopMessages(owner, id);
-                var reply = await dialogue.ReplyAsync(wands.ReadWorkshopProfile(owner, id), observed, http.RequestAborted);
+                var experiment = http.RequestServices.GetService<LocalTryHubExperimentStore>()?.Snapshot();
+                var reply = await dialogue.ReplyAsync(wands.ReadWorkshopProfile(owner, id), observed, http.RequestAborted,
+                    experiment?.DialoguePrompt);
                 try { await RequireConversationAsync(http, state, profiles, wands, games); }
                 catch (WandGenerationException error) when (error.Code == "wand_workshop_boss_captured") {
                     wands.PauseWorkshopForBoss(owner, id);
@@ -92,20 +95,23 @@ internal static partial class MobileWandWorkshopEndpoints
             wands.FinishWorkshopConversation(owner, id, state.ProfileId, state.ProfileRevision);
             return Results.Ok(new { session = State(http, wands, id, owner) });
         });
-        group.MapPost("/workshop/sessions/{id}/ticket", async (string id, MobileWandTicketRequest request,
+        group.MapPost("/workshop/sessions/{id}/ticket", async (string id, WorkshopTicketRequest request,
             HttpContext http, WandGenerationStore wands, CharacterProfileStore profiles, GameStore games,
             AccountDatabase accounts, MobileWandRuntime tickets) =>
         {
             var owner = Owner(http); var state = State(http, wands, id, owner);
             await RequireConversationAsync(http, state, profiles, wands, games);
+            var experiment = http.RequestServices.GetService<LocalTryHubExperimentStore>()?.Snapshot();
             var config = http.RequestServices.GetRequiredService<AccountConfiguration>();
             var origin = http.Request.Headers.Origin.ToString();
             if (!http.Request.IsHttps || !config.AllowedOrigins.Contains(origin, StringComparer.Ordinal)
                 || !AllowedWorkshopSocketOrigin(request.SocketOrigin, config))
                 throw new WandGenerationException("account_origin_required", 403);
             var user = await accounts.Users.AsNoTracking().SingleAsync(user => user.Id == owner, http.RequestAborted);
+            if (!AccountAiConsent.HasConsent(user)) { throw new WandGenerationException("ai_consent_required", 409); }
             var admission = new MobileWandAdmission(owner, id, http.User.FindFirstValue(AccountIdentity.SessionClaim)!,
-                user.SecurityStamp ?? "", request.SocketOrigin, DateTimeOffset.UtcNow.AddSeconds(30), wands.ReadWorkshopProfile(owner, id));
+                user.SecurityStamp ?? "", request.SocketOrigin, DateTimeOffset.UtcNow.AddSeconds(30), wands.ReadWorkshopProfile(owner, id))
+            { ElevenLabsConsent = true, LocalExperiment = experiment };
             var ticket = tickets.Ticket(admission);
             var path = $"/app/v1/customer/wand/workshop/sessions/{id}/live";
             var url = new UriBuilder(origin) { Scheme = "wss", Path = path, Query = "ticket=" + ticket }.Uri.AbsoluteUri;

@@ -17,7 +17,11 @@ namespace Kufr.Backend.Features.Wands;
 
 internal sealed record MobileWandAdmission(string Owner, string Operation, string AccountSession,
     string Stamp, string Origin, DateTimeOffset ExpiresAt, CharacterConversationSnapshot Profile,
-    (string GroupId, long AccessRevision)? LaunchSnapshot = null);
+    (string GroupId, long AccessRevision)? LaunchSnapshot = null)
+{
+    internal bool ElevenLabsConsent { get; init; }
+    internal LocalTryHubExperimentSnapshot? LocalExperiment { get; init; }
+}
 
 // The phone owns its microphone; the account socket never impersonates a device
 // and cannot issue a physical presentation or create a fabricated keepsake.

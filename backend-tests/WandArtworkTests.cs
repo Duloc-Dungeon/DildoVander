@@ -17,6 +17,7 @@ internal static class WandArtworkTests
 {
     internal static async Task RunAsync()
     {
+        await ElevenLabsWandArtworkTests.RunAsync();
         await ProviderBoundaries();
         var directory = Path.Combine(Path.GetTempPath(), "wand-artwork-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -364,6 +365,8 @@ internal static class WandArtworkTests
         {
             var payload = parsed.RootElement;
             var prompt = payload.GetProperty("prompt").GetString()!;
+            Check(!prompt.Contains('{') && !prompt.Contains('}') && !prompt.Contains("\\u", StringComparison.Ordinal),
+                "actual outbound image prompt is readable visual prose rather than serialized JSON");
             var outbound = handler.Requests[0].Body;
             Check(payload.GetProperty("model").GetString() == "gpt-image-2.5-flare" && !payload.TryGetProperty("image", out _),
                 "image uses configured SDK generation model without another image pipeline");

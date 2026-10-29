@@ -240,6 +240,12 @@ internal static class MobileWandTests
         var (profile, captured) = await PrepareProfileAsync(profiles, owner,
             new("Havran", "Fikční svět", "verze A", "Loví ztracené mapy"));
         var promptMessage = new MobileWandWorkshopMessage("humor-user", 1, "user", "Vyrob mi hůlku.", "text", 1);
+        using (var opening = JsonDocument.Parse(OpenAiMobileWandQuestionProvider.BuildReplyRequest(captured, [], "gpt-6.1-terra")))
+        {
+            using var openingInput = JsonDocument.Parse(opening.RootElement.GetProperty("input").GetString()!);
+            Check(openingInput.RootElement.GetProperty("conversation").GetArrayLength() == 0,
+                "a prepared profile can author an opening without invented guest evidence");
+        }
         using (var draft = JsonDocument.Parse(OpenAiMobileWandQuestionProvider.BuildReplyRequest(captured,
             [promptMessage], "gpt-6.1-terra")))
         using (var live = JsonDocument.Parse(JsonSerializer.Serialize(MobileWorkshopLiveRuntime.Start(
@@ -248,9 +254,9 @@ internal static class MobileWandTests
         {
             var instructions = draft.RootElement.GetProperty("instructions").GetString()!;
             var liveInstructions = live.RootElement.GetProperty("session").GetProperty("instructions").GetString()!;
-            Check(instructions.Contains(WorkshopHumorInstructions.Text)
+            Check(instructions == WorkshopPrompts.Dialogue
                 && liveInstructions.Contains(WorkshopHumorInstructions.Text),
-                "live voice and delegated dialogue receive the same character-based roast policy");
+                "dialogue uses the approved canonical Czech prompt while legacy Live retains its character-based policy");
             Check(liveInstructions.Contains("Emoce vyjadřuj intonací, důrazem a střídáním tempa")
                 && liveInstructions.Contains("při otázce") && liveInstructions.Contains("při opravě", StringComparison.OrdinalIgnoreCase)
                 && liveInstructions.Contains("An expressive original Czech baritone.")

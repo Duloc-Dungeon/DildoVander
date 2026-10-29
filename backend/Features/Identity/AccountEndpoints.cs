@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Identity;
 
-internal sealed record EnrollmentRequest(string Token, string DisplayName, bool OpenAiConsent = false);
+internal sealed record EnrollmentRequest(string Token, string DisplayName, bool OpenAiConsent = false, int ConsentVersion = 1);
 internal sealed record PasskeyResponse(JsonElement Credential);
 internal sealed record InvitationRequest(string Role, string? RecoveryUserId, string? LaunchGroupId = null);
 internal sealed record UserChange(string Role, bool Disabled);
@@ -196,7 +196,7 @@ internal static partial class AccountEndpoints
         {
             return Error(context, "invitation_expired_or_used");
         }
-        if (invitation.UserId is null && !request.OpenAiConsent)
+        if (invitation.UserId is null && (!request.OpenAiConsent || request.ConsentVersion != AccountAiConsent.CurrentVersion))
         { return ApiProblem.Create(context, 409, "ai_consent_required"); }
         var id = invitation.UserId ?? Guid.NewGuid().ToString("N");
         var recoveryUser = invitation.UserId is null ? null : await db.Users.SingleOrDefaultAsync(x => x.Id == id && !x.Disabled);
@@ -213,7 +213,8 @@ internal static partial class AccountEndpoints
         if (roles.Contains(AccountRoles.Owner, StringComparer.Ordinal)) { name = AccountRoles.OwnerDisplayName; }
         var label = PasskeyLabels.Account(name, roles);
         var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = id, Name = label, DisplayName = label });
-        await SaveCeremonyAsync(context, db, "enroll", id, name, hash, openAiConsent: request.OpenAiConsent);
+        await SaveCeremonyAsync(context, db, "enroll", id, name, hash,
+            openAiConsent: request.OpenAiConsent && request.ConsentVersion == AccountAiConsent.CurrentVersion);
         return Results.Content(options, "application/json");
     }
 
@@ -462,13 +463,15 @@ internal static partial class AccountEndpoints
         return Results.NoContent();
     }
 
-    private static async Task CreateSessionAsync(HttpContext context, AccountUser user, SignInManager<AccountUser> signIn, AccountDatabase db)
+    private static async Task CreateSessionAsync(HttpContext context, AccountUser user, SignInManager<AccountUser> signIn,
+        AccountDatabase db, long? authenticatedAt = null)
     {
         await db.Sessions.Where(x => x.ExpiresAt <= Now()).ExecuteDeleteAsync();
         // Keep the installation/session list bounded without silently extending credentials.
         var old = await db.Sessions.Where(x => x.UserId == user.Id).OrderByDescending(x => x.ExpiresAt).Skip(19).ToArrayAsync();
         db.Sessions.RemoveRange(old);
-        var session = new AccountSession { Id = Secret(), UserId = user.Id, ExpiresAt = Now() + 12 * 3600, AuthenticatedAt = Now(), LastSeenAt = Now() };
+        var session = new AccountSession { Id = Secret(), UserId = user.Id, ExpiresAt = Now() + 12 * 3600,
+            AuthenticatedAt = authenticatedAt ?? Now(), LastSeenAt = Now() };
         db.Sessions.Add(session);
         await db.SaveChangesAsync();
         await signIn.SignInWithClaimsAsync(user, new AuthenticationProperties

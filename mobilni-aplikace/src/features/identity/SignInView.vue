@@ -313,7 +313,7 @@ async function submit(): Promise<void> {
         </template>
           <fieldset v-if="customerEnrollment || enrollment && enrollmentKind === 'invite'" class="consent-fieldset">
             <legend>Souhlas s osobním zážitkem</legend>
-            <label><input v-model="aiConsent" type="checkbox" required :disabled="busy" /> <span>{{ language === 'en' ? 'I agree to use OpenAI to create my character and personal experience.' : 'Souhlasím se zpracováním údajů postavy a zvuku rozhovoru službou OpenAI pro vytvoření osobního zážitku.' }}</span></label>
+            <label><input v-model="aiConsent" type="checkbox" required :disabled="busy" /> <span>{{ language === 'en' ? 'I agree to processing my character details and conversation audio and text by OpenAI and ElevenLabs for my personal experience and voice conversation.' : 'Souhlasím se zpracováním údajů postavy, zvuku a přepisu rozhovoru službami OpenAI a ElevenLabs pro osobní zážitek a hlasový rozhovor.' }}</span></label>
             <p class="identity-hint">{{ language === 'en' ? 'Without this consent, we will not create your character.' : 'Bez tohoto souhlasu registraci nelze dokončit.' }}</p>
             <details><summary>{{ customerCopy.text('signin.ai-consent-details') }}</summary><p>{{ customerCopy.text('signin.ai-consent-copy') }} <RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink></p></details>
           </fieldset>

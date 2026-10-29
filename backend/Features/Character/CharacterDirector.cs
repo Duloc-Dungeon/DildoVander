@@ -32,8 +32,8 @@ internal static class CharacterDirector
         var finale = anchor?.Kind == CharacterAnchorKind.Preference ? CharacterFinaleKind.Contrast
             : anchor is not null ? CharacterFinaleKind.Callback : CharacterFinaleKind.Ceremony;
         var style = SelectStyle(session, phase, anchor);
-        var wordBudget = phase is CharacterPhase.Ready or CharacterPhase.Presenting ? 60
-            : session.Tempo == CharacterTempo.Express || session.Engagement == CharacterEngagement.LowPressure ? 25 : 40;
+        var wordBudget = phase is CharacterPhase.Ready or CharacterPhase.Presenting ? 35
+            : session.Tempo == CharacterTempo.Express || session.Engagement == CharacterEngagement.LowPressure ? 20 : 28;
         var intent = repair ? CharacterSpeechIntent.Repair : canAsk ? CharacterSpeechIntent.Question
             : phase is CharacterPhase.Ready or CharacterPhase.Presenting ? CharacterSpeechIntent.Finale
             : phase == CharacterPhase.Closing ? CharacterSpeechIntent.Closing : CharacterSpeechIntent.Reply;

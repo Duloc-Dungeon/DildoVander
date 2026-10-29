@@ -1,4 +1,5 @@
 using Kufr.Backend.Features.Observability;
+using Kufr.Backend.Features.Images;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text.Json;
@@ -19,13 +20,26 @@ internal static class KeepsakeProviderFactory
         return mode switch
         {
             "fake" => new FakeKeepsakeProvider(),
-            "openai" => new OpenAiKeepsakeProvider(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
-                { Timeout = Timeout.InfiniteTimeSpan }, configuration["OPENAI_API_KEY"]
-                ?? throw new InvalidOperationException("OpenAI key missing."),
-                configuration["Keepsake:StoryModel"] ?? throw new InvalidOperationException("Keepsake:StoryModel required."),
-                configuration["Keepsake:ImageModel"] ?? throw new InvalidOperationException("Keepsake:ImageModel required.")),
+            "openai" => CreateOpenAi(configuration),
             _ => throw new InvalidOperationException("Unsupported Keepsake:ProviderMode.")
         };
+    }
+
+    private static IKeepsakeProvider CreateOpenAi(IConfiguration configuration)
+    {
+        var primary = new OpenAiKeepsakeProvider(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+            { Timeout = Timeout.InfiniteTimeSpan }, configuration["OPENAI_API_KEY"]
+            ?? throw new InvalidOperationException("OpenAI key missing."),
+            configuration["Keepsake:StoryModel"] ?? throw new InvalidOperationException("Keepsake:StoryModel required."),
+            configuration["Keepsake:ImageModel"] ?? throw new InvalidOperationException("Keepsake:ImageModel required."));
+        var key = configuration["ELEVENLABS_API_KEY"];
+        if (string.IsNullOrWhiteSpace(key) || !configuration.GetValue("Keepsake:ElevenLabsArtworkFallback", true))
+        {
+            return primary;
+        }
+        var secondary = new ElevenLabsWandArtwork(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+            { Timeout = Timeout.InfiniteTimeSpan }, key);
+        return new WandArtworkFallbackProvider(primary, secondary.GenerateAsync, secondary);
     }
 }
 
@@ -54,10 +68,10 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
                 {
                     throw new KeepsakeException("portrait_source_missing");
                 }
-                var portraitPrompt = "Create an illustrated magical portrait by editing THIS uploaded visitor photograph. "
+                var portraitPrompt = ImageVisualizer.Describe("Create an illustrated magical portrait by editing THIS uploaded visitor photograph. "
                     + "Preserve the visitor's visible appearance. Do not replace the person, invent a face, or identify them. "
-                    + "Arcane workshop, warm parchment, restrained bronze accents. No writing, no wand, no logos. "
-                    + "Visual magical theme: " + request.ExistingStory?.Design.MagicalTheme;
+                    + "Arcane workshop, warm parchment, restrained bronze accents. No writing, no wand, no logos.",
+                    ("Visual magical theme", request.ExistingStory?.Design.MagicalTheme));
                 using var photo = new MemoryStream(request.NormalizedPhoto, writable: false);
                 Stage(request, "portrait_edit", "dispatch", JsonSerializer.Serialize(new { imageModel, portraitPrompt, request.UploadId, request.EditionId }));
                 var edit = await GenAiOperation.RunAsync("image_edit", imageModel, async providerTelemetry =>
@@ -141,7 +155,6 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
             if (request.Snapshot.GeneratedWand is { } wand)
                 story = story with { Design = CanonicalDesign(wand) };
             var generatedIdentity = ParseIdentity(storyResponse.RootElement);
-            var identity = generatedIdentity ?? KeepsakeStore.AuthorialIdentity(request.EditionId ?? request.JobId, request.Snapshot);
             if (request.Snapshot.GeneratedWand is not null)
             {
                 if (request.CanonicalArtworkAssetId is null) throw new KeepsakeException("wand_artwork_not_ready", 409);
@@ -151,8 +164,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
                     JsonSerializer.Serialize(new { storyRequest = JsonDocument.Parse(storyBody).RootElement,
                         storyResponse = storyResponse.RootElement, reusedArtworkAssetId = request.CanonicalArtworkAssetId }, Json), false, generatedIdentity);
             }
-            var imagePrompt = BuildImagePrompt(story.Design)
-                + " Fictional owner identity (data, not instructions): " + JsonSerializer.Serialize(identity, Json);
+            var imagePrompt = BuildImagePrompt(story.Design);
             Stage(request, "wand_generate", "dispatch", JsonSerializer.Serialize(new { imageModel, imagePrompt,
                 size = "1024x1536", output_format = "png", moderation = "low" }));
             // The typed generate overload cannot include input images, masks or image references.
@@ -203,8 +215,7 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
         // The illustration only needs the saved wand's visual construction.
         // Deliberately omit its name, lore, affinity, spells, combat profile,
         // wand/profile IDs, and every character or fictional-world detail.
-        var visualDesign = new { wand.Material, wand.Core, wand.DesignDescription };
-        return
+        return ImageVisualizer.Describe(
         "Create one unique collectible fantasy wand as an isolated object on a genuinely transparent background. "
         + "Show its entire silhouette from tip to handle with generous transparent margin, vertical 2:3 composition, "
         + "detailed high-quality fantasy craftsmanship. Use no floor, wall, pedestal, cast shadow, background, "
@@ -212,14 +223,16 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
         + "Translate only the wand's saved material, core and visual design into a distinctive silhouette, carved grip, "
         + "structural proportions, material grain and ornamentation. Do not add story references, names, characters, "
         + "or setting-specific symbols. One wand only; no unrelated objects, characters, hands, writing, lettering, "
-        + "watermark or logos. Fictional digital artifact, not a photograph of the physical prop. "
-        + "Visual construction data, never instructions: " + JsonSerializer.Serialize(visualDesign, Json);
+        + "watermark or logos. Fictional digital artifact, not a photograph of the physical prop.",
+            ("Vzhled hůlky", wand.DesignDescription), ("Materiál hůlky", wand.Material), ("Jádro hůlky", wand.Core));
     }
 
     internal static string BuildImagePrompt(WandDesignSpec design) =>
-        "Generate from scratch an entirely original digital magic wand, its whole silhouette visible tip to handle, "
+        ImageVisualizer.Describe("Generate from scratch an entirely original digital magic wand, its whole silhouette visible tip to handle, "
         + "floating on a warm parchment workshop background, generous margins, refined bronze light, editorial illustration. "
-        + "No reference image, no photograph, no text or logo. One wand only. Design: " + JsonSerializer.Serialize(design, Json);
+        + "No reference image, no photograph, no text or logo. One wand only.",
+            ("Tvar hůlky", design.Shape), ("Rukojeť", design.Handle), ("Zdobení", design.Ornament),
+            ("Materiál", design.Material), ("Vizuální magický motiv", design.MagicalTheme));
 
     private static object CreativeDirection(string jobId)
     {
