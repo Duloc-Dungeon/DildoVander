@@ -4,7 +4,6 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import DuelView from './DuelView.vue';
 import { createBattleSummary } from './battleSummary';
 vi.mock('./battleSummary', () => ({ createBattleSummary: vi.fn() }));
-import ChronicleView from './ChronicleView.vue';
 import KeepsakeView from './KeepsakeView.vue';
 import { account, offlineSession, accountTransport, accountRequest } from '../identity/session';
 import { DuelClient } from './showClient';
@@ -217,75 +216,6 @@ describe('shared guest Show Pack screens', () => {
     expect(wrapper.findAll('button').some(button => button.attributes('aria-label') === 'Úder')).toBe(true);
     window.dispatchEvent(new Event('pagehide')); window.dispatchEvent(new Event('pageshow')); await flushPromises();
     expect(wrapper.findAll('button').some(button => button.attributes('aria-label') === 'Úder')).toBe(false);
-  });
-  it('shows zero counts and ties, applies late-outcome revisions, and erases a withdrawn public chronicle before refresh', async () => {
-    let response: unknown = chronicle();
-    const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => response ? Response.json(response) : new Response('', { status: 404 })); vi.stubGlobal('fetch', fetchMock);
-    const { wrapper } = await render(ChronicleView, '/archive/chronicle');
-    expect(wrapper.text()).toContain('První potvrzená prezentace');
-    response = { ...chronicle(2), completedVisits: 2, mostPopularSlots: [1, 2], confirmedPresentations: 2 };
-    await wrapper.find('button').trigger('click'); await flushPromises(); expect(wrapper.text()).toContain('Na prvním místě je remíza');
-    response = null; await wrapper.find('button').trigger('click'); await flushPromises(); expect(wrapper.find('table').exists()).toBe(false);
-    expect(fetchMock.mock.calls.every(call => (call[1] as RequestInit).credentials === 'omit')).toBe(true);
-  });
-  it('account admin inspection is explicit, current-account-bound and immediately redacted on role loss', async () => {
-    account.value = { id: other, displayName: 'Správce', roles: ['Administrator'] };
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json(chronicle())));
-    let complete!: (response: Response) => void; vi.mocked(accountTransport).mockImplementation(path => path === '/v1/evenings' ? Promise.resolve(Response.json(eveningList)) : new Promise(resolve => complete = resolve));
-    const { wrapper } = await render(ChronicleView, '/archive/chronicle');
-    expect(vi.mocked(accountTransport).mock.calls.some(([path]) => path.startsWith('/v1/admin/'))).toBe(false);
-    expect(wrapper.find('#chronicle-device').text()).toContain('Kufr v salonu'); expect(wrapper.find('#chronicle-evening').text()).toContain('Večer v salonu');
-    await wrapper.find('#chronicle-device').setValue('test-device'); await wrapper.find('#chronicle-evening').setValue(id); await wrapper.find('form').trigger('submit');
-    expect(wrapper.find('table').exists()).toBe(false);
-    account.value = { id: other, displayName: 'Správce', roles: ['Viewer'] };
-    complete(Response.json({ snapshot: { ...chronicle(), narrative: 'Private' }, archivedEditions: 3 })); await flushPromises();
-    expect(wrapper.text()).not.toContain('Private'); expect(wrapper.find('form').exists()).toBe(false);
-  });
-  it('uses authorized labeled selections, preserves opaque evenings and ignores an old suitcase list response', async () => {
-    account.value = { id: other, displayName: 'Správce', roles: ['Administrator'] };
-    vi.mocked(accountRequest).mockResolvedValue({ ...deviceDetails, devices: [{ deviceId: 'first', canOperate: true }, { deviceId: 'second', canOperate: false }], associations: [{ deviceId: 'first', alias: 'První kufr' }, { deviceId: 'second', alias: 'Druhý kufr' }] });
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json(chronicle())));
-    let first!: (response: Response) => void;
-    vi.mocked(accountTransport).mockImplementation(async (path, init) => {
-      if (path !== '/v1/evenings') return Response.json({ snapshot: { ...chronicle(), eveningId: 'legacy-evening_219' }, archivedEditions: 1 });
-      return new Headers(init?.headers).get('X-DV-Device-Id') === 'first' ? new Promise<Response>(resolve => first = resolve)
-        : Response.json({ activeEveningId: 'legacy-evening_219', evenings: [{ eveningId: 'legacy-evening_219', name: 'Druhý večer' }] });
-    });
-    const { wrapper } = await render(ChronicleView, '/archive/chronicle');
-    expect(wrapper.findAll('input')).toHaveLength(0);
-    await wrapper.find('#chronicle-device').setValue('first'); await flushPromises();
-    await wrapper.find('#chronicle-device').setValue('second'); await flushPromises();
-    first(Response.json({ activeEveningId: id, evenings: [{ eveningId: id, name: 'Opožděný první večer' }] })); await flushPromises();
-    expect(wrapper.find('#chronicle-evening').text()).toContain('Druhý večer'); expect(wrapper.find('#chronicle-evening').text()).not.toContain('Opožděný');
-    await wrapper.find('form').trigger('submit'); await flushPromises();
-    const request = vi.mocked(accountTransport).mock.calls.find(([path]) => path.startsWith('/v1/admin/'))!;
-    expect(new URL(request[0], 'https://example.test').searchParams.get('eveningId')).toBe('legacy-evening_219');
-    expect(new Headers(request[1]!.headers).get('X-DV-Device-Id')).toBe('second');
-  });
-  it('rejects a private snapshot for a different evening even from a successful current-account response', async () => {
-    account.value = { id: other, displayName: 'Správce', roles: ['Administrator'] };
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json(chronicle())));
-    vi.mocked(accountTransport).mockImplementation(async path => Response.json(path === '/v1/evenings' ? eveningList : { snapshot: { ...chronicle(), eveningId: other, narrative: 'Wrong private evening' }, archivedEditions: 1 }));
-    const { wrapper } = await render(ChronicleView, '/archive/chronicle');
-    await wrapper.find('form').trigger('submit'); await flushPromises();
-    expect(wrapper.text()).not.toContain('Wrong private evening'); expect(wrapper.find('table').exists()).toBe(false);
-    expect(wrapper.text()).toContain('Soukromý přehled není dostupný');
-  });
-  it('late authorized-device lists cannot restore a previous account and denied context refresh redacts private content', async () => {
-    account.value = { id: other, displayName: 'Správce', roles: ['Administrator'] };
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json(chronicle())));
-    let details!: (value: unknown) => void; vi.mocked(accountRequest).mockImplementationOnce(() => new Promise(resolve => details = resolve));
-    const late = await render(ChronicleView, '/archive/chronicle');
-    account.value = null; details(deviceDetails); await flushPromises(); expect(late.wrapper.find('form').exists()).toBe(false);
-    account.value = { id: other, displayName: 'Správce', roles: ['Administrator'] }; await flushPromises();
-    let denied = false;
-    vi.mocked(accountTransport).mockImplementation(async path => path === '/v1/evenings' ? denied ? new Response('', { status: 403 }) : Response.json(eveningList)
-      : Response.json({ snapshot: { ...chronicle(), narrative: 'Private authorized snapshot' }, archivedEditions: 1 }));
-    const current = await render(ChronicleView, '/archive/chronicle');
-    await current.wrapper.find('form').trigger('submit'); await flushPromises(); expect(current.wrapper.text()).toContain('Private authorized snapshot');
-    denied = true; await current.wrapper.findAll('button').find(button => button.text() === 'Obnovit výběr')!.trigger('click'); await flushPromises();
-    expect(current.wrapper.text()).not.toContain('Private authorized snapshot'); expect(current.wrapper.find('#chronicle-device').findAll('option')).toHaveLength(1);
-    expect(current.wrapper.find('button[type=submit]').attributes('disabled')).toBeDefined();
   });
   it('legacy identity creation is explicit and locked prophecy never unlocks on a browser clock or leaks to shares', async () => {
     let hasIdentity = false;

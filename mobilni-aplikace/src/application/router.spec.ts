@@ -21,8 +21,28 @@ describe('customer entry routes', () => {
     expect(router.currentRoute.value.name).toBe('signin');
   });
 
-  it('keeps the archive behind account authentication', () => {
-    expect(router.resolve('/archive').meta.requiresAccount).toBe(true);
+  it.each([
+    ['/archive', '/me/keepsakes'],
+    ['/archive/chronicle', '/me/keepsakes'],
+    ['/keepsake/chronicle.html', '/me/keepsakes'],
+    ['/keepsake/evening/', '/me/keepsakes'],
+    ['/keepsake/evening/index.html', '/me/keepsakes'],
+    ['/tonight', '/play'],
+    ['/suitcase', '/play'],
+    ['/suitcase/diagnostics', '/play'],
+    ['/suitcase/director', '/play'],
+    ['/connections', '/play'],
+    ['/app/', '/play'],
+    ['/companion/', '/play'],
+    ['/workshop', '/play/wand'],
+    ['/workshop/index.html', '/play/wand'],
+    ['/workshop/viewer.html', '/play/wand'],
+    ['/simulator/', '/play/wand'],
+  ])('retires %s behind the current %s account guard', async (path, destination) => {
+    await router.push(path);
+    expect(router.currentRoute.value.path).toBe('/signin');
+    expect(router.currentRoute.value.query.return).toBe(destination);
+    expect(router.resolve(destination).meta.requiresAccount).toBe(true);
   });
 
   it('retires the physical conversation bookmark behind the digital workshop account guard', async () => {
@@ -33,10 +53,11 @@ describe('customer entry routes', () => {
     expect(router.currentRoute.value.query.return).toBe('/play/wand');
   });
 
-  it('preserves the director bookmark when retiring the home route', async () => {
+  it('drops the retired director fragment at the sign-in entry', async () => {
     await router.push('/#director');
     expect(router.currentRoute.value.path).toBe('/signin');
-    expect(router.currentRoute.value.query.return).toBe('/suitcase/director');
+    expect(router.currentRoute.value.hash).toBe('');
+    expect(router.currentRoute.value.query.return).toBeUndefined();
   });
 });
 

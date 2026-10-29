@@ -181,6 +181,12 @@ class PreflightPlanTests(unittest.TestCase):
         self.assertNotIn("Firmware image build", names)
         self.assertIn("Android debug build", names)
         self.assertTrue(any(check.group == "browser" for check in checks))
+        self.assertIn("Browser journey: Archive show", names)
+        self.assertIn("Browser journey: Personal wand duel", names)
+        self.assertFalse(any(name in names for name in (
+            "Browser journey: Debug", "Browser journey: Director",
+            "Browser journey: Workshop offline", "Browser journey: Workshop media",
+        )))
         repository_checks = [check for check in checks if check.group == "repository"]
         self.assertTrue(any(check.name == "Workflow actionlint validation" for check in repository_checks))
         self.assertTrue(any(check.name == "Gitleaks checkout history scan" for check in repository_checks))

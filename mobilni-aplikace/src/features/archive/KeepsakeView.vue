@@ -397,7 +397,7 @@ onBeforeUnmount(() => { suspend(); if (ownsRobots) robots?.remove(); document.re
       <p v-if="claim">{{ customerCopy.text(claim.kind === 's' ? 'keepsake.landing-share-copy' : 'keepsake.landing-private-copy') }}</p>
       <p v-else-if="accountRead">{{ customerCopy.text('keepsake.landing-account-copy') }}</p><p v-else-if="locator">{{ customerCopy.text('keepsake.landing-verifying') }}</p><p v-else>{{ customerCopy.text('keepsake.landing-link-help') }}</p>
       <button v-if="claim" class="aw-button" :disabled="busy" @click="exchange">{{ customerCopy.text(busy ? 'keepsake.landing-busy' : claim.kind === 'r' ? 'keepsake.landing-return' : claim.kind === 's' ? 'keepsake.landing-share' : 'keepsake.landing-open') }}</button>
-      <RouterLink v-else to="/archive">{{ customerCopy.text('keepsake.landing-archive') }}</RouterLink>
+      <RouterLink v-else to="/me/keepsakes">{{ customerCopy.text('keepsake.landing-archive') }}</RouterLink>
       <RouterLink v-if="accountRead && !account" to="/signin">{{ customerCopy.text('keepsake.sign-in') }}</RouterLink>
     </section>
     <article v-if="record" aria-labelledby="keepsake-title">

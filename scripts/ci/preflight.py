@@ -311,11 +311,8 @@ def build_plan(scope: str, host: str, install_dependencies: bool = False,
         add(f"Browser journey: {label}", "browser", "portable", [npm, "run", script, "--prefix", "mobilni-aplikace"],
             tools=[npm], env=((screenshot_key, str(screenshot_root)),),
             required_files=("mobilni-aplikace/dist/index.html",))
-    for label, script in (("Debug", "tests/debug.browser.mjs"), ("Director", "tests/director.browser.mjs"),
-                          ("Archive show", "scripts/archive-show.browser.mjs"),
-                          ("Personal wand duel", "tests/personal-wand-duel.browser.mjs"),
-                          ("Workshop offline", "tests/workshop-offline.browser.mjs"),
-                          ("Workshop media", "tests/workshop-media.browser.mjs")):
+    for label, script in (("Archive show", "scripts/archive-show.browser.mjs"),
+                          ("Personal wand duel", "tests/personal-wand-duel.browser.mjs")):
         screenshot_key = "ARCHIVE_SCREENSHOTS" if label == "Archive show" else "APP_SCREENSHOTS"
         screenshot_root = checkout_temp_dir() / f"browser-{label.lower().replace(' ', '-')}-{run_tag}"
         add(f"Browser journey: {label}", "browser", "portable", [node, script], "mobilni-aplikace", [node],

@@ -9,7 +9,6 @@ ENTRY_POINTS = (
     'mobilni-aplikace/package.json',
     'mobilni-aplikace/vite.config.mjs',
     'mobilni-aplikace/scripts/validate-model-bundle.mjs',
-    'mobilni-aplikace/scripts/package-offline-viewer.mjs',
     'mechanika/final/export_model_bundle.py',
     'mechanika/final/twin_core.js', 'mechanika/final/timeline_core.js',
     'mechanika/final/twin_media_core.js', 'mechanika/final/twin_media_controller.js',
