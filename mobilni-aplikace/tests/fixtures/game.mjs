@@ -9,6 +9,7 @@ const id = 'a'.repeat(32);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png', '.ttf': 'font/ttf' };
 export const gameStates = ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'task-without-wand', 'yolo', 'error', 'empty', 'long', 'tactical', 'loadout', 'boss', 'boss-setup', 'captured', 'rescue', 'teams', 'team-choice', 'team-half', 'messages', 'ranking', 'ranking-long', 'ranking-empty', 'ranking-error', 'first-wand', 'upgrade-wand', 'wand-moon', 'wand-thorn'];
 const artworkLocator = '11111111-1111-4111-8111-111111111111';
+export const yoloStates = ['yolo-generating', 'yolo-failed', 'yolo-cancelled', 'yolo-long', 'yolo-task'];
 const artworkAssets = { moon: '22222222-2222-4222-8222-222222222222', thorn: '33333333-3333-4333-8333-333333333333' };
 const artworkHashes = Object.fromEntries(await Promise.all(['moon', 'thorn'].map(async kind => [kind,
   createHash('sha256').update(await readFile(new URL(`./generated-wands/${kind}.png`, import.meta.url))).digest('hex')])));
@@ -20,6 +21,22 @@ function wandSnapshot(kind) {
     spells: ['strike', 'trick', 'shield'].map(action => ({ action, name: `Ukázkové ${action}`, description: 'Syntetické kouzlo.' })) };
 }
 function match(state) {
+  if (yoloStates.includes(state)) {
+    const snapshot = match('yolo');
+    if (state === 'yolo-long') {
+      snapshot.opponent.displayName = 'Eliška z NeuvěřitelněDlouhéhoKouzelnickéhoRodu';
+      snapshot.opponent.wandName = 'Hůlka s nezvykle dlouhým úředním názvem a ještě delším rodokmenem';
+    } else if (state === 'yolo-task') {
+      snapshot.result = 'loss';
+      snapshot.partyTask = { title: 'Úkol pro poraženého', text: 'Předveď reklamu na svou hůlku.', category: 'classic', status: 'pending' };
+    } else {
+      const status = state.slice(5);
+      snapshot.status = status;
+      snapshot.result = undefined;
+      snapshot.yolo = { status, beats: [], verdict: '' };
+    }
+    return snapshot;
+  }
   if (state === 'task-without-wand') state = 'adult';
   const opponentKind = state === 'wand-thorn' ? 'moon' : 'thorn';
   return { id, mode: state === 'yolo' ? 'yolo' : ['tactical','loadout'].includes(state) ? 'tactical' : state === 'boss' ? 'boss' : 'quick', status: ['result', 'early-result', 'adult', 'yolo'].includes(state) ? 'complete' : state === 'incoming' ? 'incoming' : 'active',
@@ -33,9 +50,9 @@ function match(state) {
     playerInventory: {strike:2,trick:1,shield:0}, opponentInventory: {strike:1,trick:2,shield:1}, needsLoadout: state === 'loadout',
     playerEnergy: 4, opponentEnergy: 2, strength: 1.2, phase: 2, hint: 'Baron upřednostňuje Úder (2/3). Štít si šetři na výměnu s jiskrou.', bossSpark: true,
     tasksEnabled: true, adultConsent: true, flirtConsent: true, createdAt: 1,
-    result: state === 'adult' ? 'loss' : ['result','early-result','yolo'].includes(state) ? 'win' : undefined, xpAwarded: state === 'adult' ? 6 : ['result','early-result'].includes(state) ? 10 : 0,
+    result: ['adult', 'yolo'].includes(state) ? 'loss' : ['result','early-result'].includes(state) ? 'win' : undefined, xpAwarded: state === 'adult' ? 6 : ['result','early-result'].includes(state) ? 10 : 0,
     partyTask: state === 'adult' ? { title: 'Reklama po půlnoci', text: 'Předveď dvacetisekundovou reklamu na svou hůlku. Dvojsmysly vítány, publikum nic nemusí.', category: 'adult', status: 'pending', exchangeCount: 0 } : undefined,
-    yolo: state === 'yolo' ? { status: 'complete', beats: ['Eliška vstupuje do arény s Děrovačkou osudu. Naproti stojí Mira s diplomatickým štítem.', 'Mira podává protest. Eliška jej děruje ještě před přečtením. Křivopísk se tváří, že to měl v pravidlech.', 'Mira získává cenu za elegantní stížnost. Eliška vítězí administrativním knockoutem.'].map(text => ({text,detailRefs:[]})), verdict: 'Eliška vítězí díky Děrovačce osudu.' } : undefined };
+    yolo: state === 'yolo' ? { status: 'complete', beats: ['Mira přináší Měsíční účetní. Eliška přichází s Trnovou námitkou; omluvenky dnes nebere.', 'Mira si zapisuje každý zásah. Eliška dodá připomínku přímo do vazby.', 'Účetní žádá nový sešit. Eliška získává vítězství; výdaje na papír zůstávají Mirovi.'].map(text => ({text,detailRefs:[]})), verdict: 'Eliška vítězí s Trnovou námitkou.' } : undefined };
 }
 function teamMatch(state, halftimeEndsAt) {
   return { id, status: state === 'team-half' ? 'halftime' : 'active', revision: 4,
@@ -70,7 +87,7 @@ export async function createGameFixtureServer(port = 0) {
     };
     const json = (value, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(value)); };
     if (url.pathname.startsWith('/__game/')) {
-      const selected = url.pathname.split('/').at(-1); if (!gameStates.includes(selected)) return json({}, 404);
+      const selected = url.pathname.split('/').at(-1); if (!gameStates.includes(selected) && !yoloStates.includes(selected)) return json({}, 404);
       taskOutcomes.delete(selected);
       previewRounds.delete(selected);
       if (selected === 'team-half') halftimeEndsAt = Math.floor(Date.now() / 1000) + 15;

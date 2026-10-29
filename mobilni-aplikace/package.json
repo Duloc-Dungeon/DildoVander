@@ -33,6 +33,7 @@
     "test:boss:browser": "node tests/boss.browser.mjs",
     "test:duel:browser": "node tests/duel.browser.mjs",
     "test:team-practice:browser": "node tests/team-practice.browser.mjs",
+    "test:yolo:browser": "node tests/yolo.browser.mjs",
     "test:wand:browser": "node tests/wand-workshop.browser.mjs",
     "test:wand-upgrade-voice:browser": "node tests/wand-upgrade-voice.browser.mjs",
     "test:living-trunk:browser": "node tests/living-trunk.browser.mjs"

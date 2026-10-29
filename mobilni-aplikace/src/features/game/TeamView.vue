@@ -225,7 +225,7 @@ onBeforeUnmount(() => { alive = false; controller.abort(); stopLiveUpdates(); })
       <p v-if="match.status === 'active'" class="team-readiness" role="status">{{ readiness }}</p>
       <section v-if="match.status === 'active' || match.status === 'complete'" class="team-exchange" aria-label="Tvoje dvojice v týmovém souboji">
         <div class="duel-round">
-          <p class="game-round-label">{{ match.status === 'complete' ? 'Dohráno' : `Výměna ${match.completedRounds + 1} z 8 · proti ${opponent ? name(opponent) : 'soupeři'}` }}</p>
+          <p class="game-round-label">{{ match.status === 'complete' ? 'Dohráno' : `Výměna ${match.completedRounds + 1} z 8 · soupeř: ${opponent ? name(opponent) : 'čekáme na jméno'}` }}</p>
           <div class="game-round-dots" aria-hidden="true"><span v-for="round in 8" :key="round" :class="{ done: round <= match.completedRounds, current: match.status === 'active' && round === match.completedRounds + 1 }" /></div>
         </div>
         <p class="team-pairing">{{ ownClash ? 'Poslední dvojice' : 'Tvoje dvojice' }}: {{ name(ownId) }} / {{ clashOpponent ? name(clashOpponent) : 'soupeř' }}</p>

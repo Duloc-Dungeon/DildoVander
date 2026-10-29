@@ -505,6 +505,32 @@ zveřejněná výměna. Potvrzení nové dvojice se nesmí spojit s ilustrací t
 Chybějící nebo odvolaný obrázek zastoupí neutrální obrys; soukromé URL jiných
 domén se nepoužívá. Načtená výměna zůstává statická stejně jako v duelu.
 
+### YOLO lóže ve třech dějstvích
+
+`GameYoloStage` má vlastní scénu: dvě autorizované hůlky, jména obou soupeřů,
+malý portrét Křivopíska a dějství Nástup → Střet → Rozsudek. Ukázkové hůlky
+jsou výslovně označené také mimo obrázek. Chybějící obrázek zastoupí původní
+neutrální obrys. Scéna používá stejný Manrope a jantarovou/fialovou dvojici;
+není novým tématem ani novou herní mechanikou.
+
+Tempo určuje čtenář tlačítkem „Další část“. Druhé dějství má jediný 0,9s
+světelný střet v SVG, bez trvalého ambientu a bez nového zvuku. Omezený pohyb
+ponechá statický střet. Ovládání ani serverový výsledek na efekt nečekají.
+Obnovení stejného zápasu pollingem nepřeskakuje dějství a efekt nespouští znovu.
+
+Obsah scény má nejvýše 760 px a od 700 px používá boční odsazení 32 px.
+Nadpis dějství má vlastní `clamp(1.75rem, 6vw, 2.5rem)`; obecný herní nadpis
+jej nesmí přepsat. Text příběhu má 1,125 rem, řádkování 1,75 a míru do 65 ch.
+Po přechodu klávesnicí nadpis ukáže fokus v barvě společného tokenu.
+Označení „· ukázka“ zůstává při zalomení pohromadě.
+
+Celý příběh lze odhalit najednou. Verdikt, zvýraznění vítězné strany, odveta
+a případný úkol poraženého přicházejí až s rozsudkem. Čtečka dostane oznámení
+o připraveném příběhu bez výsledku; ruční přechod přenese fokus na nadpis.
+Generování, chyba s opakováním a zrušení jsou samostatné pravdivé stavy.
+Zrušená ani neúplná odpověď se nepřehrává jako dokončený příběh. Vítěze vybírá
+AI, režim nepřiděluje bojové XP; obě informace zůstávají přímo ve scéně.
+
 ### Kaskáda a rozsah
 
 `src/main.ts` načítá aplikační základ, starší `consumer-brand.css` a nakonec
