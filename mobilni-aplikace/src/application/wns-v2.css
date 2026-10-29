@@ -100,6 +100,51 @@ body { background: var(--wns-bg); color: var(--wns-text); }
 .wns-game-navigation a span { white-space: nowrap; line-height: 1.45; }
 .wns-game-navigation a.router-link-active { color: var(--wns-mint); }
 .wns-game-navigation svg { width: 23px; height: 23px; }
+
+/* Shared reading frame for the signed-in customer destinations. */
+.application-shell.has-customer-navigation {
+  --customer-content-width: 64rem;
+  --customer-page-gutter: clamp(var(--wns-space-16), 4vw, var(--wns-space-32));
+  --customer-navigation-clearance: var(--application-navigation-height);
+  padding-bottom: var(--customer-navigation-clearance);
+}
+:root[data-theme] .customer-mode:not(.game-mode) .application-main {
+  max-width: var(--customer-content-width);
+  padding: var(--wns-space-32) var(--customer-page-gutter) var(--wns-space-48);
+}
+:root[data-theme] .customer-mode .application-header {
+  padding-inline: max(var(--customer-page-gutter), calc((100% - var(--customer-content-width)) / 2 + var(--customer-page-gutter)));
+}
+.customer-mode .application-footer {
+  width: min(100%, var(--customer-content-width));
+  margin-inline: auto;
+  padding: var(--wns-space-24) var(--customer-page-gutter);
+  justify-content: flex-start;
+  gap: var(--wns-space-12) var(--wns-space-24);
+}
+.has-customer-navigation :is(a, button, input, select, textarea, summary) {
+  scroll-margin-block: var(--wns-space-32) calc(var(--customer-navigation-clearance) + var(--wns-space-32));
+}
+.wns-game-navigation a { border-radius: var(--wns-radius-icon); }
+.wns-game-navigation a.router-link-active { background: var(--wns-surface-raised); }
+.wns-game-navigation a:hover { color: var(--wns-text); }
+@media (min-width: 768px) {
+  .application-shell.has-customer-navigation {
+    --customer-navigation-clearance: calc(var(--application-navigation-height) + var(--wns-space-32));
+  }
+  .wns-game-navigation {
+    inset-inline: var(--wns-space-24);
+    bottom: var(--wns-space-16);
+    width: auto;
+    max-width: 36rem;
+    margin-inline: auto;
+    gap: var(--wns-space-8);
+    padding: var(--wns-space-8);
+    border: 1px solid var(--wns-line);
+    border-radius: var(--wns-radius-card);
+  }
+  .wns-game-navigation a { font-size: .8125rem; }
+}
 @media (max-width: 720px) {
   .application-main { padding-inline: 24px; }
   .application-sidebar { background: var(--wns-navigation-bg); }
