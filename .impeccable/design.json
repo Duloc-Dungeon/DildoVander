@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T01:42:49.323Z",
+  "generatedAt": "2026-10-29T01:54:38.834Z",
   "title": "Wand Night Stand — schválený design v2",
   "extensions": {
     "colorMeta": {
@@ -325,12 +325,21 @@
         "name": "reduced-motion",
         "value": "0s",
         "purpose": "Aplikační adaptér v2 vypne přesuny a přechody při omezeném pohybu."
+      },
+      {
+        "name": "sealed-plan-stamp",
+        "value": "260ms cubic-bezier(.16,1,.3,1)",
+        "purpose": "Místní dosednutí pečeti uloženého plánu v Pod pečetí; pouze při no-preference, nikoli společná délka animace."
       }
     ],
     "breakpoints": [
       {
         "name": "narrow",
         "value": "360px"
+      },
+      {
+        "name": "sealed-case",
+        "value": "600px"
       },
       {
         "name": "mobile",
@@ -426,6 +435,13 @@
       "description": "První položka v pořadí serveru vede příběhem a otevřením. Dostupnost zůstává viditelná, přístup a propojení jsou v rozbalovacích podrobnostech. Ukázková data; náhled nic neodpojuje ani nenačítá.",
       "html": "<article class=\"ds-keepsake\"><div class=\"ds-keepsake-heading\"><div><h2>Ukázkový příběh</h2><p class=\"ds-keepsake-latest\">Naposledy uložená památka</p></div><span class=\"ds-keepsake-status\">Připraveno</span></div><div class=\"ds-keepsake-actions\"><a class=\"ds-keepsake-open\" href=\"#design-keepsake\">Otevřít památku</a></div><details class=\"ds-keepsake-details\"><summary>Podrobnosti a správa</summary><ul aria-label=\"Dostupné části\"><li>Příběh je dostupný</li><li>Ilustrace je dostupná</li></ul><p>Tvoje památka · můžeš ji spravovat</p></details></article>",
       "css": ".ds-keepsake,.ds-keepsake *{box-sizing:border-box}\n.ds-keepsake{display:grid;gap:20px;min-width:0;padding:24px;border:0;border-radius:22px;background:#191b1b;color:#f5f5f0;font:400 15px/1.65 'Manrope Variable', sans-serif}.ds-keepsake-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem 1rem}.ds-keepsake-heading>div{display:grid;gap:.35rem;min-width:0}.ds-keepsake h2{margin:0;overflow-wrap:anywhere;font-size:clamp(1.5rem,5vw,2rem);font-weight:760;line-height:1.2}.ds-keepsake-latest{margin:0;color:#b2b9b6;font-size:.875rem}.ds-keepsake-status{padding:.2rem .65rem;border-radius:999px;background:#17271e;color:#f5f5f0}.ds-keepsake-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem 1rem}.ds-keepsake-open{display:inline-flex;align-items:center;min-height:44px;padding:12px 20px;border-radius:14px;background:#b8f3d4;color:#102419;font-weight:800;text-decoration:none}.ds-keepsake-open:hover{filter:brightness(1.06)}.ds-keepsake-open:focus-visible,.ds-keepsake-details>summary:focus-visible{outline:2px solid #b8f3d4;outline-offset:4px}.ds-keepsake-details{display:grid;gap:.75rem}.ds-keepsake-details>summary{width:fit-content;min-height:44px;align-content:center;cursor:pointer;color:#b2b9b6}.ds-keepsake-details p{margin:0;color:#b2b9b6}"
+    },
+    {
+      "name": "Pod pečetí — uložený plán",
+      "kind": "custom",
+      "description": "Místní potvrzení serverem uloženého plánu. Krátké dosednutí pečeti respektuje omezený pohyb; přijetí není úspěch akce.",
+      "html": "<div class=\"ds-sealed-receipt\"><span class=\"ds-sealed-receipt-stamp\"><svg aria-hidden=\"true\" width=\"32\" height=\"32\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\" fill=\"currentColor\"><path d=\"M225.86,102.82c-3.77-3.94-7.67-8-9.14-11.57-1.36-3.27-1.44-8.69-1.52-13.94-.15-9.76-.31-20.82-8-28.51s-18.75-7.85-28.51-8c-5.25-.08-10.67-.16-13.94-1.52-3.56-1.47-7.63-5.37-11.57-9.14C146.28,23.51,138.44,16,128,16s-18.27,7.51-25.18,14.14c-3.94,3.77-8,7.67-11.57,9.14C88,40.64,82.56,40.72,77.31,40.8c-9.76.15-20.82.31-28.51,8S41,67.55,40.8,77.31c-.08,5.25-.16,10.67-1.52,13.94-1.47,3.56-5.37,7.63-9.14,11.57C23.51,109.72,16,117.56,16,128s7.51,18.27,14.14,25.18c3.77,3.94,7.67,8,9.14,11.57,1.36,3.27,1.44,8.69,1.52,13.94.15,9.76.31,20.82,8,28.51s18.75,7.85,28.51,8c5.25.08,10.67.16,13.94,1.52,3.56,1.47,7.63,5.37,11.57,9.14C109.72,232.49,117.56,240,128,240s18.27-7.51,25.18-14.14c3.94-3.77,8-7.67,11.57-9.14,3.27-1.36,8.69-1.44,13.94-1.52,9.76-.15,20.82-.31,28.51-8s7.85-18.75,8-28.51c.08-5.25.16-10.67,1.52-13.94,1.47-3.56,5.37-7.63,9.14-11.57C232.49,146.28,240,138.44,240,128S232.49,109.73,225.86,102.82Zm-11.55,39.29c-4.79,5-9.75,10.17-12.38,16.52-2.52,6.1-2.63,13.07-2.73,19.82-.1,7-.21,14.33-3.32,17.43s-10.39,3.22-17.43,3.32c-6.75.1-13.72.21-19.82,2.73-6.35,2.63-11.52,7.59-16.52,12.38S132,224,128,224s-9.15-4.92-14.11-9.69-10.17-9.75-16.52-12.38c-6.1-2.52-13.07-2.63-19.82-2.73-7-.1-14.33-.21-17.43-3.32s-3.22-10.39-3.32-17.43c-.1-6.75-.21-13.72-2.73-19.82-2.63-6.35-7.59-11.52-12.38-16.52S32,132,32,128s4.92-9.15,9.69-14.11,9.75-10.17,12.38-16.52c2.52-6.1,2.63-13.07,2.73-19.82.1-7,.21-14.33,3.32-17.43S70.51,56.9,77.55,56.8c6.75-.1,13.72-.21,19.82-2.73,6.35-2.63,11.52-7.59,16.52-12.38S124,32,128,32s9.15,4.92,14.11,9.69,10.17,9.75,16.52,12.38c6.1,2.52,13.07,2.63,19.82,2.73,7,.1,14.33.21,17.43,3.32s3.22,10.39,3.32,17.43c.1,6.75.21,13.72,2.73,19.82,2.63,6.35,7.59,11.52,12.38,16.52S224,124,224,128,219.08,137.15,214.31,142.11ZM173.66,98.34a8,8,0,0,1,0,11.32l-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35A8,8,0,0,1,173.66,98.34Z\"/></svg></span><div><strong>Uložený plán: Pátrat</strong><p>Dům přijal tvůj plán. K jeho kvalitě se zatím nevyjadřuje.</p><small>Přijetí nepotvrzuje úspěch.</small></div></div>",
+      "css": ".ds-sealed-receipt{color:#f5f5f0;font:15px/1.65 'Manrope Variable', sans-serif}.ds-sealed-receipt small{display:block;color:#b2b9b6;line-height:1.5}.ds-sealed-receipt { display: flex; align-items: flex-start; gap: 16px; padding-block: 16px 20px; border-bottom: 1px solid #343939; margin-bottom: 20px; }\n.ds-sealed-receipt strong { color: #b8f3d4; }\n.ds-sealed-receipt p { margin-block: 8px; }\n.ds-sealed-receipt-stamp { color:#102419; display: grid; place-items: center; flex: 0 0 48px; height: 48px; border-radius: 50%; background: #b8f3d4; transform: rotate(-8deg); }\n.ds-sealed-receipt-stamp svg { width: 32px; height: 32px; }\n@media (prefers-reduced-motion: no-preference) {\n  .ds-sealed-receipt-stamp { animation: sealed-stamp-settle 260ms cubic-bezier(.16, 1, .3, 1) both; }\n  @keyframes sealed-stamp-settle {\n    from { transform: translateY(-6px) rotate(-18deg) scale(1.15); }\n    to { transform: translateY(0) rotate(-8deg) scale(1); }\n  }\n}\n"
     }
   ],
   "narrative": {
