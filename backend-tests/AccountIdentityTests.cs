@@ -83,7 +83,7 @@ internal static partial class AccountIdentityTests
         Check((await stranger.GetAsync("/app/v1/admin/users")).StatusCode == HttpStatusCode.Unauthorized, "anonymous admin denied");
         Check((await stranger.PostAsJsonAsync("/app/v1/passkeys/request-options", new { })).StatusCode == HttpStatusCode.BadRequest, "CSRF required before signin");
         await CsrfAsync(owner);
-        Check((await owner.PostAsJsonAsync("/app/v1/enrollment/options", new { token = "incorrect-bootstrap-token-value", displayName = "Owner", openAiConsent = true })).StatusCode == HttpStatusCode.BadRequest, "no first anonymous bypass");
+        Check((await owner.PostAsJsonAsync("/app/v1/enrollment/options", new { token = "incorrect-bootstrap-token-value", displayName = "Owner", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest, "no first anonymous bypass");
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Owner");
         var ownerSession = await CsrfAsync(owner);
         var ownerId = ownerSession.GetProperty("account").GetProperty("id").GetString()!;
@@ -135,7 +135,7 @@ internal static partial class AccountIdentityTests
         Check((await operatorClient.GetAsync("/app/v1/admin/users")).StatusCode == HttpStatusCode.Forbidden, "operator admin denied");
         Check((await operatorClient.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Owner" })).StatusCode == HttpStatusCode.Forbidden, "operator cannot mint owner");
         await CsrfAsync(stranger);
-        Check((await stranger.PostAsJsonAsync("/app/v1/enrollment/options", new { token = invitation, displayName = "Replay", openAiConsent = true })).StatusCode == HttpStatusCode.BadRequest, "invitation replay denied");
+        Check((await stranger.PostAsJsonAsync("/app/v1/enrollment/options", new { token = invitation, displayName = "Replay", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest, "invitation replay denied");
 
         await SeedAsync(fixture.App, async db =>
         {
@@ -144,7 +144,7 @@ internal static partial class AccountIdentityTests
             db.ResourceGrants.Add(new AccountResourceGrant { Id = "workshop-grant", UserId = operatorId, ResourceType = "workshop", ResourceId = "granted-twin", Permission = "read" });
             await db.SaveChangesAsync();
         });
-        Check((await stranger.PostAsJsonAsync("/app/v1/enrollment/options", new { token = "expired-invitation-secret", displayName = "Expired", openAiConsent = true })).StatusCode == HttpStatusCode.BadRequest, "expired invitation denied");
+        Check((await stranger.PostAsJsonAsync("/app/v1/enrollment/options", new { token = "expired-invitation-secret", displayName = "Expired", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest, "expired invitation denied");
         operatorClient.DefaultRequestHeaders.Add("X-DV-Device-Id", "denied-device");
         Check((await operatorClient.GetAsync("/v1/test-device")).StatusCode == HttpStatusCode.Unauthorized, "other device denied");
         operatorClient.DefaultRequestHeaders.Remove("X-DV-Device-Id");
@@ -417,18 +417,18 @@ internal static partial class AccountIdentityTests
         });
         using var obsolete = fixture.Client();
         await CsrfAsync(obsolete);
-        Check((await obsolete.PostAsJsonAsync("/app/v1/enrollment/options", new { token = legacyToken, displayName = "Legacy", openAiConsent = true })).StatusCode == HttpStatusCode.BadRequest,
+        Check((await obsolete.PostAsJsonAsync("/app/v1/enrollment/options", new { token = legacyToken, displayName = "Legacy", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest,
             "persisted recovery tokens cannot begin new-account enrollment");
 
         await SeedAsync(fixture.App, db => db.Invitations.Where(x => x.TokenHash == AccountEndpoints.Hash(legacyToken))
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.Purpose, "invite").SetProperty(x => x.UserId, ownerId)));
-        Check((await obsolete.PostAsJsonAsync("/app/v1/enrollment/options", new { token = legacyToken, displayName = "Legacy", openAiConsent = true })).StatusCode == HttpStatusCode.BadRequest,
+        Check((await obsolete.PostAsJsonAsync("/app/v1/enrollment/options", new { token = legacyToken, displayName = "Legacy", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest,
             "user-bound legacy tokens cannot be relabeled as invitations");
 
         // A ceremony started on an earlier version must also fail at completion.
         var retiredInvite = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Viewer" }));
         var retiredToken = retiredInvite.GetProperty("token").GetString()!;
-        var options = await JsonAsync(await obsolete.PostAsJsonAsync("/app/v1/enrollment/options", new { token = retiredToken, displayName = "Retired", openAiConsent = true }));
+        var options = await JsonAsync(await obsolete.PostAsJsonAsync("/app/v1/enrollment/options", new { token = retiredToken, displayName = "Retired", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         using var replacementKey = new VirtualPasskey();
         var credential = replacementKey.Create(options);
         await SeedAsync(fixture.App, db => db.Invitations.Where(x => x.TokenHash == AccountEndpoints.Hash(retiredToken))
@@ -533,7 +533,7 @@ internal static partial class AccountIdentityTests
     private static async Task EnrollAsync(HttpClient client, VirtualPasskey key, string token, string name)
     {
         await CsrfAsync(client);
-        var response = await client.PostAsJsonAsync("/app/v1/enrollment/options", new { token, displayName = name, openAiConsent = true });
+        var response = await client.PostAsJsonAsync("/app/v1/enrollment/options", new { token, displayName = name, openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion });
         Check(response.IsSuccessStatusCode, "creation options: " + await response.Content.ReadAsStringAsync());
         var options = await JsonAsync(response);
         var completion = await client.PostAsJsonAsync("/app/v1/enrollment/complete", new { credential = key.Create(options) });
@@ -588,7 +588,7 @@ internal static partial class AccountIdentityTests
             bool deletionFeatures = false, bool customerMemoryFeatures = false,
             bool accountDataExportFeatures = false, Action<WebApplication>? configureEndpoints = null,
             Action<IServiceCollection>? configureServices = null, Action<IConfiguration>? configureConfiguration = null,
-            bool betaRecruitmentOpen = true)
+            bool betaRecruitmentOpen = true, string environmentName = "Testing")
         {
             var root = Path.Combine(Path.GetTempPath(), "dv-account-tests-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -601,7 +601,7 @@ internal static partial class AccountIdentityTests
             certRequest.CertificateExtensions.Add(san.Build());
             using var generated = certRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(1));
             var certificate = X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pfx), null, X509KeyStorageFlags.UserKeySet);
-            var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environmentName });
             builder.Configuration.Sources.Clear();
             builder.Logging.ClearProviders();
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>

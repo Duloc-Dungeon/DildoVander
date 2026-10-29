@@ -35,6 +35,9 @@ internal static partial class AccountIdentityTests
                 services.AddSingleton<WandGenerationService>();
                 services.AddSingleton<MobileWandRuntime>();
                 services.AddSingleton<MobileWorkshopLiveRuntime>();
+                services.AddSingleton(new ElevenLabsWorkshopOptions());
+                services.AddSingleton<IWorkshopSpeechProvider, ElevenLabsWorkshopProvider>();
+                services.AddSingleton<ElevenLabsWorkshopRuntime>();
                 services.AddSingleton<GptLiveClient>();
                 services.AddSingleton(sp => GptLiveOptions.Read(sp.GetRequiredService<IConfiguration>()));
                 services.AddSingleton<IKeepsakeProvider, FakeKeepsakeProvider>();

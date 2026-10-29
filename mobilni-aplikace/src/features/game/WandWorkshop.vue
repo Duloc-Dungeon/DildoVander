@@ -10,6 +10,8 @@ import { projectMobileGeneratedWand } from '../archive/generatedWand';
 import GeneratedWand from '../archive/GeneratedWand.vue';
 import TrunkStage from './TrunkStage.vue';
 import { LabVoice, type VoicePhase } from '../persona-lab/voice';
+import { classifyLabFailure } from '../persona-lab/errors';
+import { emptyWorkshopTranscript, updateWorkshopTranscript } from './workshopTranscript';
 import { loadWorkshop, loadWorkshopSession, workshopSessionRequest, workshopBase, workshopSessionPath, workshopArtwork, normalizeSession, type WorkshopEntry, type WorkshopSession, type WorkshopMessage } from './wandWorkshop';
 
 const props = defineProps<{ upgrade?: boolean; prelaunch?: boolean }>();
@@ -19,7 +21,10 @@ const loading = ref(true); const busy = ref(false); const error = ref(''); const
 const syncError = ref('');
 const mode = ref<'voice' | 'text'>('voice'); const livePhase = ref<VoicePhase>('idle');
 const muted = ref(false); const outputLevel = ref(0);
+const volume = ref(100);
 const partial = ref(''); let partialRole = ''; let partialComplete = false;
+const streamedTranscript = ref(emptyWorkshopTranscript());
+const userPartial = ref('');
 const artworkUrl = ref(''); const artworkError = ref('');
 const answerField = ref<HTMLTextAreaElement>(); const correction = ref<WorkshopMessage | null>(null); const correctionText = ref('');
 const title = ref<HTMLElement>();
@@ -34,7 +39,7 @@ let refreshInFlight: Promise<void> | null = null; let syncFailures = 0;
 let operation = ''; let artworkKey = ''; let retryId = '';
 let pendingMessage: { messageId: string; sessionId: string; text: string } | undefined;
 const live = new LabVoice({
-  phase(value) { livePhase.value = value; },
+  phase(value) { livePhase.value = value; if (['idle', 'ended', 'error'].includes(value)) userPartial.value = ''; },
   transcript(role, delta) {
     if (partialRole !== role || partialComplete) { partial.value = ''; partialRole = role; }
     partialComplete = false; partial.value += delta;
@@ -44,13 +49,16 @@ const live = new LabVoice({
   },
   session() {},
   workshopSession(value) { applySession(normalizeSession(value as Parameters<typeof normalizeSession>[0])); },
+  workshopTranscript(value) { streamedTranscript.value = updateWorkshopTranscript(streamedTranscript.value, value); },
+  userPartial(value) { userPartial.value = value; },
   outputLevel(value) { outputLevel.value = value; },
   error(code) {
     error.value = code === 'wand_workshop_boss_captured' ? 'Baron uzavřel dílnu. Po osvobození navážeš na stejný rozhovor.'
       : code === 'wand_session_busy' ? 'Předchozí spojení ještě končí. Chvíli počkej a zkus pokračovat.'
       : code.startsWith('microphone') || code === 'permission_denied' ? 'Mikrofon není dostupný. Můžeš pokračovat psaním.'
+      : code.startsWith('elevenlabs_') ? classifyLabFailure(code).message + ' ' + classifyLabFailure(code).action
       : 'Živé spojení se přerušilo. Můžeš ho obnovit nebo pokračovat psaním.';
-    mode.value = 'text'; void refresh();
+    void refresh();
   },
   closed() { void refresh(); },
 });
@@ -68,7 +76,8 @@ const canStart = computed(() => entry.value?.eligible === true && account.value?
 const canAnswer = computed(() => canStart.value && session.value?.status === 'asking' && !busy.value);
 const confirmedReply = computed(() => [...messages.value].reverse().find(message => message.role === 'assistant')?.text || session.value?.question?.text || '');
 const subtitle = computed(() => partial.value || confirmedReply.value);
-watch(subtitle, async () => {
+const captionText = computed(() => [subtitle.value, userPartial.value || streamedTranscript.value.user?.text, streamedTranscript.value.assistant?.text].join('\n'));
+watch(captionText, async () => {
   const viewport = caption.value;
   if (!viewport || viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight > 24) return;
   await nextTick();
@@ -138,7 +147,6 @@ function applySession(value: WorkshopSession | null) {
   else if (value?.status === 'complete' && session.value?.status !== 'complete') newlyCompleted.value = !document.hidden;
   if (value?.id !== session.value?.id) { releaseArtwork(); retryId = ''; }
   session.value = value; if (value) { operation = value.id; void updateArtwork(value); }
-  if (['generating', 'complete'].includes(value?.status ?? '') && active.value) { live.setMuted(true); muted.value = true; }
 }
 async function saveConversationMoment(message: WorkshopMessage): Promise<void> {
   const current = session.value;
@@ -209,15 +217,19 @@ async function ensureSession(): Promise<WorkshopSession> {
 async function startVoice() {
   if (!canStart.value || busy.value || active.value || wand.value) return;
   mode.value = 'voice'; error.value = ''; partial.value = ''; partialComplete = false;
+  streamedTranscript.value = emptyWorkshopTranscript();
   const scope = controller;
-  await live.connect(async () => {
+  await live.connect(async ticketSignal => {
     const current = await ensureSession();
-    return accountRequest<import('../persona-lab/contracts').SocketTicket>(`${workshopSessionPath(current.id)}/ticket`, 'POST', { socketOrigin: window.location.origin }, scope.signal);
+    return accountRequest<import('../persona-lab/contracts').SocketTicket>(`${workshopSessionPath(current.id)}/ticket`, 'POST', {
+      socketOrigin: window.location.origin,
+    }, ticketSignal ?? scope.signal);
   }, () => session.value?.id ?? operation, accountOrigin.value || window.location.origin, { purpose: 'workshop' });
 }
 async function useText() {
   const scope = controller;
   stopMedia(); mode.value = 'text'; error.value = ''; partial.value = '';
+  streamedTranscript.value = emptyWorkshopTranscript();
   if (canStart.value && !session.value) {
     busy.value = true;
     try {
@@ -313,6 +325,7 @@ function resetWorkshopContext() {
   newlyCompleted.value = false;
   operation = ''; pendingMessage = undefined; retryId = ''; draft.value = ''; partial.value = ''; partialRole = ''; partialComplete = false;
   correction.value = null; correctionText.value = ''; mode.value = 'voice'; busy.value = false;
+  streamedTranscript.value = emptyWorkshopTranscript();
 }
 watch([() => account.value?.id, () => account.value?.openAiConsent, () => props.upgrade], () => {
   resetWorkshopContext();
@@ -359,8 +372,16 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
         <template v-else>
           <h2 v-if="!session" class="trunk-workshop__greeting">Hůlka začíná rozhovorem.</h2>
           <p v-if="!session">Promluv si s kufrem o své hůlce. Lidem rozumí. Po staletí mu sedají na víko a tvrdí, že se tam ještě něco vejde.</p>
-          <div v-if="session" ref="caption" class="trunk-workshop__caption" role="region" aria-label="Průběžný přepis" tabindex="0"><h2 class="trunk-workshop__question" :data-speaker="partial && partialRole === 'user' ? 'user' : 'assistant'">{{ subtitle }}</h2></div>
-          <template v-if="mode === 'voice'"><AwButton v-if="!active && canStart" variant="primary" :disabled="busy" @click="startVoice">{{ session ? 'Pokračovat hlasem' : 'Promluvit s kufrem' }}</AwButton></template>
+          <div v-if="session" ref="caption" class="trunk-workshop__caption" role="region" aria-label="Průběžný přepis" tabindex="0">
+            <template v-if="streamedTranscript.latestSequence || userPartial">
+              <p v-if="userPartial || streamedTranscript.user?.text" class="trunk-workshop__live-line" data-speaker="user"><strong>Ty</strong><span>{{ userPartial || streamedTranscript.user?.text }}</span></p>
+              <p v-if="streamedTranscript.assistant?.text" class="trunk-workshop__live-line" data-speaker="assistant"><strong>Kufr</strong><span>{{ streamedTranscript.assistant.text }}</span></p>
+            </template>
+            <h2 v-else class="trunk-workshop__question" :data-speaker="partial && partialRole === 'user' ? 'user' : 'assistant'">{{ subtitle }}</h2>
+          </div>
+          <template v-if="mode === 'voice'">
+            <AwButton v-if="!active && canStart" variant="primary" :disabled="busy" @click="startVoice">{{ session ? 'Pokračovat hlasem' : 'Promluvit s kufrem' }}</AwButton>
+          </template>
           <template v-else-if="session?.status === 'asking'">
             <form @submit.prevent="submit">
               <label for="trunk-answer">Tvoje sdělení kufru</label>
@@ -377,6 +398,10 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
           </div>
         </template>
         <div v-if="active" class="trunk-workshop__media-controls">
+          <label class="trunk-workshop__volume" for="workshop-volume">
+            <span>Hlasitost {{ volume }} %</span>
+            <input id="workshop-volume" v-model.number="volume" type="range" min="0" max="100" step="5" @input="live.setOutputVolume(volume / 100)" />
+          </label>
           <AwButton :disabled="!speaking" @click="stopSpeech">Stop řeč</AwButton>
           <AwButton v-if="!wand" @click="muted = !muted; live.setMuted(muted)">{{ muted ? 'Zapnout mikrofon' : 'Ztlumit mikrofon' }}</AwButton>
           <button type="button" class="trunk-workshop__text-action" @click="stopMedia">Ukončit rozhovor</button>
@@ -406,6 +431,8 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__conversation { display: grid; align-content: start; gap: 1rem; min-width: 0; }
 .trunk-workshop__hint { color: var(--wns-muted); font-size: .9rem; line-height: 1.5; }
 .trunk-workshop__finish { display: grid; gap: .65rem; padding-top: 1rem; border-top: 1px solid var(--wns-line); }
+.trunk-workshop__voice-consent { display: flex; align-items: flex-start; gap: .65rem; font-size: .875rem; line-height: 1.5; }
+.trunk-workshop__voice-consent input { flex: none; width: 1.25rem; height: 1.25rem; margin-top: .2rem; }
 .trunk-workshop__artwork-notice { display: grid; justify-items: center; gap: .5rem; padding: 1rem; text-align: center; }
 .trunk-workshop__artwork-notice p { margin: 0; }
 .trunk-workshop__artwork-notice .trunk-workshop__text-action { color: inherit; text-align: center; }
@@ -461,12 +488,17 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop[data-stage='unavailable'] .trunk-workshop__presentation, .trunk-workshop[data-stage='error'] .trunk-workshop__presentation { background: var(--wns-surface-raised); color: var(--wns-muted); }
 .trunk-workshop__conversation { padding-block: .5rem; }
 .trunk-workshop .trunk-workshop__conversation .trunk-workshop__greeting { font-size: clamp(1.5rem, 3vw, 2.2rem); line-height: 1.2; letter-spacing: -.025em; text-wrap: balance; }
-.trunk-workshop__caption { min-block-size: 3.5em; max-block-size: 8rem; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; scrollbar-color: var(--wns-line) var(--wns-bg); border-bottom: 1px solid var(--wns-line); }
+.trunk-workshop__caption { block-size: 8rem; min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; scrollbar-color: var(--wns-line) var(--wns-bg); border-bottom: 1px solid var(--wns-line); }
 .trunk-workshop .trunk-workshop__conversation .trunk-workshop__question { font-size: clamp(1.2rem, 2.5vw, 1.65rem); padding-block: .5rem 1rem; }
 .trunk-workshop__question[data-speaker='user'] { color: var(--wns-muted); font-weight: 500; }
+.trunk-workshop__live-line { display: grid; gap: .25rem; padding-block: .5rem; margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.trunk-workshop__live-line strong { color: var(--wns-muted); font-size: .8rem; }
+.trunk-workshop__live-line span { white-space: pre-wrap; }
 .trunk-workshop__media-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: .5rem 1rem; padding-block: .5rem; border-top: 1px solid var(--wns-line); }
 .trunk-workshop__media-controls > :is(button, .aw-button) { min-height: 3.5rem; }
 .trunk-workshop__media-controls .trunk-workshop__status { grid-column: 1 / -1; min-block-size: 4.5em; }
+.trunk-workshop__volume { display: grid; grid-column: 1 / -1; gap: .25rem; }
+.trunk-workshop__volume input { width: 100%; min-height: 2.75rem; accent-color: var(--wns-mint); }
 .trunk-workshop__transcript { scrollbar-color: var(--wns-line) var(--wns-bg); }
 .trunk-workshop__transcript summary, .trunk-workshop__properties summary { display: list-item; align-content: center; }
 .trunk-workshop__transcript ol { list-style: none; padding: 0; }

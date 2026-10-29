@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Security.Cryptography;
 using Kufr.Backend.Features.Customers;
+using Kufr.Backend.Features.Images;
 using Kufr.Backend.Features.Keepsakes;
 using Kufr.Backend.Features.Wands;
 using Microsoft.AspNetCore.DataProtection;
@@ -17,6 +18,7 @@ internal static class WandArtworkTests
 {
     internal static async Task RunAsync()
     {
+        await ElevenLabsWandArtworkTests.RunAsync();
         await ProviderBoundaries();
         var directory = Path.Combine(Path.GetTempPath(), "wand-artwork-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -338,7 +340,7 @@ internal static class WandArtworkTests
             "CHARACTER_WORLD_SENTINEL: a fictional relic of a drowned observatory.", "Forked tip, carved lunar handle, silver inlaid rings", "Tides", "Static air",
             [new("strike", "Tidal lash", "A wave of light"), new("trick", "Moon lie", "A decoy"), new("shield", "Quiet harbor", "A barrier")]);
         var handler = new Handler(DifferentPng());
-        using var provider = new OpenAiKeepsakeProvider(new HttpClient(handler), "synthetic-key-never-sent-to-network", "synthetic-story-model", "gpt-image-2.5-flare");
+        using var provider = new OpenAiKeepsakeProvider(new HttpClient(handler), "synthetic-key-never-sent-to-network", "synthetic-story-model", ImageGenerationDefaults.Model);
         var snapshot = new KeepsakeIssueSnapshot("private-outcome", "private-device", 1, wand.WandId, wand.Name, wand.Lore, "synthetic", GeneratedWand: wand);
         var request = new KeepsakeProviderRequest(Guid.NewGuid().ToString("D"), snapshot, new(), Guid.NewGuid().ToString("D"), null, null, null, null, null)
             { GenerationKind = "wand_artwork" };
@@ -364,6 +366,8 @@ internal static class WandArtworkTests
         {
             var payload = parsed.RootElement;
             var prompt = payload.GetProperty("prompt").GetString()!;
+            Check(!prompt.Contains('{') && !prompt.Contains('}') && !prompt.Contains("\\u", StringComparison.Ordinal),
+                "actual outbound image prompt is readable visual prose rather than serialized JSON");
             var outbound = handler.Requests[0].Body;
             Check(payload.GetProperty("model").GetString() == "gpt-image-2.5-flare" && !payload.TryGetProperty("image", out _),
                 "image uses configured SDK generation model without another image pipeline");

@@ -22,6 +22,20 @@ function failure(category: LabErrorCategory, message: string, action: string, re
 
 /** Only application-owned codes establish a cause; arbitrary provider strings do not. */
 export function classifyLabFailure(code: string, status = 0): LabFailure {
+  if (code === 'speech_engine_public_endpoint_required') return failure('Infrastructure',
+    'Speech Engine nemá dostupný veřejný callback.', 'Spusť místní hub s parametrem -SpeechEngineTunnel.');
+  if (['speech_engine_preparation_failed', 'speech_engine_connection_failed'].includes(code)) return failure('AudioVideo',
+    'Spojení Speech Engine se nepodařilo připravit nebo se přerušilo.',
+    'Rozhovor zůstává uložený. Ověř běh místního tunelu a dostupnost ElevenLabs.', true);
+  if (code === 'speech_engine_session_expired') return failure('Auth',
+    'Přístup k tomuto hlasovému spojení už neplatí.', 'Spusť nové připojení ze své dílny.', true);
+  if (code === 'elevenlabs_consent_required') return failure('Auth',
+    'Hlas vyžaduje souhlas s předáním zvuku službě ElevenLabs.', 'Potvrď souhlas před spuštěním hlasu, nebo pokračuj psaním.');
+  if (code === 'elevenlabs_not_configured') return failure('Infrastructure',
+    'Hlas ElevenLabs není na serveru nastavený.', 'Pokračuj psaním. Správce musí nastavit serverový přístup k ElevenLabs.');
+  if (['elevenlabs_connection_failed', 'elevenlabs_transcription_failed', 'elevenlabs_speech_failed'].includes(code))
+    return failure('AudioVideo', 'Hlasové zpracování u ElevenLabs se nepodařilo.',
+      'Rozhovor zůstává uložený. Pokračuj psaním; správce může ověřit připojení a oprávnění ElevenLabs.');
   if (code === 'recent_passkey_required') return failure('Auth',
     'Změna konfigurace vyžaduje nové ověření přístupovým klíčem.', 'Ověřte přihlášení a potom akci znovu výslovně odešlete.', false, false, true);
   if (['lab_decision_provider_auth', 'lab_provider_auth'].includes(code)) return failure('Auth',
@@ -36,7 +50,7 @@ export function classifyLabFailure(code: string, status = 0): LabFailure {
   if (['transport_error', 'lab_transport_error', 'lab_live_socket_failed', 'lab_live_close_unexpected', 'connection_closed', 'connection_backpressure'].includes(code))
     return failure('Network', 'Spojení se přerušilo; příčina přerušení není potvrzená.',
       'Zkontrolujte síť a obnovte uložené výsledky před opakováním. Nové hlasové spojení vytvoří nový kontext.', true);
-  if (['connection_timeout', 'interruption_timeout', 'lab_provider_timeout', 'lab_live_finalization_timeout'].includes(code))
+  if (['connection_timeout', 'interruption_timeout', 'lab_provider_timeout', 'lab_live_finalization_timeout', 'speech_engine_preparation_timeout'].includes(code))
     return failure('Network', 'Operace nebyla potvrzena v časovém limitu.',
       'Zkontrolujte technickou stopu a uložené tahy. Další pokus spusťte výslovně po krátké prodlevě.', true);
 

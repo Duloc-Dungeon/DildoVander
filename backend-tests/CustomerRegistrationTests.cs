@@ -16,10 +16,10 @@ internal static partial class AccountIdentityTests
         using var ownerKey = new VirtualPasskey();
         using var key = new VirtualPasskey();
         var path = "/app/v1/customer/enrollment";
-        Check((await customer.PostAsJsonAsync(path + "/options", new { displayName = "Guest", openAiConsent = true })).StatusCode
+        Check((await customer.PostAsJsonAsync(path + "/options", new { displayName = "Guest", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode
             == HttpStatusCode.BadRequest, "public customer enrollment requires CSRF");
         await CsrfAsync(customer);
-        Check((await customer.PostAsJsonAsync(path + "/options", new { displayName = "Guest", openAiConsent = true })).StatusCode
+        Check((await customer.PostAsJsonAsync(path + "/options", new { displayName = "Guest", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode
             == HttpStatusCode.ServiceUnavailable, "public signup cannot preempt owner bootstrap");
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Owner");
         var launch = fixture.App.Services.GetRequiredService<LaunchPolicyStore>();
@@ -30,7 +30,7 @@ internal static partial class AccountIdentityTests
             new(selected.Admission.Revision, selected.Group.Id, true, null, selected.Group.Revision, now + 3_600_000), now);
         customer.DefaultRequestHeaders.Remove("Origin");
         customer.DefaultRequestHeaders.Add("Origin", "https://wrong.example");
-        Check((await customer.PostAsJsonAsync(path + "/options", new { displayName = "Guest", openAiConsent = true })).StatusCode
+        Check((await customer.PostAsJsonAsync(path + "/options", new { displayName = "Guest", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode
             == HttpStatusCode.Forbidden, "customer registration checks exact origin");
         customer.DefaultRequestHeaders.Remove("Origin");
         customer.DefaultRequestHeaders.Add("Origin", "https://localhost");
@@ -44,7 +44,7 @@ internal static partial class AccountIdentityTests
                 "server rejects missing and false registration consent before issuing a credential ceremony");
         }
         var options = await JsonAsync(await customer.PostAsJsonAsync(path + "/options",
-            new { displayName = "Guest", role = "Owner", userId = "forged-owner", openAiConsent = true }));
+            new { displayName = "Guest", role = "Owner", userId = "forged-owner", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         var credential = key.Create(options);
         Check((await customer.PostAsJsonAsync(path + "/complete", new { credential, role = "Owner" })).IsSuccessStatusCode,
             "customer completes verified passkey signup");
@@ -127,7 +127,11 @@ internal static partial class AccountIdentityTests
             "legacy account has no implied processing consent");
         Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = false })).StatusCode
             == HttpStatusCode.Conflict, "legacy consent cannot be granted by a false choice");
-        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true })).StatusCode
+        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = 1 })).StatusCode
+            == HttpStatusCode.Conflict, "an old client cannot grant the broader OpenAI and ElevenLabs consent using the old disclosure");
+        Check(!(await CsrfAsync(customer)).GetProperty("account").GetProperty("openAiConsent").GetBoolean(),
+            "rejecting an old disclosure leaves processing disabled");
+        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode
             == HttpStatusCode.NoContent, "legacy account can explicitly complete consent");
         Check((await CsrfAsync(customer)).GetProperty("account").GetProperty("openAiConsent").GetBoolean(),
             "explicit legacy choice is durable through a fresh session projection");

@@ -29,7 +29,8 @@ export function installAccessGuard(router: Router): void {
       const canonical = router.resolve({ name: to.name, params: to.params, query: to.query, hash: to.hash });
       if (canonical.path !== to.path) return { path: canonical.path, query: to.query, hash: to.hash, replace: true };
     }
-    const publicPath = to.name === 'notFound' || ['/signin', '/privacy', '/support', '/account-deletion'].includes(to.path);
+    const publicPath = to.name === 'notFound' || ['/signin', '/privacy', '/support', '/account-deletion'].includes(to.path)
+      || import.meta.env.DEV && to.path === '/local-try-hub';
     if (publicPath) return;
     if (to.meta.offlineLocal && offlineSession.value && offlineSessionExpiresAt.value > Date.now()
       && account.value?.roles.some(role => ['Owner', 'Administrator', 'Operator', 'Tester'].includes(role))) {

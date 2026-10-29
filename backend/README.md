@@ -17,6 +17,71 @@ to the canonical URL and retains its `KUFR_BACKEND_URL` override.
 
 # Backend kufru
 
+## Hlas mobilní Kufrovy dílny
+
+Zákaznická dílna `/play/wand` používá výchozí ElevenLabs Speech Engine přes
+WebRTC pro český přepis a hlas; GPT Terra tvoří text a rozhodnutí o výrobě.
+Původní Scribe + TTS i GPT-Live zůstávají volitelné. Callback
+`/app/v1/customer/wand/speech-engine/{capability}` vyžaduje podepsané JWT
+ElevenLabs a jednorázové přiřazení k aktuálnímu účtu a dílně. Každý hovor má
+vlastní krátkodobý prostředek bez nahrávání; jeho úklid přežívá restart.
+`Wands__Voice__SpeechEnginePublicOrigin` určuje přesný veřejný HTTPS původ
+callbacku; bez něj se použije první veřejný HTTPS původ z povolených původů
+identity. Místní launcher umí omezený tunel; viz `docs/local-try-hub.md`.
+Prohlížeč používá chráněný jednorázový WebSocket ticket pro řízení hovoru; klíče
+poskytovatelů zůstávají na serveru. Ticket vyžaduje uložený jednotný AI souhlas
+verze 2 pro OpenAI i ElevenLabs; starší souhlas se jednou obnoví. Při dalším
+hovoru se nový checkbox nezobrazuje. Rozmluvená odpověď zneplatní starší rozhodnutí
+o výrobě. Stop ruší přehrávání, ale již přijatá výroba pokračuje.
+
+| Serverové nastavení | Výchozí hodnota / význam |
+| --- | --- |
+| `OPENAI_API_KEY` | GPT rozhovor a výroba hůlky |
+| `ELEVENLABS_API_KEY` | Serverové připojení ElevenLabs; chybějící klíč nevynutí návrat ke GPT-Live |
+| `Wands__Voice__Provider` | `speech-engine`; další volby jsou `elevenlabs` a `gpt-live` |
+| `Wands__Voice__VoiceId` | Výchozí český hlas Zazy, `U48DQ1c9SVmD2BVCSiHL`; správce může uložit vlastní hlas Kufra |
+| `Wands__Voice__Speed` | `1.0` (normální rychlost); povolený rozsah `0.7` až `1.2` |
+| `Wands__Voice__Model` | `eleven_v4`; ostatní nastavení hlasu používají výchozí hodnoty poskytovatele |
+| `Wands__Model` | Stávající volba GPT pro textový rozhovor a výrobu |
+| `Wands__ReasoningEffort` | `none`; počáteční nastavení před uložením správcem |
+| `Keepsake__ImageModel` | `gpt-image-2.5-flare`; společný výchozí model pro všechny obrazové větve |
+| `Keepsake__ElevenLabsArtworkFallback` | `true`; aktivní pouze s klíčem ElevenLabs a primárním OpenAI poskytovatelem |
+
+Pokud OpenAI selže při tvorbě ilustrace uložené hůlky nebo vrátí neplatný
+průhledný PNG, následuje nejvýše jeden pokus přes ElevenLabs Image API.
+Používá `gpt-image-1.5` s průhledným pozadím a stejnou kontrolou PNG jako hlavní
+cesta. Předává jen materiál, jádro a vizuální popis hůlky, ne profil hosta,
+fotografii nebo přepis. Zrušení, ztráta oprávnění a odmítnutí obsahu nespouštějí
+záložní pokus. Opakované čtení stavu jedné generace nevytváří další obrázek.
+
+Pro zkoušení bez nasazení použij [místní hub](../docs/local-try-hub.md).
+Správa `/settings/admin` obsahuje nezávislá ID hlasů Kufra a Barona.
+`GET/PUT /app/v1/admin/actor-voices` používá oprávnění správce; zápis vyžaduje
+aktuální ověření přístupovým klíčem, potvrzení a shodnou revizi. Nastavení
+zůstává v `actor-voices.json` pod datovým adresářem identity. Kufr zachytí hlas
+na začátku spojení, Baron na začátku zvukového požadavku; klíč cache obsahuje
+zvolený hlas, takže změna nepřepíše již rozmluvenou repliku.
+
+Správa obsahuje také prompty pro GPT rozhovor a GPT-Live a reasoning
+`none`, `low`, `medium` nebo `high`. `GET/PUT /app/v1/admin/workshop-settings`
+používá stejné ověření správce a revizi; data zůstávají v
+`workshop-settings.json` pod datovým adresářem identity. Každý prompt má limit
+12 000 znaků. Hlas zachytí nastavení při přijetí hovoru; změna se použije při
+dalším připojení. Místní experiment může přepsat prompt jen v místním hubu.
+
+Všechna generování a editace obrázků používají společný `ImageVisualizer`.
+Obrazový prompt obsahuje slovní popis, nikoli serializovaný profil nebo JSON
+návrhu. Terra vytváří samostatný vizuální odstavec `designDescription`;
+ilustrátor hůlky dostává tento popis, materiál a jádro. Ostatní obrazové větve
+převádějí vlastní povolené vizuální údaje na prózu. Přenosový obal API nadále
+používá JSON podle protokolu poskytovatele; pravidlo se týká obsahu promptu.
+
+Offline kontrola: `dotnet run --project backend-tests/BackendTests.csproj -c Release -- --elevenlabs-workshop`
+a `-- --wand-artwork` z kořene repozitáře. Tyto kontroly nevolají poskytovatele.
+Protokoly: [Scribe Realtime](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime),
+[streamovaný hlas](https://elevenlabs.io/docs/api-reference/text-to-speech/stream),
+[Image API](https://elevenlabs.io/docs/api-reference/flows/image/create).
+
 ## Rickroll video
 
 Set `Rickroll__FilePath` in the server's environment file to an absolute path to

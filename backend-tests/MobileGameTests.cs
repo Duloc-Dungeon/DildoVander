@@ -1539,7 +1539,7 @@ internal static partial class MobileGameTests
         fixture.SetProductionOpen(false);
         using (var ownerClaim = await owner.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }))
             Check(ownerClaim.StatusCode == HttpStatusCode.Forbidden,
-                "owner cannot claim before production opens");
+                "owner cannot claim in their unopened selected group");
         Console.WriteLine("Boss Rickroll HTTP: CSRF, admin/recent-role/group gates, toggle revisions, media availability and per-player claims passed.");
     }
 
@@ -1651,6 +1651,9 @@ internal static partial class MobileGameTests
             builder.Services.AddSingleton<WandDecisionService>();
             builder.Services.AddSingleton(new GptLiveOptions());
             builder.Services.AddSingleton<MobileWandRuntime>();
+            builder.Services.AddSingleton(new ElevenLabsWorkshopOptions { UseLegacyGptLive = withLiveTransport });
+            builder.Services.AddSingleton<IWorkshopSpeechProvider, ElevenLabsWorkshopProvider>();
+            builder.Services.AddSingleton<ElevenLabsWorkshopRuntime>();
             builder.Services.AddSingleton<IMobileWandQuestionProvider>(textWorkshopProvider);
             builder.Services.AddSingleton<MobileWorkshopLiveRuntime>();
             var app = builder.Build();
@@ -1780,7 +1783,8 @@ internal static partial class MobileGameTests
             var user = await db.Users.SingleAsync(user => user.Id == id);
             await users.RemoveFromRoleAsync(user, AccountRoles.Customer);
             await users.AddToRoleAsync(user, AccountRoles.Owner);
-            user.LaunchGroupId = null;
+            // Bind the owner to the group this fixture opens/closes, rather than automatic name ordering.
+            user.LaunchGroupId = ActiveGroupId;
             user.LaunchGroupAccessRevision++;
             await db.SaveChangesAsync();
         }

@@ -16,6 +16,11 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: 'reduce', isMobile: width < 500, hasTouch: width < 500 });
     const page = await context.newPage(); lastPage = page; page.on('pageerror', error => errors.push(error.message));
     await page.goto(`${origin}/__workshop/ready`);
+    const voiceStart = page.getByRole('button', { name: 'Promluvit s kufrem', exact: true });
+    assert.equal(await page.locator('#workshop-elevenlabs-consent').count(), 0, `${width}: saved unified consent needs no repeated voice checkbox`);
+    assert.equal(await voiceStart.isEnabled(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}: voice disclosure fits`);
+    await page.screenshot({ path: path.join(output, `voice-consent-${width}.png`), fullPage: true }); captures++;
     await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     assert.equal(await overflow(), false, `${width}: no overflow`);

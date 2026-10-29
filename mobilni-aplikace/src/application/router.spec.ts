@@ -100,3 +100,13 @@ describe('localized document titles', () => {
     expect(router.currentRoute.value.path).toBe('/support');
   });
 });
+
+describe('local try hub', () => {
+  it('allows the development-only hub to render before sign-in', async () => {
+    expect(router.resolve('/local-try-hub').matched.length).toBe(import.meta.env.DEV ? 1 : 0);
+    if (import.meta.env.DEV) {
+      await router.push('/local-try-hub');
+      expect(router.currentRoute.value.path).toBe('/local-try-hub');
+    }
+  });
+});
