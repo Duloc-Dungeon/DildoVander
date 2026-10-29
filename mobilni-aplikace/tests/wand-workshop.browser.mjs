@@ -107,11 +107,32 @@ try {
     await page.locator('.trunk-stage__wand').waitFor();
     await page.waitForFunction(() => document.querySelector('.trunk-stage__wand')?.naturalWidth > 0);
     assert.equal(await overflow(), false, `${width}: result no overflow`);
+    const repair = page.getByRole('button', { name: 'Opravit ilustraci na průhledném pozadí', exact: true });
+    const assertNoticeBelowArtwork = async () => {
+      const art = await page.locator('.trunk-stage__artwork').boundingBox();
+      const notice = await page.locator('.trunk-workshop__artwork-notice').boundingBox();
+      assert(art && notice && notice.y >= art.y + art.height, `${width}: artwork notice stays below the illustration`);
+      const button = await repair.boundingBox();
+      assert(button && button.height >= 44, `${width}: repair remains a usable touch target`);
+    };
+    await assertNoticeBelowArtwork();
+    await repair.focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await repair.evaluate(button => button.matches(':focus-visible')), true);
+    if (width === 390) {
+      await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+      await assertNoticeBelowArtwork();
+      assert.equal(await overflow(), false, '200% result text: no overflow');
+      await page.screenshot({ path: path.join(output, 'result-text-200-percent.png'), fullPage: true }); captures++;
+      await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+    }
     const properties = page.getByText('Vlastnosti a kouzla hůlky', { exact: true });
     await properties.focus(); await page.keyboard.press('Enter');
     assert.equal(await page.getByRole('heading', { name: 'Tři kouzla. Tvůj způsob boje.', exact: true }).isVisible(), true);
     await properties.focus(); await page.keyboard.press('Enter');
     assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1);
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: path.join(output, `result-${width}.png`), fullPage: true }); captures++;
     await page.goto(`${origin}/__workshop/upgrade`);
     await page.getByText('Nová kapitola tvé hůlky', { exact: true }).waitFor();
@@ -153,13 +174,23 @@ try {
   assert(await completion.locator('.aw-notice__icon img').evaluate(image => image.naturalWidth > 0));
   assert.equal(await completionPage.locator('.trunk-workshop').getAttribute('data-new-wand'), 'true');
   assert.notEqual(await completion.locator('.aw-notice__icon').evaluate(icon => getComputedStyle(icon).animationName), 'none');
+  await completionPage.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
+  await completionPage.locator('.wand-reveal-field').waitFor();
   await completionPage.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await completion.locator('.aw-notice__icon').evaluate(icon => getComputedStyle(icon).animationName), 'none');
   await completionPage.reload();
   await completion.waitFor();
   assert.equal(await completionPage.locator('.trunk-workshop').getAttribute('data-new-wand'), 'false');
+  await completionPage.locator('.trunk-stage__wand').waitFor();
+  await completionPage.locator('.trunk-stage__wand').evaluate(image => image.decode());
+  assert.equal(await completionPage.locator('.wand-reveal-field').count(), 0, 'restored artwork never mounts the reveal');
   await completionPage.emulateMedia({ reducedMotion: 'no-preference' });
   assert.equal(await completion.locator('.aw-notice__icon').evaluate(icon => getComputedStyle(icon).animationName), 'none');
+  await completionPage.goto('about:blank');
+  await completionPage.goBack();
+  await completionPage.locator('.trunk-stage__wand').waitFor();
+  await completionPage.locator('.trunk-stage__wand').evaluate(image => image.decode());
+  assert.equal(await completionPage.locator('.wand-reveal-field').count(), 0, 'returning to saved artwork stays static');
   await completionPage.screenshot({ path: path.join(output, 'completion-confirmed-390.png'), fullPage: true }); captures++;
   await completionContext.close();
   assert.deepEqual(errors, []);

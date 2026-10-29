@@ -11,6 +11,7 @@ const props = withDefaults(defineProps<TrunkStageProps>(), {
   wandArtworkUrl: null,
   showCaption: true,
   showArtworkStatus: true,
+  animateReveal: true,
   trunkWidth: 960,
   trunkHeight: 960,
   artworkPlacement: 'standalone',
@@ -145,7 +146,7 @@ function onArtworkError(event: Event) {
           @load="onArtworkLoad"
           @error="onArtworkError"
         />
-        <WandRevealField v-if="showArtwork && decoded" :key="artworkSource ?? undefined" :artwork-url="artworkSource" :wand-name="wandName" />
+        <WandRevealField v-if="animateReveal && showArtwork && decoded" :key="artworkSource ?? undefined" :artwork-url="artworkSource" :wand-name="wandName" />
         <p v-if="showArtworkStatus && (!showArtwork || !decoded)" class="trunk-stage__artwork-state" role="status">
           {{ artworkMessage }}
         </p>

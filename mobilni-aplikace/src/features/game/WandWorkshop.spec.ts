@@ -5,6 +5,7 @@ vi.mock('../identity/session', async () => { const { ref } = await import('vue')
 vi.mock('../persona-lab/voice', () => ({ LabVoice: class { constructor(observer: unknown) { api.observer = observer; } connect = api.connect; dispose = api.dispose; interrupt = api.interrupt; setMuted = api.setMuted; setOutputVolume = api.setVolume; end() { api.observer.phase('ended'); } } }));
 vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div />' } }));
 import WandWorkshop from './WandWorkshop.vue';
+import TrunkStage from './TrunkStage.vue';
 import { account } from '../identity/session';
 const base = '/app/v1/customer/wand/workshop'; const id = 'b'.repeat(32);
 let session: any; let reason: string | null; let view: VueWrapper | undefined; let profileRevision: number;
@@ -187,12 +188,14 @@ describe('customer Live workshop', () => {
     api.observer.workshopSession(completed());
     await flushPromises();
     expect(view!.attributes('data-new-wand')).toBe('true');
+    expect(view!.getComponent(TrunkStage).props('animateReveal')).toBe(true);
     expect(view!.get('.trunk-workshop__saved').attributes('role')).toBe('status');
     expect(view!.get('.trunk-workshop__saved').text()).toBe('Hůlka je uložená a připravená ke hře.');
     view!.unmount();
     session = completed();
     await render();
     expect(view!.attributes('data-new-wand')).toBe('false');
+    expect(view!.getComponent(TrunkStage).props('animateReveal')).toBe(false);
   });
   it('does not celebrate a completion received while the document is hidden', async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
