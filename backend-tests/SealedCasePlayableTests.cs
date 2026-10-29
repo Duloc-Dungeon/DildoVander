@@ -138,6 +138,20 @@ internal static partial class SealedCaseHttpTests
                     { await AiBoundariesAsync(view.Deserialize<SealedPlayView>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!); }
                     Equal(chapter, view.GetProperty("chapter").GetInt32()); Equal("planning", view.GetProperty("phase").GetString());
                     Equal(3, view.GetProperty("choices").GetArrayLength());
+                    var routes = view.GetProperty("routes");
+                    Check(routes.GetProperty("ARCHIV").EnumerateArray().Any(), "play view publishes the frozen route graph");
+                    var publicSources = view.GetProperty("sourceSchedule").EnumerateArray().ToArray();
+                    Check(publicSources.Length > 0 && publicSources.All(source => HasExactProperties(source,
+                            "family", "label", "location", "releaseChapter")),
+                        "public source schedule contains only family labels, locations and release chapters");
+                    Check(publicSources.GroupBy(source => (source.GetProperty("family").GetString(),
+                            source.GetProperty("location").GetString(), source.GetProperty("releaseChapter").GetInt32()))
+                            .All(group => group.Count() == 1), "public source schedule has no duplicate family/location/release entries");
+                    if (chapter == 1)
+                    {
+                        Check(publicSources.Any(source => source.GetProperty("releaseChapter").GetInt32() > chapter),
+                            "source schedule includes future chapters for route planning");
+                    }
                     Check(!view.TryGetProperty("serverSeed", out _) && !view.TryGetProperty("presentation", out _)
                         && HasExactProperties(view.GetProperty("scenario"), "id", "version", "title", "summary", "universe", "tone",
                             "guardianLabel", "conspiratorLabel", "echoLabel", "echoExplanation", "extremeActionLabel", "extremeConsequence"),
@@ -149,6 +163,17 @@ internal static partial class SealedCaseHttpTests
                     {
                         Check(outcome.GetProperty("rolls").ValueKind == JsonValueKind.Null && outcome.GetProperty("modifiers").ValueKind == JsonValueKind.Null
                             && outcome.GetProperty("reason").ValueKind == JsonValueKind.Null && !outcome.GetProperty("traceCreated").GetBoolean(), "pre-finale own outcome cannot reveal hidden contest details");
+                        Check(outcome.GetProperty("result").GetString() == "Tah se vyhodnotil"
+                            && (outcome.GetProperty("observation").ValueKind is JsonValueKind.Null or JsonValueKind.String),
+                            "resolved own outcome exposes only a generic resolution marker and own observation");
+                        if (outcome.GetProperty("observation").ValueKind == JsonValueKind.String)
+                        {
+                            Check(outcome.GetProperty("observation").GetString() is "Získal jsi novou doloženou stopu."
+                                    or "Znovu jsi narazil na již známou stopu."
+                                    or "Na tomto místě nebyla nová doložená stopa dostupná."
+                                && !outcome.GetProperty("observation").GetString()!.Contains("přesměrovan", StringComparison.Ordinal),
+                                "own investigation feedback classifies actor observations without exposing hidden delivery mechanics");
+                        }
                     }
                     var operationId = $"play-plan-{chapter}-{index}";
                     var confirmed = await clients[index].PostAsJsonAsync(prefix + "/actions", new { operationId, plan = choice });
@@ -210,6 +235,12 @@ internal static partial class SealedCaseHttpTests
                 "personal reward collection has a stable, bounded schema and includes the released case");
             var reward = rewards.GetProperty("items")[0];
             var ownOutcomeRows = released.GetProperty("ownOutcomes").EnumerateArray().ToArray();
+            var participantViews = await Task.WhenAll(clients.Select(client => client.GetFromJsonAsync<JsonElement>(prefix + "/play")));
+            Check(participantViews.SelectMany(view => view.GetProperty("ownOutcomes").EnumerateArray())
+                    .Any(outcome => outcome.GetProperty("chapter").GetInt32() == 1
+                        && outcome.GetProperty("intent").GetString() is "Investigate" or "EchoScene"
+                        && outcome.GetProperty("observation").ValueKind == JsonValueKind.String),
+                "own investigation feedback is projected from the persisted resolution observation");
             var ownPlayerId = ownOutcomeRows[0].GetProperty("actor").GetString()!;
             var confirmedPlanChapters = ownOutcomeRows.Select(outcome => outcome.GetProperty("chapter").GetInt32()).ToHashSet();
             var expectedSuccessfulPlans = released.GetProperty("finale").GetProperty("reconstruction")

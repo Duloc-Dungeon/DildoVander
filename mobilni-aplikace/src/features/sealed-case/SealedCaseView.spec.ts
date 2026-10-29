@@ -9,7 +9,7 @@ vi.mock('../identity/session', async () => {
   return { account, accountTransport: api.transport };
 });
 import SealedCaseView from './SealedCaseView.vue';
-import { legacyScenario, memoryRecord, type Play, type ScenarioSummary } from './sealedCase';
+import { legacyScenario, memoryRecord, type Plan, type Play, type ScenarioSummary } from './sealedCase';
 
 const aurors: ScenarioSummary = {
   ...legacyScenario, id: 'hp-aurors', title: 'Smrtijedi a bystrozorové: Případ zamčeného letaxu',
@@ -285,6 +285,7 @@ describe('sealed case scenario selection', () => {
     expect(view.get('.sealed-lethal').text()).not.toContain('usmrtit');
     expect(button('Výslovně potvrdit plán').attributes('disabled')).toBeDefined();
     await view.get('.sealed-lethal input').setValue(true);
+    await view.findAll('label').find(item => item.text().includes('Adresát / cíl'))!.find('select').setValue('two');
     expect(button('Výslovně potvrdit plán').attributes('disabled')).toBeUndefined();
     expect(view.text()).toContain('Kniha odjezdů nebo Podkrovní chodba');
     await button('Deník').trigger('click'); await button('Doložené stopy').trigger('click');
@@ -449,7 +450,153 @@ describe('sealed case focused views and disclosure', () => {
     await flushPromises();
     await button('Doložené stopy').trigger('click');
     await flushPromises();
-    expect(view.findAll('h3').map(heading => heading.text())).toContain('Stopa 2');
+    expect(view.findAll('.sealed-evidence-part summary').map(heading => heading.text()).some(text => text.includes('Stopa 2'))).toBe(true);
+  });
+
+  it('prepares a clue statement locally, preserves authored text, and clears it on an account change', async () => {
+    const value = play();
+    const view = await renderPlay(value);
+    const button = (label: string) => view.findAll('button').find(item => item.text().includes(label))!;
+    await button('Rozhovory').trigger('click');
+    await view.get('.sealed-message-form textarea').setValue('Moje vlastní poznámka.');
+    await button('Deník').trigger('click');
+    await button('Doložené stopy').trigger('click');
+    const requestsBefore = api.transport.mock.calls.length;
+    await button('Připravit sdílení části A').trigger('click');
+    await flushPromises();
+    expect(api.transport.mock.calls).toHaveLength(requestsBefore);
+    expect((view.get('.sealed-message-form textarea').element as HTMLTextAreaElement).value)
+      .toBe('Moje vlastní poznámka.\n\nStopa A1 · řetězec 1 · část A.\nOkruh kandidátů: Host 2.');
+    expect(view.text()).toContain('zatím se nic neodeslalo');
+    expect(view.text()).not.toContain(marker.privateSource);
+    api.setAccount({ id: 'different' });
+    await flushPromises();
+    if (view.find('.sealed-message-form textarea').exists()) {
+      expect((view.get('.sealed-message-form textarea').element as HTMLTextAreaElement).value).toBe('');
+    }
+  });
+
+  it('renders each reference from one statement without adding it to owned evidence', async () => {
+    const value = play('planning', { statements: [{ id: 'shared-two', actor: 'two', public: true, recipients: [], createdAt: 1,
+      body: 'Moje vlastní poznámka.\n\nStopa A1 · řetězec 1 · část A.\nOkruh kandidátů: Host 2.\n\nStopa B1 · řetězec 1 · část B.\nOkruh kandidátů: Host 1.' }] });
+    const view = await renderPlay(value);
+    await view.findAll('button').find(item => item.text() === 'Deník')!.trigger('click');
+    await view.findAll('button').find(item => item.text() === 'Doložené stopy')!.trigger('click');
+    const claims = view.findAll('.sealed-claims li');
+    expect(claims).toHaveLength(2);
+    expect(claims[0]!.text()).toContain('Uvádí řetězec 1, část A.');
+    expect(claims[1]!.text()).toContain('Uvádí řetězec 1, část B.');
+    expect(claims[0]!.text()).toContain('Stopu A1 máš i ve vlastním spisu.');
+    expect(claims[1]!.text()).toContain('Tuto stopu ve vlastním spisu nemáš.');
+    expect(view.get('.sealed-chain-reading').text()).toContain('Chybí B a C.');
+  });
+
+  it('distinguishes full-statement disclosures for repeated references by the same author', async () => {
+    const reference = 'Stopa A1 · řetězec 1 · část A.';
+    const view = await renderPlay(play('planning', { statements: [
+      { id: 'first', actor: 'two', public: true, recipients: [], createdAt: 1, body: `${reference}\n${reference}` },
+      { id: 'second', actor: 'two', public: true, recipients: [], createdAt: 2, body: reference },
+    ] }));
+    await view.findAll('button').find(item => item.text() === 'Deník')!.trigger('click');
+    await view.findAll('button').find(item => item.text() === 'Doložené stopy')!.trigger('click');
+    const names = view.findAll('.sealed-claim-text summary').map(summary => summary.attributes('aria-label'));
+    expect(names).toHaveLength(3);
+    expect(new Set(names).size).toBe(3);
+    expect(names.every(name => name?.includes('Host 2, řetězec 1, část A'))).toBe(true);
+    expect(view.findAll('.sealed-claim-text').every(disclosure => !disclosure.element.hasAttribute('open'))).toBe(true);
+  });
+
+  it.each([
+    { intent: 2, chapter: 1 }, { intent: 10, chapter: 1 }, { intent: 3, chapter: 1 }, { intent: 10, chapter: 2 },
+  ])('changes only the destination of an existing draft (intent $intent, chapter $chapter)', async ({ intent, chapter }) => {
+    const value = play('planning', { chapter, routes: { ARCHIV: ['SALON'] },
+      sourceSchedule: [{ family: 'C', label: 'Závěrečný záznam', location: 'SALON', releaseChapter: 3 }] });
+    const draft: Plan = { chapter: 1, expectedActionRevision: 0, confirmed: true, intent, targetId: 'two',
+      destination: null, defensePolicy: 1, shelteredPosition: true, resourceId: null,
+      condition: intent === 10 ? { kind: 0 } : null, ...(intent === 3 ? { preparedIntent: 4 } : {}) };
+    const storageKey = `dv:sealed-draft:one:${value.id}`;
+    localStorage.setItem(storageKey, JSON.stringify({ draft, personalText: 'Můj rozepsaný záměr.' }));
+    const view = await renderPlay(value);
+    const button = (label: string) => view.findAll('button').find(item => item.text().includes(label))!;
+    await button('Moje akce').trigger('click');
+    const requestsBefore = api.transport.mock.calls.length;
+    await button('Připravit přesun: Salon').trigger('click');
+    await flushPromises();
+    expect(api.transport.mock.calls).toHaveLength(requestsBefore);
+    expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ draft: { ...draft, destination: 'SALON' }, personalText: 'Můj rozepsaný záměr.' });
+    const confirmation = button('Výslovně potvrdit plán');
+    if (chapter !== draft.chapter) {
+      expect(confirmation.attributes('disabled')).toBeDefined();
+      expect(view.text()).toContain('Tento návrh se sám nepřenese.');
+    } else {
+      await confirmation.trigger('click');
+      await flushPromises();
+      const action = api.transport.mock.calls.find(([url, options]) => url.endsWith('/actions') && options.method === 'POST');
+      expect(JSON.parse(action![1].body).plan).toMatchObject({ ...draft, destination: 'SALON', summary: 'Můj rozepsaný záměr.' });
+    }
+  });
+
+  it('keeps Hold stationary and blocks a manually selected destination without changing the intent', async () => {
+    const value = play('planning', { routes: { ARCHIV: ['SALON'] },
+      sourceSchedule: [{ family: 'C', label: 'Závěrečný záznam', location: 'SALON', releaseChapter: 3 }] });
+    const storageKey = `dv:sealed-draft:one:${value.id}`;
+    localStorage.setItem(storageKey, JSON.stringify({ draft: { chapter: 1, expectedActionRevision: 0, confirmed: true, intent: 0 } }));
+    const view = await renderPlay(value);
+    await view.findAll('button').find(item => item.text() === 'Moje akce')!.trigger('click');
+    expect(view.findAll('button').some(item => item.text().startsWith('Připravit přesun:'))).toBe(false);
+    expect(view.text()).toContain('Při vyčkávání se nepřesouváš.');
+    const confirmation = view.findAll('button').find(item => item.text() === 'Výslovně potvrdit plán')!;
+    expect(confirmation.attributes('disabled')).toBeUndefined();
+    await view.findAll('label').find(item => item.text().startsWith('Místo'))!.find('select').setValue('SALON');
+    expect(confirmation.attributes('disabled')).toBeDefined();
+    expect(view.text()).toContain('Vyčkávání neumožňuje přesun.');
+    expect(JSON.parse(localStorage.getItem(storageKey)!).draft.intent).toBe(0);
+    expect(api.transport.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+  });
+
+  it('shows a future public source route before it opens and prepares only its first adjacent move', async () => {
+    const value = play('planning', {
+      chapter: 1, chapters: 3, location: 'VESTIBUL', adjacentLocations: ['SALON'],
+      locations: { VESTIBUL: 'Vstupní síň', SALON: 'Salon', KOMORA: 'Komora' },
+      routes: { VESTIBUL: ['SALON'], SALON: ['VESTIBUL', 'KOMORA'], KOMORA: ['SALON'] },
+      sourceSchedule: [{ family: 'C', label: 'Závěrečný záznam', location: 'KOMORA', releaseChapter: 3 }],
+    });
+    const view = await renderPlay(value);
+    expect(view.text()).toContain('od kapitoly 3');
+    expect(view.get('.sealed-route').text()).toContain('Vstupní síňSalonKomora');
+    const button = (label: string) => view.findAll('button').find(item => item.text().includes(label))!;
+    await button('Moje akce').trigger('click');
+    const requestsBefore = api.transport.mock.calls.length;
+    await button('Připravit přesun: Salon').trigger('click');
+    await flushPromises();
+    expect(api.transport.mock.calls).toHaveLength(requestsBefore);
+    expect(view.get('.sealed-draft').text()).toContain('Zatím není odeslaný');
+    const destination = view.findAll('label').find(item => item.text().startsWith('Místo'))!.find('select');
+    expect((destination.element as HTMLSelectElement).value).toBe('SALON');
+    expect(JSON.parse(localStorage.getItem(`dv:sealed-draft:one:${value.id}`)!).draft.intent).toBe(4);
+  });
+
+  it.each(['Echo', 'Unconscious', 'Sleeping'])('does not offer physical route plans to a player in state %s', async ownState => {
+    const view = await renderPlay(play('planning', { ownState, routes: { ARCHIV: ['SALON'] },
+      sourceSchedule: [{ family: 'C', label: 'Závěrečný záznam', location: 'SALON', releaseChapter: 3 }] }));
+    expect(view.find('.sealed-exploration').exists()).toBe(false);
+    await view.findAll('button').find(item => item.text() === 'Moje akce')!.trigger('click');
+    expect(view.find('.sealed-exploration').exists()).toBe(false);
+    expect(view.findAll('button').some(item => item.text().startsWith('Připravit přesun'))).toBe(false);
+  });
+
+  it('warns about a route that cannot fit the remaining chapter and shows safe own resolution', async () => {
+    const view = await renderPlay(play('planning', {
+      chapter: 3, chapters: 3, location: 'VESTIBUL',
+      routes: { VESTIBUL: ['SALON'], SALON: ['KOMORA'] },
+      sourceSchedule: [{ family: 'C', label: 'Závěrečný záznam', location: 'KOMORA', releaseChapter: 3 }],
+      ownOutcomes: [{ chapter: 2, actor: 'one', target: null, intent: 'Investigate', result: 'Tah se vyhodnotil',
+        eventRef: '', observation: 'Znovu jsi narazil na již známou stopu.' }],
+    }));
+    expect(view.text()).toContain('do konce nestihneš');
+    expect(view.text()).toContain('Tah se vyhodnotil');
+    expect(view.text()).toContain('Znovu jsi narazil na již známou stopu.');
+    expect(view.text()).not.toContain('výsledek zatím neznáš');
   });
 
   it('updates one atomic live phase status when a refresh advances the case', async () => {

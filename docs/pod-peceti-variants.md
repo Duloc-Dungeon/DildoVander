@@ -155,6 +155,45 @@ nepublikuje budoucí kapitoly, přiřazení hráčů ani recept na tajné důkaz
 Herní pohled přidává `scenario`, `ownObjective` a `chapterTitle`; závěr
 `finale.message` je dostupný až po odhalení výsledku.
 
+## Vyšetřovací spis a veřejný plán průzkumu
+
+Úpravy po playtestu patnácti her z 29. října 2026 zachovávají pravidla
+sabotáže, pomoci a důkazních řetězců. V deníku se vlastní stopy seskupují
+podle řetězce; úplnost vyžaduje různé části A, B a C. Teprve úplný řetězec
+ukáže průnik kandidátů. Opakované sdílení stejné stopy žádnou část nepřidává.
+
+„Připravit sdílení“ vloží stručné tvrzení do rozepsané zprávy. Hráč před
+odesláním kontroluje adresáta a obsah. Sdělení ve formátu odkazu na stopu se
+zobrazí zvlášť jako tvrzení autora; ani shodné ID z něj nedělá ověřený doklad.
+Přehled rozpozná všechny vložené odkazy i za vlastním textem v jedné zprávě.
+Samotný rozhovor nemění vlastnictví stopy. Čítač ukazuje vlastní veřejná i
+soukromá sdělení. Deset zpráv bylo omezením testovacího adaptéru, nikoli novým
+pravidlem produktu.
+
+Inicializovaný herní pohled přidává `routes` a `sourceSchedule` s veřejným
+rozpisem `{ family, label, location, releaseChapter }`, včetně budoucích
+kapitol z uloženého scénáře konkrétní hry. Neobsahuje ID ani kandidáty stop,
+přesměrování nebo skutečné zdržení doručení. Původní `sources` zůstávají
+seznamem zdrojů dostupných v aktuálním místě. Bdělá postava vidí nejkratší
+trasu a upozornění, pokud se přesun s pátráním nevejde do zbývajících tahů.
+Příprava přesunu vybere pouze první sousední místnost; plán vyžaduje vlastní
+výslovné potvrzení.
+Rozepsaný typ akce, její ostatní parametry a vlastní text při tom zůstávají
+zachované. Bez rozepsané akce se připraví pátrání s přesunem.
+
+`ownOutcomes` rozlišuje vyhodnocený tah od přijetí plánu. Volitelné
+`observation` rozlišuje nový nález, opětovné prozkoumání známé stopy a místo
+bez nové dostupné stopy, pouze podle uložené vlastní zkušenosti daného tahu.
+Neodhaluje interní výsledek střetu ani cizí tajné stavy. Nové potvrzení
+sabotáže vyžaduje zdroj a pomoc jinou cílovou postavu; starší uložené příkazy
+zůstávají vyhodnotitelné podle původního bezpečného fallbacku.
+
+Lokální syntetický náhled po buildu: `npm run preview:sealed-case --prefix
+mobilni-aplikace`. Browser regrese spisu: `npm run test:sealed-dossier:browser
+--prefix mobilni-aplikace`; původní průchody: `npm run test:sealed-case:browser
+--prefix mobilni-aplikace`. Tyto fixtures neprokazují živé AI, telefon ani
+lidské blufování.
+
 ## Redakční podklad
 
 Nové texty vycházejí z [Výchozího humoru Wand Night Stand a Kantůrkova
