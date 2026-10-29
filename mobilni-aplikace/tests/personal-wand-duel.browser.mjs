@@ -280,7 +280,13 @@ try {
     return route.continue();
   });
   const owned = await ownedContext.newPage(); owned.on('pageerror', error => errors.push(error.message));
+  async function openCharacterWand() {
+    const details = owned.locator('details.character-details').filter({ has: owned.locator('summary').filter({ hasText: 'Tvoje hůlka' }) });
+    await details.waitFor();
+    if (!await details.evaluate(element => element.open)) await details.locator(':scope > summary').click();
+  }
   await owned.goto(`${origin}/me/character`);
+  await openCharacterWand();
   const originalArtwork = owned.locator('.archive-personal-wand-art img');
   await originalArtwork.waitFor();
   assert.equal(await decodedArtwork(originalArtwork), originalImageHash);
@@ -293,6 +299,7 @@ try {
   // sends a second generation request. Recovery is an explicit owner action.
   artworkState = 'failed';
   await owned.goto(`${origin}/me/character`);
+  await openCharacterWand();
   await owned.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).waitFor();
   assert.equal(retries, 0);
   await owned.getByRole('heading', { name: ownedWand.name, exact: true }).waitFor();
@@ -302,13 +309,14 @@ try {
   assert.equal(await decodedArtwork(owned.locator('.archive-personal-wand-art img')), originalImageHash, 'explicit retry returns canonical asset');
   assert.equal(retries, 1);
   await owned.reload();
+  await openCharacterWand();
   assert.equal(await decodedArtwork(owned.locator('.archive-personal-wand-art img')), originalImageHash);
   assert.equal(await owned.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).count(), 0, 'published artwork has no regeneration action');
   assert.equal(retries, 1, 'GET/reload cannot start a second paid job');
   await owned.goto(`${origin}/me/conversation`);
-  assert.equal(await decodedArtwork(owned.locator('.archive-personal-wand-art img')), originalImageHash, 'conversation result reuses canonical bytes');
-  await capture(owned, 'mobile-session-result-artwork.png');
+  await owned.waitForURL(`${origin}/play/wand`);
   await owned.goto(`${origin}/me/keepsakes`);
+  await owned.getByText('Uložené souboje', { exact: true }).click();
   await owned.getByRole('link', { name: 'Otevřít uložený souboj', exact: true }).click();
   await owned.getByRole('heading', { name: 'Výsledek', exact: true }).waitFor();
   assert.equal(await owned.locator('.archive-duel-actions').count(), 0);
@@ -341,8 +349,9 @@ try {
   // Withdrawal affects public projections, while the original owner's saved
   // image remains privately available and unchanged.
   await owned.goto(`${origin}/me/character`);
+  await openCharacterWand();
   assert.equal(await decodedArtwork(owned.locator('.archive-personal-wand-art img')), originalImageHash);
   assert(assetReads.includes(artworkPaths.left) && assetReads.includes(artworkPaths.right), 'both public wand illustrations actually requested');
   assert.deepEqual(errors, []);
-  console.log(`PASS: two isolated browser clients consent, lock hidden choices, reveal three named-spell rounds, render distinct decoded illustrations, reuse canonical bytes across profile/result/keepsake/history, explicitly retry failure and clear withdrawn public art. Synthetic API only. Screenshots: ${screenshots}`);
+  console.log(`PASS: two isolated browser clients consent, lock hidden choices, reveal three named-spell rounds, render distinct decoded illustrations, reuse canonical bytes across profile/keepsake/history, explicitly retry failure and clear withdrawn public art. Synthetic API only. Screenshots: ${screenshots}`);
 } finally { if (browser) await browser.close(); await new Promise(resolve => server.close(resolve)); }
