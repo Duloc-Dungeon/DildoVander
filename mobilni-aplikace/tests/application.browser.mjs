@@ -247,7 +247,7 @@ try {
   await lostAccessSummary.focus();
   await page.keyboard.press('Enter');
   assert.notEqual(await lostAccess.getAttribute('open'), null);
-  assert(await lostAccess.getByRole('link', { name: 'kontaktujte podporu' }).isVisible());
+  assert(await lostAccess.getByRole('link', { name: 'kontaktuj podporu' }).isVisible());
   assert.match(await lostAccess.innerText(), /pouze vlastník služby/);
   assert.equal(await page.locator('.shell-preferences').count(), 0, 'sign-in keeps the prelaunch shell free of feature navigation and preferences');
   await page.setViewportSize({ width: 1440, height: 1000 });
