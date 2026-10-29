@@ -341,6 +341,7 @@ internal static class GameTeamEndpoints
     {
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) { return; }
         var group = app.MapGroup("/app/v1/game/teams").RequireAuthorization().RequireRateLimiting(GameRateLimit.Policy);
+        group.AddEndpointFilter<GameChangedEndpointFilter>();
         group.AddEndpointFilter(async (invocation, next) =>
         {
             var context = invocation.HttpContext;

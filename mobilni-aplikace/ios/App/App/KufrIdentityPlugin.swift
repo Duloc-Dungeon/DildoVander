@@ -122,6 +122,9 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
         let config = AccountPriorityHTTP.configuration()
         return URLSession(configuration: config, delegate: AccountNoRedirect(), delegateQueue: nil)
     }()
+    private let gameLiveSession: URLSession = {
+        URLSession(configuration: AccountGameLiveHTTP.configuration(), delegate: AccountNoRedirect(), delegateQueue: nil)
+    }()
     private var publishedCookieDigest: String?
     private var publishedPrioritySession: AccountPrioritySessionSnapshot?
     private let guestSession: URLSession = {
@@ -243,8 +246,11 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
             var ordinaryLease: AccountRequestScheduler.Lease?
             defer { if let lease = ordinaryLease { requestScheduler.release(lease) } }
             let priority = AccountTransportPolicy.priorityCancellation(path: path, method: method, deviceId: device, body: request.httpBody ?? Data())
+            let gameLiveRead = AccountTransportPolicy.gameLiveRead(path: path, method: method)
             if priority {
                 result = try await sendPriorityCancellation(request, requestId: requestId)
+            } else if gameLiveRead {
+                result = try await sendGameLiveRead(request)
             } else {
                 let commit = AccountTransportPolicy.credentialCommit(path: path, method: method)
                 if path == "/app/v1/session", method == "DELETE" {
@@ -272,13 +278,25 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                   http.url?.host == origin.host, http.url?.scheme == origin.scheme, http.url?.port == origin.port else { throw AccountError.invalidResponse }
             if [401, 403].contains(http.statusCode) { try clearOfflineSession(origin: origin) }
             try acceptAccountDeletion(path: path, method: method, status: http.statusCode, body: result.0, origin: origin)
-            if !priority { try persistAccountCookie(origin: origin) }
+            if !priority && !gameLiveRead { try persistAccountCookie(origin: origin) }
             var headers: [String: String] = [:]
             for name in ["Content-Type", "X-Twin-Media-Accepted-Bytes", "Retry-After", "X-Request-Id"] {
                 if let value = http.value(forHTTPHeaderField: name) { headers[name.lowercased()] = value }
             }
             call.resolve(["status": http.statusCode, "headers": headers, "bodyBase64": result.0.base64EncodedString()])
         }
+    }
+
+    @MainActor private func sendGameLiveRead(_ original: URLRequest) async throws -> (Data, URLResponse) {
+        guard let snapshot = publishedPrioritySession else { throw AccountError.verificationFailed }
+        let lease = try requestScheduler.acquireGameLiveRead()
+        defer { requestScheduler.releaseGameLiveRead(lease) }
+        try requestScheduler.requireCurrent(lease)
+        guard publishedPrioritySession?.binding == snapshot.binding else { throw AccountRequestScheduler.Failure.contextChanged }
+        let result = try await gameLiveSession.data(for: snapshot.authorize(original))
+        try requestScheduler.requireCurrent(lease)
+        guard publishedPrioritySession?.binding == snapshot.binding else { throw AccountRequestScheduler.Failure.contextChanged }
+        return result
     }
 
     @MainActor private func sendPriorityCancellation(_ original: URLRequest, requestId: UUID) async throws -> (Data, URLResponse) {

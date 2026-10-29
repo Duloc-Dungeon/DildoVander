@@ -206,6 +206,7 @@ app.MapApplicationUpdateEndpoints();
 Kufr.Backend.Features.Wands.MobileWandEndpoints.MapMobileWands(app);
 Kufr.Backend.Features.Wands.MobileWandWorkshopEndpoints.MapWorkshopLive(app);
 app.MapMobileGame();
+app.MapGameLive();
 app.MapSealedCase();
 app.MapMobileGameBoss();
 app.MapMobileGameProgress();

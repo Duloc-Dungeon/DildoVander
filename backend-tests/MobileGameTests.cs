@@ -344,6 +344,126 @@ internal static partial class MobileGameTests
         }
     }
 
+    private static async Task<ClientWebSocket> ConnectGameLiveAsync(HttpFixture fixture, HttpClient client,
+        string origin = "https://localhost")
+    {
+        var address = new Uri(fixture.BaseAddress + GameLiveHub.Path);
+        var socketAddress = new UriBuilder(address) { Scheme = "wss" }.Uri;
+        var socket = new ClientWebSocket();
+        socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        socket.Options.SetRequestHeader("Cookie", fixture.CookiesFor(client).GetCookieHeader(address));
+        socket.Options.SetRequestHeader("Origin", origin);
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(socketAddress, timeout.Token);
+        var handshake = Encoding.UTF8.GetBytes("{\"protocol\":\"json\",\"version\":1}\u001e");
+        await socket.SendAsync(handshake, WebSocketMessageType.Text, true, timeout.Token);
+        var response = await ReceiveGameLiveFrameAsync(socket, timeout.Token);
+        if (response != "{}\u001e")
+        {
+            socket.Dispose();
+            throw new InvalidOperationException("The game SignalR handshake was rejected.");
+        }
+        return socket;
+    }
+
+    private static async Task<(string Path, string ConnectionToken)> ConnectGameLiveLongPollingAsync(
+        HttpFixture fixture, HttpClient client)
+    {
+        using var negotiateResponse = await client.PostAsync(
+            GameLiveHub.Path + "/negotiate?negotiateVersion=1", new StringContent(""));
+        negotiateResponse.EnsureSuccessStatusCode();
+        var negotiation = await negotiateResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var connectionToken = negotiation.GetProperty("connectionToken").GetString()
+            ?? throw new InvalidOperationException("SignalR negotiation omitted its connection token.");
+        var path = GameLiveHub.Path + "?id=" + Uri.EscapeDataString(connectionToken);
+
+        var initialPoll = client.GetAsync(path, HttpCompletionOption.ResponseHeadersRead);
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        var handshake = new StringContent("{\"protocol\":\"json\",\"version\":1}\u001e",
+            Encoding.UTF8, "text/plain");
+        using var handshakeResponse = await client.PostAsync(path, handshake);
+        handshakeResponse.EnsureSuccessStatusCode();
+        using var initialResponse = await initialPoll.WaitAsync(TimeSpan.FromSeconds(5));
+        initialResponse.EnsureSuccessStatusCode();
+        var handshakeFrame = await initialResponse.Content.ReadAsStringAsync();
+        if (string.IsNullOrEmpty(handshakeFrame))
+        {
+            using var handshakePoll = await client.GetAsync(path, HttpCompletionOption.ResponseHeadersRead)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            handshakePoll.EnsureSuccessStatusCode();
+            handshakeFrame = await handshakePoll.Content.ReadAsStringAsync();
+        }
+        if (!handshakeFrame.Contains("{}\u001e", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"The game SignalR LongPolling handshake was rejected: {handshakeFrame}");
+        }
+
+        return (path, connectionToken);
+    }
+
+    private static async Task<string> ReceiveGameLiveLongPollEventAsync(Task<HttpResponseMessage> pendingPoll)
+    {
+        using var response = await pendingPoll.WaitAsync(TimeSpan.FromSeconds(5));
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    private static async Task<bool> GameLiveRejectsOriginAsync(HttpFixture fixture, HttpClient client)
+    {
+        var address = new Uri(fixture.BaseAddress + GameLiveHub.Path);
+        var socketAddress = new UriBuilder(address) { Scheme = "wss" }.Uri;
+        using var socket = new ClientWebSocket();
+        socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        socket.Options.SetRequestHeader("Cookie", fixture.CookiesFor(client).GetCookieHeader(address));
+        socket.Options.SetRequestHeader("Origin", "https://attacker.invalid");
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            await socket.ConnectAsync(socketAddress, timeout.Token);
+            var handshake = Encoding.UTF8.GetBytes("{\"protocol\":\"json\",\"version\":1}\u001e");
+            await socket.SendAsync(handshake, WebSocketMessageType.Text, true, timeout.Token);
+            var firstFrame = await ReceiveGameLiveFrameAsync(socket, timeout.Token);
+            if (firstFrame != "{}\u001e")
+            {
+                return true;
+            }
+
+            var pendingFrame = ReceiveGameLiveFrameAsync(socket, CancellationToken.None);
+            await Task.WhenAny(pendingFrame, Task.Delay(TimeSpan.FromMilliseconds(250)));
+            return pendingFrame.IsFaulted || pendingFrame.IsCompletedSuccessfully
+                || socket.State is WebSocketState.Aborted or WebSocketState.Closed;
+        }
+        catch (WebSocketException)
+        {
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return true;
+        }
+    }
+
+    private static async Task<string> ReceiveGameLiveFrameAsync(ClientWebSocket socket, CancellationToken token)
+    {
+        var buffer = new byte[4096];
+        using var message = new MemoryStream();
+        while (true)
+        {
+            var result = await socket.ReceiveAsync(buffer.AsMemory(), token);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                throw new WebSocketException("The game SignalR connection closed.");
+            }
+            message.Write(buffer, 0, result.Count);
+            if (result.EndOfMessage)
+            {
+                return Encoding.UTF8.GetString(message.ToArray());
+            }
+        }
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken token)
     {
         while (!condition())
@@ -1112,8 +1232,43 @@ internal static partial class MobileGameTests
         Check(withoutCsrf.StatusCode == HttpStatusCode.BadRequest, "account mutation rejects missing CSRF");
         var csrf = await fixture.CsrfAsync(alice);
         alice.DefaultRequestHeaders.Add("X-DV-CSRF", csrf);
+        using (var unauthenticated = fixture.Client())
+        using (var negotiate = await unauthenticated.PostAsync(
+            "/app/v1/game/live/negotiate?negotiateVersion=1", new StringContent("")))
+        {
+            Check(negotiate.StatusCode == HttpStatusCode.Unauthorized,
+                "unauthenticated clients cannot negotiate a game SignalR connection");
+        }
+        Check(await GameLiveRejectsOriginAsync(fixture, bob),
+            "game SignalR rejects an authenticated WebSocket handshake from an unapproved origin");
+        using var bobLive = await ConnectGameLiveAsync(fixture, bob);
+        using var bobLongPollClient = fixture.Client();
+        await fixture.LoginAsync(bobLongPollClient, fixture.BobId);
+        bobLongPollClient.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(bobLongPollClient));
+        var bobLongPoll = await ConnectGameLiveLongPollingAsync(fixture, bobLongPollClient);
+        using (var invalidChallenge = await alice.PostAsJsonAsync("/app/v1/game/matches", new
+        {
+            opponentId = fixture.ForeignId, mode = "quick", operationId = "http-invalid-game-live-01"
+        }))
+        {
+            Check(invalidChallenge.StatusCode == HttpStatusCode.NotFound,
+                "a rejected cross-group game command does not succeed");
+        }
+        var pendingNotification = ReceiveGameLiveFrameAsync(bobLive, CancellationToken.None);
+        var quietPeriod = await Task.WhenAny(pendingNotification, Task.Delay(TimeSpan.FromMilliseconds(250)));
+        Check(quietPeriod != pendingNotification, "a rejected game command does not notify other players");
+        var pendingLongPoll = bobLongPollClient.GetAsync(bobLongPoll.Path, HttpCompletionOption.ResponseHeadersRead);
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
         var challengeResponse = await alice.PostAsJsonAsync("/app/v1/game/matches", challengeBody);
         Check(challengeResponse.StatusCode == HttpStatusCode.Created, "CSRF protected challenge succeeds");
+        var changeFrame = await pendingNotification.WaitAsync(TimeSpan.FromSeconds(5));
+        Check(changeFrame.Contains("\"target\":\"gameChanged\"", StringComparison.Ordinal)
+            && changeFrame.Contains("\"arguments\":[]", StringComparison.Ordinal),
+            "successful game commands notify the other active player without sending game data");
+        var longPollNotification = await ReceiveGameLiveLongPollEventAsync(pendingLongPoll);
+        Check(longPollNotification.Contains("\"target\":\"gameChanged\"", StringComparison.Ordinal)
+            && longPollNotification.Contains("\"arguments\":[]", StringComparison.Ordinal),
+            "successful game commands notify a native LongPolling client without sending game data");
         var challengeJson = await challengeResponse.Content.ReadFromJsonAsync<JsonElement>();
         var matchId = challengeJson.GetProperty("id").GetString()!;
         Check(challengeJson.GetProperty("canCancel").GetBoolean(), "challenger receives correct action authority");
@@ -1338,7 +1493,7 @@ internal static partial class MobileGameTests
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
-            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
+            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapGameLive(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
             app.MapGet("/test/csrf", (HttpContext context, IAntiforgery antiforgery) => Results.Json(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
             app.MapPost("/test/login/{id}", async (string id, HttpContext context, AccountDatabase db, SignInManager<AccountUser> signIn) =>

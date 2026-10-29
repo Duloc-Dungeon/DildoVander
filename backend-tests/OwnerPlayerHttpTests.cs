@@ -134,9 +134,14 @@ internal static partial class MobileGameTests
             player.GetProperty("id").GetString() == fixture.ForeignId
             && player.GetProperty("displayName").GetString() == "Olivander"),
             "other players see the owner as a normal opponent with the fixed name");
+        using var ownerLive = await ConnectGameLiveAsync(fixture, owner);
         using var challenge = await customer.PostAsJsonAsync("/app/v1/game/matches",
             new { opponentId = fixture.ForeignId, mode = "quick", operationId = "owner-opponent-0001" });
         Check(challenge.StatusCode == HttpStatusCode.Created, "a normal player can challenge an owner without Customer role");
+        var ownerNotification = await ReceiveGameLiveFrameAsync(ownerLive, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        Check(ownerNotification.Contains("\"target\":\"gameChanged\"", StringComparison.Ordinal),
+            "an owner playing in the selected group receives the game's invalidation");
         var createdDuel = await challenge.Content.ReadFromJsonAsync<JsonElement>();
         var duelId = createdDuel.GetProperty("id").GetString()!;
         using var acceptedResponse = await owner.PostAsJsonAsync("/app/v1/game/matches/" + duelId + "/accept",
