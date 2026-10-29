@@ -53,3 +53,35 @@
 @media (prefers-reduced-motion: reduce) {
   .yolo-theatre .yolo-theatre__beam, .yolo-theatre .yolo-theatre__impact { animation: none; }
 }
+
+
+.yolo-decision { margin-block: 24px; }
+.yolo-decision h2 { margin: 0 0 16px; font-size: clamp(1.5rem, 6vw, 2rem); }
+.yolo-decision__objective { color: var(--wns-amber); }
+.yolo-decision__act { font-variant-numeric: tabular-nums; font-weight: 800; margin-top: 24px; }
+.yolo-decision__options { display: grid; gap: 12px; border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }
+.yolo-decision__options legend { margin-bottom: 12px; font-weight: 800; }
+.yolo-decision__options label { display: flex; align-items: start; gap: 12px; padding: 16px; border: 1px solid var(--wns-line); border-radius: 12px; cursor: pointer; background: var(--wns-surface); }
+.yolo-decision__options label:hover { border-color: var(--wns-muted); }
+.yolo-decision__options label.is-selected { border-color: var(--wns-amber); background: color-mix(in srgb, var(--wns-amber) 7%, var(--wns-surface)); }
+.yolo-decision__options label:focus-within { outline: 2px solid var(--wns-focus-ring); outline-offset: 3px; }
+.yolo-decision__options input { flex: 0 0 auto; margin: 5px 0 0; accent-color: var(--wns-amber); }
+.yolo-decision__options label > span { display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.yolo-decision__benefit, .yolo-decision__cost { font-size: .875rem; line-height: 1.6; }
+.yolo-decision__cost, .yolo-decision__waiting { color: var(--wns-muted); }
+.yolo-decision__options:disabled label { cursor: default; opacity: .65; }
+.yolo-decision__record { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--wns-line); }
+.yolo-decision__record ol { padding: 0; list-style: none; }
+.yolo-decision__record h4 { margin: 24px 0 12px; font-size: 1rem; }
+.yolo-decision__consequences { display: grid; gap: 20px; }
+.yolo-decision__consequences h5 { margin: 0 0 8px; font-size: 1rem; color: var(--wns-amber); }
+.yolo-decision__consequences article:last-child h5 { color: var(--wns-violet); }
+.yolo-decision__consequences p { margin-block: 8px; overflow-wrap: anywhere; }
+.yolo-decision__consequences details { font-size: .875rem; color: var(--wns-muted); }
+.yolo-decision__consequences summary { cursor: pointer; padding-block: 8px; }
+.yolo-theatre__outcome { font-size: 1.5rem; color: var(--wns-amber); }
+@media (min-width: 700px) { .yolo-decision__consequences { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.yolo-decision__origin { margin-block: var(--wns-space-12); font-size: .875rem; color: var(--wns-muted); }
+.yolo-decision__origin summary { padding-block: var(--wns-space-12); cursor: pointer; }
+.yolo-decision__origin p { overflow-wrap: anywhere; }

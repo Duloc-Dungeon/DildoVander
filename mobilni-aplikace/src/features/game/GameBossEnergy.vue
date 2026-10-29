@@ -4,7 +4,7 @@ import { computed } from 'vue';
 const props = defineProps<{ playerEnergy?: number; opponentEnergy?: number; exhibition?: boolean }>();
 const energies = computed(() => [
   { label: 'Tvoje energie', value: props.playerEnergy, max: 6 },
-  { label: 'Baronova energie', value: props.opponentEnergy, max: props.exhibition ? 3 : 5 },
+  { label: 'Baronova energie', value: props.opponentEnergy, max: 5 },
 ]);
 const format = (value?: number) => value?.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) ?? '—';
 const fraction = (value: number, max: number) => Math.max(0, Math.min(1, value / max));

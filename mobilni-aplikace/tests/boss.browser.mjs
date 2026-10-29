@@ -83,7 +83,8 @@ try {
 
     patch = { phase: 3, revision: 30, exhibition: true, playerEnergy: 2.5, opponentEnergy: .5 };
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await page.waitForFunction(() => document.querySelector('[role="meter"][aria-label="Baronova energie"]')?.getAttribute('aria-valuemax') === '3');
+    await page.waitForFunction(() => document.querySelector('[role="meter"][aria-label="Tvoje energie"]')?.getAttribute('aria-valuenow') === '2.5');
+    assert.equal(await page.getByRole('meter', { name: 'Baronova energie' }).getAttribute('aria-valuemax'), '5');
     assert.equal(await page.getByRole('meter', { name: 'Tvoje energie' }).getAttribute('aria-valuenow'), '2.5');
 
     for (const result of ['win', 'loss']) {

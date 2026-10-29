@@ -476,14 +476,14 @@ internal static partial class MobileGameTests
             }
             Check(block.Block == 2 && block.CompletedRounds == 4 && block.PlayerInventory.Values.Sum() == 6,
                 "tactical inventory resets after the first four exchanges");
-            for (var round = 4; round < 8; round++)
+            for (var round = 4; round < 8 && block.Status == "active"; round++)
             {
                 var first = reopened.Mutate(tactical.Id, "group-a", "alice", "choose",
                     new($"tactical-a-{round}", block.Revision, Choice: aliceChoices[round % 4]), 106 + round);
                 block = reopened.Mutate(tactical.Id, "group-a", "bob", "choose",
                     new($"tactical-b-{round}", first.Revision, Choice: bobChoices[round % 4]), 106 + round);
             }
-            Check(block.Status == "complete", "eight tactical exchanges complete the match");
+            Check(block.Status == "complete", "tactical match ends once no reversal is possible");
             PlayTacticalMatch(reopened, "tactical-progression-one", 500);
             PlayTacticalMatch(reopened, "tactical-progression-two", 600);
             var configured = reopened.Challenge("group-a", "alice", "Alice", "bob", "Bob",
@@ -756,7 +756,7 @@ internal static partial class MobileGameTests
         var current = store.Mutate(challenge.Id, "group-a", "bob", "accept", new($"{prefix}-accept", challenge.Revision), now + 1);
         string[] left = ["strike", "trick", "shield", "strike"];
         string[] right = ["trick", "shield", "strike", "trick"];
-        for (var round = 0; round < 8; round++)
+        for (var round = 0; round < 8 && current.Status == "active"; round++)
         {
             var first = store.Mutate(challenge.Id, "group-a", "alice", "choose",
                 new($"{prefix}-left-{round}", current.Revision, Choice: left[round % 4]), now + 2 + round);
@@ -766,6 +766,18 @@ internal static partial class MobileGameTests
         Check(current.Status == "complete", "tactical progression match completes");
     }
 
+    internal static GameMatchView PlayYoloDecisions(GameStore store, GameMatchView current, string prefix,
+        string group = "group-a", string left = "alice", string right = "bob")
+    {
+        string[] choices = ["levitate", "protect", "finish"];
+        for (var act = 0; act < 3; act++)
+        {
+            var first = store.Mutate(current.Id, group, left, "choose", new($"{prefix}-left-{act}", current.Revision, Choice: choices[act]), 902 + act);
+            current = store.Mutate(current.Id, group, right, "choose", new($"{prefix}-right-{act}", first.Revision, Choice: choices[act]), 902 + act);
+        }
+        return current;
+    }
+
     private static void VerifyYoloStoreLifecycle(GameStore store, string dataRoot)
     {
         var playerBefore = store.Lobby("group-a", "alice", "Alice", []).Player;
@@ -773,8 +785,9 @@ internal static partial class MobileGameTests
             new("bob", "yolo", "yolo-store-challenge-1", TasksEnabled: true, AdultConsent: true), 900);
         var generating = store.Mutate(challenge.Id, "group-a", "bob", "accept",
             new("yolo-store-accept-1", challenge.Revision, TasksEnabled: true, AdultConsent: true), 901);
-        Check(generating.Status == "generating" && generating.TotalRounds == 0 && generating.Yolo?.Status == "generating",
-            "accepted YOLO match enters async generation without round choices");
+        Check(generating.Status == "active" && generating.TotalRounds == 0 && generating.Yolo?.Status == "choosing",
+            "accepted YOLO match starts three simultaneous decisions");
+        generating = PlayYoloDecisions(store, generating, "store-first");
         Check(store.TryClaimYolo(challenge.Id, generating.Revision)
             && !store.TryClaimYolo(challenge.Id, generating.Revision), "YOLO provider job has one durable active claim");
         using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
@@ -801,7 +814,7 @@ internal static partial class MobileGameTests
         Check(frozen?.Challenger.Name == "Alena" && repeatedFreeze?.Challenger.Name == "Alena",
             "YOLO retry uses the first frozen public profile snapshot");
         store.CompleteYolo(challenge.Id, generating.Revision,
-            new("bob", "Boris wins the fictional bout.", [new("A fictional exchange.", ["alice:name", "bob:name"]), new("A second fictional exchange.", ["alice:universe", "bob:universe"]), new("The closing fictional exchange.", ["alice:wandName", "bob:wandName"])]));
+            new("bob", "Boris wins the fictional bout.", [new("A fictional exchange.", ["alice:name", "bob:name"]), new("A second fictional exchange.", ["alice:universe", "bob:universe"]), new("The closing fictional exchange.", ["alice:wandName", "bob:wandName"])], DecisiveChoice: "bob:3"));
         var completed = store.Read(challenge.Id, "group-a", "alice");
         Check(completed.Status == "complete" && completed.Yolo?.WinnerId == "bob" && completed.XpAwarded == 0
             && completed.PartyTask?.Status == "pending"
@@ -822,6 +835,7 @@ internal static partial class MobileGameTests
             new("bob", "yolo", "yolo-store-challenge-2"), 910);
         var retrying = store.Mutate(retryChallenge.Id, "group-a", "bob", "accept",
             new("yolo-store-accept-2", retryChallenge.Revision), 911);
+        retrying = PlayYoloDecisions(store, retrying, "store-retry");
         Check(store.TryClaimYolo(retryChallenge.Id, retrying.Revision), "second YOLO job can claim independently");
         store.FailYolo(retryChallenge.Id, retrying.Revision, "yolo_generation_failed");
         var failed = store.Read(retryChallenge.Id, "group-a", "alice");
@@ -848,6 +862,65 @@ internal static partial class MobileGameTests
             new("alice", "Cancelled result should not commit.", []));
         Check(cancelled.Status == "cancelled" && store.Read(retryChallenge.Id, "group-a", "alice").Yolo?.Status == "cancelled",
             "cancel wins atomically over a pending provider completion");
+    }
+
+    private sealed class PreparedGameProvider : IGameYoloProvider
+    {
+        public Task<GameYoloSetting> PrepareAsync(GameYoloProfile left, GameYoloProfile right, CancellationToken token) =>
+            Task.FromResult(GameYoloPreparationTests.Setting());
+        public Task<GameYoloResult> GenerateAsync(GameYoloProfile left, GameYoloProfile right, CancellationToken token) =>
+            Task.FromResult(new GameYoloResult(null, "Oba splnili cíl díky přípravě.",
+                [new("První plány.", []), new("Příprava plánů.", []), new("Oba splnili cíl.", [])], "draw", $"{left.Id}:3"));
+    }
+
+    internal static async Task RunYoloDecisionHttpAsync()
+    {
+        await using var fixture = await HttpFixture.StartAsync(withKeepsakes: true, yoloProvider: new PreparedGameProvider());
+        using var alice = fixture.Client();
+        using var bob = fixture.Client();
+        await fixture.LoginAsync(alice, fixture.AliceId);
+        await fixture.LoginAsync(bob, fixture.BobId);
+        alice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(alice));
+        bob.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(bob));
+        fixture.SetGameXp(fixture.AliceId, 30, 3);
+        fixture.SetGameXp(fixture.BobId, 30, 3);
+        using var challengeResponse = await alice.PostAsJsonAsync("/app/v1/game/matches", new { opponentId = fixture.BobId, mode = "yolo", operationId = Guid.NewGuid().ToString("N") });
+        Check(challengeResponse.StatusCode == HttpStatusCode.Created, "two HTTP participants can start YOLO");
+        var challenge = await challengeResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var path = "/app/v1/game/matches/" + challenge.GetProperty("id").GetString();
+        using var accepted = await bob.PostAsJsonAsync(path + "/accept", new { operationId = Guid.NewGuid().ToString("N"), expectedRevision = challenge.GetProperty("revision").GetInt64() });
+        Check(accepted.StatusCode == HttpStatusCode.OK, "opponent accepts decision scenario over HTTP");
+        var state = await accepted.Content.ReadFromJsonAsync<JsonElement>();
+        Check(state.GetProperty("status").GetString() == "preparing", "HTTP acceptance queues AI scenario preparation");
+        for (var attempt = 0; attempt < 100 && state.GetProperty("status").GetString() != "active"; attempt++)
+        {
+            await Task.Delay(20);
+            state = await bob.GetFromJsonAsync<JsonElement>(path);
+        }
+        Check(state.GetProperty("status").GetString() == "active", "prepared AI scenario becomes playable over HTTP");
+        string[] choices = ["levitate", "protect", "finish"];
+        for (var act = 0; act < 3; act++)
+        {
+            var operation = Guid.NewGuid().ToString("N");
+            var command = new { operationId = operation, expectedRevision = state.GetProperty("revision").GetInt64(), choice = choices[act] };
+            using var first = await alice.PostAsJsonAsync(path + "/choose", command);
+            Check(first.StatusCode == HttpStatusCode.OK, "first HTTP choice saved");
+            var locked = await first.Content.ReadFromJsonAsync<JsonElement>();
+            using var replay = await alice.PostAsJsonAsync(path + "/choose", command);
+            Check(replay.StatusCode == HttpStatusCode.OK, "replayed HTTP confirmation is idempotent");
+            var opponentView = await bob.GetFromJsonAsync<JsonElement>(path);
+            var scenario = opponentView.GetProperty("yolo").GetProperty("scenario");
+            Check(scenario.GetProperty("revealed").GetArrayLength() == act && scenario.GetProperty("opponentChoiceLocked").GetBoolean(),
+                "opponent HTTP snapshot exposes only the lock and prior completed acts");
+            using var second = await bob.PostAsJsonAsync(path + "/choose", new { operationId = Guid.NewGuid().ToString("N"), expectedRevision = locked.GetProperty("revision").GetInt64(), choice = choices[act] });
+            Check(second.StatusCode == HttpStatusCode.OK, "second HTTP choice reveals both consequences");
+            state = await second.Content.ReadFromJsonAsync<JsonElement>();
+            Check(state.GetProperty("yolo").GetProperty("scenario").GetProperty("revealed").GetArrayLength() == act + 1,
+                "joint HTTP reveal contains exactly the completed acts");
+        }
+        Check(state.GetProperty("status").GetString() == "generating" && state.GetProperty("xpAwarded").GetInt32() == 0,
+            "only sixth confirmation starts AI resolution and never awards XP");
+        Console.WriteLine("YOLO two-client HTTP decision/replay/privacy checks passed without paid calls.");
     }
 
     internal static async Task RunHttpAsync()
@@ -1209,7 +1282,7 @@ internal static partial class MobileGameTests
 
         internal static async Task<HttpFixture> StartAsync(bool withLiveTransport = false, GptLiveClient? liveClient = null,
             TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true,
-            bool includeLiveDelegations = true, bool withKeepsakes = false)
+            bool includeLiveDelegations = true, bool withKeepsakes = false, IGameYoloProvider? yoloProvider = null)
         {
             var root = Path.Combine(Path.GetTempPath(), "mobile-game-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
             using var rsa = RSA.Create(2048);
@@ -1246,6 +1319,7 @@ internal static partial class MobileGameTests
             builder.Services.AddAccountIdentity(builder.Configuration);
             builder.Services.AddLaunchManagement(builder.Configuration);
             builder.Services.AddMobileGame(builder.Configuration);
+            if (yoloProvider is not null) builder.Services.AddSingleton<IGameYoloProvider>(yoloProvider);
             if (withKeepsakes)
                 builder.Services.AddSingleton(new KeepsakeStore(builder.Configuration, TimeProvider.System));
             builder.Services.AddSingleton(new CharacterProfileStore(Path.Combine(root, "profiles")));
@@ -1559,7 +1633,7 @@ internal static partial class MobileGameTests
         }
         internal Task SeedWandTierAsync(string owner, int tier) =>
             MobileWandTests.Seed(Profiles, Wands, owner, tier);
-        internal void SetGameXp(string owner, int xp)
+        internal void SetGameXp(string owner, int xp, int matches = 0)
         {
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
                 { DataSource = Path.Combine(root, "accounts", "mobile-game.sqlite") }.ToString());
@@ -1567,12 +1641,13 @@ internal static partial class MobileGameTests
             using var command = connection.CreateCommand();
             command.CommandText = """
                 INSERT INTO game_players(group_id,user_id,xp,matches)
-                VALUES($group,$user,$xp,0)
-                ON CONFLICT(group_id,user_id) DO UPDATE SET xp=$xp
+                VALUES($group,$user,$xp,$matches)
+                ON CONFLICT(group_id,user_id) DO UPDATE SET xp=$xp,matches=MAX(game_players.matches,$matches)
                 """;
             command.Parameters.AddWithValue("$group", ActiveGroupId);
             command.Parameters.AddWithValue("$user", owner);
             command.Parameters.AddWithValue("$xp", xp);
+            command.Parameters.AddWithValue("$matches", matches);
             command.ExecuteNonQuery();
         }
         internal async Task<string> CreateBossAttemptAsync()
