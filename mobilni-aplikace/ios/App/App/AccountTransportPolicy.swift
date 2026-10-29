@@ -610,7 +610,10 @@ enum AccountTransportPolicy {
     }
 
     private static func gameOpponentWandArtwork(path: String, method: String) -> Bool {
-        method == "GET" && path.range(of: "^/app/v1/game/matches/[0-9a-f]{32}/opponent/wand-artwork\\?revision=[0-9a-fA-F]{64}\\z", options: .regularExpression) != nil
+        method == "GET" && (
+            path.range(of: "^/app/v1/game/matches/[0-9a-f]{32}/opponent/wand-artwork\\?revision=[0-9a-fA-F]{64}\\z", options: .regularExpression) != nil
+                || path.range(of: "^/app/v1/game/teams/[0-9a-f]{32}/opponents/[0-9a-f]{32}/wand-artwork\\?revision=[0-9a-fA-F]{64}\\z", options: .regularExpression) != nil
+        )
     }
 
     static func account(path: String, method: String) -> Bool {
@@ -783,6 +786,7 @@ enum AccountTransportPolicy {
     }
 
     private static func sealedCase(path: String, method: String) -> Bool {
+        if path == "/app/v1/sealed-cases/scenarios" { return method == "GET" }
         if path == "/app/v1/sealed-cases" { return method == "POST" }
         if path == "/app/v1/sealed-cases/current" { return method == "GET" }
         if sealedCasePortrait(path: path, method: method) { return true }
