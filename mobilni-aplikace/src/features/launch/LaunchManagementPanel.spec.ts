@@ -18,7 +18,52 @@ beforeEach(() => {
   api.request.mockImplementation(async (path: string) => path.endsWith('/artwork') ? { jobs: [] } : path.endsWith('/audit') ? { entries: [] } : launch());
 });
 
-describe('Spuštění aplikace', () => {
+describe('Příprava večera', () => {
+  it.each([false, true])('saves from messages and exposes its own failure without opening unrelated settings (failure=%s)', async failure => {
+    api.request.mockImplementation(async (path: string, method?: string, body?: Record<string, unknown>) => {
+      if (path === '/app/v1/admin/launch' && method === 'PUT') {
+        if (failure) throw new Error('Uložení se nepodařilo.');
+        return { ...launch(), revision: 8, teaser: body?.teaser };
+      }
+      return path.endsWith('/artwork') ? { jobs: [] } : path.endsWith('/audit') ? { entries: [] } : launch();
+    });
+    const view = wrapper();
+    try {
+      await flushPromises();
+      await view.get('#launch-teaser').setValue('Dveře se brzy otevřou.');
+      await view.findAll('button').find(button => button.text() === 'Uložit plán i zprávy')!.trigger('click');
+      await flushPromises();
+      expect(api.request).toHaveBeenCalledWith('/app/v1/admin/launch', 'PUT', expect.objectContaining({ expectedRevision: 7, teaser: 'Dveře se brzy otevřou.' }));
+      expect(api.request.mock.calls.filter(([, method]) => method === 'PUT')).toHaveLength(1);
+      expect(view.findAll<HTMLDetailsElement>('details.launch-admin__disclosure')[0].element.open).toBe(false);
+      if (failure) {
+        expect(view.findAll<HTMLDetailsElement>('details.launch-admin__disclosure')[1].element.open).toBe(true);
+        expect((view.get('#launch-teaser').element as HTMLTextAreaElement).value).toBe('Dveře se brzy otevřou.');
+      } else {
+        expect(view.text()).toContain('Plán a krátké sdělení jsou uložené.');
+      }
+    } finally { view.unmount(); }
+  });
+
+  it('keeps advanced settings collapsed and preserves an unsaved message draft', async () => {
+    const view = wrapper();
+    try {
+      await flushPromises();
+      const disclosures = view.findAll<HTMLDetailsElement>('details.launch-admin__disclosure');
+      expect(disclosures).toHaveLength(5);
+      expect(disclosures.every(item => !item.element.open)).toBe(true);
+
+      const messageDisclosure = disclosures.find(item => item.text().includes('Zprávy a osobní věta'))!;
+      await messageDisclosure.get('summary').trigger('click');
+      const teaser = view.get('#launch-teaser');
+      await teaser.setValue('Zpráva zůstává rozepsaná.');
+      await messageDisclosure.get('summary').trigger('click');
+      await messageDisclosure.get('summary').trigger('click');
+      expect((view.get('#launch-teaser').element as HTMLTextAreaElement).value).toBe('Zpráva zůstává rozepsaná.');
+      expect(api.request.mock.calls.some(([path]) => path === '/app/v1/admin/launch/personalization-preview')).toBe(false);
+    } finally { view.unmount(); }
+  });
+
   it('keeps launch controls available when optional portrait or audit data is unavailable', async () => {
     api.request.mockImplementation(async (path: string) => {
       if (path.endsWith('/artwork') || path.endsWith('/audit')) throw new Error('Service unavailable');
@@ -48,6 +93,7 @@ describe('Spuštění aplikace', () => {
       await view.get('#launch-teaser').setValue('Připraveno na večer.');
       await view.get('.launch-admin__schedule button').trigger('click');
       await flushPromises();
+      expect(view.find<HTMLDetailsElement>('details.launch-admin__disclosure').element.open).toBe(true);
       await view.findAll('button').find(button => button.text() === 'Ověřit totožnost přístupovým klíčem')!.trigger('click');
       await flushPromises();
       expect(api.reauthenticate).toHaveBeenCalledWith('reauth');

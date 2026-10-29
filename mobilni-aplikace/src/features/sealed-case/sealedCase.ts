@@ -9,23 +9,57 @@ export interface Plan {
 }
 export interface PlayerCard { id: string; name: string; seat: string; state: string; location: string | null; mask: string | null; portraitUrl: string | null; isAi?: boolean }
 export interface Item { id: string; name: string; ownerId: string; transferable: boolean }
-export interface Clue { id: string; chain: string; family: string; candidates: string[]; sourceEvent: string }
+export interface Clue { id: string; chain: string; family: string; candidates: string[]; sourceEvent: string; label?: string | null; description?: string | null }
+export interface PublicSourceSchedule { family: string; label: string; location: string; releaseChapter: number }
+export interface ScenarioSummary {
+  id: string; version: string; title: string; summary: string; universe: string; tone: string;
+  guardianLabel: string; conspiratorLabel: string; echoLabel: string; echoExplanation: string;
+  extremeActionLabel: string; extremeConsequence: string;
+}
+export interface ScenarioCatalog { defaultScenarioId: string; scenarios: ScenarioSummary[] }
+export interface CreateCaseRequest { operationId: string; expectedPlayers: number; variant: string; scenarioId?: string }
+export const defaultScenarioId = 'POD_PECETI_POSLEDNI_ZVON_V1';
+// Older stored cases and servers still describe the original scenario. New
+// scenario content comes only from the public server catalog, never a secret pack.
+export const legacyScenario: ScenarioSummary = {
+  id: defaultScenarioId, version: '1.0', title: 'Případ posledního zvonu',
+  summary: 'Pečeť byla narušena před začátkem vašich tahů. Případ odhalí doložené stopy a společné hlasování.',
+  universe: 'Harry Potter', tone: '', guardianLabel: 'Strážci', conspiratorLabel: 'Spiklenci',
+  echoLabel: 'Ozvěna', echoExplanation: 'Jako Ozvěna dál pátráš, předáváš vlastní svědectví a hlasuješ. Nemůžeš fyzicky zasahovat.',
+  extremeActionLabel: 'Krajní čin',
+  extremeConsequence: 'Tento čin může usmrtit postavu. Výslovně potvrzuji smrtící úmysl a možnou spotřebu jediného Krajního činu.',
+};
 export interface Choice { id: string; label: string; benefit: string; cost: string; risk: string; plan: Plan }
-export interface Recap { chapter: number; actor: string; target: string | null; intent: string; result: string; eventRef: string; reason?: string | null; rolls?: { attack: number; defense: number; attackTotal: number; defenseTotal: number } | null; traceCreated?: boolean }
+export interface Recap { chapter: number; actor: string; target: string | null; intent: string; result: string; eventRef: string; reason?: string | null; rolls?: { attack: number; defense: number; attackTotal: number; defenseTotal: number } | null; traceCreated?: boolean; observation?: string | null }
 export interface Play {
   id: string; phase: string; serverNow: number; chapter: number; chapters: number;
   planningEndsAt: number | null; quietEndsAt: number | null; finaleEndsAt: number | null;
   expectedPlayers: number; readyPlayers: number; ownId: string; ownReady: boolean; ownScenarioConsent: boolean;
   canManage: boolean; canStart: boolean; canJoin?: boolean; canManageAi?: boolean; aiAvailable?: boolean; lobbyRevision: number | null; ownState: string;
   ownTeam: string | null; ownKit: string | null; teamMembers: string[]; location: string | null;
+  scenario?: ScenarioSummary; ownObjective?: string | null; chapterTitle?: string | null;
   locations: Record<string, string>; adjacentLocations: string[]; players: PlayerCard[];
+  routes?: Record<string, string[]> | null; sourceSchedule?: PublicSourceSchedule[] | null;
   ownPlan: (Plan & { id: string; revision: number; actorId: string }) | null; choices: Choice[];
   clues: Clue[]; sources: { id: string; label: string }[]; ownOversight: boolean; ownItems: Item[]; visibleItems: Item[]; notes: string[];
   statements: { id: string; actor: string; body: string; recipients: string[]; public: boolean; createdAt: number }[];
   ownOutcomes: Recap[]; publicNarration?: { text: string }; privateNarration?: { text: string };
   finale: { phase: string; ballotSize: number; ownSubmitted: boolean; ownBallot: string[];
     runoffCandidates: string[]; runoffPlaces: number; selected: string[] | null; winner: string | null;
-    conspirators: string[] | null; reconstruction: Recap[] | null } | null;
+    conspirators: string[] | null; reconstruction: Recap[] | null; message?: string | null } | null;
+}
+export const scenarioFor = (play: Play) => play.scenario ?? legacyScenario;
+export const factionLabel = (play: Play, team = play.ownTeam) => team === 'Conspirator'
+  ? scenarioFor(play).conspiratorLabel : scenarioFor(play).guardianLabel;
+export function memoryRecord(play: Play, personal: boolean, medallion: unknown) {
+  const scenario = scenarioFor(play);
+  return {
+    title: `Pod pečetí · ${scenario.title}`, scenarioId: scenario.id, scenarioVersion: scenario.version,
+    caseId: play.id, visibility: personal ? 'Soukromá vzpomínka' : 'Veřejná rekonstrukce',
+    winner: play.finale?.winner, selected: play.finale?.selected, conspirators: play.finale?.conspirators,
+    reconstruction: play.finale?.reconstruction,
+    ...(personal ? { ownId: play.ownId, medallion, ownNotes: play.notes, acquiredFacts: play.clues } : {}),
+  };
 }
 export class SealedError extends Error { constructor(public code: string, public status: number) { super(code); } }
 export const operation = () => secureUuid();
@@ -53,11 +87,14 @@ export function errorText(error: unknown): string {
     sealed_case_lobby_full: 'Všechna místa už mají své hosty.',
     sealed_case_roster_invalidated: 'Obsazení se změnilo. Organizátor musí připravit nový případ.',
     sealed_case_scenario_consent_required: 'Každý hráč musí přijmout scénářovou minulost a závěrečné odhalení.',
+    sealed_case_scenario_unknown: 'Vybraný scénář není dostupný. Obnov nabídku a vyber scénář znovu.',
     chapter_locked: 'Tato kapitola už plán nepřijímá. Platí poslední potvrzená verze.',
     wrong_chapter: 'Návrh patří do jiné kapitoly. Do další se sám nepřenese.',
     action_revision_conflict: 'Mezitím byla potvrzena jiná verze tvého plánu. Porovnej ji se svým návrhem.',
     sealed_case_ballot_closed: 'Toto hlasovací okno už je uzavřené.',
     sealed_case_invalid_ballot: 'Vyber přesný počet různých ostatních hráčů, nebo se zdrž hlasu.',
+    sealed_case_invalid_plan: 'Plán není proveditelný v této podobě. Zkontroluj typ akce, cíl a zdroj a připrav opravenou verzi.',
+    sealed_case_invalid_target: 'Tato postava není pro tvůj tah dostupným cílem. Obnov stav a vyber cíl z nabídky.',
     case_not_found: 'Tento případ už není dostupný. Mohl být ukončen kvůli soukromí některého hráče.',
   };
   return copy[code] ?? 'Spojení se nevrátilo v pořádku. Uložený plán zůstává na serveru; návrh zatím neodesílej pod novým potvrzením.';

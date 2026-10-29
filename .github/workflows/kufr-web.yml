@@ -3,6 +3,10 @@ name: Check Kufr mobile web
 on:
   workflow_call:
     inputs:
+      reuse-validation:
+        description: Internal verified same-tree PR test reuse; default runs every test
+        type: boolean
+        default: false
       share-web-dist:
         type: boolean
         default: false
@@ -35,7 +39,9 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix ../contracts
       - run: npm test --prefix ../contracts
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
       - run: npm test
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
       - run: npm run build
       - name: Share compiled application with site checks
         if: inputs.share-web-dist
@@ -48,7 +54,9 @@ jobs:
           retention-days: 1
       - run: bash -n scripts/build-ios-ipa.sh
       - run: python3 -m unittest discover -s scripts -p 'test_publish_*.py'
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
       - name: Test app-only iOS signing settings and source restoration
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: python3 -m unittest discover -s scripts -p 'test_configure_ios_signing.py'
       - name: Package web build with provenance
         working-directory: .

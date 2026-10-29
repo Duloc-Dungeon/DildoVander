@@ -39,6 +39,19 @@ internal sealed record SealedAction(string Id, string ActorId, int Chapter, Seal
         if (Condition is { Kind: SealedConditionKind.VerifiedSleep } && string.IsNullOrWhiteSpace(Condition.EvidenceId))
             throw new SealedCaseRuleException("Verified sleep requires evidence id.");
     }
+
+    internal void ValidateForSubmission()
+    {
+        Validate();
+        if (Intent == SealedIntent.Sabotage && string.IsNullOrWhiteSpace(ResourceId))
+        {
+            throw new SealedCaseRuleException("SABOTAGE requires a selected source resource.");
+        }
+        if (Intent == SealedIntent.Help && (string.IsNullOrWhiteSpace(TargetId) || TargetId == ActorId))
+        {
+            throw new SealedCaseRuleException("HELP requires an explicit other-player target.");
+        }
+    }
 }
 
 internal sealed class SealedActionBook
@@ -46,7 +59,7 @@ internal sealed class SealedActionBook
     internal Dictionary<(string Actor, int Chapter), SealedAction> Orders { get; } = [];
     internal SealedAction Confirm(SealedAction action, string authenticatedActor, long now, long deadline, long expectedRevision)
     {
-        action.Validate();
+        action.ValidateForSubmission();
         if (authenticatedActor != action.ActorId) throw new SealedCaseRuleException("Actor must match authenticated session.");
         var key = (action.ActorId, action.Chapter);
         Orders.TryGetValue(key, out var previous);

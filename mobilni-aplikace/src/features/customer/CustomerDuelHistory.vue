@@ -4,11 +4,10 @@ import { RouterLink } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import { account, accountRequest, accountDeletionRequested, offlineSession } from '../identity/session';
-import { customerCopy } from '../../application/customerCopy';
 import { isUuid } from '../archive/client';
 import { projectDuel, duelWandName, duelStates, type Duel } from '../archive/showContracts';
 const items = ref<Duel[]>([]); const busy = ref(false); const failed = ref(false);
-const en = computed(() => customerCopy.language.value === 'en');
+const en = false;
 const statesEn: Record<string, string> = { AwaitingParticipants: 'Waiting for both participants.', Ready: 'Ready for the event operator to start.', Running: 'Battle in progress.', Completed: 'Battle completed.', Cancelled: 'Battle cancelled. No winner.', Interrupted: 'Battle interrupted. No winner.' };
 const allowed = computed(() => !!account.value && !accountDeletionRequested.value && !offlineSession.value);
 let sequence = 0; let controller = new AbortController();
@@ -34,12 +33,12 @@ onBeforeUnmount(() => { clear(); document.removeEventListener('visibilitychange'
 </script>
 <template>
   <section v-if="allowed" class="page-stack" aria-labelledby="customer-duels-title">
-    <h2 id="customer-duels-title">{{ en ? 'Your battles' : 'Tvoje souboje' }}</h2>
-    <p>{{ en ? 'Saved battles keep the characters, wands and spells used at the time.' : 'Uložené souboje zachovávají tehdejší postavy, hůlky a kouzla.' }}</p>
-    <AwButton variant="secondary" :busy="busy" @click="refresh">{{ en ? 'Refresh battles' : 'Obnovit souboje' }}</AwButton>
-    <AwNotice v-if="failed" tone="warning">{{ en ? 'Battle history could not be verified. Refresh to try again.' : 'Historii soubojů se nepodařilo ověřit. Zkus ji znovu obnovit.' }}</AwNotice>
-    <p v-else-if="!busy && !items.length">{{ en ? 'No battles are saved yet. The event operator can invite two characters with completed wand assignments.' : 'Zatím tu není uložený souboj. Obsluha večera může pozvat dvě postavy s dokončeným výběrem hůlky.' }}</p>
-    <ul v-else class="customer-duel-history"><li v-for="duel in items" :key="duel.id"><h3>{{ duel.left.displayName }} × {{ duel.right.displayName }}</h3><p>{{ duelWandName(duel.left) }} · {{ duelWandName(duel.right) }}</p><p>{{ en ? statesEn[duel.state] : duelStates[duel.state] }}</p><p v-if="duel.result">{{ duel.result.leftPoints }} : {{ duel.result.rightPoints }} · {{ duel.result.ending }}</p><p v-if="duel.partyTask"><strong>{{ duel.partyTask.title }}</strong> · {{ duel.partyTask.text }}</p><RouterLink :to="`/archive/duel?account=1&duel=${duel.id}`">{{ en ? 'Open saved battle' : 'Otevřít uložený souboj' }}</RouterLink></li></ul>
+    <h2 id="customer-duels-title">Tvoje souboje</h2>
+    <p>Uložené souboje zachovávají tehdejší postavy, hůlky a kouzla.</p>
+    <AwButton variant="secondary" :busy="busy" @click="refresh">Obnovit souboje</AwButton>
+    <AwNotice v-if="failed" tone="warning">Historii soubojů se nepodařilo ověřit. Zkus ji znovu obnovit.</AwNotice>
+    <p v-else-if="!busy && !items.length">Zatím tu nemáš uložený žádný souboj. Obsluha večera může pozvat dvě postavy s dokončeným výběrem hůlky.</p>
+    <ul v-else class="customer-duel-history"><li v-for="duel in items" :key="duel.id"><h3>{{ duel.left.displayName }} × {{ duel.right.displayName }}</h3><p>{{ duelWandName(duel.left) }} · {{ duelWandName(duel.right) }}</p><p>{{ duelStates[duel.state] }}</p><p v-if="duel.result">{{ duel.result.leftPoints }} : {{ duel.result.rightPoints }} · {{ duel.result.ending }}</p><p v-if="duel.partyTask"><strong>{{ duel.partyTask.title }}</strong> · {{ duel.partyTask.text }}</p><RouterLink :to="`/archive/duel?account=1&duel=${duel.id}`">Otevřít uložený souboj</RouterLink></li></ul>
   </section>
 </template>
 <style scoped>

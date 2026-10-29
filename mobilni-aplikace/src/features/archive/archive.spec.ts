@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createMemoryHistory, createRouter } from 'vue-router';
-import ArchiveView from './ArchiveView.vue';
 import KeepsakeView from './KeepsakeView.vue';
 import { account, offlineSession } from '../identity/session';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
@@ -18,8 +17,8 @@ const linkedProjection = { ...view, readOnly: true, accountLinked: true, accessK
 const partialReadiness = { state: 'partial', reason: 'reconciliation_required', canRetry: false, shouldPoll: true, hasStory: true, hasArtwork: false };
 const readyReadiness = { state: 'ready', reason: null, canRetry: false, shouldPoll: false, hasStory: true, hasArtwork: true };
 let wrappers: VueWrapper[] = [];
-async function render(component: typeof ArchiveView | typeof KeepsakeView, location: string) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/archive', component: ArchiveView }, { path: '/keepsake/', component: KeepsakeView }, { path: '/other', component: { template: '<p>other</p>' } }] });
+async function render(component: typeof KeepsakeView, location: string) {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/keepsake/', component: KeepsakeView }, { path: '/other', component: { template: '<p>other</p>' } }] });
   await router.push(location); await router.isReady();
   const wrapper = mount(component, { attachTo: document.body, global: { plugins: [router] } }); wrappers.push(wrapper); await flushPromises();
   return { wrapper, router };
@@ -37,7 +36,7 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new Event('close')); };
 });
 afterEach(() => { for (const wrapper of wrappers) wrapper.unmount(); wrappers = []; offlineSession.value = false; interfaceLanguagePreference.setScope(null); interfaceLanguagePreference.setLanguage('cs'); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.innerHTML = ''; });
-describe('real archive SFC routes', () => {
+describe('keepsake detail routes', () => {
   it('keeps ready artwork labelled as loading until its asset download finishes in either language', async () => {
     account.value = { id: 'account-a', displayName: 'Current account', roles: ['Viewer'] };
     let finishAsset!: (response: Response) => void;
@@ -80,15 +79,6 @@ describe('real archive SFC routes', () => {
     expect(wrapper.findAll('button').find(button => button.text() === 'Potvrdit smazání')!.attributes('disabled')).toBeDefined();
     expect(wrapper.find('#archive-delete-confirm').exists()).toBe(true);
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
-  });
-  it('public route only reads a credential-free gallery, renders escaped identity and never grants private tools', async () => {
-    const fetchMock = vi.fn(async (_path: string, _init?: RequestInit) => Response.json({ schemaVersion: 1, evening: { id }, latest: null,
-      items: [{ locator: id, editionId: id, officialName: '<script>catalog</script>', slot: 1, synthetic: true, story: { title: 'Edition', text: 'Story' }, assets: [] }] }));
-    vi.stubGlobal('fetch', fetchMock);
-    const { wrapper } = await render(ArchiveView, '/archive');
-    expect(wrapper.text()).toContain('<script>catalog</script>'); expect(wrapper.find('script').exists()).toBe(false);
-    expect(wrapper.text()).toContain('SYNTETICKÁ UKÁZKA'); expect(wrapper.find('input[type=file]').exists()).toBe(false);
-    expect(fetchMock).toHaveBeenCalledTimes(1); expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: 'omit', cache: 'no-store', redirect: 'error' });
   });
   it('a captured claim waits for explicit action and exchanges body token without a query secret', async () => {
     entry.value = '#c=' + 'a'.repeat(40);
@@ -187,34 +177,6 @@ describe('real archive SFC routes', () => {
     expect(JSON.parse(deletion[1]!.body as string)).toMatchObject({ confirm: 'delete', expectedRevision: 1 });
     expect(wrapper.text()).toContain('odstranění poskytovatelem nepotvrzeno'); expect(wrapper.text()).toContain('čeká na nezávislé odstranění záloh');
     expect(wrapper.find('input[type=file]').exists()).toBe(false); expect(wrapper.text()).not.toContain('Fiction edition');
-  });
-  it('switching the public selected edition rejects a late export even when the transport ignores abort', async () => {
-    let resolveFile!: (blob: Blob) => void;
-    const file = new Promise<Blob>(resolve => resolveFile = resolve);
-    const item = (locator: string, officialName: string) => ({ locator, editionId: locator, officialName, story: { title: 'Edition', text: 'Story' }, assets: [{ id: locator, kind: 'export_story', mediaType: 'text/plain' }] });
-    const fetchMock = vi.fn(async (path: string) => path.endsWith('/evening')
-      ? Response.json({ schemaVersion: 1, evening: { id }, latest: null, items: [item(id, 'First wand'), item(secondId, 'Second wand')] })
-      : { ok: true, status: 200, blob: () => file });
-    vi.stubGlobal('fetch', fetchMock);
-    const { wrapper } = await render(ArchiveView, '/archive');
-    await wrapper.findAll('button').find(button => button.text() === 'Příběh TXT')!.trigger('click'); await flushPromises();
-    await wrapper.findAll('button').find(button => button.text() === 'Second wand')!.trigger('click');
-    resolveFile(new Blob(['first private body'], { type: 'text/plain' })); await flushPromises();
-    expect(wrapper.find('a[download]').exists()).toBe(false); expect(URL.createObjectURL).not.toHaveBeenCalled();
-    expect(wrapper.find('#public-wand-name').text()).toBe('Second wand');
-  });
-  it('refresh keeps an explicitly selected older page and offers return to the latest index', async () => {
-    const item = (locator: string, officialName: string) => ({ locator, editionId: locator, officialName, story: { title: 'Edition', text: 'Story' }, assets: [] });
-    const fetchMock = vi.fn(async (path: string) => Response.json({ schemaVersion: 1, evening: { id }, latest: item(id, 'Latest wand'),
-      items: path.includes('cursor=older') ? [item(secondId, 'Earlier wand')] : [item(id, 'Latest wand')], nextCursor: path.includes('cursor=older') ? null : 'older' }));
-    vi.stubGlobal('fetch', fetchMock);
-    const { wrapper } = await render(ArchiveView, '/archive');
-    await wrapper.findAll('button').find(button => button.text() === 'Načíst další hůlky')!.trigger('click'); await flushPromises();
-    await wrapper.findAll('button').find(button => button.text() === 'Earlier wand')!.trigger('click');
-    await wrapper.findAll('button').find(button => button.text() === 'Obnovit přehled')!.trigger('click'); await flushPromises();
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/guest/v1/evening?cursor=older'); expect(wrapper.find('#public-wand-name').text()).toBe('Earlier wand');
-    await wrapper.findAll('button').find(button => button.text() === 'Zpět na nejnovější přehled')!.trigger('click'); await flushPromises();
-    expect(wrapper.find('#public-wand-name').text()).toBe('Latest wand'); expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/guest/v1/evening');
   });
   it('linking requires an explicit owner confirmation including private portraits, then consumes the targeted ticket through the account API', async () => {
     account.value = { id: 'account-a', displayName: 'Current account', roles: ['Viewer'] };

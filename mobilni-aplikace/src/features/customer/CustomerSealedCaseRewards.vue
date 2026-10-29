@@ -11,34 +11,26 @@ interface SealedCaseReward {
   team: SealedCaseTeam;
   confirmedPlans: number;
   successfulPlans: number;
+  scenario?: { id: string; title: string; teamLabel: string };
 }
 
-const props = withDefaults(defineProps<{ locale?: 'cs' | 'en' }>(), { locale: 'cs' });
-const copy = computed(() => props.locale === 'en' ? {
-  title: 'Your case keepsakes', intro: 'A record of your part in released cases in your current group.',
-  caseTitle: 'The Case of the Last Bell', keeper: 'Keeper', conspirator: 'Conspirator',
-  confirmed: 'Confirmed plans', successful: 'Successful actions', released: 'Released',
-  refresh: 'Refresh case keepsakes', loading: 'Loading your case keepsakes…',
-  empty: 'No released case keepsakes are saved to this account yet.',
-  signedOut: 'Sign in to view keepsakes saved to your account.', offline: 'Account keepsakes are unavailable offline.',
-  unavailable: 'Account keepsakes are unavailable while this session is changing.',
-  failure: 'Case keepsakes are temporarily unavailable. Try refreshing.',
-} : {
+defineProps<{ locale?: 'cs' | 'en' }>();
+const copy = computed(() => ({
   title: 'Památky z Pod pečetí', intro: 'Záznam tvé účasti v uzavřených případech aktuální skupiny.',
   caseTitle: 'Případ posledního zvonu', keeper: 'Strážce', conspirator: 'Spiklenec',
   confirmed: 'Potvrzené hlavní plány', successful: 'Provedené zásahy', released: 'Uzavřeno',
   refresh: 'Obnovit záznamy případů', loading: 'Načítám tvoje stopy v případech…',
   empty: 'Zatím tu nejsou žádné uzavřené případy uložené k tomuto účtu.',
-  signedOut: 'Pro zobrazení památek uložených k účtu se přihlaste.', offline: 'Památky účtu nejsou offline dostupné.',
-  unavailable: 'Památky účtu nejsou během změny relace dostupné.',
-  failure: 'Stopy v případech jsou dočasně nedostupné. Zkus je obnovit.',
-});
+  signedOut: 'Přihlas se a zobraz památky uložené ke svému účtu.', offline: 'Tvoje památky nejsou dostupné offline.',
+  unavailable: 'Památky nejsou dostupné, dokud se mění přihlášení.',
+  failure: 'Tvoje stopy v případech jsou dočasně nedostupné. Zkus je obnovit.',
+}));
 
 const items = ref<SealedCaseReward[]>([]);
 const busy = ref(false);
 const error = ref(false);
 const online = ref(typeof navigator !== 'undefined' && navigator.onLine);
-const dateFormatter = computed(() => new Intl.DateTimeFormat(props.locale === 'en' ? 'en' : 'cs', { dateStyle: 'medium' }));
+const dateFormatter = computed(() => new Intl.DateTimeFormat('cs', { dateStyle: 'medium' }));
 const canRead = () => Boolean(account.value && online.value && !offlineSession.value
   && !signingOut.value && !accountDeletionRequested.value);
 let generation = 0;
@@ -59,13 +51,24 @@ function parsePage(value: unknown): SealedCaseReward[] | null {
   for (const raw of page.items) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const row = raw as Record<string, unknown>;
-    if (!exactKeys(row, ['caseId', 'releasedAt', 'team', 'confirmedPlans', 'successfulPlans'])
+    const keys = ['caseId', 'releasedAt', 'team', 'confirmedPlans', 'successfulPlans'];
+    if (Object.prototype.hasOwnProperty.call(row, 'scenario')) keys.push('scenario');
+    if (!exactKeys(row, keys)
       || typeof row.caseId !== 'string' || !/^sc_[0-9a-f]{32}$/.test(row.caseId) || seen.has(row.caseId)
       || typeof row.releasedAt !== 'string' || row.releasedAt.length > 64 || !Number.isFinite(Date.parse(row.releasedAt))
       || (row.team !== 'Conspirator' && row.team !== 'Guardian')
       || !Number.isSafeInteger(row.confirmedPlans) || (row.confirmedPlans as number) < 0 || (row.confirmedPlans as number) > 100
       || !Number.isSafeInteger(row.successfulPlans) || (row.successfulPlans as number) < 0
       || (row.successfulPlans as number) > (row.confirmedPlans as number)) return null;
+    if ('scenario' in row) {
+      if (!row.scenario || typeof row.scenario !== 'object' || Array.isArray(row.scenario)) return null;
+      const scenario = row.scenario as Record<string, unknown>;
+      if (!exactKeys(scenario, ['id', 'title', 'teamLabel'])
+        || typeof scenario.id !== 'string' || !/^[A-Z0-9_]{1,128}$/.test(scenario.id)
+        || typeof scenario.title !== 'string' || !scenario.title.trim() || scenario.title.length > 160
+        || typeof scenario.teamLabel !== 'string' || !scenario.teamLabel.trim() || scenario.teamLabel.length > 80
+        || /[\u0000-\u001f\u007f]/.test(scenario.title + scenario.teamLabel)) return null;
+    }
     seen.add(row.caseId);
     parsed.push(row as unknown as SealedCaseReward);
   }
@@ -96,7 +99,7 @@ async function refresh(): Promise<void> {
   busy.value = true;
   error.value = false;
   try {
-    const value = await accountRequest<unknown>('/app/v1/sealed-cases/rewards', 'GET', undefined, requestController.signal);
+    const value = await accountRequest<unknown>('/app/v1/sealed-cases/rewards?scenarioMetadata=true', 'GET', undefined, requestController.signal);
     if (requestGeneration !== generation || owner !== account.value?.id || !canRead()) return;
     const page = parsePage(value);
     if (!page) throw new Error('Invalid sealed case reward response.');
@@ -149,8 +152,8 @@ onBeforeUnmount(() => {
     <ul v-else class="case-rewards__list">
       <li v-for="item in items" :key="item.caseId" class="case-rewards__item">
         <div class="case-rewards__heading">
-          <div><h3>{{ copy.caseTitle }}</h3><p>{{ releasedDate(item.releasedAt) }}</p></div>
-          <span class="case-rewards__badge">{{ item.team === 'Conspirator' ? copy.conspirator : copy.keeper }}</span>
+          <div><h3>{{ item.scenario?.title ?? copy.caseTitle }}</h3><p>{{ releasedDate(item.releasedAt) }}</p></div>
+          <span class="case-rewards__badge">{{ item.scenario?.teamLabel ?? (item.team === 'Conspirator' ? copy.conspirator : copy.keeper) }}</span>
         </div>
         <p class="case-rewards__counts">{{ copy.confirmed }}: {{ item.confirmedPlans }} · {{ copy.successful }}: {{ item.successfulPlans }}</p>
       </li>

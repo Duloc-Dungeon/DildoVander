@@ -93,6 +93,8 @@ describe('single-group beta enrollment', () => {
     await flushPromises();
     expect(wrapper.get('h1').text()).toBe('Vstup na vlastní pověst.');
     expect(wrapper.find('form').exists()).toBe(false);
+    expect(wrapper.get('.arrival-content').text()).toMatch(/postav.*večer/i);
+    expect(wrapper.findAll('button').some(button => button.text() === 'Mám kód pozvánky')).toBe(true);
     await wrapper.findAll('button').find(button => button.text() === 'Už mám přístup')!.trigger('click');
     expect(wrapper.get('button[type="submit"]').text()).toBe('Přihlásit přístupovým klíčem');
     expect(wrapper.find('.arrival-invitation').exists()).toBe(false);
@@ -101,6 +103,22 @@ describe('single-group beta enrollment', () => {
     await flushPromises();
     expect(wrapper.find('#account-name').exists()).toBe(true);
     expect(wrapper.find('#account-invite').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('lets an invited guest start with a code and moves keyboard focus into the new step', async () => {
+    const router = createSignInRouter();
+    await router.push('/signin');
+    const wrapper = mount(SignInView, { attachTo: document.body, global: { plugins: [router] } });
+    await flushPromises();
+
+    const invitationEntry = wrapper.findAll('button').find(button => button.text() === 'Mám kód pozvánky')!;
+    invitationEntry.element.focus();
+    await invitationEntry.trigger('click');
+    await nextTick();
+
+    expect(wrapper.find('#account-invite').exists()).toBe(true);
+    expect(document.activeElement).toBe(wrapper.get('#sign-in-title').element);
     wrapper.unmount();
   });
 
@@ -312,13 +330,13 @@ describe('sign-in destinations', () => {
     wrapper.unmount();
   });
   it.each([
-    ['invitation_expired_or_used', 'Pozvánka už není platná.', 'This invitation has expired or was already used.'],
+    ['invitation_expired_or_used', 'Pozvánka už neplatí.', 'This invitation has expired or was already used.'],
     ['ceremony_expired_or_used', 'Ověření vypršelo.', 'Verification expired.'],
     ['csrf_required', 'Platnost stránky vypršela.', 'This page has expired.'],
     ['account_origin_required', 'Tato adresa není povolená', 'This address is not allowed'],
     ['passkey_not_verified', 'Přístupový klíč se nepodařilo ověřit.', 'The passkey could not be verified.'],
-    ['recent_passkey_required', 'Nejprve znovu ověřte', 'Verify your identity with a passkey again.'],
-    ['same_account_passkey_required', 'Vyberte přístupový klíč', 'Choose a passkey for the currently signed-in account.'],
+    ['recent_passkey_required', 'Znovu ověř svou totožnost', 'Verify your identity with a passkey again.'],
+    ['same_account_passkey_required', 'Vyber přístupový klíč', 'Choose a passkey for the currently signed-in account.'],
     ['accounts_not_configured', 'Přihlášení je dostupné až po konfiguraci', 'Sign-in is available after an administrator configures'],
   ])('preserves safe Czech guidance for %s without displaying server details after a legacy English choice', async (code, czech) => {
     api.authenticate.mockRejectedValueOnce(Object.assign(new Error('private-server-detail-token'), { code }));
@@ -347,28 +365,32 @@ describe('sign-in destinations', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('Přihlášení nebo změnu účtu se nepodařilo dokončit.');
     expect(wrapper.text()).not.toContain('private-server-detail-token');
-    expect(wrapper.get('details summary').text()).toBe('Ztratili jste přístup?');
+    expect(wrapper.get('details summary').text()).toBe('Nemůžeš se přihlásit?');
     wrapper.unmount();
   });
 
   it('shows expandable lost-access guidance only on unauthenticated sign-in without making requests', async () => {
     const { router, wrapper } = await mountSignIn();
     const disclosure = wrapper.get('details');
-    expect(disclosure.get('summary').text()).toBe('Ztratili jste přístup?');
+    expect(disclosure.get('summary').text()).toBe('Nemůžeš se přihlásit?');
     expect(disclosure.attributes('open')).toBeUndefined();
     await disclosure.get('summary').trigger('click');
     expect(disclosure.attributes('open')).toBeDefined();
-    expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktujte podporu');
+    expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktuj podporu');
     expect(api.authenticate).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain('Zobrazované jméno ani odkaz na památku vlastnictví účtu neprokazují.');
     expect(router.currentRoute.value.path).toBe('/signin');
     wrapper.unmount();
   });
 
-  it('opens the invitation form by default and switches to recovery without carrying its code', async () => {
+  it('offers code paths before character details and clears an invitation code when switching to recovery', async () => {
     const { wrapper } = await mountSignIn(undefined, true);
     expect(wrapper.find('#account-invite').exists()).toBe(false);
-    await wrapper.findAll('button').find(button => button.text() === 'Mám pozvánku nebo kód obnovy')!.trigger('click');
+    const entryChoices = wrapper.get('.signin-options');
+    const enrollmentForm = wrapper.get('form');
+    expect(entryChoices.attributes('aria-label')).toBeTruthy();
+    expect(entryChoices.element.compareDocumentPosition(enrollmentForm.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await wrapper.findAll('button').find(button => button.text() === 'Mám kód pozvánky')!.trigger('click');
     expect(wrapper.find('#account-name').exists()).toBe(true);
     expect(wrapper.find('#account-universe').exists()).toBe(true);
     expect(wrapper.find('#account-invite').exists()).toBe(true);
@@ -376,7 +398,7 @@ describe('sign-in destinations', () => {
     expect(wrapper.find('h1').text()).toBe('Jak ti budou říkat?');
     await wrapper.get('#account-invite').setValue('invitation-secret');
     await wrapper.get('input[type="checkbox"]').setValue(true);
-    await wrapper.findAll('button').find(button => button.text() === 'Obnovit přístup')!.trigger('click');
+    await wrapper.findAll('button').find(button => button.text() === 'Mám kód obnovy')!.trigger('click');
     expect(wrapper.find('#account-name').exists()).toBe(false);
     expect(wrapper.find('#account-universe').exists()).toBe(false);
     expect((wrapper.get('#account-invite').element as HTMLInputElement).value).toBe('');
@@ -385,6 +407,8 @@ describe('sign-in destinations', () => {
     expect(wrapper.find('a[href="/privacy"]').exists()).toBe(true);
     await wrapper.findAll('button').find(button => button.text() === 'Zpět k pozvánce')!.trigger('click');
     expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false);
+    expect(wrapper.find('#account-invite').exists()).toBe(true);
+    expect((wrapper.get('#account-invite').element as HTMLInputElement).value).toBe('');
     wrapper.unmount();
   });
 
@@ -423,9 +447,12 @@ describe('sign-in destinations', () => {
     expect(wrapper.get('#account-name').attributes('maxlength')).toBe('80');
     expect(wrapper.get('#account-universe').attributes('maxlength')).toBe('160');
     expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).required).toBe(true);
+    expect(wrapper.find('fieldset legend').exists()).toBe(true);
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined();
     await wrapper.get('#account-name').setValue('  Luna Lovegood  ');
     await wrapper.get('#account-universe').setValue('  Kouzelnický svět  ');
     if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined();
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(api.authenticate).toHaveBeenCalledWith('enroll', 'private-invitation-code', 'Luna Lovegood', true);
@@ -441,6 +468,7 @@ describe('sign-in destinations', () => {
     await wrapper.get('#account-name').setValue('Luna');
     await wrapper.get('#account-universe').setValue('Kouzelnický svět');
     if (wrapper.find('input[type="checkbox"]').exists()) await wrapper.get('input[type="checkbox"]').setValue(true);
+    (wrapper.get('#account-name').element as HTMLInputElement).focus();
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect((wrapper.get('#account-name').element as HTMLInputElement).value).toBe('Luna');

@@ -3,6 +3,8 @@ import { mount, flushPromises } from '@vue/test-utils';
 import SettingsView from './SettingsView.vue';
 import { nextTick } from 'vue';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
+import { account } from './session';
+import { setOwnerPlayer } from '../../application/ownerMode';
 const api = vi.hoisted(() => ({
   request: vi.fn(),
   signOut: vi.fn(),
@@ -21,6 +23,7 @@ vi.mock('../../application/preferences', () => ({usePreferences: () => ({theme: 
 beforeEach(() => {
   interfaceLanguagePreference.setScope(null);
   interfaceLanguagePreference.setLanguage('cs');
+  setOwnerPlayer(null, false);
   let name: string | null = null;
   api.setAccount({id: 'owner', displayName: 'Guest', roles: ['Owner']});
   api.setDeletionRequested(false);
@@ -75,6 +78,17 @@ describe('credential naming settings', () => {
     expect(wrapper.text()).not.toContain('HTTP API v1');
     expect(wrapper.findAll('h1')).toHaveLength(0);
     wrapper.unmount();
+  });
+
+  it('offers Owner a separate administration entry from the customer account', async () => {
+    setOwnerPlayer(account.value, true);
+    const wrapper = mount(SettingsView, { props: { customerSurface: true }, global: { stubs: { AccountArchiveList: true, EveningPanel: true, RouterLink: { template: '<a><slot /></a>' } } } });
+    await flushPromises();
+    expect(wrapper.text()).toContain('Administrace večera');
+    expect(wrapper.find('a[to="/settings/admin/launch"]').text()).toBe('Večer a pozvánky');
+    expect(wrapper.find('a[to="/settings/admin"]').text()).toBe('Účty a oprávnění');
+    wrapper.unmount();
+    setOwnerPlayer(null, false);
   });
 
   it('shows collapsed My Data only for an eligible customer and defers its data requests', async () => {

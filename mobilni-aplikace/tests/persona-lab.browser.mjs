@@ -75,6 +75,7 @@ async function installFixtures(context, state) {
     const account = () => state.authenticated ? { id: state.admin ? 'synthetic-admin' : 'synthetic-viewer', displayName: 'Prohlížečový tester', roles: state.admin ? ['Administrator', 'Viewer'] : ['Viewer'] } : null;
     if (pathname === '/app/v1/session') return json({ enabled: true, account: account(), csrfToken: 'synthetic-browser-csrf' });
     if (pathname === '/app/v1/launch') return json({ allowed: true, audience: account() ? 'privileged' : 'production', launchAt: null, serverNow: Date.now(), teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false });
+    if (pathname === '/app/v1/enrollment/default' && method === 'GET') return json({ available: false });
     if (pathname === '/app/v1/passkeys/request-options') return json({ challenge: 'AQID', rpId: '127.0.0.1', allowCredentials: [], userVerification: 'preferred' });
     if (pathname === '/app/v1/passkeys/sign-in') { state.authenticated = true; return json({}); }
     if (pathname === '/guest/v1/evening') return json({ schemaVersion: 1, evening: null, items: [], latest: null });

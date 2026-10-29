@@ -4,12 +4,14 @@ import { defaultSignedInDestination, getCustomerJourneyAction } from './customer
 const customer = { id: 'customer', displayName: 'Zákazník', roles: ['Customer'] };
 const staff = { id: 'staff', displayName: 'Obsluha', roles: ['Operator'] };
 const mixed = { id: 'mixed', displayName: 'Obsluha', roles: ['Customer', 'Operator'] };
+const owner = { id: 'owner', displayName: 'Vlastník', roles: ['Owner'] };
 const completed = 'completed';
 const locator = 'e513a7ce-1f2a-4320-9ca2-463fb179b0f4';
 
 describe('customer journey actions', () => {
-  it('defaults a new customer to creating their character and a returning customer to conversation', () => {
+  it('defaults a new customer to creating their character and a returning customer to the digital workshop', () => {
     expect(defaultSignedInDestination(customer)).toBe('/me/character');
+    expect(defaultSignedInDestination(owner)).toBe('/me/character');
     expect(getCustomerJourneyAction({ account: customer })).toMatchObject({
       key: 'create-character',
       label: 'Vytvořit postavu',
@@ -19,8 +21,8 @@ describe('customer journey actions', () => {
 
     expect(getCustomerJourneyAction({ account: customer, profile: { status: 'ready' } })).toMatchObject({
       key: 'continue-conversation',
-      route: '/me/conversation',
-      canStartConversation: true,
+      route: '/play/wand',
+      canStartConversation: false,
     });
   });
 
@@ -54,7 +56,7 @@ describe('customer journey actions', () => {
   });
 
   it.each(['recovering', 'queued', 'expired', 'ended', 'cancelled', 'future_server_state'])(
-    'prioritizes an active or unknown nonterminal session (%s) over a linked result',
+    'sends a legacy nonterminal session (%s) to the digital workshop',
     sessionState => {
       expect(getCustomerJourneyAction({
         account: customer,
@@ -63,7 +65,7 @@ describe('customer journey actions', () => {
         latestAuthorizedResult: { locator },
       })).toMatchObject({
         key: 'resume-session',
-        route: '/me/conversation',
+        route: '/play/wand',
         meaning: 'active-session',
         canStartConversation: false,
       });
@@ -80,7 +82,7 @@ describe('customer journey actions', () => {
       key: 'open-latest-result',
       route: '/keepsake/?account=1&k=' + locator,
       meaning: 'latest-result',
-      canStartConversation: true,
+      canStartConversation: false,
     });
 
     expect(getCustomerJourneyAction({
@@ -89,15 +91,15 @@ describe('customer journey actions', () => {
       profile: { status: 'ready' },
     })).toMatchObject({
       key: 'continue-conversation',
-      route: '/me/conversation',
+      route: '/play/wand',
     });
   });
 
   it('keeps a saved profile usable without requiring AI preparation or consent', () => {
     expect(getCustomerJourneyAction({ account: customer, profile: { status: 'saved' } })).toMatchObject({
       key: 'continue-conversation',
-      label: 'Pokračovat k rozhovoru',
-      canStartConversation: true,
+      label: 'Otevřít dílnu',
+      canStartConversation: false,
     });
   });
 
@@ -126,7 +128,7 @@ describe('customer journey actions', () => {
       ...state,
     })).toMatchObject({
       key: 'refresh-session',
-      route: '/me/conversation',
+      route: '/me/character',
       meaning: 'verification-required',
       canStartConversation: false,
     });
@@ -147,7 +149,7 @@ describe('customer journey actions', () => {
       profile: { status: 'ready' },
       latestAuthorizedResult: { locator: locator + '&redirect=https://evil.example' },
     });
-    expect(invalid.route).toBe('/me/conversation');
+    expect(invalid.route).toBe('/play/wand');
   });
 
   it('requires an account before selecting a journey action', () => {

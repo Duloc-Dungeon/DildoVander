@@ -17,7 +17,7 @@ const loadouts = [
     <fieldset class="game-modes"><legend>Jak vstoupíš do příštího bloku?</legend>
       <label v-for="loadout in loadouts" :key="loadout.id"><input v-model="selected" type="radio" name="loadout" :value="loadout.id" :disabled="busy || uncertain" /><span><strong>{{ loadout.title }}</strong><small>{{ loadout.stock }}</small></span></label>
     </fieldset>
-    <p v-if="selected !== 'balanced'">Může ti zbýt jediný typ kouzla. Šetři svou odpověď na soupeřův tah.</p>
+    <p v-if="selected !== 'balanced'">Může ti zbýt jediný typ kouzla. Šetři odpověď na soupeřův tah; soupeř tvou důslednost rád využije.</p>
     <p>Šest použití na čtyři výměny. Jiskry se mezi bloky neobnovují.</p>
     <AwButton type="submit" variant="primary" :busy="busy" :disabled="uncertain">Potvrdit sestavu</AwButton>
   </form>

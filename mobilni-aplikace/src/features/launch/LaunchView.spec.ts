@@ -11,6 +11,7 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
 vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', props: ['image'], template: '<div class="portrait-stage" />' } }));
 vi.mock('./PrelaunchWand.vue', () => ({ default: { name: 'PrelaunchWand', emits: ['open-change'], template: '<section><button @click="$emit(\'open-change\', true)">Vytvořit hůlku</button><button @click="$emit(\'open-change\', false)">Zpět k odpočtu</button></section>' } }));
+vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', template: '<div class="push-notifications-stub" />' } }));
 vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
@@ -58,11 +59,30 @@ it('offers wand creation only after revealing the saved character', async () => 
   try {
     await flushPromises(); image.value = 'blob:portrait'; await flushPromises();
     expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
+    expect(view.find('.launch-next-step').exists()).toBe(false);
     view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
     expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true);
+    expect(view.find('.launch-next-step').exists()).toBe(false);
+    expect(view.html().indexOf('Vytvořit hůlku')).toBeLessThan(view.html().indexOf('portrait-stage'));
+    expect(view.text()).toContain('Večer se otevře');
+    expect(view.findAllComponents({ name: 'PushNotifications' })).toHaveLength(1);
+    expect(view.get('.launch-notifications summary').text()).toContain('Nastavit oznámení');
     await view.findComponent({ name: 'PrelaunchWand' }).get('button').trigger('click');
     expect(view.get('.launch-card').attributes('style')).toContain('display: none');
     expect(api.request.mock.calls.some(call => call[1] === 'POST')).toBe(false);
+  } finally { view.unmount(); }
+});
+it('keeps optional character labels collapsed without changing the saved character', async () => {
+  persisted = true;
+  const view = entry();
+  try {
+    await flushPromises();
+    const details = view.get('.launch-label-options');
+    expect(details.attributes('open')).toBeUndefined();
+    await details.get('summary').trigger('click');
+    expect(details.attributes('open')).toBeDefined();
+    expect(view.find('input[maxlength="80"]').exists()).toBe(true);
+    expect(api.request.mock.calls.some(call => call[1] === 'PUT')).toBe(false);
   } finally { view.unmount(); }
 });
 it('keeps an open workshop through night opening, then presents the night when the guest returns', async () => {
@@ -152,7 +172,7 @@ it('B: confirms at 8 visible seconds when the image takes 30 seconds', async () 
   try {
     await flushPromises(); await vi.advanceTimersByTimeAsync(7999);
     expect(view.get('.launch-status').text()).toBe('Chvíli strpení…');
-    await vi.advanceTimersByTimeAsync(101); expect(view.get('.launch-status').text()).toBe('Postava je uložená. Můžeš se vrátit později.');
+    await vi.advanceTimersByTimeAsync(101); expect(view.get('.launch-status').text()).toBe('Postava je uložená. Ještě připravujeme její portrét.');
     await vi.advanceTimersByTimeAsync(21900); image.value = 'blob:decoded'; await flushPromises();
     expect(view.get('.launch-status').text()).toBe('');
   } finally { view.unmount(); }
@@ -184,13 +204,16 @@ it('K: an already seen server-authorized opening sends returning guests straight
   try { await flushPromises(); expect(api.replace).toHaveBeenCalledWith('/me/character'); }
   finally { view.unmount(); }
 });
-it.each(['Owner', 'Viewer'])('keeps the authorized %s account on its existing operational destination', async role => {
+it.each([
+  ['Owner', '/me/character'],
+  ['Viewer', '/settings'],
+])('routes the authorized %s account to its default destination', async (role, destination) => {
   allowed = true;
   api.setAccount({ id: 'staff', displayName: 'Staff', roles: [role] });
   const view = entry();
   try {
     await flushPromises();
-    expect(api.replace).toHaveBeenCalledWith('/settings');
+    expect(api.replace).toHaveBeenCalledWith(destination);
     expect(view.find('.group-opening').exists()).toBe(false);
     expect(api.request.mock.calls.some(([path]) => path === '/app/v1/prelaunch/character')).toBe(false);
   } finally { view.unmount(); }
@@ -236,8 +259,55 @@ it('replaces a recovered draft universe with the persisted group universe after 
 });
 it('old characters get no introduction and public loading ignores host and research text', async () => {
   persisted = true; const view = entry();
-  try { await flushPromises(); expect(view.get('.launch-status').text()).toContain('Postava je uložená.'); expect(view.text()).toContain('Opona má trému.'); expect(view.text()).not.toContain('PRIVATE FINAL'); expect(view.text()).not.toContain('Od pořadatele'); }
+  try { await flushPromises(); expect(view.get('.launch-status').text()).toContain('Postava je uložená.'); expect(view.text()).toContain('Zrcadlo si zatím vyjednává'); expect(view.text()).not.toContain('PRIVATE FINAL'); expect(view.text()).not.toContain('Od pořadatele'); }
   finally { view.unmount(); }
+});
+it('does not announce running portrait preparation when none has been requested', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    const result = await original(path, method);
+    return path === '/app/v1/prelaunch/character' ? { ...result, artwork: null } : result;
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('.launch-status').text()).toBe('Postava je uložená. Portrét zatím není připravený.');
+    expect(view.get('form button').text()).toBe('Připravit překvapení');
+    expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
+    expect(api.request.mock.calls.some(([, method]) => method === 'POST')).toBe(false);
+  } finally { view.unmount(); }
+});
+it('shows the loading joke before the portrait and preserves the welcome in the waiting room without a portrait', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    const result = await original(path, method);
+    return path === '/app/v1/prelaunch/character' ? { ...result, artwork: {
+      status: artworkStatus, loadingMessage: 'Osobní věta při přípravě.',
+      welcome: { joke: 'Osobní uvítací věta.', identity: 'Raven z Fiction.', teaser: 'Místo na večer.' },
+    } } : result;
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('Osobní věta při přípravě.');
+    expect(view.get('[aria-current="step"]').text()).toBe('Portrét');
+    expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(view.get('.launch-joke').text()).toBe('Osobní věta při přípravě.');
+    failed.value = true; await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('Osobní uvítací věta.');
+    expect(view.get('[aria-current="step"]').text()).toBe('Hůlka');
+    const workshop = view.findComponent({ name: 'PrelaunchWand' });
+    workshop.vm.$emit('complete-change', true); await flushPromises();
+    expect(view.get('[aria-current="step"]').text()).toBe('Čekárna');
+    expect(view.text()).toContain('Vítej v čekárně.');
+    expect(view.get('.launch-joke').text()).toBe('Osobní uvítací věta.');
+    api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'], openAiConsent: true });
+    await flushPromises();
+    expect(view.get('[aria-current="step"]').text()).not.toBe('Čekárna');
+  } finally { view.unmount(); }
 });
 it('preserves an unfinished same-account draft and clears it from another account’s view', async () => {
   const view = entry();

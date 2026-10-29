@@ -1,0 +1,45 @@
+.game-boss-scene { --boss-light: var(--wns-violet); }
+.game-boss-scene[data-boss-phase='2'] { --boss-light: var(--wns-amber); }
+.game-boss-scene[data-boss-phase='3'] { --boss-light: var(--wns-peach); }
+.boss-scene-light {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 700px;
+  max-height: 100%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 15%, color-mix(in srgb, var(--boss-light) 10%, transparent), transparent 65%);
+  animation: boss-scene-illuminate .7s ease-out;
+}
+.game-boss-scene .game-header { margin-bottom: 8px; }
+.game-boss-scene .game-content h1.boss-title {
+  max-width: 100%;
+  margin: 0 0 12px;
+  font-size: clamp(2.6rem, 11vw, 4rem);
+  line-height: 1.02;
+  letter-spacing: -.035em;
+  font-weight: 800;
+  text-wrap: balance;
+}
+.boss-title span { display: block; }
+.game-boss-scene .boss-captive { margin: 0; color: var(--wns-muted); font-size: .9375rem; }
+.game-boss-scene .boss-invitation { padding-block: 24px; }
+.game-boss-scene .boss-invitation h2 { margin: 0 0 12px; font-size: 1.35rem; }
+.game-boss-scene .boss-invitation p { margin: 12px 0; font-size: .9375rem; }
+.game-boss-scene .boss-invitation > .aw-button { display: flex; justify-content: center; width: 100%; margin-top: 20px; }
+.boss-terms { margin-top: 20px; color: var(--wns-muted); border-top: 1px solid var(--wns-line); }
+.boss-terms summary { min-height: 48px; padding-block: 16px; cursor: pointer; color: var(--wns-text); font-size: .9375rem; }
+.game-boss-scene .boss-identity { margin: 0 0 12px; font-size: clamp(1.2rem, 5vw, 1.65rem); line-height: 1.15; text-wrap: balance; }
+.boss-phase { margin: 0; color: var(--boss-light); font-size: .875rem; font-variant-numeric: tabular-nums; }
+.boss-phases { display: flex; gap: 6px; list-style: none; margin: 12px 0 0; padding: 0; }
+.boss-phases li { height: 3px; flex: 1; background: var(--wns-line); }
+.boss-phases li[aria-current='step'] { background: var(--boss-light); }
+.game-boss-scene .boss-tactics { padding-block: 16px; border-bottom: 1px solid var(--wns-line); }
+.game-boss-scene .boss-tactics p { margin: 0; font-size: .9375rem; }
+.game-boss-scene .boss-tactics .boss-spark { margin-top: 12px; color: var(--boss-light); font-weight: 650; }
+.game-boss-scene .boss-tactics .boss-strength { margin-top: 8px; color: var(--wns-muted); font-size: .875rem; }
+.game-boss-scene .boss-round { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--wns-space-8); margin-block: var(--wns-space-12) var(--wns-space-16); }
+.game-boss-scene .boss-round .game-round-label { margin: 0; }
+.game-boss-scene .boss-round .game-round-dots { margin: 0; }
+.game-boss-scene .game-content .game-reveal { margin-block: 16px; }
+@keyframes boss-scene-illuminate { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .boss-scene-light { animation: none; } }

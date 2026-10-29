@@ -7,6 +7,7 @@ using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
 using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Customers;
+using Kufr.Backend.Features.Keepsakes;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -23,7 +24,8 @@ internal sealed record GameRoundView(int Index, string? PlayerChoice, string? Op
     int PlayerSparkBid, int OpponentSparkBid, int PlayerPoints, int OpponentPoints, string? Reason);
 internal sealed record GamePlayerView(string Id, string DisplayName, int Xp, int MatchesPlayed,
     bool TacticalUnlocked, bool YoloUnlocked, bool HasWand = false, int WandTier = 0);
-internal sealed record GameOpponentView(string Id, string DisplayName, int Xp, int MatchesPlayed);
+internal sealed record GameOpponentView(string Id, string DisplayName, int Xp, int MatchesPlayed,
+    string? WandArtworkUrl = null, string? WandName = null, bool? WandSynthetic = null);
 internal sealed record GameLobbyOpponentView(string Id, string DisplayName, int Xp, int MatchesPlayed,
     bool HasWand, int WandTier, bool TacticalUnlocked);
 internal sealed record GamePartyTask(string Title, string Text, string Category, string Status, int ExchangeCount);
@@ -657,7 +659,26 @@ internal static class GameEndpoints
         {
             var match = store.Read(id, (string)h.Items["dv-game-group"]!,
                 h.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if (h.RequestServices.GetService<KeepsakeStore>() is { } keepsakes)
+                match = await WithOpponentWandArtworkAsync(match, h, profiles, keepsakes);
             return Results.Ok(await GameDisplayNames.DecorateAsync(match, profiles, h.RequestServices.GetRequiredService<AccountDatabase>(), h.RequestAborted));
+        });
+        group.MapGet("/matches/{id}/opponent/wand-artwork", async (string id, string? revision, HttpContext h,
+            GameStore store, CharacterProfileStore profiles) =>
+        {
+            var match = store.Read(id, (string)h.Items["dv-game-group"]!,
+                h.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if (revision is not { Length: 64 } || revision.Any(character => !Uri.IsHexDigit(character)))
+                return ApiProblem.Create(h, 404, "game_wand_artwork_unavailable");
+            if (h.RequestServices.GetService<KeepsakeStore>() is not { } keepsakes)
+                return ApiProblem.Create(h, 404, "game_wand_artwork_unavailable");
+            var artwork = await ReadCurrentOpponentWandArtworkAsync(match.Opponent.Id, h, profiles, keepsakes,
+                revision, includeBytes: true);
+            if (artwork?.Bytes is not { } bytes)
+                return ApiProblem.Create(h, 404, "game_wand_artwork_unavailable");
+            h.Response.Headers.CacheControl = "no-store";
+            h.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            return Results.File(bytes, "image/png", enableRangeProcessing: false);
         });
         foreach (var action in new[] { "accept", "decline", "cancel", "choose", "loadout", "task", "retry" })
             group.MapPost($"/matches/{{id}}/{action}", async (string id, GameCommand request, HttpContext h,
@@ -675,7 +696,36 @@ internal static class GameEndpoints
                 var result = store.Mutate(id, groupId, userId, action,
                     request, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), settings.AdultContentEnabled, settings.FlirtEnabled);
                 if (result.Yolo?.Status == "generating") yolo.Enqueue(id, result.Revision);
+                if (h.RequestServices.GetService<KeepsakeStore>() is { } keepsakes)
+                    result = await WithOpponentWandArtworkAsync(result, h, profiles, keepsakes);
                 return Results.Ok(await GameDisplayNames.DecorateAsync(result, profiles, h.RequestServices.GetRequiredService<AccountDatabase>(), h.RequestAborted));
             });
+    }
+
+    private static async Task<GameMatchView> WithOpponentWandArtworkAsync(GameMatchView match, HttpContext context,
+        CharacterProfileStore profiles, KeepsakeStore keepsakes)
+    {
+        var artwork = await ReadCurrentOpponentWandArtworkAsync(match.Opponent.Id, context, profiles, keepsakes);
+        if (artwork is null) return match;
+        return match with
+        {
+            Opponent = match.Opponent with
+            {
+                WandArtworkUrl = $"/app/v1/game/matches/{match.Id}/opponent/wand-artwork?revision={Uri.EscapeDataString(artwork.Sha256)}",
+                WandName = artwork.Name,
+                WandSynthetic = artwork.Synthetic
+            }
+        };
+    }
+
+    internal static async Task<GameSharedWandArtwork?> ReadCurrentOpponentWandArtworkAsync(string accountId,
+        HttpContext context, CharacterProfileStore profiles, KeepsakeStore keepsakes, string? revision = null,
+        bool includeBytes = false)
+    {
+        var profile = await profiles.ReadAsync(accountId, context.RequestAborted);
+        var wandStore = context.RequestServices.GetService<WandGenerationStore>();
+        var wand = profile is null || wandStore is null ? null
+            : MobileWandSessions.Current(wandStore, accountId, profile.ProfileId, profile.Revision);
+        return wand is null ? null : keepsakes.ReadGameSharedWandArtwork(accountId, wand.WandId, revision, includeBytes);
     }
 }

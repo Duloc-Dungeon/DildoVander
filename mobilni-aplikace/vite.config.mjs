@@ -9,7 +9,7 @@ import vue from '@vitejs/plugin-vue';
 const localDirectory = relative => fileURLToPath(new URL(relative, import.meta.url));
 
 // Run the canonical resolver before CSS or Vue can render. The build CSP hashes
-// this exact inline source, and the offline packager reuses the same hook.
+// this exact inline source.
 export function themeBootstrap() {
   return {
     name: 'application-theme-bootstrap',
@@ -77,7 +77,6 @@ export default defineConfig({
   define: { __DV_APPLICATION_BUILD__: JSON.stringify(applicationBuildIdentity()) },
   plugins: [themeBootstrap(), vue(), captureWorkletAsset(), applicationCsp()],
   base: '/',
-  // The offline entry has a virtual bundle supplied only by its packager.
   optimizeDeps: { entries: ['index.html'] },
   server: {
     fs: {

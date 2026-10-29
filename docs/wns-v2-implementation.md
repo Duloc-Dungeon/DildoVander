@@ -1,5 +1,133 @@
 # WNS v2 — implementace a skutečně provedené kontroly
 
+## Týmová hra a trénink — 29. října 2026
+
+- `TeamView` a `team.css` přebírají dvoubarevné jeviště, ukazují všechny čtyři
+  účastníky a jejich skutečné potvrzení tahu. Osobní dvojice a její poslední
+  zveřejněná kouzla mají vlastní světelný střet; týmové body zůstávají serverové.
+  Vlastní hůlka pochází z osobního archivu; soupeřova z nové autorizované
+  týmové projekce `opponentWands`, podle stejné osobní dvojice jako zveřejněná výměna.
+- Mapování publikačního pořadí kouzel je ověřené pro obě strany, oba hráčské
+  sloty a obě poloviny. Pořadí B kouzel v DTO je po přestávce již přepárované;
+  potvrzení tahů naopak zůstává kanonické A0/A1/B0/B1.
+- Trénink používá stejné nasvícení a pravdivý lokální verdikt, dál bez XP,
+  úkolů nebo herních API zápisů. Opakování vyčistí skóre i výsledek.
+  Cvičný soupeř má obecnou fialovou hůlku, označenou jako cvičnou.
+- YOLO ukazuje skutečné hůlky obou hráčů staticky; příběh neprodukuje
+  domyšlené RPS tahy. Nedostupná ilustrace přejde na neutrální obrys.
+- Týmová PNG cesta kontroluje účastníka, skupinu, protější tým, aktuální
+  publikaci a revizi; používá stejné schvalování jako 1 na 1 a `no-store`/`nosniff`.
+  HTTP testy pokrývají odmítnutí spoluhráče/cizího účtu, stažení ilustrace,
+  starou revizi a odebraný přístup účastníka.
+- `test:team-practice:browser` prošel na 320/390/768/1280 px: soukromá volba,
+  potvrzení čtyř hráčů, odhalení dvojice, přestávka/předání/expirace, druhá
+  polovina, konečné skóre, dokončení a opakování tréninku, klávesnice,
+  omezený pohyb a 200% text. Ověřuje také přesné dekódované pixely schválené
+  hůlky před střídáním a po něm, odstranění odvolané ilustrace, cvičnou hůlku
+  a statické hůlky v YOLO. Data jsou syntetická; nejde o živý multiplayer
+  ani o ověření fyzických telefonů.
+
+## Boss a hráčské duely — 29. října 2026
+
+- `GameBossStage`, `GameBossEnergy` a `boss.css` doplňují stínové představení
+  Barona, světlo podle serverové fáze a skutečnou energii včetně exhibice.
+  Pravidla, nápověda, pokračování pokusu, uzamčený tah a ukončení zůstávají dostupné.
+- PvP režim v `PlayView`, `GameClash` a `duel.css` sjednocuje jeviště rychlých
+  a taktických duelů. Jantar/fialová odlišují strany; zveřejněná výměna mění
+  světlo a slovní verdikt. Volba před odesláním výsledek neprozrazuje.
+  Konečný výsledek vychází ze serveru, ne z poslední výměny.
+- Impeccable document sloučil skutečná pravidla do `DESIGN.md` a doplnil
+  `.impeccable/design.json` o místní pohyb a statické vzorky energie/skóre.
+  Stávající paleta, globální tokeny a pravidla ostatních obrazovek zůstávají zachované.
+- `npm run test:boss:browser --prefix mobilni-aplikace` ověřuje 320/390/1280 px,
+  tři fáze, běžný a omezený pohyb, klávesnici, uzamčení, exhibici, výhru/prohru,
+  200% text a oddělení běžného duelu.
+- `npm run test:duel:browser --prefix mobilni-aplikace` ověřuje 320/390/768/1280 px,
+  živé odhalení výhry/prohry/remízy, soukromou volbu, klávesnici, čekání,
+  načtení/polling bez opakování efektu, konečný výsledek, taktický duel,
+  dlouhá jména, 200% text a oddělení bosse/týmů.
+- Browserové testy používají pouze loopback a syntetické fixture. Neprokazují
+  skutečný multiplayer, živou AI, chování fyzických telefonů ani nasazení.
+
+## Příprava postavy a návrat do čekárny — 29. října 2026
+
+- Před otevřením večera `/launch` ukazuje kroky Postava → Portrét → Hůlka →
+  Čekárna podle načteného stavu. Během ukládání a přípravy portrétu zůstává
+  viditelný vtip: přednost má `artwork.loadingMessage`, bez něj uvítací věta
+  nebo stabilní český náhradní text. Polling vtip náhodně nestřídá.
+- Po odhalení portrétu se zpřístupní vstup do dílny. Selhání portrétu ukáže
+  náhradní podobu, možnost opakování a cestu do dílny bez obrázku. Samotný čas
+  neoznačí přípravu za hotovou. U postavy bez objednaného portrétu text
+  neoznamuje běžící výrobu; zůstává výslovná akce pro přípravu.
+- Otevření dílny skryje postavu, odpočet i přehled kroků, aby hlavní akce
+  výsledku zůstala dostupná i na malém telefonu. Po uložení a návratu se
+  zobrazí čekárna s postavou, jejím vtipem, názvem hůlky a akcí
+  **Prohlédnout hůlku**. Obnovení stránky načte hotovou hůlku ze serveru;
+  prohlížení nezakládá novou výrobu. Oprávnění a připravenost pro samotnou
+  výrobu nadále ověřuje [dílna](magicky-kufr-workshop.md#api-a-výroba).
+- Lokálně prošlo 47 testů v `LaunchView.spec.ts`, `PrelaunchWand.spec.ts`
+  a `PortraitCurtain.spec.ts`, produkční build a nezávislé review.
+  `test:prelaunch-wand:browser` ověřil čekání, chybějící portrét, dílnu,
+  uložený výsledek, návrat a obnovení při šířkách 320/390/1280 px,
+  omezeném pohybu a 200% textu; uložil 20 syntetických snímků.
+  Prošel také `test:launch:browser` včetně vytvoření postavy, soukromého
+  portrétu, označení postavy a přepnutí účtu. Mechanický sken změněných
+  obrazovek a `git diff --check` byly čisté. Jde o lokální webové fixtures,
+  nikoli živou AI, přejímku na fyzickém telefonu nebo nasazení.
+
+## Přihlášený host — 29. října 2026
+
+- Navigace vede přímo do digitální Dílny, Her, Památek a účtu. Postava zůstává
+  dostupná z Dílny a je prvním krokem po registraci. Žebříček je pojmenovaný
+  přímo v herních odkazech i prázdné kolekci.
+- `/me/conversation` je kompatibilní přesměrování do `/play/wand` se zachovanou
+  kontrolou účtu na cílové trase. Zákaznický pohled již neimportuje Bluetooth,
+  nenačítá fyzické relace ani nenabízí jejich spouštění. Servisní části a
+  protokoly zůstávají oddělené; nejde o změnu firmware ani backendových kontraktů.
+- Památky upřednostňují kolekci. Aktualizace, tituly, případy a souboje se
+  načítají až po otevření příslušné sekce. Prázdná nevyfiltrovaná kolekce
+  neskrývá užitečný další krok za hledání a filtry; vyfiltrovaný prázdný stav
+  a chyba zachovávají ovládání hledání.
+- Zákaznické nadpisy a navigace jsou upravené pro zvětšený text. Texty účtu,
+  podpory a památek používají tykání. Ověření a jeho limity se uvádějí v dodání
+  této změny; historické výsledky níže nejsou jejím automatickým potvrzením.
+
+## Osobní hůlky v herním souboji — 29. října 2026
+
+- `GameClash.vue` používá celé průhledné PNG 2:3. Hrot určuje z alfa kanálu;
+  zdrojovou kresbu neořezává ani nepřebarvuje. Úder, lest a štít mají odlišnou
+  stopu, krátký světelný náraz a částice. Efekt trvá nejvýše dvě sekundy,
+  neblokuje další tah a neopakuje se při pollingu ani otevření historie.
+  Omezený pohyb, skrytí a opuštění scény animaci vypnou.
+- Vlastní obrázek přichází ze stávajícího autorizovaného odkazu aktuální
+  postavy. Odpověď `GET /app/v1/game/matches/{id}` může nově obsahovat
+  `opponent.wandArtworkUrl`, `wandName` a `wandSynthetic`. Pole jsou volitelná;
+  bez přístupného obrázku klient zobrazí neutrální obrys.
+- Obrazová cesta je `GET /app/v1/game/matches/{id}/opponent/wand-artwork?revision={sha256}`.
+  Ověřuje skupinu a účastníka zápasu, aktuální vybranou hůlku soupeře,
+  platné vlastnictví památky, schválení aktuální publikované edice a přesný
+  kanonický PNG se stejnou revizí. Přijetí souboje nenahrazuje souhlas
+  se zveřejněním. Neplatná nebo odvolaná reference vrací 404.
+  Odpověď používá `no-store` a `nosniff`; identifikátory vlastníkovy památky
+  ani privátní cesty úložiště se soupeři neposílají.
+- Jde o aktuální stav postavy, nikoli obrázek zmrazený při zahájení zápasu.
+  Změna či odvolání zveřejnění se projeví při dalším ověření stavu; obrazový
+  endpoint kontroluje oprávnění znovu při každém čtení. Metadata při pollingu
+  nenačítají celé PNG. Web/iOS/Android povolují jen přesnou obrazovou cestu
+  a stávající limit obrazových přenosů; klient nepřijímá libovolné URL.
+- `tests/fixtures/generated-wands/` obsahuje dvě syntetické PNG vytvořené
+  vestavěným ImageGen podle `KeepsakeProvider.BuildWandImagePrompt`.
+  `generation.json` uchovává prompty, fiktivní návrhy a kontrolní součty.
+  Fixture server je podává odděleně od aplikačního balíku; nejsou produkčním
+  výsledkem hráče. Náhledy: `/__game/wand-moon` a `/__game/wand-thorn`.
+
+Pro lokální ověření slouží `node tests/game-clash.browser.mjs` z mobilní
+aplikace a backendová skupina `--game-wand-artwork`. Prošly také stávající
+herní browserové scénáře v pěti šířkách včetně 200% textu a omezeného pohybu.
+Skupina `--mobile-game-http` ověřuje i schválený PNG přes skutečnou HTTP cestu,
+jeho přesné bajty a hlavičky a zneplatnění původního odkazu po odvolání publikace.
+Tyto kontroly nenahrazují nativní iOS sestavení a přejímku na telefonu.
+
 ## Výchozí stav
 
 - Balíček: edice 2.0, SHA-256 v `../DESIGN.md`; inventura `8c202e5`.
@@ -18,6 +146,63 @@
 | C — památky/účet | Sdílená vizuální vrstva a paměťová koule prázdné kolekce; původní owner/link/recovery/export/delete chování se nemění. | Kompletní cílové obrazovky/edice a skutečný nativní export na zařízení. |
 | D — Pod pečetí | Serverový rules/projection základ, SQLite journal, revize/idempotence/uzávěrka, plán variant, hlasovací validace a pause/resume; skutečné autorizované HTTP založení/čtení čekárny a připravenost se souhlasem. Focused C# harnessy procházejí. | Propojení úložiště s enginem, kompletní scénářové adaptéry/pravidla, start, UI, finální runoff integrace a plná přejímka tajných projekcí. Start a akce výslovně vracejí 422, funkce je defaultně vypnutá. Není to hotová hra. |
 | E — hostitel/provoz | Původní capability a skupinový launch zůstávají; sdílený vzhled. Ověřeno existující oddělení návrhu, potvrzení odpočtu a otevření skupiny v `BetaAdmissionPanel.vue`. | Úplná vizuální shoda cílové hostitelské cesty a mobilní přejímka. Není potřeba znovu vytvářet už existující skupinové API. |
+
+## Oprava vstupu a oddělení administrace — 28. října 2026
+
+- `/` a historická `/demo` vedou přes přihlašovací scénu. Starý domov a
+  syntetická ukázka byly odstraněny; archiv vyžaduje účet. Sdílené odkazy
+  na památky a souboje si zachovávají původní ověření oprávnění.
+- Uvítání, přihlášení a registrace sdílejí šířku, typografii a ovládání bez
+  vnořených panelů. Ilustrace hůlky i klíče se celé vejdou do barevné plochy.
+- Vlastník po přihlášení otevírá zákaznickou postavu. Administraci otevře
+  z účtu; serverové role a oprávnění se změnou zobrazení nemění. Výběr hráčské
+  skupiny zůstává ve hře a účtu, bez trvalého přepínače režimu na všech stránkách.
+- Předvolby a výběr vzhledu či jazyka zmizely ze společného rozhraní.
+  Zvuk zůstává dobrovolný; ovládání ukazuje ikonu, textový stav a `aria-pressed`.
+- Lokální Windows ověření: build, 157 Node testů, 1 233 Vitest testů,
+  `test:browser` a `test:owner:browser`. Syntetické browser průchody pokrývají
+  320/390/1440 px, 200% text, vstup, souhlas, návratové adresy, zákaznickou
+  navigaci, administraci, skupiny a zvuk. Není to přejímka na fyzickém iPhonu
+  ani nasazení.
+
+### Doplnění podle kritiky rozhraní — 28. října 2026
+
+- Účet vlastníka nabízí přímo `Večer a pozvánky` a zvlášť `Účty a oprávnění`.
+- Ruční první postava začíná jménem a předlohou; další údaje jsou pod
+  `Doplnit postavu`. Sbalení zachovává návrh, při úpravě existující postavy
+  jsou podrobnosti otevřené.
+- Správa večera shrnuje skutečně načtenou skupinu, čekající hosty, přijímání
+  hostů a otevření. Po neúspěšném obnovení uvádí neověřený stav. Odpočet
+  a otevření jsou přímo dostupné, pokročilá nastavení jsou rozbalovací.
+- Oddíl zpráv má vlastní dostupné uložení s výslovným upozorněním, že uloží
+  i rozepsaný globální plán; zachovává společný revizní kontrakt. Chyba otevře
+  příslušný oddíl a opětovné ověření samo neopakuje změnu.
+- Prošel build, 157 Node testů, 1 239 Vitest testů a průchody
+  `test:browser`, `test:owner:browser`, `test:launch:browser` v lokálním Brave
+  přes stávající Playwright scénáře. Ověřeny byly syntetické stavy na
+  320/390/1280/1440 px, u hlavního průchodu také 200% text; nejde o nativní
+  přejímku telefonu. Mechanický designový sken změněných obrazovek byl čistý.
+
+## Drobné zpříjemnění administrace — 29. října 2026
+
+- Stránky účtů (`/settings/admin`), večera (`/settings/admin/launch`) a postav
+  (`/settings/admin/characters`) sdílejí navigaci „Zákulisí večera“ přes
+  `AdminNavigation.vue`. Aktuální stránka má `aria-current="page"`; všechny
+  odkazy jsou dostupné klávesnicí i na úzkém telefonu.
+- `AdminConfirmation.vue` doprovází potvrzené vytvoření pozvánky či obnovy
+  a uložení údajů nebo portrétu postavy. Text zůstává ve stavovém oznámení
+  `role="status"`; fajfka se vykreslí za 240 ms a při omezeném pohybu je
+  statická. Chyby a nejistý výsledek obnovení seznamu zachovávají původní hlášení.
+- Hledání bez výsledků nabízí `Zrušit hledání`, které obnoví načtený seznam
+  bez dalšího požadavku. Úvod správy a prázdný detail postavy přidávají krátký
+  situační humor; oprávnění, souhlasy a potvrzování zápisů se nemění.
+- Lokální Windows ověření s Node 24.21.0: build včetně typechecku a kontroly
+  generovaných kontraktů, 20 cílených komponentových testů a rozšířený
+  `test:character-admin:browser` na 320/390/1280 px. Scénář ověřuje aktivní
+  navigaci, klávesnici, zrušení hledání, potvrzení uložení, omezený pohyb,
+  náhradu obrázku a konflikt revizí. Doplňková lokální kontrola ověřila
+  přechody mezi všemi třemi stránkami, 200% text na 320/1280 px a běžnou animaci.
+  Všechny průchody použily syntetická data; nejde o produkční ani nativní přejímku.
 
 ## Ověřené průchody
 
@@ -99,6 +284,39 @@ Lokální evidence této relace je v
 Browser instalace používá zapisovatelný `PLAYWRIGHT_BROWSERS_PATH` v téže
 soukromé pracovní složce; systémový cache mount nebyl měněn.
 
+### První průchod hosta — 29. října 2026
+
+`test:guest-journey:browser` spojuje sdílené UI se skutečným izolovaným HTTPS
+backendem a virtuálním WebAuthn autentikátorem. Fixture vytvoří dočasného
+vlastníka, zákaznickou pozvánku a skupinu s budoucím otevřením. Enrichment,
+portrét i obrazový fallback mají lokální testovací implementace; test nevyžaduje
+externí poskytovatele ani placenou generaci. Launcher po skončení ověří odstranění
+dočasné databáze, klíčů a soukromé pozvánky.
+
+Ověřeno: explicitní souhlas, zachování formuláře po simulovaném zrušení
+přístupového klíče, skutečná registrace hosta a uložení postavy, ztracená odpověď
+po dokončeném zápisu, obnovení stránky bez dalšího vytvoření, budoucí odpočet,
+dekódování lokálního testovacího portrétu, opětovné přihlášení stejným klíčem
+a obecné odmítnutí použité či neznámé pozvánky. Mobilní čekárna nově skrývá
+nepovinné rozlišovací označení do rozbalovací sekce a po odhalení postavy nabízí
+zkratku k hůlce; při chybě portrétu zůstává tento další krok dostupný.
+
+Spuštění z kořene app repozitáře v PowerShellu na Windows:
+
+```powershell
+dotnet build backend-tests/BackendTests.csproj -c Release -r win-x64 --self-contained false -p:RestoreLockedMode=true
+npm run build --prefix mobilni-aplikace
+$env:KUFR_TESTS_DLL = 'backend-tests/bin/Release/net10.0/win-x64/BackendTests.dll'
+$env:APP_SCREENSHOTS = Join-Path (Get-Location).Path '.codex/artifacts/guest-journey'
+npm run test:guest-journey:browser --prefix mobilni-aplikace
+```
+
+Jde o lokální přejímku s virtuálním klíčem, nikoli důkaz chování na fyzickém
+telefonu, živé AI nebo skutečné tvorby hůlky. Starší `test:accounts:fixture`
+v tomto checkoutu před změnou stále očekával po registraci `/settings`, zatímco
+aktuální aplikace přechází na `/launch`; nový zákaznický průchod tento starší
+administrátorský scénář nenahrazuje.
+
 ## Zatím neověřeno
 
 ### Čeština — ověřený rozdíl oproti dílčímu auditu
@@ -135,6 +353,26 @@ soukromé pracovní složce; systémový cache mount nebyl měněn.
 telefonu, iOS/Android signing a instalace, nativní export/haptika, plná hra Pod
 pečetí a lidský pilot. Nic nebylo nasazeno. Stav těchto položek není „hotovo“
 jen proto, že sestavení nebo syntetický browser test projde.
+
+## YOLO lóže: jeviště a hranice generování
+
+- `GameYoloStage.vue` a `yolo.css` nahrazují kartu s příběhem třemi ručně
+  odhalovanými dějstvími. Používají stávající chráněné obrázky hůlek a původní
+  portrét komentátora. Výsledek ani úkol poraženého neprozradí před rozsudkem;
+  opakovaný polling zachová rozečtené dějství. Přístupnost zahrnuje oznámení
+  připraveného příběhu, fokus po ručním přechodu a statickou variantu střetu.
+- Backend drží nárok na generování 90 s při 60s limitu provideru. Rezerva
+  omezuje opakované převzetí během ukončování požadavku; není zárukou proti
+  libovolně dlouhému zablokování workeru. Stávající kontrola revize odmítá
+  pozdní výsledky po zrušení nebo opakování. Neúplný příběh s vítězem parser
+  odmítne a YOLO nepřiděluje bojové XP.
+- Ověření: `GameYoloStage.spec.ts`, integrační případy v `PlayView.spec.ts`,
+  `npm run test:yolo:browser --prefix mobilni-aplikace` a backendová skupina
+  `--mobile-game`. Browser scénáře pokrývají 320/390/768/1280 px, ruční
+  odhalování, celý příběh, polling, chybu, generování, zrušení, úkol pro
+  poraženého, dlouhá jména, 200% text a omezený pohyb. Data jsou syntetická;
+  živé placené generování, skutečné telefony a produkce nejsou touto přejímkou
+  potvrzené.
 
 ## Oprava CI po úklidu zdrojů
 

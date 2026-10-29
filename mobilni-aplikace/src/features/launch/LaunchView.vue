@@ -43,6 +43,9 @@ const error = ref('');
 const remaining = ref(0);
 const revealed = ref(false);
 const workshopOpen = ref(false);
+const wandComplete = ref(false);
+const receptionSteps = ['Postava', 'Portrét', 'Hůlka', 'Čekárna'];
+const receptionStep = computed(() => wandComplete.value ? 3 : canPrepareWand.value ? 2 : state.value?.character ? 1 : 0);
 const canPrepareWand = computed(() => isCustomerAccount(account.value)
   && customerMembershipState.value === 'active' && !!state.value?.character
   && (revealed.value && hasPortrait.value || phase.value === 'failed'));
@@ -91,6 +94,23 @@ const statusMessage = computed(() => {
   return copy.value.saved;
 });
 const finalMessage = computed(() => state.value?.artwork?.finalMessage || copy.value.finalFallback);
+const receptionJoke = computed(() => {
+  const artwork = state.value?.artwork;
+  if (canPrepareWand.value) return artwork?.welcome?.joke?.trim() || artwork?.loadingMessage?.trim() || finalMessage.value;
+  return artwork?.loadingMessage?.trim() || artwork?.welcome?.joke?.trim()
+    || 'Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.';
+});
+const receptionStatus = computed(() => {
+  if (error.value || phase.value === 'failed') return '';
+  if (writing.value || uncertain.value || !state.value?.character) return statusMessage.value;
+  if (statusMessage.value === copy.value.waiting) return statusMessage.value;
+  if (wandComplete.value) return 'Postava i hůlka jsou připravené. Tady počkáš na otevření večera.';
+  if (canPrepareWand.value) return 'Postava je připravená. Teď můžeš do dílny pro hůlku.';
+  if (hasPortrait.value) return '';
+  return actualPreparation.value || portrait.pending.value
+    ? 'Postava je uložená. Ještě připravujeme její portrét.'
+    : 'Postava je uložená. Portrét zatím není připravený.';
+});
 const portraitSource = computed(() => {
   const source = state.value?.artwork?.source;
   if (!source) return null;
@@ -109,6 +129,13 @@ const portraitSource = computed(() => {
 const timeParts = computed(() => {
   const total = Math.max(0, Math.floor(remaining.value / 1000));
   return [Math.floor(total / 86400), Math.floor(total / 3600) % 24, Math.floor(total / 60) % 60, total % 60];
+});
+const launchTimeLabel = computed(() => {
+  if (policy.value?.launchAt == null) return '';
+  return new Intl.DateTimeFormat(language.value === 'en' ? 'en-GB' : 'cs-CZ', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+  }).format(policy.value.launchAt);
 });
 watch(() => account.value?.id, id => {
   accountEpoch++;
@@ -141,7 +168,7 @@ watch(() => registration.value?.status, status => {
   if (status === 'confirmed' && controller) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
 });
 watch(hasPortrait, ready => { if (ready) finishInvitationPresentation(); });
-watch(characterIdentity, () => { revealed.value = false; workshopOpen.value = false; }, { flush: 'sync' });
+watch(characterIdentity, () => { revealed.value = false; workshopOpen.value = false; wandComplete.value = false; }, { flush: 'sync' });
 watch(canPrepareWand, available => { if (!available) workshopOpen.value = false; }, { flush: 'sync' });
 function onWorkshopOpen(open: boolean): void {
   workshopOpen.value = open;
@@ -457,9 +484,17 @@ onBeforeUnmount(() => {
         <AwButton v-if="betaEnrollmentAvailable === true" variant="primary" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>
       </PaperSurface>
     </section>
-    <section v-else v-show="!workshopOpen" class="launch-card">
+    <template v-else>
+    <ol v-if="writing || state?.character" v-show="!workshopOpen" class="reception-steps" aria-label="Příprava na večer">
+      <li v-for="(step, index) in receptionSteps" :key="step" :class="{ 'is-current': index === receptionStep, 'is-done': index < receptionStep }" :aria-current="index === receptionStep ? 'step' : undefined">
+        <span class="reception-step-mark" aria-hidden="true" />
+        <span>{{ step }}<small v-if="index === 1 && phase === 'failed'">Bez portrétu</small><span v-if="index < receptionStep" class="sr-only">{{ index === 1 && phase === 'failed' ? ' — přeskočeno' : ' — hotovo' }}</span></span>
+      </li>
+    </ol>
+    <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" @complete-change="wandComplete = $event" />
+    <section v-show="!workshopOpen" class="launch-card" :class="{ 'launch-card--reception': writing || state?.character }">
       <PaperSurface class="launch-copy">
-        <h1 v-if="!state?.character" id="launch-title">{{ draftProvided ? name : copy.title }}</h1>
+        <h1 v-if="!state?.character" id="launch-title">{{ writing ? 'Tvoje postava se připravuje.' : draftProvided ? name : copy.title }}</h1>
         <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <AwNotice v-if="phase === 'failed'" tone="warning" role="alert">{{ copy.failed }} <button class="launch-retry" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
         <template v-if="!account"><RouterLink class="aw-button aw-button--primary" to="/signin">{{ copy.invitation }}</RouterLink></template>
@@ -476,22 +511,34 @@ onBeforeUnmount(() => {
           <p>{{ copy.missingPortrait }}</p>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
-        <CharacterCountdown v-if="state?.character" class="countdown" heading-id="launch-title" :name="characterDisplayName(state.character.name, state.character.label)" :universe="state.character.universe" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
-        <CharacterLabelEditor v-if="state?.character" :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" />
-      </PaperSurface>
-      <PortraitCurtain class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" @revealed="revealed = $event" @failed="portrait.fail()" />
-      <div class="launch-text">
-        <p class="launch-status" role="status" aria-atomic="true">{{ statusMessage }}</p>
-        <div v-if="revealed && hasPortrait" class="launch-final">
-          <template v-if="state?.artwork?.welcome"><p class="launch-joke">{{ state.artwork.welcome.joke }}</p><p v-if="state.artwork.welcome.identity" class="launch-identity">{{ state.artwork.welcome.identity }}</p><p v-if="state.artwork.welcome.teaser" class="launch-teaser">{{ state.artwork.welcome.teaser }}</p></template>
-          <p v-else class="launch-joke">{{ finalMessage }}</p>
-          <p v-if="portraitSource" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
+        <header v-if="state?.character" class="reception-identity">
+          <h1 id="launch-title">{{ characterDisplayName(state.character.name, state.character.label) }}</h1>
+          <p>{{ state.character.universe }}</p>
+        </header>
+        <div v-if="writing || state?.character" class="reception-introduction" :class="{ 'launch-final': canPrepareWand }">
+          <p class="launch-status" role="status" aria-atomic="true">{{ receptionStatus }}</p>
+          <p class="launch-joke">{{ receptionJoke }}</p>
+          <template v-if="canPrepareWand && state?.artwork?.welcome">
+            <p v-if="state.artwork.welcome.identity" class="launch-identity">{{ state.artwork.welcome.identity }}</p>
+            <p v-if="state.artwork.welcome.teaser" class="launch-teaser">{{ state.artwork.welcome.teaser }}</p>
+          </template>
+          <p v-if="portraitSource && revealed && hasPortrait" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
         </div>
-        <p v-else class="launch-generic">{{ copy.loading }}</p>
+      </PaperSurface>
+      <PortraitCurtain class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" :unavailable="phase === 'failed'" @revealed="revealed = $event" @failed="portrait.fail()" />
+      <p v-if="!writing && !state?.character" class="launch-text launch-status" role="status">{{ statusMessage }}</p>
+    </section>
+    <section v-if="state?.character" v-show="!workshopOpen" class="reception-waiting" aria-label="Čekání na večer">
+      <CharacterCountdown class="countdown" heading-as="h2" :name="wandComplete ? 'Vítej v čekárně.' : 'Večer se chystá.'" :universe="''" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
+      <div class="reception-options">
+        <p v-if="launchTimeLabel" class="launch-time">Večer se otevře {{ launchTimeLabel }}.</p>
+        <p v-if="wandComplete" class="reception-seat">Čekárna uznává tvoji pověst. Na pořadí to vliv nemá.</p>
+        <details v-if="account && !accountDeletionRequested" class="launch-notifications"><summary>Nastavit oznámení pro toto zařízení</summary><PushNotifications /></details>
+        <details class="launch-label-options"><summary>Rozlišovací označení (nepovinné)</summary><CharacterLabelEditor :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" /></details>
       </div>
     </section>
-    <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" />
-    <footer class="launch-footer"><details v-if="account" class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="!accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
+    </template>
+    <footer class="launch-footer"><details v-if="account" class="launch-account-options"><summary>{{ copy.account }}</summary><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
 </template>
 
@@ -539,6 +586,11 @@ onBeforeUnmount(() => {
 .launch-account-options { max-width: 100%; }
 .launch-account-options[open] { flex-basis: 100%; width: 100%; }
 .launch-account-options summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
+.launch-label-options { margin-top: 1rem; }
+.launch-label-options summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
+.launch-label-options[open] :deep(form) { margin-top: .75rem; }
+.launch-notifications summary { cursor: pointer; min-height: 44px; padding-block: .65rem; }
+.launch-notifications[open] { margin-block: .75rem; }
 .group-opening { display: flex; flex-direction: column; align-items: center; overflow: hidden; }
 .group-opening-art { display: block; width: min(100%, 36rem); max-height: 58dvh; object-fit: contain; margin: 0 auto; }
 .group-opening-copy { position: relative; width: min(100% - 2rem, 30rem); display: grid; justify-items: center; gap: 1rem; padding: 1rem 2rem max(1rem, env(safe-area-inset-bottom)); text-align: center; }
@@ -587,4 +639,32 @@ onBeforeUnmount(() => {
 .launch-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
 @media (min-width: 760px) { .launch-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, .85fr); align-items: center; gap: 2rem; } .launch-copy { order: 1; } .launch-art { order: 2; } .launch-text { grid-column: 1 / -1; } }
 @media (max-width: 759px) { .launch-copy { border-radius: 24px; } .launch-art { max-width: min(100%, 44.8vh); margin-inline: auto; } }
+.reception-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(100%, 62rem); margin: 0 auto 24px; padding: 0; list-style: none; }
+.reception-steps li { display: flex; gap: 8px; align-items: baseline; min-width: 0; padding: 12px 4px 0; border-top: 2px solid var(--wns-line); color: var(--wns-muted); font-size: clamp(.75rem, 2.8vw, .9rem); }
+.reception-step-mark { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.reception-steps li > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.reception-steps .is-current { border-color: var(--wns-amber); color: var(--wns-amber); font-weight: 750; }
+.reception-steps .is-done { border-color: var(--wns-mint); color: var(--wns-mint); }
+.reception-steps small { display: block; font-size: .75rem; font-weight: 500; }
+.launch-card--reception { width: min(100%, 62rem); margin-block: 32px; }
+.launch-card--reception .launch-copy { background: transparent; border: 0; padding: 0; border-radius: 0; }
+.launch-card--reception .launch-art { width: min(100%, 300px); align-self: center; }
+.reception-identity h1 { text-wrap: balance; }
+.reception-identity > p { margin: 8px 0 28px; color: var(--wns-muted); }
+.reception-introduction { display: grid; gap: 20px; }
+.reception-introduction p { margin: 0; overflow-wrap: anywhere; }
+.reception-introduction .launch-status { color: var(--wns-mint); max-width: 48ch; }
+.reception-introduction .launch-joke { max-width: 28ch; font-size: clamp(1.4rem, 5vw, 2.1rem); line-height: 1.4; font-weight: 650; letter-spacing: -.02em; }
+.reception-introduction .launch-identity { color: var(--wns-muted); font-size: 1rem; }
+.reception-waiting { display: grid; gap: 28px; width: min(100%, 62rem); margin: 40px auto 0; padding-top: 28px; border-top: 1px solid var(--wns-line); }
+.reception-waiting .countdown { text-align: left; }
+.reception-waiting :deep(.character-countdown-identity p) { display: none; }
+.reception-waiting :deep(.character-countdown-title) { margin-top: 16px; color: var(--wns-muted); }
+.reception-waiting :deep(.character-countdown-grid) { max-width: 320px; }
+.reception-options { min-width: 0; color: var(--wns-muted); font-size: .875rem; }
+.reception-options p { margin: 0 0 16px; }
+.reception-options .reception-seat { color: var(--wns-text); max-width: 42ch; line-height: 1.5; }
+.reception-options summary { cursor: pointer; min-height: 44px; padding-block: 12px; }
+.launch-page ::selection { background: var(--wns-violet); color: var(--wns-on-violet); }
+@media (min-width: 760px) { .launch-card--reception { grid-template-columns: minmax(0, 1fr) minmax(240px, .7fr); gap: 64px; } .reception-waiting { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; } }
 </style>

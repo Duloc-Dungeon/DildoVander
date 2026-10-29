@@ -24,6 +24,62 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('shows the actual opponent wand in YOLO without inventing combat rounds', async () => {
+    const path = `/app/v1/game/matches/${id}/opponent/wand-artwork?revision=${'b'.repeat(64)}`;
+    const yolo = snapshot({ mode: 'yolo', opponent: { id: 'two', displayName: 'Eliška', xp: 20, matchesPlayed: 3, wandArtworkUrl: path, wandName: 'Uložená hůlka' }, yolo: { status: 'generating', beats: [], verdict: '' } });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:yolo-opponent');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    api.transport.mockImplementation(async (url: string) => url === path
+      ? new Response(new Blob(['image'], { type: 'image/png' })) : Response.json(yolo));
+    const view = await render();
+    expect(view.get('.game-yolo .game-magic-clash__origin--opponent img').attributes('src')).toBe('blob:yolo-opponent');
+    expect(view.get('.game-yolo').text()).toContain('Uložená hůlka');
+    expect(view.get('.game-clash-stage').attributes('data-winner')).toBeUndefined();
+    expect(view.find('.game-magic-clash__spells').exists()).toBe(false);
+  });
+  it('keeps YOLO result announcements and the loser task out of the opening acts', async () => {
+    const value = snapshot({ mode: 'yolo', status: 'complete', result: 'loss',
+      yolo: { status: 'complete', beats: ['Nástup.', 'Střet.', 'Rozsudek.'].map(text => ({ text, detailRefs: [] })), verdict: 'Eliška vítězí.' },
+      partyTask: { title: 'Úkol pro poraženého', text: 'Předveď reklamu.', category: 'classic', status: 'pending' } });
+    api.transport.mockResolvedValue(Response.json(value));
+    const view = await render();
+    expect(view.get('.game-sr[role="status"]').text()).toContain('Příběh je připraven.');
+    expect(view.find('.game-task').exists()).toBe(false);
+    expect(view.text()).not.toContain('Dnes slaví soupeř.');
+    await view.findAll('.yolo-theatre__reading-controls button')[1]!.trigger('click');
+    expect(view.find('.game-task').exists()).toBe(true);
+    expect(view.text()).toContain('Eliška vítězí.');
+  });
+  it('announces an asynchronously completed YOLO story without revealing its winner', async () => {
+    const value = snapshot({ mode: 'yolo', status: 'generating', yolo: { status: 'generating', beats: [], verdict: '' } });
+    api.transport.mockImplementation(async () => Response.json(value));
+    const view = await render();
+    expect(view.get('.game-sr[role="status"]').text()).toBe('');
+    value.status = 'complete'; value.revision++;
+    value.yolo = { status: 'complete', beats: ['Nástup.', 'Střet.', 'Rozsudek.'].map(text => ({ text, detailRefs: [] })), verdict: 'Eliška vítězí.' };
+    window.dispatchEvent(new Event('online'));
+    await flushPromises();
+    expect(view.get('.game-sr[role="status"]').text()).toContain('Příběh je připraven.');
+    expect(view.text()).not.toContain('Eliška vítězí.');
+  });
+  it('keeps earned game modes discoverable without exposing locked modes', async () => {
+    const player = { id: 'one', displayName: 'Mira', xp: 10, matchesPlayed: 1, tacticalUnlocked: false, yoloUnlocked: false };
+    let tacticalMatches = 0;
+    api.transport.mockImplementation(async (path: string) => Response.json(path.endsWith('/progress')
+      ? { pending: [], tacticalMatches }
+      : { player, opponents: [], incoming: [], active: [], history: [] }));
+    const view = await render('/play');
+    expect(view.find('.game-mode-links a').exists()).toBe(false);
+    player.tacticalUnlocked = true;
+    player.yoloUnlocked = true;
+    tacticalMatches = 3;
+    window.dispatchEvent(new Event('online'));
+    await flushPromises();
+    const destinations = view.findAll('.game-mode-links a').map(link => link.attributes('href'));
+    expect(destinations).toEqual(['/play/challenge?mode=tactical', '/play/teams', '/play/challenge?mode=yolo']);
+    expect(view.get('.game-start a').attributes('href')).toBe('/play/challenge');
+  });
+
   it('keeps the owner name Olivander even when the character has another label', async () => {
     api.setAccount({ id: 'one', displayName: 'Old name', roles: ['Owner'] });
     api.request.mockResolvedValue({ hasCharacter: true, wand: { wandId: 'saved' }, tier: 1, characterDisplayName: 'Jiná postava' });
@@ -72,6 +128,47 @@ describe('mobile game interaction', () => {
     api.transport.mockResolvedValue(Response.json(snapshot({ mode: 'boss', exhibition: true, playerEnergy: 6, opponentEnergy: 2 })));
     const view = await render();
     expect(view.text()).toContain('Baronova energie2 / 3');
+    expect(view.get('[role="meter"][aria-label="Baronova energie"]').attributes('aria-valuemax')).toBe('3');
+    expect(view.get('[role="meter"][aria-label="Baronova energie"]').attributes('aria-valuenow')).toBe('2');
+  });
+
+  it('updates boss lighting and energy from the server without discarding an unsubmitted choice', async () => {
+    let state = snapshot({ mode: 'boss', phase: 1, playerEnergy: 5.5, opponentEnergy: 4, hint: 'První nápověda.' });
+    api.transport.mockImplementation(async () => Response.json(state));
+    const view = await render();
+    await view.get('input[value="strike"]').setValue();
+    const portrait = view.get('.boss-theatre__figure').element;
+    expect(view.attributes('data-boss-phase')).toBe('1');
+    state = { ...state, revision: 3, phase: 3, playerEnergy: 2.5, opponentEnergy: .5, hint: 'Nová nápověda.' };
+    window.dispatchEvent(new Event('online')); await flushPromises();
+    expect(view.attributes('data-boss-phase')).toBe('3');
+    expect(view.get('.boss-phase').text()).toBe('Fáze 3 ze 3');
+    expect(view.get('.boss-phases [aria-current="step"]').attributes('aria-label')).toBe('Fáze 3');
+    expect(view.get('.boss-tactics').text()).toContain('Nová nápověda.');
+    expect(view.get('[role="meter"][aria-label="Tvoje energie"]').attributes('aria-valuenow')).toBe('2.5');
+    expect(view.get('input[value="strike"]').element).toHaveProperty('checked', true);
+    expect(view.get('.boss-theatre__figure').element).toBe(portrait);
+  });
+
+  it('keeps a locked boss turn visible without the regular duel canvas', async () => {
+    api.transport.mockResolvedValue(Response.json(snapshot({ mode: 'boss', phase: 2, ownChoiceLocked: true })));
+    const view = await render();
+    expect(view.find('.game-clash-stage').exists()).toBe(false);
+    expect(view.get('.game-controls .game-helper').text()).toBe('Tvůj tah je uzamčený. Čekáme na soupeře.');
+    expect(view.find('input[name="spell"]').exists()).toBe(false);
+  });
+
+  it.each([
+    ['player', 'Tvoje výměna.'], ['opponent', 'Soupeřova výměna.'], ['draw', 'Nerozhodná výměna.'],
+  ])('names a published %s round without changing the saved match result', async (winner, title) => {
+    api.transport.mockResolvedValue(Response.json(snapshot({ status: 'complete', result: 'win', playerScore: 5, opponentScore: 3,
+      completedRounds: 7, rounds: [{ index: 7, playerChoice: 'strike', opponentChoice: winner === 'draw' ? 'strike' : winner === 'player' ? 'trick' : 'shield', winner }] })));
+    const view = await render();
+    expect(view.classes()).toContain('game-duel-scene');
+    expect(view.attributes('data-duel-result')).toBe('win');
+    expect(view.get('.duel-round-verdict').text()).toBe(title);
+    expect(view.get('.game-result h2').text()).toBe('Tohle bylo tvoje.');
+    expect(view.get('.game-clash-stage').classes()).toContain('game-magic-clash--theatre');
   });
 
   it('does not offer a challenge to a player who is still making a wand', async () => {
@@ -204,12 +301,18 @@ describe('mobile game interaction', () => {
   it('offers practice without making game requests or awarding XP', async () => {
     vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => { (array as Uint32Array).fill(0); return array; });
     const view = await render('/play/practice');
+    expect(view.classes()).toContain('game-practice-scene');
+    expect(view.classes()).toContain('game-duel-scene');
+    expect(view.get('.game-clash-stage').classes()).toContain('game-magic-clash--theatre');
+    expect(view.get('.game-magic-clash__origin--opponent img').classes()).toContain('game-magic-clash__artifact--practice');
     for (let index = 0; index < 7; index++) {
       await view.get('input[value="strike"]').setValue();
       await view.findAll('button').find(button => button.text() === 'Potvrdit tah')!.trigger('click');
     }
     expect(view.text()).toContain('Trénink dokončen'); expect(api.transport).not.toHaveBeenCalled();
     expect(view.text()).not.toMatch(/\+\d+ XP/);
+    expect(view.attributes('data-duel-result')).toBe('draw');
+    expect(view.get('.duel-round-verdict').text()).toBe('Nerozhodná výměna.');
   });
   it('lets a new guest reach the captured workshop rescue without a first wand', async () => {
     api.request.mockResolvedValue({ hasCharacter: true, wand: null, tier: 0 });
@@ -222,7 +325,7 @@ describe('mobile game interaction', () => {
     const boss = await render('/play/boss');
     expect(boss.text()).toContain('V exhibici dostaneš neomezená kouzla');
     expect(boss.text()).toContain('6 energie proti 3');
-    expect(boss.findAll('button').some(button => button.text() === 'Vyzvat bosse')).toBe(true);
+    expect(boss.findAll('button').some(button => button.text() === 'Vyzvat Barona')).toBe(true);
     expect(boss.find('a[href="/play/wand"]').exists()).toBe(false);
   });
 
@@ -268,6 +371,8 @@ describe('mobile game interaction', () => {
     expect(view.findAll('.game-round-dots > .done')).toHaveLength(4);
     expect(view.find('input[value="strike"]').exists()).toBe(false);
     expect(api.transport).not.toHaveBeenCalled();
+    expect(view.attributes('data-duel-result')).toBe(winner === 'player' ? 'win' : 'loss');
+    expect(view.get('.duel-round-verdict').text()).toBe(winner === 'player' ? 'Tvoje výměna.' : 'Soupeřova výměna.');
   });
 
   it.each(['done', 'skip'] as const)('requires explicit confirmation and retains saved task outcome %s after reload', async outcome => {

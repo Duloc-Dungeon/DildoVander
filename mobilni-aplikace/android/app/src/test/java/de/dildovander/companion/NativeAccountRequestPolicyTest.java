@@ -14,6 +14,36 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void opponentWandArtworkIsMatchAndRevisionBound() {
+        String path = "/app/v1/game/matches/" + String.join("", Collections.nCopies(32, "a"))
+            + "/opponent/wand-artwork?revision=" + String.join("", Collections.nCopies(64, "b"));
+        assertTrue(NativeAccountRequestPolicy.allows(path, "GET"));
+        assertEquals(32 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(path, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(path, "POST"));
+        for (String invalid : new String[] {path + "&x=1", path + "\n", path + "/extra", path.replace("revision=", "asset="), path.substring(0, path.length() - 1)}) {
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "GET"));
+        }
+    }
+    @Test public void teamOpponentWandArtworkIsTeamOpponentAndRevisionBound() {
+        String path = "/app/v1/game/teams/" + String.join("", Collections.nCopies(32, "a"))
+            + "/opponents/" + String.join("", Collections.nCopies(32, "c"))
+            + "/wand-artwork?revision=" + String.join("", Collections.nCopies(64, "b"));
+        assertTrue(NativeAccountRequestPolicy.allows(path, "GET"));
+        assertEquals(32 * 1024 * 1024, NativeAccountRequestPolicy.responseBodyLimit(path, "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(path, "POST"));
+        for (String invalid : new String[] {path + "&x=1", path + "\n", path + "/extra", path.replace("revision=", "asset="),
+            path.replace("opponents/" + String.join("", Collections.nCopies(32, "c")), "opponents/player-two"),
+            path.replace(String.join("", Collections.nCopies(32, "a")), "bad")}) {
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "GET"));
+        }
+    }
+    @Test public void sealedCaseScenarioCatalogIsReadOnlyAndExact() {
+        String path = "/app/v1/sealed-cases/scenarios";
+        assertTrue(NativeAccountRequestPolicy.allows(path, "GET"));
+        for (String method : Arrays.asList("POST", "PUT", "DELETE")) assertFalse(NativeAccountRequestPolicy.allows(path, method));
+        assertFalse(NativeAccountRequestPolicy.allows(path + "?x=1", "GET"));
+        assertFalse(NativeAccountRequestPolicy.allows(path + "/extra", "GET"));
+    }
     @Test public void pushRoutesAreExplicitAndMethodBound() {
         for (String method : new String[] {"GET", "PUT", "DELETE"}) {
             assertTrue(NativeAccountRequestPolicy.allows("/app/v1/push", method));

@@ -99,7 +99,7 @@ describe('CustomerCompletionUpdates', () => {
     wrapper.unmount();
   });
 
-  it('shows loading, request failure, browser offline and English copy without requesting notification permission', async () => {
+  it('shows loading, request failure, browser offline and Czech copy with the legacy locale prop', async () => {
     const permission = typeof Notification !== 'undefined' && typeof Notification.requestPermission === 'function'
       ? vi.spyOn(Notification, 'requestPermission') : null;
     expect(navigator.onLine).toBe(true);
@@ -109,7 +109,7 @@ describe('CustomerCompletionUpdates', () => {
     const loading = setup().wrapper;
     await nextTick();
     expect(request).toHaveBeenCalledTimes(1);
-    expect(loading.text()).toContain('Načítám vaše výsledky…');
+    expect(loading.text()).toContain('Načítám tvoje výsledky…');
     finish(page());
     await flushPromises();
     loading.unmount();
@@ -118,13 +118,13 @@ describe('CustomerCompletionUpdates', () => {
     request.mockRejectedValueOnce(new Error('offline'));
     const failed = setup().wrapper;
     await flushPromises();
-    expect(failed.text()).toContain('Výsledky jsou dočasně nedostupné. Zkuste je obnovit.');
+    expect(failed.text()).toContain('Tvoje výsledky jsou dočasně nedostupné. Zkus je obnovit.');
     failed.unmount();
 
     request.mockReset();
     setOnline(false);
     const offline = setup('en').wrapper;
-    expect(offline.text()).toContain('Account results are unavailable in offline mode.');
+    expect(offline.text()).toContain('Tvoje výsledky nejsou dostupné offline.');
     expect(request).not.toHaveBeenCalled();
     offline.unmount();
     permission?.mockRestore();
@@ -296,7 +296,7 @@ describe('CustomerCompletionUpdates', () => {
     request.mockResolvedValueOnce(page());
     const { wrapper, router } = setup('en');
     await flushPromises();
-    expect(wrapper.text()).toContain('Your results');
+    expect(wrapper.text()).toContain('Tvoje výsledky');
     await wrapper.get('a').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.fullPath).toBe(`/keepsake/?account=1&k=${locator}`);

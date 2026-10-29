@@ -43,9 +43,10 @@ async function stop() {
   await stopChildProcess(server);
 }
 async function ready() {
-  for (let index = 0; index < 120; index++) {
+  const deadline = performance.now() + 30_000;
+  while (performance.now() < deadline) {
     if (server.exitCode !== null || server.signalCode !== null) { throw new Error(`Backend exited: ${output}`); }
-    try { if ((await fetch(`${baseUrl}/healthz`)).ok) { return; } } catch { }
+    try { if ((await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(1000) })).ok) { return; } } catch { }
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   throw new Error(`Backend did not start: ${output}`);

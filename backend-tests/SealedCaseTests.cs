@@ -16,6 +16,8 @@ internal static class SealedCaseTests
         repeated_stun_does_not_extend_unconsciousness();
         received_presentation_does_not_reveal_other_recipients();
         undefined_enums_and_phase_two_conditions_are_rejected();
+        required_action_parameters_are_rejected_when_missing();
+        investigation_feedback_uses_actor_observation_deltas();
         dream_and_echo_actions_require_the_matching_state();
         preparation_is_consumed_or_expires_in_the_next_chapter();
         own_presentation_tracks_delivery_without_belief();
@@ -24,6 +26,38 @@ internal static class SealedCaseTests
         state_gate_prevents_movement_before_rejection();
         help_survives_a_defended_attack_but_not_a_successful_stun();
         preparation_modifier_matches_the_declared_intent_or_rest();
+    }
+
+    private static void required_action_parameters_are_rejected_when_missing()
+    {
+        var legacySabotage = new SealedAction("sabotage", "A", 1, SealedIntent.Sabotage);
+        var legacyHelp = new SealedAction("help", "A", 1, SealedIntent.Help);
+        var selfHelp = new SealedAction("help-self", "A", 1, SealedIntent.Help, TargetId: "A");
+        legacySabotage.Validate(); legacyHelp.Validate(); selfHelp.Validate();
+        Throws<SealedCaseRuleException>(legacySabotage.ValidateForSubmission);
+        Throws<SealedCaseRuleException>(legacyHelp.ValidateForSubmission);
+        Throws<SealedCaseRuleException>(selfHelp.ValidateForSubmission);
+        Throws<SealedCaseRuleException>(() => new SealedActionBook().Confirm(legacySabotage, "A", 1, 2, 0));
+        new SealedAction("sabotage-valid", "A", 1, SealedIntent.Sabotage, ResourceId: "source").ValidateForSubmission();
+        new SealedAction("help-valid", "A", 1, SealedIntent.Help, TargetId: "B").ValidateForSubmission();
+    }
+
+    private static void investigation_feedback_uses_actor_observation_deltas()
+    {
+        static SealedScenarioState Snapshot(string[] known, string[] notes) => new("scenario", "full", [],
+            new(StringComparer.Ordinal) { ["A"] = known }, new(StringComparer.Ordinal) { ["A"] = notes },
+            new(StringComparer.Ordinal), new(StringComparer.Ordinal));
+
+        const string discovered = "Prozkoumal jsi doloženou stopu clue-1.";
+        Equal("Znovu jsi narazil na již známou stopu.", SealedCaseFeedback.InvestigationObservation(
+            SealedIntent.Investigate, Snapshot(["clue-1"], []), Snapshot(["clue-1"], [discovered]), "A"));
+        Equal("Získal jsi novou doloženou stopu.", SealedCaseFeedback.InvestigationObservation(
+            SealedIntent.Investigate, Snapshot([], []), Snapshot(["clue-1"], [discovered]), "A"));
+        Equal("Na tomto místě nebyla nová doložená stopa dostupná.", SealedCaseFeedback.InvestigationObservation(
+            SealedIntent.Investigate, Snapshot([], []), Snapshot(["delivered-by-peer"],
+                ["Prozkoumal jsi místo. Nová doložená stopa tu zatím dostupná není."]), "A"));
+        Equal<string?>(null, SealedCaseFeedback.InvestigationObservation(SealedIntent.Investigate,
+            Snapshot([], []), Snapshot(["clue-1"], ["Při pátrání došlo k přesměrovanému doručení."]), "A"));
     }
 
     private static void Confirmed_orders_replace_and_retry_is_idempotent()

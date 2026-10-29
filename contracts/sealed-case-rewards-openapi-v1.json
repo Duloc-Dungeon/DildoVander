@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Wand Night Stand sealed case rewards API",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Read-only, account-scoped summaries for the authenticated participant's released sealed cases. No private case actions or other participant data are included."
   },
   "paths": {
@@ -10,10 +10,17 @@
       "get": {
         "summary": "Read personal released case rewards",
         "x-source": "Features/SealedCase/SealedCaseRewards.cs",
+        "parameters": [{
+          "name": "scenarioMetadata",
+          "in": "query",
+          "required": false,
+          "description": "Opt in to all scenario variants and their saved public title and the participant's own team label. Without this option only original last-bell cases are returned, with the original exact item shape, so older clients cannot mislabel other scenarios.",
+          "schema": { "type": "boolean", "default": false }
+        }],
         "security": [{ "AccountSession": [] }],
         "responses": {
           "200": {
-            "description": "Released cases for which the current account is a rostered participant",
+            "description": "Released cases for which the current account is a rostered participant. With scenarioMetadata=true every item also contains scenario; without it the legacy item shape is preserved.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/SealedCaseRewardCollection" }
@@ -53,7 +60,19 @@
           "releasedAt": { "type": "string", "format": "date-time" },
           "team": { "type": "string", "enum": ["Guardian", "Conspirator"] },
           "confirmedPlans": { "type": "integer", "minimum": 0 },
-          "successfulPlans": { "type": "integer", "minimum": 0 }
+          "successfulPlans": { "type": "integer", "minimum": 0 },
+          "scenario": { "$ref": "#/components/schemas/SealedCaseRewardScenario" }
+        },
+        "additionalProperties": false
+      },
+      "SealedCaseRewardScenario": {
+        "type": "object",
+        "description": "Only saved public scenario identity and the authenticated participant's own team label. No assignments, evidence recipes, private actions or narrator prompts.",
+        "required": ["id", "title", "teamLabel"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Z0-9_]{1,128}$" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "teamLabel": { "type": "string", "minLength": 1, "maxLength": 80 }
         },
         "additionalProperties": false
       }

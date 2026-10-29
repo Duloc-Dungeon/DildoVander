@@ -9,6 +9,10 @@ import { account } from '../identity/session';
 const base = '/app/v1/customer/wand/workshop'; const id = 'b'.repeat(32);
 let session: any; let reason: string | null; let view: VueWrapper | undefined; let profileRevision: number;
 const saved = () => ({ id, profileId: 'profile', profileRevision, tier: 1, status: 'asking', question: null, steps: [], messages: [], wand: null, artwork: null });
+const completed = () => ({
+  ...saved(), status: 'complete', verdict: 'Tvoje cesta má konečně doprovod.',
+  wand: { wandId: 'f'.repeat(32), name: 'Modrá nit', material: 'Jasan', core: 'Jiskra', temperament: 'Klidná', lore: 'Příběh', designDescription: 'Modrá nit.', affinity: 'Mosty', weakness: 'Spěch', combatArchetype: 'balanced', combatRulesVersion: 'wand-archetypes-v1', spells: ['strike', 'trick', 'shield'].map(action => ({ action, name: action, description: 'Kouzlo' })) },
+});
 const render = async (prelaunch = false) => { view = mount(WandWorkshop, { props: { prelaunch }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); await flushPromises(); return view; };
 const click = async (text: string) => { await view!.findAll('button').find(button => button.text() === text)!.trigger('click'); await flushPromises(); };
 beforeEach(() => {
@@ -26,6 +30,30 @@ beforeEach(() => {
 });
 afterEach(() => { view?.unmount(); view = undefined; vi.useRealTimers(); });
 describe('customer Live workshop', () => {
+  it('acknowledges completion observed in this workshop and keeps a restored result quiet', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    session = { ...saved(), status: 'generating' };
+    await render();
+    expect(view!.attributes('data-new-wand')).toBe('false');
+    api.observer.workshopSession(completed());
+    await flushPromises();
+    expect(view!.attributes('data-new-wand')).toBe('true');
+    expect(view!.get('.trunk-workshop__saved').attributes('role')).toBe('status');
+    expect(view!.get('.trunk-workshop__saved').text()).toBe('Hůlka je uložená a připravená ke hře.');
+    view!.unmount();
+    session = completed();
+    await render();
+    expect(view!.attributes('data-new-wand')).toBe('false');
+  });
+  it('does not celebrate a completion received while the document is hidden', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    session = { ...saved(), status: 'generating' };
+    await render();
+    api.observer.workshopSession(completed());
+    await flushPromises();
+    expect(view!.attributes('data-new-wand')).toBe('false');
+    expect(view!.text()).toContain('Hůlka je uložená a připravená ke hře.');
+  });
   it('returns prelaunch guests to their countdown and stops media without linking to the game', async () => {
     await render(true);
     expect(view!.find('a').exists()).toBe(false);
@@ -38,8 +66,50 @@ describe('customer Live workshop', () => {
   it('only reads on entry and offers Live first plus typing without acquiring audio', async () => {
     await render(); expect(api.request.mock.calls.map(call => call[0])).toEqual([base]); expect(api.connect).not.toHaveBeenCalled(); expect(view!.text()).toContain('Promluvit s kufrem'); expect(view!.text()).toContain('Raději psát'); expect(view!.text()).not.toMatch(/Otázka .* ze 3/);
   });
+  it('guides text answers without reporting an unused microphone or starting Live', async () => {
+    await render(true);
+    await click('Raději psát');
+    expect(view!.get('textarea').attributes('aria-describedby')).toBe('trunk-answer-hint');
+    expect(view!.get('#trunk-answer-hint').text()).toContain('Stačí jedna věta');
+    expect(view!.text()).not.toContain('Mikrofon je vypnutý.');
+    expect(view!.text()).toContain('Hůlka vznikne z uložených odpovědí.');
+    expect(api.connect).not.toHaveBeenCalled();
+    expect(view!.findAll('button').find(button => button.text() === 'Odeslat')!.attributes('disabled')).toBeDefined();
+  });
+  it('keeps one saved result and one recoverable illustration error without an empty art area', async () => {
+    session = { ...completed(), artwork: { status: 'failed', assetId: null, canRetry: true, version: 1 } };
+    await render(true);
+    expect(view!.get('#workshop-title').text()).toBe('Modrá nit');
+    expect(view!.text().match(/Hůlka je uložená/g)).toHaveLength(1);
+    expect(view!.text().match(/Ilustrace se nezdařila/g)).toHaveLength(1);
+    expect(view!.get('.trunk-stage').attributes('style')).toContain('display: none');
+    await click('Počkat na začátek večera');
+    expect(view!.emitted('exit')).toEqual([[]]);
+    expect(api.request.mock.calls.some(call => call[1] === 'POST')).toBe(false);
+  });
   it.each(['wand_character_preparing', 'wand_character_needs_clarification', 'wand_character_preparation_failed'])('blocks both modes while %s', async value => {
     reason = value; await render(); expect(view!.findAll('button').some(button => ['Promluvit s kufrem', 'Raději psát'].includes(button.text()))).toBe(false); expect(api.connect).not.toHaveBeenCalled();
+  });
+  it('announces confirmed text replies without streaming fragments', async () => {
+    await render(); await click('Raději psát');
+    const announcement = view!.get('[aria-live="polite"]');
+    expect(announcement.text()).toBe('Co má hůlka zachránit?');
+    api.observer.transcript('assistant', 'Nedokončená věta'); await flushPromises();
+    expect(view!.get('.trunk-workshop__question').text()).toBe('Nedokončená věta');
+    expect(announcement.text()).toBe('Co má hůlka zachránit?');
+  });
+  it('prioritizes confirmed manufacture over speech and keeps failed work recoverable', async () => {
+    session = saved(); await render(); await click('Pokračovat hlasem');
+    api.observer.phase('speaking'); api.observer.outputLevel(.8); await flushPromises();
+    expect(view!.get('.trunk-stage').attributes('data-stage')).toBe('speaking');
+    api.observer.workshopSession({ ...saved(), status: 'generating' }); await flushPromises();
+    expect(view!.get('.trunk-stage').attributes('data-stage')).toBe('forging');
+    expect(view!.get('[aria-current="step"]').text()).toBe('Výroba');
+    expect(view!.get('.trunk-stage__visual').attributes('style')).toContain('--trunk-level: 0;');
+    api.observer.workshopSession({ ...saved(), status: 'failed', canRetry: true }); await flushPromises();
+    expect(view!.get('.trunk-stage').attributes('data-stage')).toBe('error');
+    expect(view!.text()).toContain('Obnovit výrobu');
+    expect(view!.text()).not.toContain('Pokračovat hlasem');
   });
   it('explicitly connects customer workshop Live with its own ticket', async () => {
     await render(); await click('Promluvit s kufrem'); expect(api.connect).toHaveBeenCalledOnce(); expect(api.connect.mock.calls[0][3]).toEqual({ purpose: 'workshop' }); expect(api.request.mock.calls.some(call => call[0] === `${base}/sessions/${session.id}/ticket`)).toBe(true); expect(api.request.mock.calls.some(call => String(call[0]).includes('persona-lab'))).toBe(false);
@@ -176,7 +246,7 @@ describe('customer Live workshop', () => {
     expect(api.connect).toHaveBeenCalledOnce();
   });
   it('cancels a pending final verdict and cannot replay its late audio response', async () => {
-    session = { ...saved(), status: 'complete', verdict: 'Uložená hůlka.', wand: { wandId: 'f'.repeat(32), name: 'Modrá nit', material: 'Jasan', core: 'Jiskra', temperament: 'Klidná', lore: 'Příběh', designDescription: 'Modrá nit.', affinity: 'Mosty', weakness: 'Spěch', combatArchetype: 'balanced', combatRulesVersion: 'wand-archetypes-v1', spells: ['strike', 'trick', 'shield'].map(action => ({ action, name: action, description: 'Kouzlo' })) } };
+    session = completed();
     let deliver!: (response: Response) => void;
     api.transport.mockImplementation(() => new Promise<Response>(resolve => { deliver = resolve; }));
     await render(); await click('Přehrát verdikt kufru');

@@ -22,6 +22,12 @@ colors:
   placeholder: "#9ba69e"
   navigation-bg: "#111413"
   navigation-muted: "#9ca7a0"
+  sealed-paper: "#f2e6c8"
+  sealed-ink: "#29291f"
+  sealed-muted: "#5d5b48"
+  sealed-line: "#b5aa8f"
+  sealed-green: "#324e3b"
+  sealed-green-hover: "#243d2c"
 typography:
   headline:
     fontFamily: "'Manrope Variable', sans-serif"
@@ -42,7 +48,7 @@ typography:
     lineHeight: 1.65
   label:
     fontFamily: "'Manrope Variable', sans-serif"
-    fontSize: "1rem"
+    fontSize: ".95rem"
     fontWeight: 800
     lineHeight: 1.45
     letterSpacing: "-0.01em"
@@ -52,6 +58,7 @@ rounded:
   card: "22px"
   sheet: "24px"
   hero: "28px"
+  sealed-dossier: "12px"
 spacing:
   "8": "8px"
   "12": "12px"
@@ -67,6 +74,7 @@ components:
     typography: "{typography.label}"
     rounded: "{rounded.button}"
     padding: "8px 14px"
+    height: "56px"
   button-secondary:
     backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.text}"
@@ -93,6 +101,21 @@ components:
     backgroundColor: "{colors.navigation-bg}"
     textColor: "{colors.navigation-muted}"
     padding: "10px 12px"
+  notice:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.field}"
+    padding: "16px"
+  sealed-dossier:
+    backgroundColor: "{colors.sealed-paper}"
+    textColor: "{colors.sealed-ink}"
+    rounded: "{rounded.sealed-dossier}"
+    padding: "clamp(16px, 4vw, 28px)"
+  sealed-share:
+    backgroundColor: "{colors.sealed-green}"
+    textColor: "{colors.sealed-paper}"
+    rounded: "{rounded.sealed-dossier}"
+    padding: "12px 16px"
 ---
 
 # Wand Night Stand — schválený design v2
@@ -177,19 +200,39 @@ Stránka postavy má vlastní větší nadpis a herní obrazovka kompaktnější
 Při rozšiřování vycházej z konkrétního okolního rozhraní; neroztahuj jednu
 naměřenou velikost na všechny obrazovky.
 
+Baronovo představení má místní titul `clamp(2.6rem, 11vw, 4rem)`, váhu 800,
+řádkování 1,02 a prostrkání −0,035 em. Jeho jméno stojí před portrétem;
+nejde o nový společný nadpis. Energie používá tabulkové číslice, hodnotu
+1,25 rem a menší tlumený jmenovatel 0,875 rem.
+
 ## Layout
 
-Zákaznický obsah má jednu hlavní oblast. Spodní lišta má čtyři stejně široké
-destinace na mobilu i široké obrazovce. Obsah rezervuje její skutečně změřenou
+Zákaznický obsah má jednu hlavní oblast. Spodní lišta má čtyři destinace na mobilu
+i široké obrazovce. Za běžné velikosti jsou stejně široké; při zvětšení textu
+delší popisek dostane potřebnou šířku, aby se nelámal uvnitř slova.
+Obsah rezervuje její skutečně změřenou
 výšku včetně bezpečných okrajů, nikoli pevnou výšku podle obrázku.
 
-Základní mobilní okraj adaptéru je 24 px, do šířky 360 px klesá na 16 px.
+Zákaznický shell používá okraj `clamp(16px, 4vw, 32px)` a společný kontejner
+64 rem; postava a účet mají užší čtecí oblast nejvýše 48 rem.
+Základní mobilní okraj ostatních stránek adaptéru je 24 px, do šířky 360 px klesá na 16 px.
 Existující shell používá hranice 720 a 1100 px; stránka představení přechází
 na dvě oblasti od 760 px. Konkrétní stránka může mít vlastní kontejner:
-například postava nejvýše 62 rem, představení 70 rem. Nejde o nový společný limit.
+například formulář postavy 42 rem, představení 70 rem. Nejde o nový společný limit.
 Rozestupy v záhlaví jsou používaná část škály tokenů, nikoli inventář všech hodnot.
 
-Při 200% textu se popisky zalamují. Pole, tlačítka a položky navigace mají
+Příprava před otevřením večera v `/launch` má vlastní kontejner (62 rem).
+Postava s portrétem a dolní čekárna přecházejí na dvě oblasti od 760 px;
+na telefonu se řadí pod sebe. Jméno, stav a osobní věta mají přednost před
+odpočtem a volitelnými nastaveními. Nejde o náhradu zákaznického shellu.
+
+Herní obsah zůstává nejvýše 520 px široký. Baronovo představení má minimální
+výšku 360 px, do 360 px šířky 310 px; ve vlastním zápasu je scéna kompaktní
+(210 px, na úzké obrazovce 180 px). Energetické bloky mají sloupce alespoň
+8 rem a při zvětšení textu se skládají pod sebe. PvP skóre do 360 px skryje
+pouze ozdobné iniciály, nikoli jména nebo body. Tyto rozměry patří herním scénám.
+
+Při 200% textu zůstávají popisky čitelné a nepřekrývají se. Pole, tlačítka a položky navigace mají
 nejméně 44px dotykový cíl. Pořadí a fokus ovládání zůstávají použitelné klávesnicí.
 
 ## Elevation & Depth
@@ -198,6 +241,11 @@ Základ je plochý: karty, hlavní tlačítka a dialogy v adaptéru v2 mají vyp
 stíny. Hloubku vyjadřuje rozdíl ploch, jemná linka, obraz a opona. Starší zlaté
 gradienty a stíny z kompatibilní vrstvy nejsou novou společnou normou.
 
+Boss a hráčské duely mají místní světelnou clonu: oříznuté barevné paprsky,
+rozostřené o 6 px na samostatné dekorativní vrstvě za postavou nebo hůlkami.
+Text a ovládání zůstávají ostré. Statické nasvícení nemá vlastní běžící smyčku;
+není to sklo, stín všech karet ani nový aplikační ambient.
+
 ## Shapes
 
 Záhlaví zachycuje opakované poloměry polí, tlačítek, karet, panelů a velkých
@@ -205,8 +253,9 @@ scénických ploch. Hrany a obrysy jsou klidné; fotka si zachovává proporce
 a ořez určuje konkrétní portrétní komponenta.
 
 Lokální výjimky jsou skutečné, nikoli nové globální tokeny: zákaznická stránka
-používá 24px karty a pilulkové hlavní tlačítko, slavnostní představení oblouk.
-Základní sdílené tlačítko zůstává zaobleným obdélníkem podle záhlaví.
+používá 24px karty, slavnostní představení oblouk. Hlavní tlačítka i odkazy
+stylované jako hlavní tlačítko mají společný 16px poloměr; zákaznické stránky
+už nepřepisují tuto podobu pilulkou.
 
 ## Components
 
@@ -216,6 +265,9 @@ Základní sdílené tlačítko zůstává zaobleným obdélníkem podle záhlav
 používá nejméně 56px výšku; kompaktní varianty jednotlivých obrazovek nejsou
 přepsáním této dokumentované výchozí podoby. Vnitřní odsazení může dědit
 kompatibilní tématickou vrstvu; záhlaví zachycuje aktuální základní vzorek.
+Hlavní varianta používá mintovou výplň, tmavý text, 16px poloměr a žádný stín.
+Stejná podoba platí pro hlavní odkazy v dílně, hrách, postavě a památkách;
+starší zlatá výplň ani stín kompatibilní vrstvy se na ně nepřenášejí.
 
 Hover mírně zesvětlí plochu. Disabled sníží opacity na 0,48 a zruší hover efekt.
 Busy nastaví `aria-busy`, zablokuje tlačítko a podle motion režimu může ukázat
@@ -237,12 +289,88 @@ Fokus mění obrys a okraj. Disabled a `aria-invalid` přebírají sdílený sta
 
 ### Navigation
 
-Čtyři položky **Večer / Postava / Památky / Já** mají skutečné ikony Phosphor,
-viditelný text a označení aktivní stránky. Lišta je přes celou šířku u spodního
-okraje, s horní linkou, bez plovoucího zaobleného obalu. Odkazy mají nejméně
+Čtyři položky **Dílna / Hry / Památky / Já** mají skutečné ikony Phosphor,
+viditelný text a označení aktivní stránky. Na mobilu je lišta přes celou šířku
+u spodního okraje s horní linkou. Od 768 px je vycentrovaná, nejvýše 36 rem
+široká, s odsazením 16 px od spodního okraje a zaobleným obalem. Obsah navíc
+rezervuje 32 px nad její změřenou výšku. Odkazy mají nejméně
 58px výšku; ikony 23 px. Aktivní text je mintový, neaktivní tlumený, ikony
 zůstávají světlé s rozlišením opacity. Odsazení roste o bezpečné okraje telefonu.
 Samostatné herní scény mohou lištu záměrně skrýt.
+Aktivní položka má zvýšenou tmavou plochu a horní mintovou značku 20 × 2 px.
+Detail uloženého souboje `/archive/duel` zůstává v sekci Památky; příprava
+postavy patří do Dílny. Hover neaktivní položky nemění označení aktuální stránky.
+
+### Stavové zprávy
+
+`AwNotice` má informační, varovnou, chybovou a úspěšnou variantu. Na tmavé
+ploše je čitelný text a 24px značka se skutečnou ikonou Phosphor: informace,
+varování nebo potvrzovací pečeť. Barevný podklad značky používá modrou, jantar,
+broskvovou nebo mintovou podle významu. Ikona je dekorativní; text a role nesou
+celé sdělení. Chyba používá `alert`, ostatní živé zprávy `status`; `live=false`
+živou roli vypne.
+
+Dvousloupcové rozložení patří pouze do `AwNotice` s ikonou. Starší textové
+elementy s třídou `aw-notice` zachovávají celou šířku textu bez prázdného
+sloupce pro ikonu. Zpráva má 16px odsazení, 14px poloměr a 1px linku.
+Potvrzení uložené hůlky má v dílně kompaktní svislé odsazení 8 px bez dalších
+vnějších okrajů; na úzkém telefonu tak zachová hlavní pokračovací akci v první
+obrazovce. Rozestupy mezi prvky zde vlastní mřížka rozhovoru.
+
+### Dokončení hůlky a další krok
+
+Uložená hůlka dostane pravdivé potvrzení s pečetí a jednu hlavní pokračovací
+akci. Pečeť se krátce odhalí jen při dokončení stejného rozpracovaného rozhovoru
+pozorovaném na viditelné obrazovce: 480 ms, `cubic-bezier(.16, 1, .3, 1)`.
+Opakovaný polling ani návrat k hotovému výsledku efekt nespouští. Omezený pohyb
+zachovává statickou pečeť i celé potvrzení; žádná akce nečeká na animaci.
+
+Herní vstup bez hůlky používá jantarovou scénickou plochu s existující ilustrací
+hůlky a další krok podle potvrzeného stavu. Dílna vede volný rozhovor hlasem
+nebo psaním; rozhraní neslibuje pevný počet otázek. Prázdné památky nabízejí
+hlavní akci ke hře a klidnější odkaz na žebříček.
+
+### Povrchy prohlížeče
+
+Výběr textu je mintový s tmavým textem, textový kurzor mintový a posuvníky
+používají `line` na `bg`. Odkazy mají podtržení odsazené o .25 em. Společný
+klávesnicový fokus je 3px mintový obrys s odsazením 4 px; lokální zákaznický
+2px fokus zůstává zachovanou výjimkou.
+
+### Administrace: navigace a potvrzení
+
+`AdminNavigation.vue` propojuje účty, večer a postavy pod názvem „Zákulisí
+večera“. Je to místní navigace správy, nikoli náhrada zákaznické lišty. Plochu
+oddělují dvě 1px linky; odkazy mají nejméně 48px výšku, 22px ikony Phosphor
+a zaoblení `field`. Aktivní stránka používá mintovou výplň, text `on-mint`
+a `aria-current="page"`. Fokus má 2px mintový obrys s 3px odstupem.
+Do 560 px se odkazy skládají do tří stejně širokých sloupců s ikonou nad textem.
+
+`AdminConfirmation.vue` ukazuje pouze potvrzený výsledek zápisu. Tmavá plocha
+`--aw-accent-soft`, mintový text a 36px kruh s fajfkou dávají klidnou jistotu;
+text nese `role="status"`, dekorace nenese význam pro čtečku. Fajfka se odkrývá
+přes `clip-path` za 240 ms s `cubic-bezier(.16, 1, .3, 1)`; omezený pohyb
+ponechá statický znak. Zápis ani další ovládání na animaci nečekají.
+
+Humor patří do úvodu nebo prázdného detailu, nikoli místo chybového hlášení.
+Hledání postav bez výsledků nabízí přímo zrušení filtru; návrat načtených
+postav nevyžaduje další požadavek. Neověřený výsledek obnovení seznamu se
+nesmí zobrazit jako nové úspěšné potvrzení.
+
+### Zákaznický přehled postavy a památek
+
+Přehled postavy začíná jménem, světem a pravdivým stavem přípravy. Má jednu
+hlavní následující akci: do dílny, nebo ke hrám, pokud už má uloženou hůlku.
+Během přípravy vysvětluje čekání a průběžně obnovuje stav. Dílnu nevkládá
+do přehledu jako druhou celou obrazovku. Portrét následuje za přehledem;
+hůlka, rozlišovací označení a technická revize jsou v rozbalovacích podrobnostech.
+
+Památky vedou příběhem a otevřením první položky v pořadí serveru. Popisek
+„Naposledy uložená památka“ neprohlašuje datum posledního uskutečněného večera.
+Hledání, filtry a obnovení jsou v následné rozbalovací správě. Stav dostupnosti
+zůstává viditelný; údaje o přístupu, propojení a odpojení patří do podrobností
+konkrétní památky. Na širokém kontejneru jsou další herní záznamy vedle kolekce,
+na mobilu za ní. Původní oprávnění a potvrzení odpojení zůstávají závazná.
 
 ### Představení postavy
 
@@ -251,6 +379,199 @@ Chybějící obrázek má náhradní podobu a pravdivý stav. Nevyvolávej novou
 generaci kvůli přehrání efektu. Pravidlo deseti sekund v popředí před zobrazením
 „Pokračovat“ je výslovná místní výjimka vlastníka v `PRODUCT.md`, ne obecný
 časovač pro všechna tlačítka. Omezený pohyb zachovává obsah bez přesunů a škálování.
+
+### Příprava postavy a předání do dílny
+
+`LaunchView` používá klidný čtyřdílný přehled přípravy: hotový krok je mintový,
+aktuální jantarový a budoucí tlumený. Stav označuje také `aria-current="step"`;
+vynechaný portrét má výslovný popisek. Přehled není procentní ukazatel ani
+časový odhad a při otevřené dílně ustoupí jejímu hlavnímu ovládání.
+
+`PrelaunchWand` předává hlavní akci mintovou plochou s tmavým textem,
+klidnými rohy (16 px) a odsazením `clamp(20px, 4vw, 32px)`. Tmavé tlačítko
+s mintovým textem obrací barvy běžné primární akce; fokus je zde tmavý,
+aby zůstal čitelný na mintové. Od 760 px stojí akce vedle textu,
+na mobilu pod ním. Tato barevná inverze je místní vzor předání do dílny,
+nikoli nová globální varianta všech karet.
+
+Osobní věta vedle portrétu má výraznou sazbu (`clamp(1.4rem, 5vw, 2.1rem)`,
+váha 650, řádkování 1,4) a krátkou čtecí míru (28 ch). Stav přípravy je
+samostatný, aby vtip nezastoupil informaci nebo chybu. `PortraitCurtain`
+ponechává jeden místní pohyb opony (1,1 s), při omezeném pohybu statické
+odhalení. Při chybě zobrazuje ikonu postavy a doslovný náhradní text.
+Čekárna po dokončení uchovává osobní větu i přístup k uložené hůlce;
+přehrání scény samo nevyrábí nový obsah.
+
+### Živý kufr
+
+Dílna používá stejný design v2: jeden výrazný objekt, plochou jantarovou scénu
+rozhovoru a fialovou scénu výroby i hotové ilustrace. Nejde o nové společné
+barvy stavů. Nedostupná dílna a chyba výroby mají zvýšenou tmavou plochu.
+Původní autorizovaná ilustrace kufru nebo hůlky zůstává hlavním obrazem;
+prázdný prostor nenahrazuje ukázková hůlka. Pokud ilustrace ještě vzniká nebo
+selže, výsledná scéna se skryje a uložený výsledek s další akcí zůstává čitelný.
+
+Průběh má tři pojmenované fáze **Rozhovor / Výroba / Tvoje hůlka**. Aktivní
+fázi vyznačuje mintová horní linka a tučný popisek, dokončenou mintová linka.
+Aktuální krok má také `aria-current="step"`. Fáze vychází z uloženého stavu;
+počet odpovědí ani čas nejsou odhadem procent výroby.
+
+Na široké obrazovce je objekt vedle rozhovoru, od 850 px ve dvou sloupcích;
+scéna zůstává při posunu nahoře. Na telefonu předchází ovládání, při hovoru
+nebo psaní se zmenší. Stop a ukončení hovoru jsou před obsahem rozhovoru;
+Stop se neskrývá za přepis ani animaci. Uložený stav a materiál předcházejí
+hlavní akci, verdikt následuje za ní. V ověřeném předstartovním průchodu je
+akce návratu dostupná v první obrazovce také na 320 px při běžné velikosti textu.
+Při 200% textu zůstává průchod bez vodorovného přetékání, bez slibu všeho nad přehybem.
+
+**Pohyb následuje skutečnost.** Kufr a sedm segmentů reagují jen na měřený
+výstup právě přehrávané řeči, s lineární odezvou (100 ms). Mimo stav řeči je
+vstupní úroveň nulová; scéna nesimuluje hlas náhodou ani nesnímá nový mikrofon.
+Indikátor výroby se pohybuje pouze při potvrzené výrobě, bez odhadu zbývajícího
+času. Předání scény používá příchod (650 ms) a odchod (200 ms); dekódovaná
+ilustrace má vlastní příchod (850 ms). Jde o místní hodnoty `TrunkStage`,
+nikoli novou společnou délku animací. Omezený pohyb zachovává plnohodnotnou
+statickou scénu, obsah i okamžitě dostupné akce.
+
+Potvrzené textové odpovědi oznamuje samostatná zdvořilá živá oblast;
+streamované útržky se průběžně nepředčítají. Vlastnosti, kouzla a uložený
+přepis jsou rozbalovací podrobnosti. Ilustrace má samostatné načítání, chybu
+a obnovu; její nedostupnost nesmí znovu vyrábět hůlku.
+
+Zdroje: `WandWorkshop.vue`, `TrunkStage.vue` a
+[průchod dílnou](docs/magicky-kufr-workshop.md), sloučeno v `e938775`.
+Browserové kontroly používají syntetická data; nedokládají živou AI ani nativní telefon.
+
+### Souboje v Hrách
+
+Scéna staví dvě celé hůlky proti sobě. Osobní ilustrace mají svislou kompozici
+2:3, skutečnou průhlednost a rozdílné okraje; scéna je natočí hroty ke středu,
+zachová rukojeť i hrot a nepřebarvuje jejich materiál. Název patří pod příslušnou
+hůlku. Nedostupný obrázek zastupuje jednoduchý neutrální obrys.
+Rychlý a taktický duel, YOLO i 2 na 2 používají skutečnou schválenou ilustraci
+soupeře přes autorizovanou cestu konkrétního zápasu a revize. YOLO ukazuje
+hůlky staticky vedle příběhu, bez domyšlené výměny kouzel. Změna soupeře,
+revize, účtu nebo odvolání obrázku odstraní předchozí ilustraci.
+
+Zveřejněná výměna spustí nejvýše dvousekundový střet: úder má ostrou stopu,
+lest vlnivý proud a štít oblouk v místě nárazu. Jantar a fialová rozlišují
+strany; světlé jádro a krátký rozlet částic patří pouze nárazu. Výsledek je
+čitelný okamžitě a ovládání na efekt nečeká. Omezený pohyb ponechá celou
+statickou scénu; historie ani opakované načtení stejné výměny efekt nepřehrává.
+
+### Baron Šarlatán
+
+`GameBossStage` používá původní průhledný portrét se třemi výrazy. Představení
+ukazuje velké jméno, pravdivý stav Ollivandera a hlavní akci. Podmínky souboje
+jsou v rozbalitelném detailu; existující pokus nabízí pokračování.
+Scéna po odhalení neskrývá ovládání a nečeká na doběh efektu.
+
+Nasvícení zápasu určuje skutečná fáze ze serveru: první fialová, druhá jantarová,
+třetí broskvová. Stejnou fázi pojmenuje text a označí `aria-current="step"`.
+Barva sama nenese stav. Změna fáze přehraje pouze clonu (1,1 s) a náběh místního
+světla (0,7 s); neremountuje portrét ani nerozhodnutou volbu kouzla.
+
+`GameBossEnergy` ukazuje skutečnou zbývající energii: hráč nejvýše 6,
+Baron nejvýše 5, v exhibici 3. Hodnoty mají český číselný formát, přístupné
+ukazatele `role="meter"` a vodorovné pásy s odezvou 0,35 s. Neznámá hodnota
+je pomlčka, nikoli domyšlený stav. Nápověda, Baronova jiskra, výsledek poslední
+výměny a možnost ukončit aktivní pokus zůstávají čitelné bez animace.
+
+### Duely mezi hráči
+
+`game-duel-scene` platí pro aktivní a dokončené rychlé a taktické duely,
+lokální trénink a samostatně upravenou týmovou scénu.
+Hráč má jantarovou, soupeř fialovou stranu; stejné barvy propojují iniciály,
+hůlky a výsledek zveřejněné výměny. Skóre používá skutečná herní jména a body.
+Počet výměn a průběh stojí na jednom pružném řádku jako u bosse.
+
+Volba kouzla zůstává soukromá. `GameClash` zvýrazní vítěznou stranu teprve,
+když jsou zveřejněna obě platná kouzla. Krátké světelné dosednutí (0,75 s)
+používá stávající životní cyklus střetu, nikoli další časovač. Při uzamčeném
+tahu světlo obou stran zeslábne a scéna výslovně oznámí čekání.
+Text „Tvoje výměna.“, „Soupeřova výměna.“ nebo „Nerozhodná výměna.“
+vysvětluje stejný stav jako světlo; konečný výsledek zápasu vlastní samostatně server.
+
+Omezený pohyb ponechá v obou scénách úplný statický stav. PvP efekt se
+nepřehrává při načtení historie, stejném pollingu, skrytém dokumentu nebo
+mimo viditelnou scénu. Herní pravidla, souhlasy a preference zvuku se nemění.
+YOLO tento místní výtvarný režim nepřebírá.
+
+Trénink zůstává označený „bez XP“. Stejná scéna a slovní verdikt reagují
+na skutečně odehranou lokální výměnu; nevytvářejí herní API zápisy ani odměnu.
+Nový trénink vynuluje místní skóre i nasvícení výsledku.
+Soupeř v tréninku má výslovně označenou „Cvičnou hůlku“ z existující fialové
+ilustrace. Její diagonální kompozice se natočí hrotem ke středu scény.
+
+### Týmová hra 2 na 2
+
+`TeamView` ukazuje oba týmy po dvou jménech, skutečné týmové skóre a potvrzení
+tahu každého hráče. Kanonické pořadí `allFourLocked` (A0, A1, B0, B1) se
+překládá podle strany diváka. Neznámý stav není nehotový tah ani domyšlený počet.
+Přestávka zachovává serverový termín, předání jiskry a zřetelné potvrzení;
+scéna střetu v ní uvolní místo těmto ovládacím prvkům.
+
+Jednorázový střet zobrazuje pouze osobní dvojici zveřejněné výměny. Její
+známá cyklická pravidla určují světlo, zatímco týmové body i konečný výsledek
+zůstávají serverové. Popisek odděluje poslední dvojici od následujícího soupeře.
+Publikovaná kouzla B už mají po přestávce pořadí dvojic; toto pořadí se nesmí
+zaměnit s kanonickým pořadím jmen a potvrzených tahů.
+Týmová projekce poskytuje `opponentWands` podle kanonických ID obou soupeřů.
+Scéna vybere jméno i autorizovaný obrázek stejné osobní dvojice, kterou ukazuje
+zveřejněná výměna. Potvrzení nové dvojice se nesmí spojit s ilustrací té staré.
+Chybějící nebo odvolaný obrázek zastoupí neutrální obrys; soukromé URL jiných
+domén se nepoužívá. Načtená výměna zůstává statická stejně jako v duelu.
+
+### Pod pečetí: vyšetřovací spis
+
+Deník má lokální papírovou plochu (`#f2e6c8`) s inkoustovým textem
+(`#29291f`) a tmavě zelenými doloženými částmi (`#324e3b`). Zachovává Manrope
+a tmavý zákaznický shell. Nejde o změnu společných tokenů. Řetězec propojuje
+části A/B/C linkou; chybějící část má přerušovaný obrys a výslovný popisek,
+takže význam nenese samotná barva. Tvrzení spoluhráčů zůstávají mimo papírový
+soubor vlastních dokladů.
+Přehled tvrzení ukazuje autora, rozsah sdílení, odkaz na část řetězce a vlastní
+ověření hned. Úplný původní text je pod klávesnicově přístupným rozbalením;
+dlouhá zpráva s více stopami tak nezahltí všechny řádky. Ovládání vlastních
+stop má pro čtečky obrazovky doplněný kontext příslušného řetězce.
+
+Drobné popisky částí používají 0,8125 rem. Rozbalení vlastní stopy má
+nejméně 52 px, rozbalení tvrzení 44 px a tlačítko sdílení 48 px. Názvy
+opakovaných tvrzení obsahují pro čtečku i pořadí v přehledu. Fokus ovládání
+používá `--wns-focus-ring`: na světlém spisu místní `#324e3b`, na tmavém
+okolí výchozí mintovou. Zelená při hoveru tlačítka přechází na `#243d2c`.
+
+Otevření spisu má jeden místní `clip-path` přechod 280 ms; při omezeném
+pohybu je obsah ihned statický. Ovládání ani herní stav na efekt nečekají.
+Veřejný plán průzkumu používá čitelný seznam tras a kapitol, bez zobrazení
+cizích skrytých poloh nebo událostí. Místní styly vlastní
+`src/features/sealed-case/sealedDossier.css` v mobilní aplikaci.
+
+### YOLO lóže ve třech dějstvích
+
+`GameYoloStage` má vlastní scénu: dvě autorizované hůlky, jména obou soupeřů,
+malý portrét Křivopíska a dějství Nástup → Střet → Rozsudek. Ukázkové hůlky
+jsou výslovně označené také mimo obrázek. Chybějící obrázek zastoupí původní
+neutrální obrys. Scéna používá stejný Manrope a jantarovou/fialovou dvojici;
+není novým tématem ani novou herní mechanikou.
+
+Tempo určuje čtenář tlačítkem „Další část“. Druhé dějství má jediný 0,9s
+světelný střet v SVG, bez trvalého ambientu a bez nového zvuku. Omezený pohyb
+ponechá statický střet. Ovládání ani serverový výsledek na efekt nečekají.
+Obnovení stejného zápasu pollingem nepřeskakuje dějství a efekt nespouští znovu.
+
+Obsah scény má nejvýše 760 px a od 700 px používá boční odsazení 32 px.
+Nadpis dějství má vlastní `clamp(1.75rem, 6vw, 2.5rem)`; obecný herní nadpis
+jej nesmí přepsat. Text příběhu má 1,125 rem, řádkování 1,75 a míru do 65 ch.
+Po přechodu klávesnicí nadpis ukáže fokus v barvě společného tokenu.
+Označení „· ukázka“ zůstává při zalomení pohromadě.
+
+Celý příběh lze odhalit najednou. Verdikt, zvýraznění vítězné strany, odveta
+a případný úkol poraženého přicházejí až s rozsudkem. Čtečka dostane oznámení
+o připraveném příběhu bez výsledku; ruční přechod přenese fokus na nadpis.
+Generování, chyba s opakováním a zrušení jsou samostatné pravdivé stavy.
+Zrušená ani neúplná odpověď se nepřehrává jako dokončený příběh. Vítěze vybírá
+AI, režim nepřiděluje bojové XP; obě informace zůstávají přímo ve scéně.
 
 ### Kaskáda a rozsah
 

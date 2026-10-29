@@ -8,6 +8,8 @@ const props = withDefaults(defineProps<TrunkStageProps>(), {
   artworkStatus: 'not-requested',
   wandName: '',
   wandArtworkUrl: null,
+  showCaption: true,
+  showArtworkStatus: true,
   trunkWidth: 960,
   trunkHeight: 960,
   artworkPlacement: 'standalone',
@@ -22,7 +24,7 @@ const trunk640 = new URL('../../assets/wns-v2/art/trunk-workshop/trunk-open-640.
 const trunk960 = new URL('../../assets/wns-v2/art/trunk-workshop/trunk-open-960.webp', import.meta.url).href;
 const closed640 = new URL('../../assets/wns-v2/art/trunk-workshop/trunk-closed-640.webp', import.meta.url).href;
 const closed960 = new URL('../../assets/wns-v2/art/trunk-workshop/trunk-closed-960.webp', import.meta.url).href;
-const closed = computed(() => ['ready', 'unavailable'].includes(props.stage));
+const closed = computed(() => ['ready', 'unavailable', 'error', 'forging'].includes(props.stage));
 const source = computed(() => props.trunkSrc || (closed.value ? closed960 : trunk960));
 const sources = computed(() => props.trunkSrcSet
   || (props.trunkSrc ? undefined : closed.value ? `${closed640} 640w, ${closed960} 960w` : `${trunk640} 640w, ${trunk960} 960w`));
@@ -31,9 +33,9 @@ const level = computed(() => props.stage === 'speaking'
   && Number.isFinite(props.assistantOutputLevel)
   ? Math.min(1, Math.max(0, props.assistantOutputLevel)) : 0);
 const visualStyle = computed<CSSProperties>(() => ({
-  '--trunk-lift': `${-2 * level.value}px`,
-  '--trunk-scale': String(1 + 0.006 * level.value),
-  '--trunk-emission': String(0.22 * level.value),
+  '--trunk-level': String(level.value),
+  '--trunk-lift': `${-7 * level.value}px`,
+  '--trunk-scale': String(1 + 0.018 * level.value),
   aspectRatio: `${Math.max(1, props.trunkWidth)} / ${Math.max(1, props.trunkHeight)}`,
 }));
 
@@ -102,9 +104,11 @@ function onArtworkError(event: Event) {
 
 <template>
   <div class="trunk-stage" :data-stage="stage">
+    <Transition name="trunk-handoff">
     <div v-if="!revealed" class="trunk-stage__visual" :style="visualStyle" aria-hidden="true">
-      <span class="trunk-stage__emission"></span>
+      <span v-if="stage === 'forging'" class="trunk-stage__seam"></span>
       <img
+        :key="source"
         class="trunk-stage__trunk"
         :src="source"
         :srcset="sources"
@@ -139,12 +143,19 @@ function onArtworkError(event: Event) {
           @load="onArtworkLoad"
           @error="onArtworkError"
         />
-        <p v-if="!showArtwork || !decoded" class="trunk-stage__artwork-state" role="status">
+        <p v-if="showArtworkStatus && (!showArtwork || !decoded)" class="trunk-stage__artwork-state" role="status">
           {{ artworkMessage }}
         </p>
       </div>
-      <figcaption v-if="wandName" class="trunk-stage__name">{{ wandName }}</figcaption>
+      <figcaption v-if="showCaption && wandName" class="trunk-stage__name">{{ wandName }}</figcaption>
     </figure>
+    </Transition>
+    <div v-if="!revealed && activityLabel" class="trunk-stage__activity" aria-hidden="true">
+      <span class="trunk-stage__meter" :style="{ '--trunk-level': level }">
+        <i v-for="(strength, index) in [0.32, 0.58, 0.82, 1, 0.82, 0.58, 0.32]" :key="index" :style="{ '--strength': strength }"></i>
+      </span>
+      <span>{{ activityLabel }}</span>
+    </div>
   </div>
 </template>
 
@@ -154,6 +165,7 @@ function onArtworkError(event: Event) {
   color: var(--aw-ivory, #f5f5f0);
   font-family: inherit;
   background: transparent;
+  position: relative;
 }
 .trunk-stage__visual {
   position: relative;
@@ -171,16 +183,24 @@ function onArtworkError(event: Event) {
   transition: transform 100ms linear;
   user-select: none;
 }
-.trunk-stage__emission {
+/* A single local scene: no canvas, ambient loop, microphone sampling or timers. */
+.trunk-stage__seam {
   position: absolute;
-  z-index: -1;
-  inset: 24% 18% 22%;
-  border-radius: 50%;
-  background: radial-gradient(ellipse, var(--wns-mint, #b8f3d4), transparent 68%);
-  opacity: var(--trunk-emission);
-  transition: opacity 100ms linear;
+  inset: 65% 18% auto;
+  height: 2px;
+  background: currentColor;
+  transform: scaleX(.45);
+  animation: trunk-work 2.4s cubic-bezier(.16, 1, .3, 1) infinite alternate;
   pointer-events: none;
 }
+.trunk-stage__activity { display: flex; justify-content: center; align-items: center; gap: .75rem; min-height: 2.75rem; font-size: .85rem; font-weight: 700; }
+.trunk-stage__meter { display: flex; align-items: center; gap: 3px; height: 1.5rem; }
+.trunk-stage__meter i { width: 3px; height: 100%; border-radius: 2px; background: currentColor; transform: scaleY(calc(.14 + var(--trunk-level, 0) * var(--strength))); transition: transform 100ms linear; }
+.trunk-handoff-enter-active { transition: opacity 650ms cubic-bezier(.16, 1, .3, 1), transform 650ms cubic-bezier(.16, 1, .3, 1), clip-path 650ms cubic-bezier(.16, 1, .3, 1); }
+.trunk-handoff-enter-from { opacity: 0; transform: translateY(1rem); clip-path: inset(0 0 12%); }
+.trunk-handoff-leave-active { position: absolute; inset: 0; pointer-events: none; transition: opacity 200ms ease-out; }
+.trunk-handoff-leave-to { opacity: 0; }
+@keyframes trunk-work { to { transform: scaleX(1); opacity: .3; } }
 .trunk-stage__result { margin: 0; }
 .trunk-stage__artwork {
   position: relative;
@@ -210,7 +230,8 @@ function onArtworkError(event: Event) {
   object-fit: contain;
   opacity: 0;
 }
-.trunk-stage__artwork[data-loaded='true'] .trunk-stage__wand { opacity: 1; }
+.trunk-stage__artwork[data-loaded='true'] .trunk-stage__wand { opacity: 1; animation: trunk-arrival 850ms cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes trunk-arrival { from { opacity: 0; transform: translateY(1rem) rotate(-4deg) scale(.94); clip-path: inset(0 0 15%); } to { opacity: 1; transform: none; clip-path: inset(0); } }
 .trunk-stage__artwork[data-with-tray='true'] .trunk-stage__wand {
   width: var(--trunk-tray-artwork-width);
   justify-self: center;
@@ -241,6 +262,9 @@ function onArtworkError(event: Event) {
 }
 @media (prefers-reduced-motion: reduce) {
   .trunk-stage__trunk { transform: none; transition: none; }
-  .trunk-stage__emission { opacity: 0; transition: none; }
+  .trunk-stage__seam, .trunk-stage__artwork[data-loaded='true'] .trunk-stage__wand { animation: none; }
+  .trunk-stage__meter i { transform: none; height: 3px; transition: none; }
+  .trunk-handoff-enter-active, .trunk-handoff-leave-active { transition: none; }
+  .trunk-handoff-enter-from { opacity: 1; transform: none; clip-path: none; }
 }
 </style>

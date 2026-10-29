@@ -373,7 +373,22 @@ internal static partial class AccountIdentityTests
             Process.Dispose();
             if (Directory.Exists(Root))
             {
-                Directory.Delete(Root, recursive: true);
+                // Windows can retain a terminating process's file handles briefly.
+                // Retry only sharing/lock failures; persistent cleanup errors still fail.
+                for (var attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        Directory.Delete(Root, recursive: true);
+                        break;
+                    }
+                    catch (IOException error) when (OperatingSystem.IsWindows()
+                        && (error.HResult & 0xffff) is 32 or 33
+                        && attempt < 20)
+                    {
+                        await Task.Delay(100);
+                    }
+                }
             }
         }
 

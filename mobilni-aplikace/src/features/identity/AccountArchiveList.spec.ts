@@ -77,20 +77,30 @@ afterEach(() => {
 });
 
 describe('account archive collection', () => {
-  it('shows current owner and linked capabilities, readiness, private metadata, dates and the existing detail route', async () => {
+  it('puts the newest server-ordered keepsake first and progressively discloses access details', async () => {
     const permission = vi.fn();
     vi.stubGlobal('Notification', { requestPermission: permission });
     const wrapper = setup();
     await flushPromises();
     const cards = wrapper.findAll('.collection-card');
     expect(cards).toHaveLength(2);
+    expect(cards[0].text()).toContain('Naposledy uložená památka');
+    expect(cards[0].get('h2').text()).toBe('Večerní příběh');
+    expect(wrapper.attributes('aria-label')).toBe('Uložené památky');
+    expect(cards[0].element.compareDocumentPosition(wrapper.get('.collection-tools').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(wrapper.get<HTMLDetailsElement>('.collection-tools').element.open).toBe(false);
+    expect(cards[0].get('.collection-actions a, .collection-card__actions a').text()).toBe('Otevřít památku');
+    expect(cards[0].get('.collection-actions a, .collection-card__actions a').element).toBe(cards[0].get('a').element);
+    expect(cards[0].get('details.collection-item-details').attributes('open')).toBeUndefined();
     expect(cards[0].text()).toContain('Moje památka');
-    expect(cards[0].text()).toContain('Vaše památka');
+    await cards[0].get('details.collection-item-details > summary').trigger('click');
+    expect(cards[0].text()).toContain('Tvoje památka');
     expect(cards[0].text()).toContain('Eliška');
     expect(cards[0].get('.collection-status-pill').attributes('data-state')).toBe('ready');
     expect(cards[0].get('.collection-status-pill').text()).toBe('Připraveno');
-    expect(cards[0].text()).toContain('Výsledek obrazu je k dispozici');
+    expect(cards[0].text()).toContain('Ilustrace je dostupná');
     expect(cards[0].findAll('button').some(button => button.text() === 'Odpojit od účtu')).toBe(false);
+    await cards[1].get('details.collection-item-details > summary').trigger('click');
     expect(cards[1].text()).toContain('Propojeno s účtem · pouze ke čtení');
     expect(cards[1].get('.collection-status-pill').attributes('data-state')).toBe('processing');
     expect(cards[1].get('.collection-status-pill').text()).toBe('Probíhá');
@@ -101,33 +111,76 @@ describe('account archive collection', () => {
     expect(permission).not.toHaveBeenCalled();
   });
 
-  it('shows truthful partial and failed states with available pieces and localized English copy', async () => {
+  it('shows truthful partial and failed states with available pieces and Czech copy for the legacy locale prop', async () => {
     request.mockResolvedValueOnce(page([
       { ...owner, readiness: { state: 'partial', reason: 'generation_failed', canRetry: true, shouldPoll: false, hasStory: true, hasArtwork: false } },
       { ...linked, readiness: { state: 'failed', reason: 'generation_failed', canRetry: false, shouldPoll: false, hasStory: false, hasArtwork: false } },
     ]));
     const wrapper = setup('en');
     await flushPromises();
-    expect(wrapper.text()).toContain('Partially available');
-    expect(wrapper.text()).toContain('Generation failed. Open the result to check available content.');
-    expect(wrapper.text()).toContain('Story available');
-    expect(wrapper.text()).toContain('Could not be completed');
+    expect(wrapper.text()).toContain('Částečně dostupné');
+    expect(wrapper.text()).toContain('Příprava se nepovedla. Otevři památku a zkontroluj dostupné části.');
+    expect(wrapper.text()).toContain('Příběh je dostupný');
+    expect(wrapper.text()).toContain('Nepodařilo se dokončit');
     expect(wrapper.findAll('.collection-card').length).toBe(2);
-    expect(wrapper.findAll('button').some(button => button.text() === 'Unlink from account')).toBe(true);
+    expect(wrapper.findAll('button').some(button => button.text() === 'Odpojit od účtu')).toBe(true);
+  });
+
+  it('hides search controls for a truly empty collection and points to games and rankings', async () => {
+    request.mockResolvedValueOnce(page([], null));
+    const wrapper = setup();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Zatím tu nemáš žádné dostupné památky.');
+    expect(wrapper.find('.collection-search').exists()).toBe(false);
+    expect(wrapper.find('.collection-tools').exists()).toBe(true);
+    expect(wrapper.findAll('button').some(button => button.text() === 'Obnovit památky')).toBe(true);
+    const destinations = wrapper.findAll('a').map(link => JSON.parse(link.attributes('data-to')!));
+    expect(destinations).toContain('/play');
+    expect(destinations).toContain('/play/ranking');
+  });
+
+  it('can discover newly saved keepsakes by refreshing an empty collection', async () => {
+    request.mockResolvedValueOnce(page([], null)).mockResolvedValueOnce(page([owner], null));
+    const wrapper = setup();
+    await flushPromises();
+    expect(wrapper.find('.collection-card').exists()).toBe(false);
+    await wrapper.findAll('button').find(button => button.text() === 'Obnovit památky')!.trigger('click');
+    await flushPromises();
+    expect(wrapper.get('.collection-card h2').text()).toBe('Večerní příběh');
+    expect(request.mock.calls.filter(call => call[1] === 'GET')).toHaveLength(2);
   });
 
   it('distinguishes an empty first visit from empty search results and submits bounded trimmed filters', async () => {
-    request.mockResolvedValueOnce(page([], null)).mockResolvedValueOnce(page([], null));
+    request.mockResolvedValueOnce(page([owner], null)).mockResolvedValueOnce(page([], null));
     const wrapper = setup();
     await flushPromises();
-    expect(wrapper.text()).toContain('Tento účet zatím nemá žádné dostupné výsledky.');
+    expect(wrapper.find('.collection-search').exists()).toBe(true);
 
     await wrapper.get('input[type="search"]').setValue('   hůlka    ');
     await wrapper.get('select').setValue('linked');
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(wrapper.text()).toContain('Filtrům neodpovídají žádné výsledky.');
+    expect(wrapper.text()).toContain('Těmto filtrům nic neodpovídá.');
+    expect(wrapper.find('.collection-search').exists()).toBe(true);
+    expect(wrapper.find('.collection-tools').attributes('open')).toBe('');
     expect(request.mock.calls.filter(call => call[1] === 'GET').at(-1)?.[0]).toBe('/app/v1/archive/collection?limit=25&access=linked&q=h%C5%AFlka');
+    expect(wrapper.find('.collection-card__latest').exists()).toBe(false);
+  });
+
+  it('keeps applied search controls and values when a filtered refresh fails', async () => {
+    request.mockResolvedValueOnce(page([owner], null));
+    const wrapper = setup();
+    await flushPromises();
+    await wrapper.get('input[type="search"]').setValue('hůlka');
+    await wrapper.get('select').setValue('owned');
+    request.mockRejectedValueOnce(new Error('temporary outage'));
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Památky se nepodařilo načíst.');
+    expect(wrapper.get('input[type="search"]').element).toHaveProperty('value', 'hůlka');
+    expect(wrapper.get('select').element).toHaveProperty('value', 'owned');
+    expect(wrapper.find('.collection-search').exists()).toBe(true);
+    expect(wrapper.find('.collection-tools').attributes('open')).toBe('');
   });
 
   it('keeps cursor paging tied to the active filters and deduplicates an item repeated across pages', async () => {
@@ -144,7 +197,7 @@ describe('account archive collection', () => {
     await flushPromises();
     expect(request.mock.calls.at(-1)?.[0]).toBe('/app/v1/archive/collection?limit=25&access=linked&q=night&cursor=cursor%2B%2Fopaque');
     expect(wrapper.findAll('.collection-card')).toHaveLength(2);
-    expect(wrapper.text()).toContain('Při zobrazení starších výsledků se automatické obnovování pozastaví.');
+    expect(wrapper.text()).toContain('Při prohlížení starších památek se automatické obnovování pozastaví.');
   });
 
   it('fails closed for contradictory capabilities and only unlinks a linked-viewer association after confirmation', async () => {
@@ -165,7 +218,7 @@ describe('account archive collection', () => {
     await flushPromises();
     await fresh.find('.collection-card').find('button').trigger('click');
     await flushPromises();
-    expect(confirm).toHaveBeenCalledWith('Odebrat toto propojení pouze ke čtení z účtu? Původní výsledek ani jeho uložené soubory se tím nesmažou.');
+    expect(confirm).toHaveBeenCalledWith('Odebrat toto propojení pouze ke čtení z účtu? Původní památka ani její uložené soubory se tím nesmažou.');
     expect(request.mock.calls.some(([path, method]) => path === `/app/v1/archive/associations/${linkedLocator}` && method === 'DELETE')).toBe(true);
     expect(request.mock.calls.some(([, method]) => method === 'POST')).toBe(false);
   });
@@ -198,7 +251,7 @@ describe('account archive collection', () => {
     finishOfflineRead(page([owner]));
     await flushPromises();
     expect(wrapper.find('.collection-card').exists()).toBe(false);
-    expect(wrapper.text()).toContain('Výsledky účtu nejsou offline dostupné.');
+    expect(wrapper.text()).toContain('Bez připojení k internetu tvoje památky nezobrazíme.');
 
     request.mockResolvedValueOnce(page([owner]));
     setOnline(true);
@@ -244,7 +297,7 @@ describe('account archive collection', () => {
       await flushPromises();
     }
     expect(wrapper.findAll('.collection-card')).toHaveLength(200);
-    expect(wrapper.text()).toContain('Zobrazuje se nejvýše 200 výsledků.');
+    expect(wrapper.text()).toContain('Zobrazuje se nejvýše 200 památek.');
     expect(wrapper.findAll('button').some(button => button.text() === 'Načíst další')).toBe(false);
   });
 
@@ -324,7 +377,7 @@ describe('account archive collection', () => {
     await wrapper.get('select').setValue('linked');
     signingOut.value = true;
     await nextTick();
-    expect(wrapper.text()).toContain('Výsledky účtu nejsou během změny relace dostupné.');
+    expect(wrapper.text()).toContain('Památky nejsou dostupné, dokud se mění přihlášení.');
     request.mockResolvedValueOnce(page([owner]));
     signingOut.value = false;
     await flushPromises();
@@ -339,7 +392,7 @@ describe('account archive collection', () => {
     signingOut.value = true;
     await nextTick();
     expect(wrapper.findAll('.collection-card')).toHaveLength(0);
-    expect(wrapper.text()).toContain('Account results are unavailable while this session is changing.');
+    expect(wrapper.text()).toContain('Památky nejsou dostupné, dokud se mění přihlášení.');
     expect(request.mock.calls[0][3].aborted).toBe(true);
   });
 });

@@ -37,6 +37,7 @@ const customerMemoryPath = /^\/app\/v1\/customer\/memory$/;
 const workshopTranscription = /^\/app\/v1\/customer\/wand\/workshop\/sessions\/[a-f0-9]{32}\/transcribe$/;
 const workshopAudio = /^\/app\/v1\/customer\/wand\/workshop\/sessions\/[a-f0-9]{32}\/audio$/;
 const workshopArtwork = /^\/app\/v1\/customer\/wand\/workshop\/sessions\/[a-f0-9]{32}\/artwork\/assets\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+const opponentWandArtwork = /^\/app\/v1\/game\/(?:matches\/[a-f0-9]{32}\/opponent|teams\/[a-f0-9]{32}\/opponents\/[a-f0-9]{32})\/wand-artwork\?revision=[a-f0-9]{64}$/i;
 const customerExportDownloadPath = /^\/app\/v1\/customer\/data\/exports\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\/download$/;
 
 function matchesExactTransportPath(pattern: RegExp, path: string): boolean {
@@ -65,6 +66,7 @@ export function accountTransportResponseLimit(path: string, method: string): num
   if (method !== 'GET') return 1024 * 1024;
   if (matchesExactTransportPath(prelaunchPortrait, path) || /^\/app\/v1\/sealed-cases\/sc_[a-f0-9]{32}\/portraits\/[A-Za-z0-9_-]{1,128}$/.test(path)) return 8 * 1024 * 1024;
   return matchesExactTransportPath(archiveAsset, path)
+    || matchesExactTransportPath(opponentWandArtwork, path)
     || matchesExactTransportPath(workshopArtwork, path)
     || matchesExactTransportPath(testingAsset, path)
     || matchesExactTransportPath(customerMemoryPath, path)

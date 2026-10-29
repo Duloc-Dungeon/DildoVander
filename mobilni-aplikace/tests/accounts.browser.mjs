@@ -47,7 +47,8 @@ try {
     assert.equal((await denied.json()).code, 'ai_consent_required');
     await page.getByRole('checkbox', { name: /Souhlasím.*OpenAI/ }).check();
     await accept.click();
-    await page.waitForURL(url => url.pathname === '/settings');
+    await page.waitForURL(url => url.pathname === '/launch');
+    await page.goto(origin.origin + '/settings');
     await page.getByRole('heading', { name: expectedName, exact: true }).waitFor();
   }
   const owner = await participant();
@@ -95,12 +96,12 @@ try {
   assert.equal((await (await viewer.context.request.get(origin.origin + '/app/v1/account')).json()).passkeys[0].name, 'Testovací Chrome');
   assert.equal((await viewer.context.request.get(origin.origin + '/app/v1/admin/users')).status(), 403);
   await viewer.page.goto(origin.origin + '/settings/admin');
-  await viewer.page.waitForURL(url => url.pathname === '/' && url.searchParams.get('access') === 'administrator');
-  await viewer.page.getByText('K této části nemáte potřebnou roli.', { exact: false }).waitFor();
+  await viewer.page.waitForURL(url => url.pathname === '/settings');
   assert.equal(await viewer.page.getByLabel('Role nového účtu', { exact: true }).count(), 0, 'Viewer cannot mount admin controls');
   await viewer.page.goto(origin.origin + '/suitcase');
-  await viewer.page.waitForURL(url => url.pathname === '/' && url.searchParams.get('access') === 'operator');
-  await viewer.page.getByText('K této části nemáte potřebnou roli.', { exact: false }).waitFor();
+  await viewer.page.waitForURL(url => url.pathname === '/play');
+  await viewer.page.goto(origin.origin + '/admin/customer-sessions');
+  await viewer.page.waitForURL(url => url.pathname === '/settings');
   await viewer.page.goto(origin.origin + '/settings');
   // Hold the actual expiry Set-Cookie response. A JS-only stale-response fence
   // cannot protect a new cookie if logout and a fresh login run concurrently.
@@ -143,7 +144,7 @@ try {
   assert.equal((await signedOut.json()).account, null);
   await viewer.page.goto(origin.origin + '/signin?return=%2Farchive');
   await viewer.page.getByRole('button', { name: 'Přihlásit přístupovým klíčem', exact: true }).click();
-  await viewer.page.waitForURL(url => url.pathname === '/archive');
+  await viewer.page.waitForURL(url => url.pathname === '/me/keepsakes');
   assert.equal((await (await viewer.context.request.get(origin.origin + '/app/v1/session')).json()).account.displayName, 'Izolovaný návštěvník');
   const replay = await participant();
   await replay.page.goto(invitation);
@@ -151,7 +152,7 @@ try {
   await replay.page.getByLabel('Univerzum', { exact: true }).fill('Izolovaný testovací svět');
   await replay.page.getByRole('checkbox', { name: /Souhlasím.*OpenAI/ }).check();
   await replay.page.getByRole('button', { name: 'Přijmout pozvánku', exact: true }).click();
-  await replay.page.getByRole('alert').filter({ hasText: /Pozvánka už není platná/ }).waitFor();
+  await replay.page.getByRole('alert').filter({ hasText: /Pozvánka už neplatí/ }).waitFor();
   assert.equal((await (await replay.context.request.get(origin.origin + '/app/v1/session')).json()).account, null);
 
   await viewer.page.goto(origin.origin + '/settings');
@@ -175,6 +176,7 @@ try {
   assert.equal((await (await viewer.context.request.get(origin.origin + '/app/v1/session')).json()).account, null);
   assert.equal((await viewer.context.request.get(origin.origin + '/app/v1/account')).status(), 401);
   assert.equal((await owner.context.request.get(origin.origin + '/app/v1/account')).status(), 200, 'deleting the Viewer preserves the Owner');
+  await viewer.page.bringToFront();
   await viewer.page.reload();
   await completed.waitFor();
   if (screenshots) {

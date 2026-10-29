@@ -100,6 +100,7 @@ final class NativeAccountRequestPolicy {
     }
 
     private static boolean allowsSealedCasePath(String path, String method) {
+        if ("/app/v1/sealed-cases/scenarios".equals(path)) return "GET".equals(method);
         if ("/app/v1/sealed-cases".equals(path)) return "POST".equals(method);
         if ("/app/v1/sealed-cases/current".equals(path)) return "GET".equals(method);
         if (path.matches("^/app/v1/sealed-cases/sc_[a-f0-9]{32}/portraits/[A-Za-z0-9_-]{1,128}$")) return "GET".equals(method);
@@ -146,6 +147,12 @@ final class NativeAccountRequestPolicy {
     private static boolean allowsAppPath(String path, String method, String query) {
         if (allowsWandWorkshopPath(path, method, query)) return true;
         if (query == null && allowsSealedCasePath(path, method)) return true;
+        if (path.matches("^/app/v1/game/matches/[0-9a-f]{32}/opponent/wand-artwork$")) {
+            return "GET".equals(method) && query != null && query.matches("^revision=[0-9a-fA-F]{64}$");
+        }
+        if (path.matches("^/app/v1/game/teams/[0-9a-f]{32}/opponents/[0-9a-f]{32}/wand-artwork$")) {
+            return "GET".equals(method) && query != null && query.matches("^revision=[0-9a-fA-F]{64}$");
+        }
         if (query == null && "/app/v1/game".equals(path)) return "GET".equals(method);
         if (query == null && "/app/v1/game/matches".equals(path)) return "POST".equals(method);
         if (query == null && "/app/v1/game/progress".equals(path)) return "GET".equals(method);

@@ -66,7 +66,7 @@ if (process.argv.includes('--preview')) {
   const browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}) });
   try {
     const errors = [];
-    for (const width of [390, 1280]) {
+    for (const width of [320, 390, 1280]) {
       character = original(); writes = [];
       const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
       const page = await context.newPage();
@@ -79,11 +79,19 @@ if (process.argv.includes('--preview')) {
       };
       await page.goto(origin + '/settings/admin/characters');
       await page.getByRole('heading', { name: 'Postavy a portréty', exact: true }).waitFor();
+      const navigation = page.getByRole('navigation', { name: 'Správa aplikace', exact: true });
+      assert.equal(await navigation.locator('[aria-current="page"]').textContent(), 'Postavy');
+      await navigation.getByRole('link', { name: 'Účty', exact: true }).focus();
+      await page.keyboard.press('Tab');
+      assert.equal(await navigation.getByRole('link', { name: 'Večer', exact: true }).evaluate(node => node === document.activeElement), true);
       await page.getByRole('button', { name: 'Načíst další postavy', exact: true }).click();
       await page.getByText('Robin', { exact: true }).waitFor();
       assert.equal(await page.locator('.character-admin__list button').count(), 2);
       await page.getByLabel('Hledat podle jména nebo světa').fill('nikdo');
       await page.getByText('Hledání neodpovídá žádná postava.').waitFor();
+      await page.getByRole('button', { name: 'Zrušit hledání', exact: true }).click();
+      assert.equal(await page.getByLabel('Hledat podle jména nebo světa').inputValue(), '');
+      assert.equal(await page.locator('.character-admin__list button').count(), 2);
       await page.getByLabel('Hledat podle jména nebo světa').fill('potter');
       await page.locator('.character-admin__list button').click();
       await page.locator('.character-admin__portrait > img[src^="blob:"]').waitFor();
@@ -92,6 +100,9 @@ if (process.argv.includes('--preview')) {
       await page.getByLabel('Jméno postavy').fill('Luna upravená');
       await page.getByRole('button', { name: 'Uložit údaje', exact: true }).click();
       await page.getByText('Údaje postavy byly uloženy.').waitFor();
+      assert.equal(await page.locator('.admin-confirmation').getAttribute('role'), 'status');
+      assert.equal(await page.locator('.admin-confirmation__seal img').evaluate(node => getComputedStyle(node).animationName), 'none');
+      await capture('saved');
       assert.equal(character.userInput.name, 'Luna upravená');
       assert.equal(character.revision, 3);
       assert.deepEqual(Object.keys(JSON.parse(writes[0].bytes)).sort(), ['expectedRevision', 'userInput']);
@@ -121,6 +132,6 @@ if (process.argv.includes('--preview')) {
       await context.close();
     }
     assert.deepEqual(errors, []);
-    console.log(`Character admin browser checks passed: 390/1280px; search, keyboard focus, manual edit, invalid file, replacement preview/upload, revision conflict. Screenshots: ${output}`);
+    console.log(`Character admin browser checks passed: 320/390/1280px; admin navigation, search recovery, keyboard focus, save feedback, reduced motion, manual edit, invalid file, replacement preview/upload, revision conflict. Screenshots: ${output}`);
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 }

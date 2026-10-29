@@ -16,61 +16,35 @@ import {
   type CollectionReadinessState,
 } from './accountCollection';
 
-const props = withDefaults(defineProps<{ locale?: 'cs' | 'en' }>(), { locale: 'cs' });
+defineProps<{ locale?: 'cs' | 'en' }>();
 
-const copy = computed(() => props.locale === 'en' ? {
-  title: 'Your collection', intro: 'Results available to this account, with access and completion status shown separately.',
-  signIn: 'Sign in to view results saved to your account.', offline: 'Account results are unavailable while offline.',
-  unavailableAccount: 'Account results are unavailable while this session is changing.',
-  loading: 'Loading your collection…', refresh: 'Refresh collection', searchLabel: 'Search your collection',
-  accessLabel: 'Access', allAccess: 'All results', ownedAccess: 'Owned by this account', linkedAccess: 'Linked for read-only access',
-  submitSearch: 'Search', loadMore: 'Load more', loadingMore: 'Loading more…', refreshing: 'Refreshing…',
-  empty: 'Your account has no available results yet.', filteredEmpty: 'No results match these filters.',
-  failure: 'The collection could not be loaded. Access may have changed, or the service may be temporarily unavailable. Try refreshing.',
-  moreFailure: 'More results could not be loaded. Try again.', noMore: 'No more results.',
-  morePaused: 'Automatic refresh pauses while older results are open. Refresh the collection to check for updates.',
-  limitReached: 'Showing at most 200 results. Narrow your search to find older items.',
-  result: 'Open result', unnamed: 'Saved result', noTitle: 'No story title', portrait: 'Portrait available',
-  owner: 'Owned by this account · management available', linked: 'Linked to this account · read-only',
-  unknownAccess: 'Access details could not be verified; unlink is unavailable.',
-  character: 'Character', evening: 'Evening', linkedAt: 'Linked',
-  unlink: 'Unlink from account', unlinking: 'Unlinking…',
-  confirmUnlink: 'Remove this read-only link from your account? This does not delete the original result or its saved files.',
-  ready: 'Ready', pending: 'Waiting', processing: 'In progress', partial: 'Partially available',
-  failed: 'Could not be completed', unavailable: 'Unavailable',
-  reasons: {
-    awaiting_result: 'Waiting for the result.', awaiting_capacity: 'Waiting for available capacity.',
-    paused_preparing: 'Preparation is paused.', reconciliation_required: 'The result is being checked.',
-    generation_failed: 'Generation failed. Open the result to check available content.', result_unavailable: 'This result is no longer available.',
-  } as Record<string, string>,
-  story: 'Story available', artwork: 'Artwork available', completedParts: 'Available parts',
-} : {
-  title: 'Vaše kolekce', intro: 'Výsledky dostupné z tohoto účtu včetně oprávnění a stavu dokončení.',
-  signIn: 'Pro zobrazení výsledků uložených k účtu se přihlaste.', offline: 'Výsledky účtu nejsou offline dostupné.',
-  unavailableAccount: 'Výsledky účtu nejsou během změny relace dostupné.',
-  loading: 'Načítám vaši kolekci…', refresh: 'Obnovit kolekci', searchLabel: 'Hledat v kolekci',
-  accessLabel: 'Přístup', allAccess: 'Všechny výsledky', ownedAccess: 'Vaše památky', linkedAccess: 'Propojené pouze ke čtení',
+const copy = computed(() => ({
+  signIn: 'Přihlas se a otevři svoje uložené památky.', offline: 'Bez připojení k internetu tvoje památky nezobrazíme.',
+  unavailableAccount: 'Památky nejsou dostupné, dokud se mění přihlášení.',
+  loading: 'Načítám tvoje památky…', refresh: 'Obnovit památky', searchLabel: 'Hledat v památkách',
+  accessLabel: 'Přístup', allAccess: 'Všechny památky', ownedAccess: 'Tvoje památky', linkedAccess: 'Propojené pouze ke čtení',
   submitSearch: 'Hledat', loadMore: 'Načíst další', loadingMore: 'Načítám další…', refreshing: 'Obnovuji…',
-  empty: 'Tento účet zatím nemá žádné dostupné výsledky.', filteredEmpty: 'Filtrům neodpovídají žádné výsledky.',
-  failure: 'Kolekci se nepodařilo načíst. Přístup se mohl změnit nebo je služba dočasně nedostupná. Zkuste ji obnovit.',
-  moreFailure: 'Další výsledky se nepodařilo načíst. Zkuste to znovu.', noMore: 'Další výsledky nejsou k dispozici.',
-  morePaused: 'Při zobrazení starších výsledků se automatické obnovování pozastaví. Obnovením kolekce ověříte aktuální stav.',
-  limitReached: 'Zobrazuje se nejvýše 200 výsledků. Starší položky najdete upřesněním hledání.',
-  result: 'Otevřít výsledek', unnamed: 'Uložený výsledek', noTitle: 'Bez názvu příběhu', portrait: 'Výsledný portrét je k dispozici',
-  owner: 'Vaše památka · můžete ji spravovat', linked: 'Propojeno s účtem · pouze ke čtení',
+  empty: 'Zatím tu nemáš žádné dostupné památky. Archiv považuje prázdnou polici za důkaz, že má ve všem pořádek.', filteredEmpty: 'Těmto filtrům nic neodpovídá. Zkus hledat jinak nebo vyber Všechny památky.',
+  failure: 'Památky se nepodařilo načíst. Přístup se mohl změnit nebo je služba dočasně nedostupná. Zkus ji obnovit.',
+  moreFailure: 'Další památky se nepodařilo načíst. Zkus to znovu.', noMore: 'Další památky tu zatím nejsou.',
+  morePaused: 'Při prohlížení starších památek se automatické obnovování pozastaví. Obnovením památek ověříš aktuální stav.',
+  limitReached: 'Zobrazuje se nejvýše 200 památek. Starší položky najdeš upřesněním hledání.',
+  result: 'Otevřít památku', unnamed: 'Uložená památka', portrait: 'Portrét je k dispozici',
+  latest: 'Naposledy uložená památka', collectionTools: 'Hledání a správa památek', details: 'Podrobnosti a správa',
+  owner: 'Tvoje památka · můžeš ji spravovat', linked: 'Propojeno s účtem · pouze ke čtení',
   unknownAccess: 'Podrobnosti přístupu nelze ověřit; odpojení není dostupné.',
   character: 'Postava', evening: 'Večer', linkedAt: 'Propojeno',
   unlink: 'Odpojit od účtu', unlinking: 'Odpojuji…',
-  confirmUnlink: 'Odebrat toto propojení pouze ke čtení z účtu? Původní výsledek ani jeho uložené soubory se tím nesmažou.',
+  confirmUnlink: 'Odebrat toto propojení pouze ke čtení z účtu? Původní památka ani její uložené soubory se tím nesmažou.',
   ready: 'Připraveno', pending: 'Čeká', processing: 'Probíhá', partial: 'Částečně dostupné',
   failed: 'Nepodařilo se dokončit', unavailable: 'Nedostupné',
   reasons: {
     awaiting_result: 'Čeká se na výsledek.', awaiting_capacity: 'Čeká se na volnou kapacitu.',
     paused_preparing: 'Příprava je pozastavená.', reconciliation_required: 'Výsledek se ověřuje.',
-    generation_failed: 'Generování selhalo. Dostupný obsah ověříte otevřením výsledku.', result_unavailable: 'Tento výsledek již není dostupný.',
+    generation_failed: 'Příprava se nepovedla. Otevři památku a zkontroluj dostupné části.', result_unavailable: 'Tato památka už není dostupná.',
   } as Record<string, string>,
-  story: 'Příběh je k dispozici', artwork: 'Výsledek obrazu je k dispozici', completedParts: 'Dostupné části',
-});
+  story: 'Příběh je dostupný', artwork: 'Ilustrace je dostupná', completedParts: 'Dostupné části',
+}));
 
 const items = ref<AccountCollectionItem[]>([]);
 const searchText = ref('');
@@ -86,8 +60,13 @@ const error = ref(false);
 const moreError = ref(false);
 const online = ref(typeof navigator !== 'undefined' && navigator.onLine);
 const expandedPages = ref(false);
+const controlsOpen = ref(false);
 const isEmpty = computed(() => !items.value.length && loaded.value && !loading.value && !error.value);
 const filterIsActive = computed(() => Boolean(appliedSearch.value) || appliedAccess.value !== 'all');
+const collectionToolsOpen = computed(() => controlsOpen.value || filterIsActive.value || error.value);
+function onControlsToggle(event: Event): void {
+  controlsOpen.value = (event.currentTarget as HTMLDetailsElement).open;
+}
 const accountId = () => account.value?.id ?? null;
 const canRead = () => Boolean(accountId() && online.value && !offlineSession.value && !signingOut.value && !accountDeletionRequested.value);
 const client = new AccountCollectionClient(accountId, canRead);
@@ -101,8 +80,8 @@ let activeAccountId: string | null = null;
 let disposed = false;
 const seenCursors = new Set<string>();
 
-const dateFormatter = computed(() => new Intl.DateTimeFormat(props.locale === 'en' ? 'en' : 'cs', { dateStyle: 'medium' }));
-const dateTimeFormatter = computed(() => new Intl.DateTimeFormat(props.locale === 'en' ? 'en' : 'cs', { dateStyle: 'medium', timeStyle: 'short' }));
+const dateFormatter = computed(() => new Intl.DateTimeFormat('cs', { dateStyle: 'medium' }));
+const dateTimeFormatter = computed(() => new Intl.DateTimeFormat('cs', { dateStyle: 'medium', timeStyle: 'short' }));
 function formatUnix(value: number | null, includeTime = false): string {
   if (value === null) return '';
   const date = new Date(value * 1000);
@@ -143,6 +122,7 @@ function stopAndClear(): void {
   appliedSearch.value = '';
   accessFilter.value = 'all';
   appliedAccess.value = 'all';
+  controlsOpen.value = false;
   loading.value = false;
   loadingMore.value = false;
   unlinking.value = null;
@@ -356,89 +336,101 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="account-collection aw-card" aria-labelledby="account-collection-title">
-    <header class="collection-header">
-      <div>
-        <h2 id="account-collection-title">{{ copy.title }}</h2>
-        <p>{{ copy.intro }}</p>
-      </div>
-      <AwButton :busy="loading" :disabled="!canRead() || loadingMore || Boolean(unlinking)" @click="loadFirstPage">{{ loading ? copy.refreshing : copy.refresh }}</AwButton>
-    </header>
-
+  <section class="account-collection aw-card" aria-label="Uložené památky">
     <AwNotice v-if="!account" tone="info" :live="false">{{ copy.signIn }}</AwNotice>
     <AwNotice v-else-if="offlineSession || signingOut || accountDeletionRequested" tone="warning" :live="false">{{ copy.unavailableAccount }}</AwNotice>
     <AwNotice v-else-if="!online" tone="warning" :live="false">{{ copy.offline }}</AwNotice>
-    <AwNotice v-else-if="error" tone="warning" :live="true">{{ copy.failure }}</AwNotice>
     <template v-else>
-      <form class="collection-search" @submit.prevent="submitSearch">
-        <label class="collection-field">
-          <span>{{ copy.searchLabel }}</span>
-          <input v-model="searchText" type="search" maxlength="80" autocomplete="off" />
-        </label>
-        <label class="collection-field">
-          <span id="account-collection-access-label">{{ copy.accessLabel }}</span>
-          <select v-model="accessFilter" aria-labelledby="account-collection-access-label">
-            <option value="all">{{ copy.allAccess }}</option>
-            <option value="owned">{{ copy.ownedAccess }}</option>
-            <option value="linked">{{ copy.linkedAccess }}</option>
-          </select>
-        </label>
-        <AwButton type="submit" :disabled="loading || loadingMore || Boolean(unlinking)">{{ copy.submitSearch }}</AwButton>
-      </form>
 
-      <p v-if="loading && !items.length" class="collection-status" role="status">{{ copy.loading }}</p>
-      <div v-else-if="isEmpty" class="collection-empty"><img v-if="!filterIsActive" :src="keepsakeArtwork" alt="" width="960" height="640" loading="lazy" /><p>{{ filterIsActive ? copy.filteredEmpty : copy.empty }}</p></div>
-      <ol v-else-if="items.length" class="collection-list">
-        <li v-for="item in items" :key="item.locator" class="collection-card">
+
+      <AwNotice v-if="error" tone="warning" :live="true">{{ copy.failure }}</AwNotice>
+      <p v-if="!error && loading && !items.length" class="collection-status" role="status">{{ copy.loading }}</p>
+      <div v-else-if="!error && isEmpty" class="collection-empty">
+        <img v-if="!filterIsActive" :src="keepsakeArtwork" alt="" width="960" height="640" loading="lazy" />
+        <p>{{ filterIsActive ? copy.filteredEmpty : copy.empty }}</p>
+        <nav v-if="!filterIsActive" class="collection-empty__actions" aria-label="Další kroky">
+          <RouterLink class="aw-button aw-button--primary" to="/play">Zkusit hru</RouterLink>
+          <RouterLink to="/play/ranking">Otevřít žebříček</RouterLink>
+        </nav>
+      </div>
+      <ol v-else-if="!error && items.length" class="collection-list">
+        <li v-for="(item, index) in items" :key="item.locator" class="collection-card" :class="{ 'collection-card--latest': index === 0 && !filterIsActive }">
           <div class="collection-card__heading">
             <div>
-              <h3>{{ item.officialName || copy.unnamed }}</h3>
-              <p v-if="item.storyTitle" class="collection-card__story">{{ item.storyTitle }}</p>
+              <h2>{{ item.storyTitle || item.officialName || copy.unnamed }}</h2>
+              <p v-if="index === 0 && !filterIsActive" class="collection-card__latest">{{ copy.latest }}</p>
+              <p v-if="item.storyTitle && item.officialName" class="collection-card__story">{{ item.officialName }}</p>
             </div>
             <span class="collection-status-pill" :data-state="item.readiness.state">{{ statusLabel(item.readiness.state) }}</span>
           </div>
           <p v-if="item.readiness.reason" class="collection-card__reason">{{ copy.reasons[item.readiness.reason] }}</p>
-          <ul v-if="item.readiness.hasStory || item.readiness.hasArtwork" class="collection-parts" :aria-label="copy.completedParts">
-            <li v-if="item.readiness.hasStory">{{ copy.story }}</li>
-            <li v-if="item.readiness.hasArtwork">{{ copy.artwork }}</li>
-          </ul>
-          <p v-if="item.hasPortrait" class="collection-private">{{ copy.portrait }}</p>
-          <p v-if="isOwnedCollectionItem(item) && item.characterName" class="collection-metadata">{{ copy.character }}: {{ item.characterName }}</p>
-          <p v-if="isOwnedCollectionItem(item) && item.eveningAt !== null" class="collection-metadata">{{ copy.evening }}: {{ formatUnix(item.eveningAt, true) }}</p>
-          <div class="collection-card__footer">
-            <span v-if="isOwnedCollectionItem(item)" class="collection-access">{{ copy.owner }}</span>
-            <span v-else-if="isLinkedCollectionItem(item)" class="collection-access">{{ copy.linked }}</span>
-            <span v-else class="collection-access">{{ copy.unknownAccess }}</span>
-            <time v-if="isoUnix(item.linkedAt)" :datetime="isoUnix(item.linkedAt)">{{ copy.linkedAt }}: {{ formatUnix(item.linkedAt) }}</time>
-          </div>
           <div class="collection-card__actions">
-            <RouterLink :to="resultLocation(item)">{{ copy.result }}</RouterLink>
-            <AwButton v-if="isLinkedCollectionItem(item)" variant="danger" :busy="unlinking === item.locator" :disabled="Boolean(unlinking) || loading || loadingMore" @click="unlink(item)">
-              {{ unlinking === item.locator ? copy.unlinking : copy.unlink }}
-            </AwButton>
+            <RouterLink class="collection-open" :to="resultLocation(item)">{{ copy.result }}</RouterLink>
           </div>
+          <details class="collection-item-details">
+            <summary>{{ copy.details }}</summary>
+            <ul v-if="item.readiness.hasStory || item.readiness.hasArtwork" class="collection-parts" :aria-label="copy.completedParts">
+              <li v-if="item.readiness.hasStory">{{ copy.story }}</li>
+              <li v-if="item.readiness.hasArtwork">{{ copy.artwork }}</li>
+            </ul>
+            <p v-if="item.hasPortrait" class="collection-private">{{ copy.portrait }}</p>
+            <p v-if="isOwnedCollectionItem(item) && item.characterName" class="collection-metadata">{{ copy.character }}: {{ item.characterName }}</p>
+            <p v-if="isOwnedCollectionItem(item) && item.eveningAt !== null" class="collection-metadata">{{ copy.evening }}: {{ formatUnix(item.eveningAt, true) }}</p>
+            <div class="collection-card__footer">
+              <span v-if="isOwnedCollectionItem(item)" class="collection-access">{{ copy.owner }}</span>
+              <span v-else-if="isLinkedCollectionItem(item)" class="collection-access">{{ copy.linked }}</span>
+              <span v-else class="collection-access">{{ copy.unknownAccess }}</span>
+              <time v-if="isoUnix(item.linkedAt)" :datetime="isoUnix(item.linkedAt)">{{ copy.linkedAt }}: {{ formatUnix(item.linkedAt) }}</time>
+            </div>
+            <div class="collection-card__actions">
+              <AwButton v-if="isLinkedCollectionItem(item)" variant="danger" :busy="unlinking === item.locator" :disabled="Boolean(unlinking) || loading || loadingMore" @click="unlink(item)">
+                {{ unlinking === item.locator ? copy.unlinking : copy.unlink }}
+              </AwButton>
+            </div>
+          </details>
         </li>
       </ol>
-      <AwNotice v-if="moreError" tone="warning" :live="true">{{ copy.moreFailure }}</AwNotice>
-      <AwButton v-if="nextCursor && items.length < 200" :busy="loadingMore" :disabled="loading || Boolean(unlinking)" @click="loadMore">{{ loadingMore ? copy.loadingMore : copy.loadMore }}</AwButton>
-      <p v-else-if="items.length >= 200" class="collection-end">{{ copy.limitReached }}</p>
-      <p v-else-if="loaded && items.length" class="collection-end">{{ copy.noMore }}</p>
-      <p v-if="expandedPages" class="collection-poll-paused">{{ copy.morePaused }}</p>
+      <details class="collection-tools" :open="collectionToolsOpen" @toggle="onControlsToggle">
+        <summary>{{ copy.collectionTools }}</summary>
+        <form v-if="!isEmpty || filterIsActive || error" class="collection-search" @submit.prevent="submitSearch">
+          <label class="collection-field">
+            <span>{{ copy.searchLabel }}</span>
+            <input v-model="searchText" type="search" maxlength="80" autocomplete="off" />
+          </label>
+          <label class="collection-field">
+            <span id="account-collection-access-label">{{ copy.accessLabel }}</span>
+            <select v-model="accessFilter" aria-labelledby="account-collection-access-label">
+              <option value="all">{{ copy.allAccess }}</option>
+              <option value="owned">{{ copy.ownedAccess }}</option>
+              <option value="linked">{{ copy.linkedAccess }}</option>
+            </select>
+          </label>
+          <AwButton type="submit" :disabled="loading || loadingMore || Boolean(unlinking)">{{ copy.submitSearch }}</AwButton>
+        </form>
+        <AwButton :busy="loading" :disabled="!canRead() || loadingMore || Boolean(unlinking)" @click="loadFirstPage">{{ loading ? copy.refreshing : copy.refresh }}</AwButton>
+      </details>
+      <AwNotice v-if="!error && moreError" tone="warning" :live="true">{{ copy.moreFailure }}</AwNotice>
+      <AwButton v-if="!error && nextCursor && items.length < 200" :busy="loadingMore" :disabled="loading || Boolean(unlinking)" @click="loadMore">{{ loadingMore ? copy.loadingMore : copy.loadMore }}</AwButton>
+      <p v-else-if="!error && items.length >= 200" class="collection-end">{{ copy.limitReached }}</p>
+      <p v-else-if="!error && loaded && items.length" class="collection-end">{{ copy.noMore }}</p>
+      <p v-if="!error && expandedPages" class="collection-poll-paused">{{ copy.morePaused }}</p>
     </template>
   </section>
 </template>
 
 <style scoped>
 .account-collection { display: grid; gap: 1rem; min-width: 0; }
-.collection-header, .collection-card__heading, .collection-card__footer, .collection-card__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1rem; }
-.collection-header h2 { margin-bottom: .35rem; }
-.collection-header p, .collection-card__story, .collection-card__reason, .collection-card__footer, .collection-end, .collection-poll-paused { margin: 0; color: var(--aw-muted); }
+.collection-card__heading, .collection-card__footer, .collection-card__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1rem; }
+.collection-card__story, .collection-card__reason, .collection-card__footer, .collection-end, .collection-poll-paused { margin: 0; color: var(--aw-muted); }
+.collection-tools, .collection-item-details { display: grid; gap: .75rem; }
+.collection-tools > summary, .collection-item-details > summary { width: fit-content; min-height: 44px; align-content: center; cursor: pointer; color: var(--aw-muted); }
+.collection-card__latest { margin: 0; color: var(--aw-muted); font-size: .875rem; }
 .collection-search { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(12rem, .8fr) auto; align-items: end; gap: .75rem; }
 .collection-field { display: grid; gap: .4rem; min-width: 0; font-weight: 600; }
 .collection-field input, .collection-field select { box-sizing: border-box; width: 100%; min-height: 44px; padding: .55rem .7rem; border: 1px solid var(--aw-border-subtle); border-radius: var(--aw-radius-control); background: var(--aw-surface); color: var(--aw-ivory); font: inherit; }
 .collection-list { display: grid; gap: .8rem; margin: 0; padding: 0; list-style: none; }
 .collection-card { display: grid; gap: .8rem; min-width: 0; padding: 1rem; border: 1px solid var(--aw-border-subtle); border-radius: var(--aw-radius-card); }
-.collection-card h3 { margin: 0; overflow-wrap: anywhere; }
+.collection-card h2 { margin: 0; overflow-wrap: anywhere; }
 .collection-card__heading > div { display: grid; gap: .35rem; min-width: 0; }
 .collection-status-pill { padding: .2rem .65rem; border-radius: 999px; background: var(--aw-accent-soft); color: var(--aw-ivory); }
 .collection-status-pill[data-state="failed"], .collection-status-pill[data-state="unavailable"] { background: var(--aw-surface); color: var(--aw-danger); }
@@ -449,13 +441,20 @@ onBeforeUnmount(() => {
 .collection-card__footer time { margin-inline-start: auto; }
 .collection-card__actions { justify-content: flex-start; }
 .collection-card__actions a { display: inline-flex; align-items: center; min-height: 44px; }
+.collection-card .collection-open { padding: var(--wns-space-12) var(--wns-space-20); border-radius: var(--aw-radius-control); background: var(--aw-elevated); color: var(--aw-ivory); font-weight: 800; text-decoration: none; }
+.collection-card--latest { padding: var(--wns-space-24); background: var(--wns-surface); border: 0; gap: var(--wns-space-20); }
+.collection-card--latest h2 { font-size: clamp(1.5rem, 5vw, 2rem); line-height: 1.2; }
+.collection-card--latest .collection-open { background: var(--aw-accent); color: var(--aw-on-accent); }
+.collection-item-details[open] > :not(summary) { margin-block: var(--wns-space-12); }
+.collection-tools { border-top: 1px solid var(--wns-line); padding-top: var(--wns-space-8); }
 .collection-empty, .collection-status { margin: 0; }
 .collection-empty { display: grid; gap: 1rem; max-width: 38rem; }
 .collection-empty img { display: block; width: 100%; height: 16rem; object-fit: contain; padding: 12%; background: var(--wns-violet); border-radius: var(--wns-radius-hero); }
+.collection-empty__actions { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; }
+.collection-empty__actions a { display: inline-flex; align-items: center; min-height: 44px; }
 .collection-field input:focus-visible, .collection-field select:focus-visible, .collection-card__actions a:focus-visible { outline: 3px solid var(--aw-accent); outline-offset: 3px; }
 @media (max-width: 680px) {
   .collection-search { grid-template-columns: minmax(0, 1fr); }
-  .collection-header { align-items: flex-start; }
   .collection-card__footer time { margin-inline-start: 0; }
 }
 </style>

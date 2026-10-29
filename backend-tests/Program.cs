@@ -21,6 +21,7 @@ if (args is ["--sealed-case-http"]) { await SealedCaseHttpTests.RunAsync(); retu
 if (args is ["--sealed-case-c1"]) { await SealedCaseHttpTests.FrozenPrivacyAndLegacyAcceptanceAsync(); return; }
 if (args is ["--sealed-case-timing"]) { SealedCaseTimingTests.Run(); return; }
 if (args is ["--sealed-case-plans"]) { SealedCasePlanTests.Run(); return; }
+if (args is ["--sealed-case-variants"]) { SealedScenarioVariantTests.Run(); await SealedCaseHttpTests.ScenarioVariantsAsync(); return; }
 if (args is ["--sealed-case-ai", var aiVariant])
 {
     try { await SealedCaseHttpTests.AiGameAsync(aiVariant); }
@@ -31,10 +32,11 @@ if (args is ["--sealed-case-ai-lobby"]) { await SealedCaseHttpTests.AiLobbyAsync
 if (args is ["--sealed-case-playable"]) { await SealedCaseHttpTests.PlayableCasesAsync(); return; }
 if (args is ["--sealed-case-runtime"])
 {
-    SealedCaseTests.Run(); SealedCaseRulesTests.Run(); SealedCaseProjectionTests.Run();
+    SealedCaseTests.Run(); SealedCaseRulesTests.Run(); SealedCaseProjectionTests.Run(); SealedScenarioVariantTests.Run();
     SealedCaseContextPersistenceTests.Run(); SealedCasePersistenceTests.Run();
     SealedCaseTimingTests.Run(); SealedCasePlanTests.Run();
-    await SealedCaseHttpTests.RunAsync(); await SealedCaseHttpTests.PlayableCasesAsync(); await SealedCaseHttpTests.AiLobbyAsync(); return;
+    await SealedCaseHttpTests.RunAsync(); await SealedCaseHttpTests.PlayableCasesAsync(); await SealedCaseHttpTests.AiLobbyAsync();
+    await SealedCaseHttpTests.ScenarioVariantsAsync(); return;
 }
 if (args is ["--mobile-wands"]) { await MobileWandTests.RunAsync(); return; }
 if (args is ["--mobile-workshop-transparent-artwork", var artSource, var artModel]) { await WandArtworkLiveTests.VerifyAsync(artSource, artModel); return; }
@@ -47,6 +49,7 @@ if (args is ["--mobile-workshop-socket"]) { await MobileWorkshopSocketTests.RunA
 if (args is ["--mobile-workshop-voice-verify"]) { await MobileWorkshopLiveTests.VerifySpokenTurnsAsync(); return; }
 if (args is ["--mobile-workshop-artwork-verify", var sourceDatabase, var imageModel]) { await MobileWorkshopLiveTests.VerifyArtworkAsync(sourceDatabase, imageModel); return; }
 if (args is ["--mobile-game"]) { MobileGameTests.Run(); return; }
+if (args is ["--game-wand-artwork"]) { await GameWandArtworkTests.RunAsync(); return; }
 if (args is ["--owner-player-http"]) { await MobileGameTests.RunOwnerPlayerHttpAsync(); return; }
 if (args is ["--mobile-game-http"]) { await MobileGameTests.RunHttpAsync(); return; }
 if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); return; }
@@ -66,6 +69,15 @@ if (args is ["--bounded-sdk-transport"]) { await BoundedSdkTransportTests.RunAsy
 if (args is ["--text-dialog-budget"]) { ResponsesTextDialogBudgetTests.Run(); Console.WriteLine("Text dialogue model budgets passed."); return; }
 if (args is ["--tester-identity"]) { await AccountIdentityTests.RunTesterIdentityAsync(); return; }
 if (args is ["--passkey-labels"]) { await AccountIdentityTests.RunPasskeyLabelsAsync(); return; }
+if (args is ["--hardware-simulator"])
+{
+    await TestingMultiTurnTests.RunAsync();
+    await TestingHardwareTests.RunAsync();
+    await TestingCharacterRaceTests.RunAsync();
+    await AccountIdentityTests.RunTestingSessionHttpAsync();
+    await TestingSessionsTests.RunAsync();
+    return;
+}
 if (args is ["--testing-hardware"]) { await TestingHardwareTests.RunAsync(); return; }
 if (args is ["--testing-conversations"]) { await TestingConversationTests.RunAsync(); return; }
 if (args is ["--testing-multiturn"]) { await TestingMultiTurnTests.RunAsync(); return; }
@@ -168,6 +180,7 @@ if (args is ["--identity"])
 if (args is ["--customer-profiles"]) { await CustomerProfileTests.RunAsync(); return; }
 if (args is ["--customer-sessions"]) { await CustomerSessionTests.RunAsync(); await AccountIdentityTests.RunCustomerSessionsAsync(); return; }
 if (args is ["--identity-fixture"]) { await AccountIdentityTests.RunBrowserFixtureAsync(); return; }
+if (args is ["--guest-journey-fixture"]) { await AccountIdentityTests.RunGuestJourneyBrowserFixtureAsync(); return; }
 if (args is ["--show-live-boundary"]) { await AutonomousLiveTests.RunShowLiveBoundariesAsync(); return; }
 if (args is ["--show"])
 {
@@ -252,7 +265,6 @@ await AccountCollectionTests.RunAsync();
 await AccountIdentityTests.RunAccountCollectionHttpAsync();
 await AccountIdentityTests.RunCustomerSessionResultHttpAsync();
 KeepsakeOutcomeJournalTests.Run();
-FirmwareReleaseTests.Run();
 CharacterDirectorTests.Run();
 CharacterOperationTests.Run();
 await AutonomousLiveTests.RunCharacterAsync();
@@ -268,14 +280,10 @@ await AccountIdentityTests.RunTesterIdentityAsync();
 await PushTests.RunAsync();
 await AccountIdentityTests.RunPushHttpAsync();
 await TestingConversationTests.RunAsync();
-await TestingMultiTurnTests.RunAsync();
-await TestingHardwareTests.RunAsync();
 await TestingResourcesTests.RunAsync();
-await TestingCharacterRaceTests.RunAsync();
-await AccountIdentityTests.RunTestingSessionHttpAsync();
-await TestingSessionsTests.RunAsync();
 await CharacterLabelTests.RunAsync();
 GameDisplayNameTests.Run();
+await GameWandArtworkTests.RunAsync();
 await PersonalityTests.RunAsync();
 await AutonomousLiveTests.RunAsync();
 await CaseVoiceAsideTests.RunAsync();

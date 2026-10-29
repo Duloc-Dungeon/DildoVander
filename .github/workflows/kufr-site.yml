@@ -3,6 +3,10 @@ name: Build DildoVander application
 on:
   workflow_call:
     inputs:
+      reuse-validation:
+        description: Internal verified same-tree PR test reuse; default runs every test
+        type: boolean
+        default: false
       reuse-web-dist:
         type: boolean
         default: false
@@ -39,23 +43,15 @@ jobs:
             contracts/package-lock.json
       - name: Guard application and viewer CI independence
         run: python scripts/ci/ui_boundary.py
-      - name: Validate application packaging and viewer fixtures
+      - name: Validate application packaging fixtures
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         run: |
           python scripts/generate_design_tokens.py --check
           npm test --prefix design-system
           python -m unittest discover -s web -p 'test_*.py'
-          python -m unittest discover -s web/deploy -p 'test_*.py'
-          python -m unittest discover -s mechanika/final -p test_viewer_style.py
-          python -m unittest discover -s mechanika/final -p test_viewer_document.py
-          python -m unittest discover -s mechanika/final -p test_twin_manifest.py
-          python mechanika/final/generate_effects.py --check
-          python -m unittest discover -s mechanika/final -p test_effects.py
-          python -m unittest discover -s mechanika/final -p test_model_bundle_export.py
-          python -m unittest discover -s mechanika/final -p test_model_verification.py
-          node --test mechanika/final/test_viewer.cjs mechanika/final/test_twin_viewer.cjs mechanika/final/test_twin_media.cjs mechanika/final/test_show_timeline.cjs
-          node --test firmware/diagnostics/servo-bench/web/tests/*.test.mjs
-          python -m unittest discover -s firmware/diagnostics/servo-bench/web/tests -p 'test_*.py'
-          node firmware/simulator/verify-dashboard.mjs
+          for test in test_application_routes.py test_character_admin_proxy.py test_distribution_store.py test_keepsake_proxy.py test_launch_resource_gate.py test_private_pipeline_preparation.py test_release_store.py; do
+            python -m unittest discover -s web/deploy -p "$test"
+          done
       - name: Install shared application browser dependencies
         working-directory: mobilni-aplikace
         run: |
@@ -75,6 +71,7 @@ jobs:
           npm test
           npm run build
       - name: Verify shared application browser journeys
+        if: inputs.reuse-validation != true || github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
         working-directory: mobilni-aplikace
         run: |
           npx playwright install --with-deps chromium
@@ -83,12 +80,8 @@ jobs:
           npm run test:owner:browser
           npm run test:persona-lab:browser
           npm run test:updates:browser
-          node tests/debug.browser.mjs
-          node tests/director.browser.mjs
           node scripts/archive-show.browser.mjs
           node tests/personal-wand-duel.browser.mjs
-          node tests/workshop-offline.browser.mjs
-          node tests/workshop-media.browser.mjs
       - name: Check real compiled application inputs without CAD
         env:
           KUFR_SITE_WEB_DIST: ${{ github.workspace }}/mobilni-aplikace/dist

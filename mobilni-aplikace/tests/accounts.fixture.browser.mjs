@@ -8,12 +8,13 @@ import { fileURLToPath } from 'node:url';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repository = resolve(appRoot, '..');
+const guestJourney = process.argv.includes('--guest-journey');
 const assembly = process.env.KUFR_TESTS_DLL;
 assert(assembly, 'Set KUFR_TESTS_DLL to the previously built BackendTests.dll.');
 await access(resolve(repository, assembly));
 await access(resolve(appRoot, 'dist/index.html'));
 
-const fixture = spawn('dotnet', [resolve(repository, assembly), '--identity-fixture'], {
+const fixture = spawn('dotnet', [resolve(repository, assembly), guestJourney ? '--guest-journey-fixture' : '--identity-fixture'], {
   cwd: repository, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
 });
 let fixtureExit;
@@ -45,7 +46,7 @@ const startupTimeout = setTimeout(() => readyReject(new Error('Isolated account 
 try {
   await ready;
   clearTimeout(startupTimeout);
-  const browser = spawn(process.execPath, ['tests/accounts.browser.mjs'], {
+  const browser = spawn(process.execPath, [guestJourney ? 'tests/guest-journey.browser.mjs' : 'tests/accounts.browser.mjs'], {
     cwd: appRoot, windowsHide: true, stdio: 'inherit',
     env: { ...process.env, ACCOUNT_BROWSER_URL: origin, ACCOUNT_BOOTSTRAP_FILE: delivery },
   });

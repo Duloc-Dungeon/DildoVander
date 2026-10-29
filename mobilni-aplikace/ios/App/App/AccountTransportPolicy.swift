@@ -48,6 +48,7 @@ enum AccountTransportPolicy {
     }
 
     static func accountResponseLimit(path: String, method: String) -> Int {
+        if gameOpponentWandArtwork(path: path, method: method) { return 32 * 1024 * 1024 }
         if (method == "GET" && (adminCharacterList(path) || adminCharacterProfilePath(path))) ||
             (method == "PUT" && (adminCharacterProfilePath(path) || adminCharacterPortrait(path: path, method: method, read: false))) {
             return 256 * 1024
@@ -83,6 +84,10 @@ enum AccountTransportPolicy {
 
     static func accountResponseContentTypeAllowed(path: String, method: String, contentType: String?, status: Int = 200) -> Bool {
         if !(200..<300).contains(status) { return true }
+        if gameOpponentWandArtwork(path: path, method: method) {
+            return contentType?.split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "image/png"
+        }
         if path.range(of: "^/app/v1/customer/wand/workshop/sessions/[0-9a-f]{32}/audio$", options: .regularExpression) != nil,
            method == "POST" {
             guard let value = contentType?.split(separator: ";", maxSplits: 1).first?
@@ -604,7 +609,15 @@ enum AccountTransportPolicy {
             ["GET", "PUT"].contains(method)
     }
 
+    private static func gameOpponentWandArtwork(path: String, method: String) -> Bool {
+        method == "GET" && (
+            path.range(of: "^/app/v1/game/matches/[0-9a-f]{32}/opponent/wand-artwork\\?revision=[0-9a-fA-F]{64}\\z", options: .regularExpression) != nil
+                || path.range(of: "^/app/v1/game/teams/[0-9a-f]{32}/opponents/[0-9a-f]{32}/wand-artwork\\?revision=[0-9a-fA-F]{64}\\z", options: .regularExpression) != nil
+        )
+    }
+
     static func account(path: String, method: String) -> Bool {
+        if gameOpponentWandArtwork(path: path, method: method) { return true }
         if wandWorkshop(path: path, method: method) { return true }
         if path == "/app/v1/customer/wand" { return method == "GET" }
         if path == "/app/v1/customer/wand/sessions" { return method == "POST" }
@@ -773,6 +786,7 @@ enum AccountTransportPolicy {
     }
 
     private static func sealedCase(path: String, method: String) -> Bool {
+        if path == "/app/v1/sealed-cases/scenarios" { return method == "GET" }
         if path == "/app/v1/sealed-cases" { return method == "POST" }
         if path == "/app/v1/sealed-cases/current" { return method == "GET" }
         if sealedCasePortrait(path: path, method: method) { return true }

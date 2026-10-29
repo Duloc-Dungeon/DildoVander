@@ -1,0 +1,19 @@
+.game-team-scene .game-team-heading h1 { margin-block: 8px 20px; }
+.game-team-scene .game-team-score { grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr); align-items: stretch; gap: var(--wns-space-12); margin: 0; padding-bottom: var(--wns-space-16); border-bottom: 1px solid var(--wns-line); text-align: left; }
+.game-team-scene .team-side { gap: var(--wns-space-12); }
+.game-team-scene .team-side__label { margin: 0; color: var(--wns-muted); font-size: .875rem; }
+.game-team-scene .team-roster { display: grid; gap: var(--wns-space-12); padding: 0; margin: 0 0 var(--wns-space-8); list-style: none; }
+.team-player__name { display: block; font-size: .9375rem; font-weight: var(--wns-weight-medium); line-height: 1.4; }
+.team-player__state { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: .8125rem; color: var(--wns-muted); line-height: 1.4; }
+.team-player__indicator { flex-shrink: 0; width: 6px; height: 6px; border: 1px solid currentColor; border-radius: 50%; }
+.team-player[data-ready='true'] .team-player__state { color: var(--duel-player); }
+.team-side--opponents .team-player[data-ready='true'] .team-player__state { color: var(--duel-opponent); }
+.team-player[data-ready='true'] .team-player__indicator { background: currentColor; }
+.game-team-scene .game-team-score strong { margin-top: auto; font-size: clamp(2.25rem, 10vw, 3rem); line-height: 1.1; }
+.game-team-scene .game-team-score .game-score-divider { align-self: end; padding-bottom: 8px; text-align: center; }
+.game-team-scene .team-readiness { margin-block: var(--wns-space-12) var(--wns-space-16); color: var(--wns-muted); font-size: .875rem; }
+.game-team-scene .team-pairing { margin: 0 0 var(--wns-space-8); font-size: .875rem; color: var(--wns-muted); overflow-wrap: anywhere; }
+.game-team-scene .game-content .team-round-points { margin-block: var(--wns-space-8) 0; font-size: .875rem; color: var(--wns-muted); }
+.game-team-scene .game-halftime { border-color: var(--wns-amber); }
+.game-team-scene .game-halftime-clock { color: var(--wns-amber); }
+@media (max-width: 360px) { .game-team-scene .game-team-score { gap: var(--wns-space-8); } }

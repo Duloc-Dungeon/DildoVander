@@ -202,8 +202,11 @@ internal static partial class SealedCaseHttpTests
         var grants = durableStore.ReadRosterAuthority(id, persisted.GroupId);
         Equal(30, grants.Members.Length); Check(grants.Members.All(x => x.Roles.Contains(SealedContextRole.Player)), "frozen roster issues player grants");
         Check(HasExactProperties(full, "id", "playerId", "status", "revision", "variant", "expectedPlayers", "readyPlayers",
-            "ownReady", "canManage", "canStart", "startBlocker", "serverNow", "chapters", "planningSeconds", "quietSeconds"),
+            "ownReady", "canManage", "canStart", "startBlocker", "serverNow", "chapters", "planningSeconds", "quietSeconds", "scenario"),
             "HTTP lobby wire projection contains only its public allowlist");
+        Check(HasExactProperties(full.GetProperty("scenario"), "id", "version", "title", "summary", "universe", "tone",
+            "guardianLabel", "conspiratorLabel", "echoLabel", "echoExplanation", "extremeActionLabel", "extremeConsequence"),
+            "HTTP lobby scenario has public presentation only");
         Equal(id, full.GetProperty("id").GetString());
         Equal("p1", full.GetProperty("playerId").GetString());
         Check(!JsonSerializer.Serialize(full).Contains(roster.ServerSeed, StringComparison.Ordinal), "server seed is not in lobby projection");

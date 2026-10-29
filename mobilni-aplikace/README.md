@@ -21,7 +21,7 @@ obrazovky na webu a v Capacitor WKWebView. Spotřebitelská značka **Wand Night
 používá `src/application/consumer-brand.css` nad společnými sémantickými tokeny;
 [DESIGN.md](../DESIGN.md) popisuje aktuální vzhled. Technické nástroje zachovávají
 Vapour Chrome. `src/components/` obsahuje typované Vue komponenty.
-`src/application/App.vue` drží navigaci **Domov, Kufr, Dílna, Archiv, Nastavení**
+`src/application/App.vue` a `WnsNavigation.vue` drží navigaci **Dílna, Hry, Památky, Já**
 a dostupný Stop. Feature služby vlastní zařízení, účty, archiv a viewer;
 Swift adaptéry dál vlastní Bluetooth, Keychain, audio a nativní transport.
 
@@ -54,51 +54,22 @@ adds no ESP exporter, new BLE fields or trace persistence. Native compilation,
 an installed iPhone, a physical ESP and a production trace are separate
 acceptance checks; browser tests alone do not prove them.
 
-Režie Show Pack je skutečná Vue obrazovka na `/suitcase/director`, dostupná z Provozu.
-Starý vstup `/#director` přesměruje na tuto cestu. Používá přihlášený účet,
-konkrétní nakonfigurovaný kufr a stejný omezený transport na webu i iOS;
-obrazovka nevyžaduje adresu serveru ani raw bearer.
-Backend kontroluje read/operate/manage grant. Citlivé odhalení, herní grant,
-import offline výsledků a konec večera vyžadují potvrzení a čerstvý passkey.
-Běžné zásahy a Stop nečekají na nové přihlášení. Stop má přednostní cestu i při
-čekajícím běžném požadavku a zůstává v globálním Stop po odchodu z režie.
-Přepnutí účtu nebo vybraného zařízení ruší starý kontext synchronně.
+Web, iOS a Android používají stejné současné obrazovky: přihlášení a pozvánky,
+Kufrovu dílnu (`/play/wand`), hry (`/play`), postavu a památky, účet a oprávněnou
+správu. Staré obrazovky fyzického Kufru, Připojení, Diagnostiky, Režie, Provozu,
+3D Dílny a původního Archivu jsou odstraněné včetně samostatného offline vieweru.
+Jejich přesné webové vstupy zůstávají kompatibilními přesměrováními do her,
+Kufrovy dílny nebo `/me/keepsakes`; nenahrávají původní obrazovky.
 
-Režie zachovává revize, generaci návštěvy a TTL zásahů 30 s; nejistý výsledek
-se nikdy automaticky neopakuje. Backendové přijetí není potvrzení zvuku nebo
-fyzického účinku. Stop porovnává čerstvý report stejné deviceStopRevision.
-Místní offline preflight/Arm/start/ticho/ambient mají vlastní autentizované WSS;
-Arm vyžaduje výslovně získaný ruční lease v Provozu. Import označuje výsledky
-operator_relay a potvrzuje outbox až po přijetí shodného operationId serverem.
+`/keepsake/` a `/archive/duel` zůstávají detaily používanými současnými Památkami.
+Soukromé odkazy dál vyžadují vlastníka nebo příslušný omezený grant; účet jej
+nenahrazuje. Technické služby a nativní adaptéry používané laboratoří a dalšími
+udržovanými funkcemi zůstávají oddělené od odstraněných obrazovek.
 
-Souboj vyžaduje dvě dokončené identity a souhlas obou hostů. Herní odkazy mají
-jednorázově zachycený fragment a žijí pouze v paměti; opuštění pohledu, změna
-účtu/zařízení/večera nebo ukončení souboje odstraní operátorovy kopie.
-Veřejný přehled grant neobsahuje a jeho origin dodává backend.
-`/archive/duel` a `/archive/chronicle` jsou Vue cesty; staré
-`/keepsake/duel.html` a `/keepsake/chronicle.html` zůstávají přesné aliasy.
-Soukromé znění proroctví zůstává návštěvníkovi. Ukončení večera nemaže archiv.
-
-Opakovatelné syntetické browser ověření běží proti sestavenému Vue dist pomocí
-`node scripts/check-director-browser.mjs`; nemění backend, nevolá provider ani
-hardware. `check-director-flows.mjs` a `check-director-remote-stop.mjs` jsou
-kompatibilní vstupy stejné udržované sady. Skutečné account/backend testy vlastní
-izolovaný HTTPS fixture. Žádný browser výsledek neprokazuje přijetí na iPhonu.
-
-
-`/connections` soustředí uložené zařízení a BLE párování; `/suitcase`
-hlas, tanec, text a ruční řízení. `/suitcase/diagnostics` obsahuje nativní
-testy a místní USB servis. `/workshop` integruje model, montáž, simulaci,
-pozorování a replay. `/archive` a `/keepsake/` zachovávají veřejný a soukromý
-přístup hostů. `/settings` a `/settings/admin` vlastní účty a správu.
-
-Přepnutí pohledu zachovává aktivní operace; revize a změna cíle ruší čekající
-potvrzení fyzického povelu. Telemetrie zachovává stabilní vstupy a focus.
-Prohlížeč začíná bez připojení: ukázku nebo simulátor volíte výslovně.
-Preference tématu migruje `aw-theme` do `dildovander.theme`; účet ani přístupové
-tokeny se do localStorage neukládají. Oprávnění účtu, lokální párování,
-spojení a ruční lease jsou samostatné hranice. Webové testy neprokazují iPhone
-ani fyzický kufr. [Architektura a migrační mapa](../docs/application-architecture.md).
+Syntetické browser ověření aktuální navigace běží přes
+`npm run test:navigation:browser`; `npm run test:browser` ověřuje také účty,
+správu a stará přesměrování. Vyžadují sestavený Vue dist a neprokazují běh na
+skutečném telefonu ani přijetí fyzického hardwaru.
 
 Následující datované záznamy popisují starší předání hardware a zachované
 nativní schopnosti; nedokládají přejímku nové Vue aplikace.

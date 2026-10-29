@@ -47,6 +47,7 @@ internal interface IGameYoloProvider
 internal sealed class OpenAiGameYoloProvider : IGameYoloProvider, IDisposable
 {
     private const string Model = ResponsesTextDialogBudget.Model;
+    internal const int RequestTimeoutSeconds = 60;
     private readonly string? _key;
     private readonly HttpClient? _http;
 
@@ -67,7 +68,7 @@ internal sealed class OpenAiGameYoloProvider : IGameYoloProvider, IDisposable
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(TimeSpan.FromSeconds(60));
+            deadline.CancelAfter(TimeSpan.FromSeconds(RequestTimeoutSeconds));
             using var bounded = BoundedSdkTransport.Create(_http, 32_768);
             var client = new ResponsesClient(new ApiKeyCredential(_key), new ResponsesClientOptions
             {
@@ -352,6 +353,8 @@ internal sealed class GameYoloWorker(IServiceScopeFactory scopes, GameStore stor
 
 internal sealed partial class GameStore
 {
+    internal const int YoloClaimLeaseSeconds = OpenAiGameYoloProvider.RequestTimeoutSeconds + 30;
+
     private static void EnsureYoloTables(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
@@ -416,7 +419,7 @@ internal sealed partial class GameStore
             claim.CommandText = "INSERT INTO game_yolo_jobs(match_id,revision,status,lease_until) VALUES($id,$revision,'claimed',$lease) ON CONFLICT(match_id) DO UPDATE SET revision=excluded.revision,status='claimed',lease_until=excluded.lease_until";
             claim.Parameters.AddWithValue("$id", matchId);
             claim.Parameters.AddWithValue("$revision", revision);
-            claim.Parameters.AddWithValue("$lease", DateTimeOffset.UtcNow.AddSeconds(60).ToUnixTimeSeconds());
+            claim.Parameters.AddWithValue("$lease", DateTimeOffset.UtcNow.AddSeconds(YoloClaimLeaseSeconds).ToUnixTimeSeconds());
             claim.ExecuteNonQuery();
             transaction.Commit();
             return true;

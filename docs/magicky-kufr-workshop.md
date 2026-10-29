@@ -237,3 +237,27 @@ přehrávaného zvuku; při `prefers-reduced-motion` se vypíná.
 Podnos není pro neznámou orientaci kanonického artworku použitý. Výsledek se
 zobrazuje samostatně bez ořezu. Demonstrační hůlka `sever-wand-demo.png` není
 součástí klientského buildu ani výrobního fallbacku.
+
+## Živý kufr — prezentace celého průchodu
+
+Směr Overdrive zůstává v designu v2: jantarová scéna rozhovoru, fialová výroba
+a odhalení uložené hůlky. Indikátor Rozhovor → Výroba → Tvoje hůlka vychází
+ze serverové relace; nepočítá otázky, neodhaduje procenta a nedokončuje výrobu.
+Pauza a selhání mají vlastní stav, nikoli nabídku dalšího rozhovoru během výroby.
+
+Kufr i sedm segmentů reagují pouze na skutečně přehrávaný výstup z existujícího
+analyzéru. Mimo stav řeči je úroveň vždy nulová, včetně Stop. Žádný nový přístup
+k mikrofonu, zvuk, poskytovatel nebo placená generace se kvůli efektu nespouští.
+Přechody jsou lokální CSS/Vue; výsledek i ovládání fungují bez čekání na animaci.
+Omezený pohyb vypíná posuny, škálování, přechody a pohyb indikátoru výroby.
+
+Na telefonu se scéna při hovoru a psaní zmenší. Stop a ukončení hovoru jsou před
+obsahem rozhovoru a zůstávají dostupné při posunu stránky. Čtečka oznamuje
+potvrzené textové odpovědi v samostatné živé oblasti, nikoli streamované útržky.
+Chybějící ilustrace zachová výsledek i další krok, bez prázdné scénické plochy.
+
+Ověření: `npm test`, `npm run build`, `npm run test:wand:browser`,
+`npm run test:wand-upgrade-voice:browser` a `npm run test:living-trunk:browser`
+z `mobilni-aplikace/`. Poslední scénář posílá syntetické PCM do skutečného
+browserového přehrávače, ověřuje měřenou reakci, Stop, omezený pohyb a všechny
+fáze na šířkách 390/768/1280 px. Lokální fixture není důkaz živé AI ani telefonu.

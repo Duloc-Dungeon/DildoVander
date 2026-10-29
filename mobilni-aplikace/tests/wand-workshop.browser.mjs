@@ -57,7 +57,33 @@ try {
       await page.unroute('**/app/v1/customer/wand/workshop');
     }
     await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).focus(); await page.keyboard.press('Enter');
-    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    await page.getByText('Hůlka je uložená a připravená ke hře.', { exact: true }).waitFor();
+
+    if (width === 390) {
+      let artworkFailure = 'fetch';
+      await page.route('**/artwork/assets/*', route => artworkFailure === 'fetch'
+        ? route.fulfill({ status: 503, body: '' })
+        : artworkFailure === 'decode'
+          ? route.fulfill({ contentType: 'image/png', body: 'invalid image bytes' })
+          : route.continue());
+      await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
+      await page.getByText('Ilustraci se nepodařilo načíst.', { exact: true }).waitFor();
+      artworkFailure = 'decode';
+      await page.evaluate(() => {
+        window.__artworkDecodeFailures = 0;
+        document.addEventListener('error', event => {
+          if (event.target instanceof HTMLImageElement && event.target.classList.contains('trunk-stage__wand')) window.__artworkDecodeFailures++;
+        }, true);
+      });
+      await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
+      await page.waitForFunction(() => window.__artworkDecodeFailures > 0);
+      await page.waitForFunction(() => document.querySelector('.trunk-stage')?.getAttribute('data-stage') === 'revealed'
+        && document.querySelector('.trunk-workshop__scene')?.getAttribute('data-artwork-visible') === 'false');
+      await page.getByText('Ilustraci se nepodařilo načíst.', { exact: true }).waitFor();
+      await page.screenshot({ path: path.join(output, 'artwork-decode-failed-390.png'), fullPage: true }); captures++;
+      assert.equal(await page.getByRole('heading', { name: 'Tichý přístav', exact: true }).count(), 1);
+      artworkFailure = '';
+    }
 
     await page.getByRole('button', { name: 'Zkusit ilustraci znovu', exact: true }).click();
     await page.locator('.trunk-stage__wand').waitFor();
@@ -80,9 +106,9 @@ try {
       await page.waitForFunction(() => !document.querySelector('textarea')?.disabled);
     }
     await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).click();
-    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    await page.getByText('Hůlka je uložená a připravená ke hře.', { exact: true }).waitFor();
     await page.reload();
-    await page.getByText('Hůlka je uložená', { exact: true }).waitFor();
+    await page.getByText('Hůlka je uložená a připravená ke hře.', { exact: true }).waitFor();
     assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1);
     assert.equal(await overflow(), false, `${width}: upgraded wand result no overflow`);
     await page.screenshot({ path: path.join(output, `upgrade-result-${width}.png`), fullPage: true }); captures++;
@@ -94,6 +120,30 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Raději psát', exact: true }).count(), 0);
     await context.close();
   }
+  // A newly made wand earns one visual acknowledgement; opening it again does not.
+  const completionContext = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'no-preference' });
+  const completionPage = await completionContext.newPage(); lastPage = completionPage;
+  completionPage.on('pageerror', error => errors.push(error.message));
+  await completionPage.goto(`${origin}/__workshop/ready`);
+  await completionPage.getByRole('button', { name: 'Raději psát', exact: true }).click();
+  await completionPage.getByLabel('Tvoje sdělení kufru', { exact: true }).fill('Chci hůlku, která zachová klid.');
+  await completionPage.getByRole('button', { name: 'Odeslat', exact: true }).click();
+  await completionPage.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).click();
+  const completion = completionPage.locator('.trunk-workshop__saved');
+  await completion.waitFor();
+  await completion.locator('.aw-notice__icon img').evaluate(image => image.decode());
+  assert(await completion.locator('.aw-notice__icon img').evaluate(image => image.naturalWidth > 0));
+  assert.equal(await completionPage.locator('.trunk-workshop').getAttribute('data-new-wand'), 'true');
+  assert.notEqual(await completion.locator('.aw-notice__icon').evaluate(icon => getComputedStyle(icon).animationName), 'none');
+  await completionPage.emulateMedia({ reducedMotion: 'reduce' });
+  assert.equal(await completion.locator('.aw-notice__icon').evaluate(icon => getComputedStyle(icon).animationName), 'none');
+  await completionPage.reload();
+  await completion.waitFor();
+  assert.equal(await completionPage.locator('.trunk-workshop').getAttribute('data-new-wand'), 'false');
+  await completionPage.emulateMedia({ reducedMotion: 'no-preference' });
+  assert.equal(await completion.locator('.aw-notice__icon').evaluate(icon => getComputedStyle(icon).animationName), 'none');
+  await completionPage.screenshot({ path: path.join(output, 'completion-confirmed-390.png'), fullPage: true }); captures++;
+  await completionContext.close();
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ result: 'passed', widths: [320, 390, 1280], textScale: '200%', simulatedKeyboardHeight: 420, reducedMotion: true, captures, output, liveProviderCalls: 0 }));
 } catch (error) {
