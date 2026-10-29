@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
     </p>
     <AwNotice v-if="isCurrentVerificationFresh && projection?.valid && generationUnavailable" tone="warning">
       {{ customerCopy.language.value === 'en' ? 'Your personal wand could not be created. No replacement wand has been assigned.' : 'Osobní hůlku se nepodařilo vytvořit. Náhradní hůlka nebyla přiřazena.' }}
-      <template v-if="projection.wandGeneration?.canRetry"><br>{{ customerCopy.language.value === 'en' ? 'When the suitcase is idle, start a new conversation to try again.' : 'Až bude kufr volný, můžeš zahájit nový rozhovor a zkusit to znovu.' }} <RouterLink to="/me/conversation">{{ customerCopy.language.value === 'en' ? 'Open conversation' : 'Přejít k rozhovoru' }}</RouterLink></template>
+      <template v-if="projection.wandGeneration?.canRetry"><br>{{ customerCopy.language.value === 'en' ? 'You can prepare your wand in the in-app workshop.' : 'Hůlku si můžeš připravit v dílně přímo v aplikaci.' }} <RouterLink to="/play/wand">{{ customerCopy.language.value === 'en' ? 'Open workshop' : 'Otevřít dílnu' }}</RouterLink></template>
     </AwNotice>
     <GeneratedWand v-if="isCurrentVerificationFresh && projection?.generatedWand" :wand="projection.generatedWand" show-name
       :image-url="artworkMedia.artworkUrl.value"

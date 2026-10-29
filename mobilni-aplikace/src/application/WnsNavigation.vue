@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import evening from '../assets/wns-v2/icons/regular/house.svg';
-import character from '../assets/wns-v2/icons/regular/user.svg';
+import character from '../assets/wns-v2/icons/regular/sparkle.svg';
 import keepsakes from '../assets/wns-v2/icons/regular/seal-check.svg';
 import account from '../assets/wns-v2/icons/regular/key.svg';
 const emit = defineEmits<{ resize: [height: number] }>();
@@ -19,12 +19,13 @@ onMounted(() => {
 });
 onBeforeUnmount(() => observer?.disconnect());
 const links = [
-  { to: '/play', label: 'Večer', icon: evening },
-  { to: '/me/character', alias: '/me/conversation', label: 'Postava', icon: character },
+  { to: '/play/wand', alias: '/me/character', label: 'Dílna', icon: character },
+  { to: '/play', label: 'Hry', icon: evening },
   { to: '/me/keepsakes', label: 'Památky', icon: keepsakes },
   { to: '/me/account', label: 'Já', icon: account },
 ];
 function isSelected(link: { to: string; alias?: string }): boolean {
+  if (link.to === '/play' && route.path === '/play/wand') return false;
   return route.path === link.to || route.path.startsWith(`${link.to}/`) || route.path === link.alias;
 }
 </script>

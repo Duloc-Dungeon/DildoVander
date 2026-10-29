@@ -31,6 +31,8 @@ try {
         return json({ enabled: true, account: sessionMode === 'anonymous' ? null : account, csrfToken: 'synthetic' });
       }
       if (url.pathname === '/app/v1/customer/character') return json({ profile: null });
+      if (url.pathname === '/app/v1/customer/wand/workshop') return json({ eligible: false, reason: 'wand_character_required', tier: 1, profile: null, session: null });
+      if (url.pathname === '/app/v1/customer/completion-updates') return json({ schemaVersion: 1, items: [], nextCursor: null });
       if (url.pathname === '/app/v1/sealed-cases/current') return json({ id: caseId });
       if (url.pathname === `/app/v1/sealed-cases/${caseId}/lobby`) {
         const body = route.request().postDataJSON();
@@ -58,7 +60,7 @@ try {
     async function checkNavigation(selected) {
       await navigation.waitFor();
       assert.deepEqual(await navigation.locator('a').evaluateAll(links => links.map(link => [link.textContent, link.getAttribute('href')])), [
-        ['Večer', '/play'], ['Postava', '/me/character'], ['Památky', '/me/keepsakes'], ['Já', '/me/account'],
+        ['Dílna', '/play/wand'], ['Hry', '/play'], ['Památky', '/me/keepsakes'], ['Já', '/me/account'],
       ]);
       assert.equal(await page.locator('.primary-navigation').count(), 0);
       assert.equal(await navigation.locator('img').count(), 4);
@@ -74,7 +76,7 @@ try {
     }
     await page.goto(`${origin}/__game/first-wand`);
     await page.getByRole('heading', { name: 'Nejdřív vlastní hůlku.' }).waitFor();
-    await checkNavigation('Večer');
+    await checkNavigation('Hry');
     await page.screenshot({ path: path.join(output, `play-${width}.png`) });
     await page.getByRole('link', { name: 'Pod pečetí', exact: true }).click();
     await page.waitForURL(`**/play/pod-peceti/${caseId}`);
@@ -84,26 +86,41 @@ try {
     await page.getByText('Tvoje postava je připravená.', { exact: false }).waitFor();
     await page.reload();
     await page.getByText('Tvoje postava je připravená.', { exact: false }).waitFor();
-    await checkNavigation('Večer');
+    await checkNavigation('Hry');
     await navigation.getByRole('link', { name: 'Já', exact: true }).click();
     await page.waitForURL('**/me/account');
     await page.locator('#customer-account-title').waitFor();
     await checkNavigation('Já');
     await page.screenshot({ path: path.join(output, `account-${width}.png`) });
-    for (const [label, route] of [['Postava', 'character'], ['Památky', 'keepsakes']]) {
-      await navigation.getByRole('link', { name: label, exact: true }).click();
-      await page.waitForURL(`**/me/${route}`);
-      await checkNavigation(label);
-      if (route === 'keepsakes') {
-        await page.locator('.game-titles__badge').getByText('Soupeř s pamětí', { exact: true }).waitFor();
-        await page.locator('.case-rewards__badge').getByText('Strážce', { exact: true }).waitFor();
-        await page.getByText('Potvrzené hlavní plány: 3 · Provedené zásahy: 2', { exact: true }).waitFor();
-        await page.reload();
-        await page.locator('.case-rewards__badge').getByText('Strážce', { exact: true }).waitFor();
-        await checkNavigation(label);
-        await page.screenshot({ path: path.join(output, `keepsakes-rewards-${width}.png`), fullPage: true });
-      }
-    }
+    await navigation.getByRole('link', { name: 'Dílna', exact: true }).click();
+    await page.waitForURL('**/play/wand');
+    await page.getByRole('heading', { name: 'Kufrova dílna', exact: true }).waitFor();
+    await checkNavigation('Dílna');
+    await page.screenshot({ path: path.join(output, `workshop-${width}.png`) });
+    await page.goto(`${origin}/me/conversation`);
+    await page.waitForURL('**/play/wand');
+    assert.equal(await page.getByRole('button', { name: /Najít kufr|Připojit/ }).count(), 0);
+    await page.getByRole('link', { name: 'Moje postava', exact: true }).click();
+    await page.waitForURL('**/me/character');
+    await page.getByRole('heading', { name: 'Moje postava', exact: true }).waitFor();
+    await checkNavigation('Dílna');
+    await page.screenshot({ path: path.join(output, `character-${width}.png`) });
+    await navigation.getByRole('link', { name: 'Památky', exact: true }).click();
+    await page.waitForURL('**/me/keepsakes');
+    await checkNavigation('Památky');
+    await page.getByText('Tvoje kolekce', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('textbox', { name: 'Hledat v kolekci' }).count(), 0);
+    await page.screenshot({ path: path.join(output, `keepsakes-${width}.png`), fullPage: true });
+    await page.locator('summary').getByText('Herní tituly', { exact: true }).click();
+    await page.locator('.game-titles__badge').getByText('Soupeř s pamětí', { exact: true }).waitFor();
+    await page.locator('summary').getByText('Památky z uzavřených případů', { exact: true }).click();
+    await page.locator('.case-rewards__badge').getByText('Strážce', { exact: true }).waitFor();
+    await page.getByText('Potvrzené hlavní plány: 3 · Provedené zásahy: 2', { exact: true }).waitFor();
+    await page.reload();
+    await checkNavigation('Památky');
+    assert.equal(await page.locator('.case-rewards__badge').count(), 0, 'secondary sections start collapsed after reload');
+    await page.locator('summary').getByText('Památky z uzavřených případů', { exact: true }).click();
+    await page.locator('.case-rewards__badge').getByText('Strážce', { exact: true }).waitFor();
     await navigation.getByRole('link', { name: 'Já', exact: true }).click();
     await page.waitForURL('**/me/account');
     await page.locator('.application-footer').getByRole('link', { name: 'Podpora', exact: true }).click();
@@ -125,21 +142,21 @@ try {
 
     // Failed verification cancels the new destination without losing established identity.
     sessionMode = 'offline';
-    await navigation.getByRole('link', { name: 'Večer', exact: true }).click();
+    await navigation.getByRole('link', { name: 'Hry', exact: true }).click();
     await page.getByText('Připojení k účtu se nepodařilo ověřit.', { exact: false }).waitFor();
     assert.equal(new URL(page.url()).pathname, '/me/account');
     // The lifecycle refresh must retain the same identity and access policy too.
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
     await checkNavigation('Já');
     sessionMode = 'ok';
-    await navigation.getByRole('link', { name: 'Večer', exact: true }).click();
+    await navigation.getByRole('link', { name: 'Hry', exact: true }).click();
     await page.waitForURL('**/play');
-    await checkNavigation('Večer');
+    await checkNavigation('Hry');
     await page.locator('.notification-stack button').first().click();
 
     await page.evaluate(() => document.documentElement.style.setProperty('--safe-area-inset-bottom', '34px'));
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
-    await checkNavigation('Večer');
+    await checkNavigation('Hry');
     await page.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector('.application-shell')).paddingBottom)
       >= document.querySelector('.wns-game-navigation').getBoundingClientRect().height - 1);
     await page.keyboard.press('Tab');

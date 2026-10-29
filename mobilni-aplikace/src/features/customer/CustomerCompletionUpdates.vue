@@ -6,28 +6,12 @@ import AwNotice from '../../components/AwNotice.vue';
 import { account, accountDeletionRequested, offlineSession, signingOut } from '../identity/session';
 import { CompletionUpdatesClient, type CompletionUpdate, type CompletionUpdateState } from './completionUpdates';
 
-const props = withDefaults(defineProps<{ locale?: 'cs' | 'en' }>(), { locale: 'cs' });
+defineProps<{ locale?: 'cs' | 'en' }>();
 
-const copy = computed(() => props.locale === 'en' ? {
-  title: 'Your results', refresh: 'Refresh', loading: 'Loading your results…', empty: 'No result updates yet.',
-  signedOut: 'Sign in to see results saved to your account.', offline: 'Account results are unavailable in offline mode.',
-  failure: 'Results are temporarily unavailable. Try refreshing.', push: 'These updates are available here. System notifications are not required.',
-  keepsake: 'Keepsake', portrait: 'Portrait', unread: 'Unread', read: 'Read', markRead: 'Mark as read',
-  open: 'Open result', loadMore: 'Load older updates', loadingMore: 'Loading older updates…', moreUnavailable: 'No older updates are available.',
-  status: {
-    pending: 'Waiting', processing: 'In progress', partial: 'Partially available', ready: 'Ready', failed: 'Could not be completed', unavailable: 'Unavailable',
-  } as Record<CompletionUpdateState, string>,
-  reason: {
-    awaiting_capacity: 'Waiting for available capacity.', paused_preparing: 'Preparation is paused.',
-    reconciliation_required: 'The result is being checked.', generation_failed: 'Generation failed. Any available part is shown below.',
-    result_unavailable: 'This result is no longer available.',
-  } as Record<string, string>,
-  story: 'Story available', artwork: 'Artwork available',
-  occurred: 'Update received',
-} : {
-  title: 'Vaše výsledky', refresh: 'Obnovit', loading: 'Načítám vaše výsledky…', empty: 'Zatím tu nejsou žádné aktualizace výsledků.',
-  signedOut: 'Pro zobrazení výsledků uložených k účtu se přihlaste.', offline: 'Výsledky účtu nejsou v offline režimu dostupné.',
-  failure: 'Výsledky jsou dočasně nedostupné. Zkuste je obnovit.', push: 'Aktualizace najdete zde. Systémová oznámení nejsou potřeba.',
+const copy = computed(() => ({
+  title: 'Tvoje výsledky', refresh: 'Obnovit', loading: 'Načítám tvoje výsledky…', empty: 'Zatím tu nejsou žádné aktualizace výsledků.',
+  signedOut: 'Přihlas se a zobraz výsledky uložené ke svému účtu.', offline: 'Tvoje výsledky nejsou dostupné offline.',
+  failure: 'Tvoje výsledky jsou dočasně nedostupné. Zkus je obnovit.', push: 'Aktualizace najdeš tady. Systémová oznámení nepotřebuješ.',
   keepsake: 'Památka', portrait: 'Portrét', unread: 'Nepřečteno', read: 'Přečteno', markRead: 'Označit jako přečtené',
   open: 'Otevřít výsledek', loadMore: 'Načíst starší aktualizace', loadingMore: 'Načítám starší aktualizace…', moreUnavailable: 'Starší aktualizace nejsou dostupné.',
   status: {
@@ -37,10 +21,10 @@ const copy = computed(() => props.locale === 'en' ? {
     awaiting_capacity: 'Čeká se na volnou kapacitu.', paused_preparing: 'Příprava je pozastavená.',
     reconciliation_required: 'Výsledek se ověřuje.', generation_failed: 'Vytvoření selhalo. Dostupná část je uvedená níže.',
     result_unavailable: 'Tento výsledek už není dostupný.',
-  } as Record<string, string>,
+} as Record<string, string>,
   story: 'Příběh je dostupný', artwork: 'Ilustrace je dostupná',
   occurred: 'Aktualizováno',
-});
+}));
 
 const updates = ref<CompletionUpdate[]>([]);
 const busy = ref(false);
@@ -60,7 +44,7 @@ let active = false;
 let activeAccountId: string | null = null;
 let disposed = false;
 
-const dateFormatter = computed(() => new Intl.DateTimeFormat(props.locale === 'en' ? 'en' : 'cs', { dateStyle: 'medium', timeStyle: 'short' }));
+const dateFormatter = computed(() => new Intl.DateTimeFormat('cs', { dateStyle: 'medium', timeStyle: 'short' }));
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? dateFormatter.value.format(date) : '';

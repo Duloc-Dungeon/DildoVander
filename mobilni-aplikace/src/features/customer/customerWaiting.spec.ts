@@ -216,7 +216,7 @@ describe('CustomerWaiting', () => {
     const accepted = mountWaiting({ proximity: null });
     await flushPromises();
     expect(accepted.text()).toContain('Místo bylo přijato.');
-    expect(accepted.text()).toContain('Otevřít rozhovor');
+    expect(accepted.text()).toContain('Otevřít dílnu');
     expect(accepted.text()).not.toContain('Opustit čekací seznam');
     accepted.unmount();
   });

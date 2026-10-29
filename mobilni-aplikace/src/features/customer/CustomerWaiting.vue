@@ -342,7 +342,7 @@ onBeforeUnmount(() => {
       <AwButton v-if="canLeave" variant="secondary" :disabled="!canLeave" :busy="actionBusy" @click="runCommand('leave')">{{ customerCopy.text('waiting.leave') }}</AwButton>
       <AwButton v-if="snapshot?.entry?.state === 'waiting' && snapshot.position === 1" variant="primary" :disabled="!canClaim" :busy="actionBusy" @click="runCommand('claim')">{{ customerCopy.text('waiting.claim') }}</AwButton>
       <AwButton v-if="snapshot?.entry?.state === 'claimed'" variant="primary" :disabled="!canUseClaim" @click="useReservedTurn">{{ customerCopy.text('waiting.use-claim') }}</AwButton>
-      <RouterLink v-if="snapshot?.entry?.state === 'accepted'" to="/me/conversation">{{ customerCopy.text('waiting.open-conversation') }}</RouterLink>
+      <RouterLink v-if="snapshot?.entry?.state === 'accepted'" to="/play/wand">{{ customerCopy.text('waiting.open-conversation') }}</RouterLink>
     </div>
   </section>
 </template>

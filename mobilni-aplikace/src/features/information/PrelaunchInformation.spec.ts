@@ -22,6 +22,6 @@ describe('prelaunch information pages', () => {
   it('restores full disclosures only after the server allows access', () => {
     launchAllowed.value = true;
     expect(mount(PrivacyView, { global: { stubs: ['RouterLink', 'InformationBackLink'] } }).text()).toContain('Rozhovory a příběhy');
-    expect(mount(SupportView, { global: { stubs: ['RouterLink', 'InformationBackLink'] } }).text()).toContain('Připojení');
+    expect(mount(SupportView, { global: { stubs: ['RouterLink', 'InformationBackLink'] } }).text()).toContain('Dílna, hry a památky');
   });
 });

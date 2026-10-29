@@ -1,5 +1,22 @@
 # WNS v2 — implementace a skutečně provedené kontroly
 
+## Přihlášený host — 29. října 2026
+
+- Navigace vede přímo do digitální Dílny, Her, Památek a účtu. Postava zůstává
+  dostupná z Dílny a je prvním krokem po registraci. Žebříček je pojmenovaný
+  přímo v herních odkazech i prázdné kolekci.
+- `/me/conversation` je kompatibilní přesměrování do `/play/wand` se zachovanou
+  kontrolou účtu na cílové trase. Zákaznický pohled již neimportuje Bluetooth,
+  nenačítá fyzické relace ani nenabízí jejich spouštění. Servisní části a
+  protokoly zůstávají oddělené; nejde o změnu firmware ani backendových kontraktů.
+- Památky upřednostňují kolekci. Aktualizace, tituly, případy a souboje se
+  načítají až po otevření příslušné sekce. Prázdná nevyfiltrovaná kolekce
+  neskrývá užitečný další krok za hledání a filtry; vyfiltrovaný prázdný stav
+  a chyba zachovávají ovládání hledání.
+- Zákaznické nadpisy a navigace jsou upravené pro zvětšený text. Texty účtu,
+  podpory a památek používají tykání. Ověření a jeho limity se uvádějí v dodání
+  této změny; historické výsledky níže nejsou jejím automatickým potvrzením.
+
 ## Výchozí stav
 
 - Balíček: edice 2.0, SHA-256 v `../DESIGN.md`; inventura `8c202e5`.
