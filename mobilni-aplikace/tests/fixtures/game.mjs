@@ -23,16 +23,17 @@ function match(state) {
     partyTask: state === 'adult' ? { title: 'Reklama po půlnoci', text: 'Předveď dvacetisekundovou reklamu na svou hůlku. Dvojsmysly vítány, publikum nic nemusí.', category: 'adult', status: 'pending', exchangeCount: 0 } : undefined,
     yolo: state === 'yolo' ? { status: 'complete', beats: ['Eliška vstupuje do arény s Děrovačkou osudu. Naproti stojí Mira s diplomatickým štítem.', 'Mira podává protest. Eliška jej děruje ještě před přečtením. Křivopísk se tváří, že to měl v pravidlech.', 'Mira získává cenu za elegantní stížnost. Eliška vítězí administrativním knockoutem.'].map(text => ({text,detailRefs:[]})), verdict: 'Eliška vítězí díky Děrovačce osudu.' } : undefined };
 }
-function teamMatch(state) {
+function teamMatch(state, halftimeEndsAt) {
   return { id, status: state === 'team-half' ? 'halftime' : 'active', revision: 4,
     teamMembers:['one','two'], opponents:['three','four'], acceptedBy:['one','two','three','four'],
     rounds:[], teamScore:3, opponentScore:2, completedRounds:state === 'team-half' ? 4 : 1,
     ownSparks:2, ownInventory:{strike:2,trick:2,shield:2}, ownChoiceLocked:false, allFourLocked:[false,false,false,false],
-    halftimeEndsAt:Math.floor(Date.now()/1000)+15, xpAwarded:0, sparkBalances:{one:2,two:1,three:2,four:2}, ownTransferLocked:false, onTeamA:true };
+    halftimeEndsAt, xpAwarded:0, sparkBalances:{one:2,two:1,three:2,four:2}, ownTransferLocked:false, onTeamA:true };
 }
 export async function createGameFixtureServer(port = 0) {
   const requests = [];
   const taskOutcomes = new Map();
+  let halftimeEndsAt;
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     const state = /(?:^|; )game-fixture=([^;]+)/.exec(request.headers.cookie ?? '')?.[1] ?? 'lobby';
@@ -45,6 +46,7 @@ export async function createGameFixtureServer(port = 0) {
     if (url.pathname.startsWith('/__game/')) {
       const selected = url.pathname.split('/').at(-1); if (!gameStates.includes(selected)) return json({}, 404);
       taskOutcomes.delete(selected);
+      if (selected === 'team-half') halftimeEndsAt = Math.floor(Date.now() / 1000) + 15;
       const destinations = {challenge:'/play/challenge',lobby:'/play',empty:'/play','boss-setup':'/play/boss',boss:`/play/boss/${id}`,captured:'/play/keeper',rescue:'/play/keeper',teams:'/play/teams','team-choice':`/play/team/${id}`,'team-half':`/play/team/${id}`,messages:'/play/messages',ranking:'/play/ranking','first-wand':'/play','upgrade-wand':'/play/keeper'};
       const destination = destinations[selected] ?? `/play/match/${id}`;
       response.writeHead(302, { Location: selected.startsWith('ranking-') ? '/play/ranking' : destination, 'Set-Cookie': `game-fixture=${selected}; Path=/; SameSite=Strict` }); response.end(); return;
@@ -67,10 +69,10 @@ export async function createGameFixtureServer(port = 0) {
       return json(match('boss'));
     }
     if (url.pathname === '/app/v1/game/boss') return json({revealed:true,rescued:false,referenceXp:40,revision:1});
-    if (url.pathname === '/app/v1/game/teams') return json({teams:[teamMatch(state)]});
+    if (url.pathname === '/app/v1/game/teams') return json({teams:[teamMatch(state, halftimeEndsAt)]});
     if (url.pathname.startsWith('/app/v1/game/teams/')) {
-      if (request.method === 'POST') return json({...teamMatch(state),ownChoiceLocked:true,ownTransferLocked:true,revision:5});
-      return json(teamMatch(state));
+      if (request.method === 'POST') return json({...teamMatch(state, halftimeEndsAt),ownChoiceLocked:true,ownTransferLocked:true,revision:5});
+      return json(teamMatch(state, halftimeEndsAt));
     }
     if (url.pathname.startsWith('/app/v1/game/matches/') || url.pathname.startsWith('/app/v1/game/boss/attempts/')) {
       if (state === 'error') return json({ code: 'unavailable' }, 503);
