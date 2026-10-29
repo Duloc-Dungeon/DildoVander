@@ -3,7 +3,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import GameSpellToken from './GameSpellToken.vue';
 import { actionName, type Choice, type Round } from './game';
 
-const props = defineProps<{ round?: Round; locked?: boolean; wandUrl?: string; wandName?: string; synthetic?: boolean; opponentWandUrl?: string; opponentWandName?: string; opponentSynthetic?: boolean }>();
+const props = defineProps<{
+  round?: Round;
+  locked?: boolean;
+  theatrical?: boolean;
+  wandUrl?: string;
+  wandName?: string;
+  synthetic?: boolean;
+  opponentWandUrl?: string;
+  opponentWandName?: string;
+  opponentSynthetic?: boolean;
+}>();
 const stage = ref<HTMLElement>();
 const canvas = ref<HTMLCanvasElement>();
 const playerOrigin = ref<HTMLElement>();
@@ -15,6 +25,7 @@ const revealedActions = computed(() => {
   return choices.every(choice => choice === 'strike' || choice === 'trick' || choice === 'shield')
     ? choices as Choice[] : [];
 });
+const revealedWinner = computed(() => revealedActions.value.length === 2 ? props.round?.winner : undefined);
 const tips = [{ x: .5, y: .05 }, { x: .5, y: .05 }];
 let frame = 0;
 let disposed = false;
@@ -183,7 +194,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="stage" class="game-clash-stage game-magic-clash" :class="{ 'game-clash-stage--revealed': round, 'game-clash-stage--locked': locked }" :data-motion="motion" role="group" aria-label="Hůlky v souboji">
+  <div ref="stage" class="game-clash-stage game-magic-clash"
+    :class="{ 'game-clash-stage--revealed': round, 'game-clash-stage--locked': locked, 'game-magic-clash--theatre': theatrical }"
+    :data-motion="motion" :data-winner="theatrical ? revealedWinner : undefined" role="group" aria-label="Hůlky v souboji">
+    <div v-if="theatrical" class="game-magic-clash__lights" aria-hidden="true">
+      <span class="game-magic-clash__light game-magic-clash__light--player" />
+      <span class="game-magic-clash__light game-magic-clash__light--opponent" />
+    </div>
     <div ref="playerOrigin" class="game-magic-clash__origin">
       <img v-if="wandUrl && !artworkFailed[0]" class="game-magic-clash__artifact" :src="wandUrl" alt="" width="1024" height="1536" @load="artworkLoaded($event, 0)" @error="artworkFailed[0] = true" />
       <svg v-else class="game-magic-clash__artifact game-magic-clash__placeholder" viewBox="0 0 100 150" aria-hidden="true" focusable="false"><path d="m50 7-3 97-4 32q7 9 14 0l-4-32ZM44 116h12m-13 9h14" /></svg>

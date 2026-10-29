@@ -90,6 +90,47 @@ describe('mobile game interaction', () => {
     api.transport.mockResolvedValue(Response.json(snapshot({ mode: 'boss', exhibition: true, playerEnergy: 6, opponentEnergy: 2 })));
     const view = await render();
     expect(view.text()).toContain('Baronova energie2 / 3');
+    expect(view.get('[role="meter"][aria-label="Baronova energie"]').attributes('aria-valuemax')).toBe('3');
+    expect(view.get('[role="meter"][aria-label="Baronova energie"]').attributes('aria-valuenow')).toBe('2');
+  });
+
+  it('updates boss lighting and energy from the server without discarding an unsubmitted choice', async () => {
+    let state = snapshot({ mode: 'boss', phase: 1, playerEnergy: 5.5, opponentEnergy: 4, hint: 'První nápověda.' });
+    api.transport.mockImplementation(async () => Response.json(state));
+    const view = await render();
+    await view.get('input[value="strike"]').setValue();
+    const portrait = view.get('.boss-theatre__figure').element;
+    expect(view.attributes('data-boss-phase')).toBe('1');
+    state = { ...state, revision: 3, phase: 3, playerEnergy: 2.5, opponentEnergy: .5, hint: 'Nová nápověda.' };
+    window.dispatchEvent(new Event('online')); await flushPromises();
+    expect(view.attributes('data-boss-phase')).toBe('3');
+    expect(view.get('.boss-phase').text()).toBe('Fáze 3 ze 3');
+    expect(view.get('.boss-phases [aria-current="step"]').attributes('aria-label')).toBe('Fáze 3');
+    expect(view.get('.boss-tactics').text()).toContain('Nová nápověda.');
+    expect(view.get('[role="meter"][aria-label="Tvoje energie"]').attributes('aria-valuenow')).toBe('2.5');
+    expect(view.get('input[value="strike"]').element).toHaveProperty('checked', true);
+    expect(view.get('.boss-theatre__figure').element).toBe(portrait);
+  });
+
+  it('keeps a locked boss turn visible without the regular duel canvas', async () => {
+    api.transport.mockResolvedValue(Response.json(snapshot({ mode: 'boss', phase: 2, ownChoiceLocked: true })));
+    const view = await render();
+    expect(view.find('.game-clash-stage').exists()).toBe(false);
+    expect(view.get('.game-controls .game-helper').text()).toBe('Tvůj tah je uzamčený. Čekáme na soupeře.');
+    expect(view.find('input[name="spell"]').exists()).toBe(false);
+  });
+
+  it.each([
+    ['player', 'Tvoje výměna.'], ['opponent', 'Soupeřova výměna.'], ['draw', 'Nerozhodná výměna.'],
+  ])('names a published %s round without changing the saved match result', async (winner, title) => {
+    api.transport.mockResolvedValue(Response.json(snapshot({ status: 'complete', result: 'win', playerScore: 5, opponentScore: 3,
+      completedRounds: 7, rounds: [{ index: 7, playerChoice: 'strike', opponentChoice: winner === 'draw' ? 'strike' : winner === 'player' ? 'trick' : 'shield', winner }] })));
+    const view = await render();
+    expect(view.classes()).toContain('game-duel-scene');
+    expect(view.attributes('data-duel-result')).toBe('win');
+    expect(view.get('.duel-round-verdict').text()).toBe(title);
+    expect(view.get('.game-result h2').text()).toBe('Tohle bylo tvoje.');
+    expect(view.get('.game-clash-stage').classes()).toContain('game-magic-clash--theatre');
   });
 
   it('does not offer a challenge to a player who is still making a wand', async () => {

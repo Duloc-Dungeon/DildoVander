@@ -1,5 +1,27 @@
 # WNS v2 — implementace a skutečně provedené kontroly
 
+## Boss a hráčské duely — 29. října 2026
+
+- `GameBossStage`, `GameBossEnergy` a `boss.css` doplňují stínové představení
+  Barona, světlo podle serverové fáze a skutečnou energii včetně exhibice.
+  Pravidla, nápověda, pokračování pokusu, uzamčený tah a ukončení zůstávají dostupné.
+- PvP režim v `PlayView`, `GameClash` a `duel.css` sjednocuje jeviště rychlých
+  a taktických duelů. Jantar/fialová odlišují strany; zveřejněná výměna mění
+  světlo a slovní verdikt. Volba před odesláním výsledek neprozrazuje.
+  Konečný výsledek vychází ze serveru, ne z poslední výměny.
+- Impeccable document sloučil skutečná pravidla do `DESIGN.md` a doplnil
+  `.impeccable/design.json` o místní pohyb a statické vzorky energie/skóre.
+  Stávající paleta, globální tokeny a pravidla ostatních obrazovek zůstávají zachované.
+- `npm run test:boss:browser --prefix mobilni-aplikace` ověřuje 320/390/1280 px,
+  tři fáze, běžný a omezený pohyb, klávesnici, uzamčení, exhibici, výhru/prohru,
+  200% text a oddělení běžného duelu.
+- `npm run test:duel:browser --prefix mobilni-aplikace` ověřuje 320/390/768/1280 px,
+  živé odhalení výhry/prohry/remízy, soukromou volbu, klávesnici, čekání,
+  načtení/polling bez opakování efektu, konečný výsledek, taktický duel,
+  dlouhá jména, 200% text a oddělení bosse/týmů.
+- Browserové testy používají pouze loopback a syntetické fixture. Neprokazují
+  skutečný multiplayer, živou AI, chování fyzických telefonů ani nasazení.
+
 ## Příprava postavy a návrat do čekárny — 29. října 2026
 
 - Před otevřením večera `/launch` ukazuje kroky Postava → Portrét → Hůlka →

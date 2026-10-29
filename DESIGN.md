@@ -183,6 +183,11 @@ Stránka postavy má vlastní větší nadpis a herní obrazovka kompaktnější
 Při rozšiřování vycházej z konkrétního okolního rozhraní; neroztahuj jednu
 naměřenou velikost na všechny obrazovky.
 
+Baronovo představení má místní titul `clamp(2.6rem, 11vw, 4rem)`, váhu 800,
+řádkování 1,02 a prostrkání −0,035 em. Jeho jméno stojí před portrétem;
+nejde o nový společný nadpis. Energie používá tabulkové číslice, hodnotu
+1,25 rem a menší tlumený jmenovatel 0,875 rem.
+
 ## Layout
 
 Zákaznický obsah má jednu hlavní oblast. Spodní lišta má čtyři destinace na mobilu
@@ -204,6 +209,12 @@ Postava s portrétem a dolní čekárna přecházejí na dvě oblasti od 760 px;
 na telefonu se řadí pod sebe. Jméno, stav a osobní věta mají přednost před
 odpočtem a volitelnými nastaveními. Nejde o náhradu zákaznického shellu.
 
+Herní obsah zůstává nejvýše 520 px široký. Baronovo představení má minimální
+výšku 360 px, do 360 px šířky 310 px; ve vlastním zápasu je scéna kompaktní
+(210 px, na úzké obrazovce 180 px). Energetické bloky mají sloupce alespoň
+8 rem a při zvětšení textu se skládají pod sebe. PvP skóre do 360 px skryje
+pouze ozdobné iniciály, nikoli jména nebo body. Tyto rozměry patří herním scénám.
+
 Při 200% textu zůstávají popisky čitelné a nepřekrývají se. Pole, tlačítka a položky navigace mají
 nejméně 44px dotykový cíl. Pořadí a fokus ovládání zůstávají použitelné klávesnicí.
 
@@ -212,6 +223,11 @@ nejméně 44px dotykový cíl. Pořadí a fokus ovládání zůstávají použit
 Základ je plochý: karty, hlavní tlačítka a dialogy v adaptéru v2 mají vypnuté
 stíny. Hloubku vyjadřuje rozdíl ploch, jemná linka, obraz a opona. Starší zlaté
 gradienty a stíny z kompatibilní vrstvy nejsou novou společnou normou.
+
+Boss a hráčské duely mají místní světelnou clonu: oříznuté barevné paprsky,
+rozostřené o 6 px na samostatné dekorativní vrstvě za postavou nebo hůlkami.
+Text a ovládání zůstávají ostré. Statické nasvícení nemá vlastní běžící smyčku;
+není to sklo, stín všech karet ani nový aplikační ambient.
 
 ## Shapes
 
@@ -421,6 +437,43 @@ lest vlnivý proud a štít oblouk v místě nárazu. Jantar a fialová rozlišu
 strany; světlé jádro a krátký rozlet částic patří pouze nárazu. Výsledek je
 čitelný okamžitě a ovládání na efekt nečeká. Omezený pohyb ponechá celou
 statickou scénu; historie ani opakované načtení stejné výměny efekt nepřehrává.
+
+### Baron Šarlatán
+
+`GameBossStage` používá původní průhledný portrét se třemi výrazy. Představení
+ukazuje velké jméno, pravdivý stav Ollivandera a hlavní akci. Podmínky souboje
+jsou v rozbalitelném detailu; existující pokus nabízí pokračování.
+Scéna po odhalení neskrývá ovládání a nečeká na doběh efektu.
+
+Nasvícení zápasu určuje skutečná fáze ze serveru: první fialová, druhá jantarová,
+třetí broskvová. Stejnou fázi pojmenuje text a označí `aria-current="step"`.
+Barva sama nenese stav. Změna fáze přehraje pouze clonu (1,1 s) a náběh místního
+světla (0,7 s); neremountuje portrét ani nerozhodnutou volbu kouzla.
+
+`GameBossEnergy` ukazuje skutečnou zbývající energii: hráč nejvýše 6,
+Baron nejvýše 5, v exhibici 3. Hodnoty mají český číselný formát, přístupné
+ukazatele `role="meter"` a vodorovné pásy s odezvou 0,35 s. Neznámá hodnota
+je pomlčka, nikoli domyšlený stav. Nápověda, Baronova jiskra, výsledek poslední
+výměny a možnost ukončit aktivní pokus zůstávají čitelné bez animace.
+
+### Duely mezi hráči
+
+`game-duel-scene` platí pro aktivní a dokončené rychlé a taktické duely.
+Hráč má jantarovou, soupeř fialovou stranu; stejné barvy propojují iniciály,
+hůlky a výsledek zveřejněné výměny. Skóre používá skutečná herní jména a body.
+Počet výměn a průběh stojí na jednom pružném řádku jako u bosse.
+
+Volba kouzla zůstává soukromá. `GameClash` zvýrazní vítěznou stranu teprve,
+když jsou zveřejněna obě platná kouzla. Krátké světelné dosednutí (0,75 s)
+používá stávající životní cyklus střetu, nikoli další časovač. Při uzamčeném
+tahu světlo obou stran zeslábne a scéna výslovně oznámí čekání.
+Text „Tvoje výměna.“, „Soupeřova výměna.“ nebo „Nerozhodná výměna.“
+vysvětluje stejný stav jako světlo; konečný výsledek zápasu vlastní samostatně server.
+
+Omezený pohyb ponechá v obou scénách úplný statický stav. PvP efekt se
+nepřehrává při načtení historie, stejném pollingu, skrytém dokumentu nebo
+mimo viditelnou scénu. Herní pravidla, souhlasy a preference zvuku se nemění.
+Trénink, YOLO a týmové obrazovky tento místní výtvarný režim nepřebírají.
 
 ### Kaskáda a rozsah
 
