@@ -591,6 +591,7 @@ internal static class GameEndpoints
         if (AccountConfiguration.Read(configuration).Enabled)
         {
             services.AddGameRateLimits();
+            services.AddGameLive();
             services.AddSingleton(sp => new GameStore(sp.GetRequiredService<AccountConfiguration>().DataRoot));
             services.AddSingleton<IGameYoloProvider, OpenAiGameYoloProvider>();
             services.AddSingleton<IGameCombatNarrator, OpenAiGameYoloProvider>();
@@ -604,6 +605,7 @@ internal static class GameEndpoints
     {
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) return;
         var group = app.MapGroup("/app/v1/game").RequireAuthorization().RequireRateLimiting(GameRateLimit.Policy);
+        group.AddEndpointFilter<GameChangedEndpointFilter>();
         group.AddEndpointFilter(async (invocation, next) =>
         {
             var h = invocation.HttpContext; var id = h.User.FindFirstValue(ClaimTypes.NameIdentifier);

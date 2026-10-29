@@ -173,6 +173,7 @@ internal static class GameProgressEndpoints
     {
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) { return; }
         var routes = app.MapGroup("/app/v1/game/progress").RequireAuthorization().RequireRateLimiting(GameRateLimit.Policy);
+        routes.AddEndpointFilter<GameChangedEndpointFilter>();
         routes.AddEndpointFilter(async (invocation, next) =>
         {
             try

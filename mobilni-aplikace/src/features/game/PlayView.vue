@@ -19,6 +19,7 @@ import GameClash from './GameClash.vue';
 import GameYoloStage from './GameYoloStage.vue';
 import { explainRound, duelHighlight } from './duelExplanation';
 import { useGameWandArtwork } from './useGameWandArtwork';
+import { useGameLiveUpdates } from './useGameLiveUpdates';
 import { useOpponentWandArtwork } from './useOpponentWandArtwork';
 import { account, accountRequest } from '../identity/session';
 import { actions, modeName, gameRequest, gameErrorText, GameError, operation, practiceRound,
@@ -135,7 +136,7 @@ const liveMessage = computed(() => {
 });
 let controller = new AbortController();
 let generation = 0;
-let refreshing = false;
+const refreshing = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
 
 function updateMatch(value: Match) {
@@ -149,8 +150,8 @@ function updateMatch(value: Match) {
   void opponentWand.refresh(value);
 }
 async function refresh() {
-  if (refreshing || busy.value) return;
-  refreshing = true;
+  if (refreshing.value || busy.value) return;
+  refreshing.value = true;
   const token = generation;
   try {
     const currentWand = await accountRequest<GameWandStatus>('/app/v1/customer/wand', 'GET', undefined, controller.signal);
@@ -195,17 +196,35 @@ async function refresh() {
     }
     if (token === generation) { error.value = ''; uncertain.value = false; }
   } catch (cause) {
-    if (token === generation && !controller.signal.aborted) {
-      error.value = gameErrorText(cause);
-      if (cause instanceof GameError && [401, 403, 404].includes(cause.status)) {
-        match.value = undefined; lobby.value = undefined; progress.value = undefined; bossProfile.value = undefined;
-        playerWand.clear(); opponentWand.clear();
-      }
-    }
+    handleRefreshError(cause, token);
   } finally {
-    if (token === generation) { refreshing = false; loading.value = false; }
+    if (token === generation) { refreshing.value = false; loading.value = false; }
   }
 }
+function handleRefreshError(cause: unknown, token: number) {
+  if (token === generation && !controller.signal.aborted) {
+    error.value = gameErrorText(cause);
+    if (cause instanceof GameError && [401, 403, 404].includes(cause.status)) {
+      match.value = undefined; lobby.value = undefined; progress.value = undefined; bossProfile.value = undefined;
+      playerWand.clear(); opponentWand.clear();
+    }
+  }
+}
+async function refreshLive() {
+  if (!matchId.value) return refresh();
+  if (refreshing.value || busy.value) return;
+  refreshing.value = true;
+  const token = generation;
+  try {
+    const value = await gameRequest<Match>(`${bossAttempt.value ? '/boss/attempts' : '/matches'}/${encodeURIComponent(matchId.value)}`, undefined, controller.signal);
+    if (token === generation) {
+      updateMatch(value);
+      error.value = ''; uncertain.value = false;
+    }
+  } catch (cause) { handleRefreshError(cause, token); }
+  finally { if (token === generation) refreshing.value = false; }
+}
+useGameLiveUpdates(refreshLive, () => busy.value || refreshing.value);
 async function acknowledge(milestone: Milestone, open: boolean) {
   if (busy.value || !progress.value) return;
   busy.value = true; const token = generation;
@@ -296,13 +315,13 @@ watch(() => route.fullPath, () => {
   opponentId.value = typeof route.query.opponent === 'string' ? route.query.opponent : '';
   mode.value = route.query.mode === 'yolo' ? 'yolo' : route.query.mode === 'tactical' ? 'tactical' : 'quick';
   useLoadouts.value = false; milestoneDismissed.value = false;
-  busy.value = false; uncertain.value = false; loading.value = true; refreshing = false;
+  busy.value = false; uncertain.value = false; loading.value = true; refreshing.value = false;
   void refresh();
 });
 watch(() => account.value?.id, (value, previous) => {
   if (value === previous) return;
   generation++; controller.abort(); controller = new AbortController(); wandStatus.value = undefined;
-  match.value = undefined; lobby.value = undefined; bossProfile.value = undefined; progress.value = undefined; refreshing = false;
+  match.value = undefined; lobby.value = undefined; bossProfile.value = undefined; progress.value = undefined; refreshing.value = false;
   error.value = ''; notice.value = ''; progressError.value = '';
   labeledPlayerName.value = null;
   busy.value = false; uncertain.value = false; selected.value = undefined;
@@ -310,7 +329,7 @@ watch(() => account.value?.id, (value, previous) => {
   void refresh();
 });
 onMounted(() => {
-  void refresh(); timer = setInterval(onVisible, 3000);
+  void refresh(); timer = setInterval(() => { if (!document.hidden) void refreshLive(); }, 3000);
   document.addEventListener('visibilitychange', onVisible); window.addEventListener('online', onVisible);
 });
 onBeforeUnmount(() => {

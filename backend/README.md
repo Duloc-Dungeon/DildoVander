@@ -17,6 +17,28 @@ to the canonical URL and retains its `KUFR_BACKEND_URL` override.
 
 # Backend kufru
 
+## Limity požadavků účtu
+
+`ApplicationIdentity:ReadRequestsPerMinute` nastavuje limit běžného čtení na
+4 000 požadavků za minutu ve výchozím stavu (povolené rozmezí 10–12 000).
+Čtení `GET`/`HEAD`, vyhrazený polling `account-poll` a ověřování účtu
+`GET /app/v1/session` mají každý samostatný limit podle IP adresy. Vyčerpání
+čtení nebo příkazů proto neblokuje ověření přihlášení. Uživatelé za stejnou
+veřejnou IP adresou sdílejí příslušný limit.
+
+`ApplicationIdentity:WebSocketRequestsPerMinute` nastavuje samostatný limit
+WebSocket připojení: výchozích 4 000 pokusů za minutu, rozmezí 10–12 000.
+HTTP upgrade a `CONNECT` používají tento limit; nečerpají limit čtení ani příkazů.
+Obnovení jednorázového ticketu pro dílnu a Persona Lab má vlastní limit stejné
+velikosti, aby nové připojení neblokoval nižší limit běžných příkazů.
+Počet současně aktivních relací a jejich oprávnění se tím nemění.
+
+Přihlášení a změny dat zachovávají nižší limit
+`ApplicationIdentity:RequestsPerMinute`: výchozích 40 za minutu, rozmezí 10–120.
+Odmítnutí vrací HTTP 429, kód `rate_limited` a hlavičku `Retry-After`.
+Tyto limity nemění dobu platnosti relace ani samostatné limity herních API.
+Offline HTTP regrese: `dotnet run --project backend-tests/BackendTests.csproj -- --identity-rate-limits`.
+
 ## Vlastník ve hře
 
 Účet s rolí `Owner` má pevné zobrazované jméno `Olivander` a členství ve všech

@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createRouter, createMemoryHistory } from 'vue-router';
 vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div />' } }));
-const api = vi.hoisted(() => ({ transport: vi.fn(), request: vi.fn(), setAccount: (_value: unknown) => {} }));
+const api = vi.hoisted(() => ({ transport: vi.fn(), request: vi.fn(), setAccount: (_value: unknown) => {}, changed: () => {} }));
+vi.mock('./gameLive', () => ({ connectGameLive: (changed: () => void) => { api.changed = changed; return () => {}; } }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue'); const account = ref<unknown>({ id: 'one' });
   api.setAccount = value => { account.value = value; };
@@ -25,6 +26,17 @@ async function render(path = `/play/match/${id}`) {
 beforeEach(() => { api.transport.mockReset(); api.request.mockReset(); api.request.mockResolvedValue({hasCharacter: true, wand: {wandId: 'saved'}, tier: 1}); api.setAccount({ id: 'one', openAiConsent: true }); });
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 describe('mobile game interaction', () => {
+  it('applies a live opponent action without waiting for polling or loading wand metadata again', async () => {
+    let current = snapshot();
+    api.transport.mockImplementation(async () => Response.json(current));
+    const view = await render();
+    const metadataReads = api.request.mock.calls.length;
+    current = snapshot({ revision: 3, opponentChoiceLocked: true });
+    api.changed();
+    await flushPromises();
+    expect(view.text()).toContain('Soupeř je připraven. Jeho tah zůstává tajný.');
+    expect(api.request.mock.calls).toHaveLength(metadataReads);
+  });
   it('shows the actual opponent wand in YOLO without inventing combat rounds', async () => {
     const path = `/app/v1/game/matches/${id}/opponent/wand-artwork?revision=${'b'.repeat(64)}`;
     const yolo = snapshot({ mode: 'yolo', opponent: { id: 'two', displayName: 'Eliška', xp: 20, matchesPlayed: 3, wandArtworkUrl: path, wandName: 'Uložená hůlka' }, yolo: { status: 'generating', beats: [], verdict: '' } });

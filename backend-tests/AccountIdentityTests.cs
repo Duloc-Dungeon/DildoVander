@@ -56,6 +56,7 @@ internal static partial class AccountIdentityTests
     public static async Task RunAsync()
     {
         ServiceCredentialBoundaries();
+        await RunAccountRateLimitsAsync();
         await DisabledIdentitySessionAsync();
         await AppleAppSiteAssociationAsync();
         await RunAndroidAssociationAsync();
