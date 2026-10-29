@@ -732,8 +732,8 @@ enum AccountTransportPolicy {
                UUID(uuidString: String(parts.path.split(separator: "/")[3])) != nil { return method == "GET" }
             if parts.query == nil, parts.path.range(of: "^/app/v1/chronicle/[0-9a-fA-F-]{36}/badges/[A-Za-z0-9._:-]{1,100}/image\\z", options: .regularExpression) != nil,
                UUID(uuidString: String(parts.path.split(separator: "/")[3])) != nil { return method == "GET" }
-            if parts.query == nil, parts.path.range(of: "^/app/v1/chronicle/source/(yolo|duel|team|boss|case|wand|evening|conversation)/[A-Za-z0-9][A-Za-z0-9._:-]{0,99}\\z", options: .regularExpression) != nil,
-               let id = parts.path.split(separator: "/").last, UUID(uuidString: String(id)) != nil { return method == "GET" }
+            if parts.query == nil,
+               parts.path.range(of: "^/app/v1/chronicle/source/(yolo|duel|team|boss|case|wand|evening|conversation)/[A-Za-z0-9][A-Za-z0-9._:-]{0,99}\\z", options: .regularExpression) != nil { return method == "GET" }
             if adminCharacters(path: path, method: method) { return true }
             if prelaunchAccount(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }
             if show(path: parts.path, method: method, query: parts.queryItems ?? []) { return true }

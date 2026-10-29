@@ -188,7 +188,7 @@ internal static partial class MobileGameTests
         var wand = fixture.Wands.LatestBonded(fixture.ForeignId, character.ProfileId, character.Revision)!;
         Check(character.UserInput.Name != "Olivander" && ownerNarrative.Name == "Olivander"
             && ownerNarrative.Universe == character.UserInput.World && ownerNarrative.WandName == wand.Name
-            && ownerNarrative.Traits.Contains(wand.Temperament),
+            && ownerNarrative.Traits.SequenceEqual(character.Enrichment!.Facts.Take(3).Select(fact => fact.Text)),
             "YOLO provider projection fixes owner narrative name while preserving fictional world, wand and traits without a provider call");
         Console.WriteLine("Owner player HTTPS checks passed.");
 
