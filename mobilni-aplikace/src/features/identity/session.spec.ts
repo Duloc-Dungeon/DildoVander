@@ -188,6 +188,26 @@ describe('native account archive transport limits', () => {
     }
     expect(identity.accountTransportResponseLimit(path, 'POST')).toBe(1024 * 1024);
   });
+  it('limits team opponent artwork to the exact GET route and archive size cap', async () => {
+    bridge.native = true;
+    const identity = await import('./session');
+    const team = 'a'.repeat(32);
+    const opponent = 'c'.repeat(32);
+    const revision = 'b'.repeat(64);
+    const path = `/app/v1/game/teams/${team}/opponents/${opponent}/wand-artwork?revision=${revision}`;
+    expect(identity.accountTransportResponseLimit(path, 'GET')).toBe(32 * 1024 * 1024);
+    expect(identity.accountTransportResponseAllowed(path, 'GET', 32 * 1024 * 1024 + 1)).toBe(false);
+    for (const invalid of [path + '&x=1', path + '\n', path + '/extra', path.replace(team, 'a'.repeat(31)),
+      path.replace(opponent, 'invalid'), path.replace(revision, 'b'.repeat(63)), path.replace('revision=', 'asset=')]) {
+      expect(identity.accountTransportResponseLimit(invalid, 'GET')).toBe(1024 * 1024);
+    }
+    expect(identity.accountTransportResponseLimit(path, 'POST')).toBe(1024 * 1024);
+    const binary = btoa('x'.repeat(1024 * 1024 + 1));
+    bridge.accountTransport.mockResolvedValueOnce({ status: 200, headers: { 'content-type': 'image/png' }, bodyBase64: binary });
+    const response = await identity.accountTransport(path);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect((await response.arrayBuffer()).byteLength).toBe(1024 * 1024 + 1);
+  });
   it('admits workshop artwork binaries only for the exact GET route and archive size cap', async () => {
     bridge.native = true;
     const identity = await import('./session');
