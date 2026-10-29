@@ -52,7 +52,7 @@ if (args is ["--mobile-game"]) { MobileGameTests.Run(); GameYoloScenarioTests.Ru
 if (args is ["--game-wand-artwork"]) { await GameWandArtworkTests.RunAsync(); return; }
 if (args is ["--owner-player-http"]) { await MobileGameTests.RunOwnerPlayerHttpAsync(); return; }
 if (args is ["--mobile-game-http"]) { await MobileGameTests.RunHttpAsync(); await MobileGameTests.RunYoloDecisionHttpAsync(); return; }
-if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); return; }
+if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); await GameBossNarrationTests.RunAsync(); await MobileGameTests.RunBossNarrationHttpAsync(); return; }
 if (args is ["--mobile-game-teams"]) { GameTeamTests.Run(); return; }
 if (args is ["--mobile-game-progress"]) { GameProgressTests.Run(); return; }
 if (args is ["--mobile-game-yolo-live"]) { await GameYoloLiveTests.RunAsync(); return; }

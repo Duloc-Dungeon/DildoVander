@@ -64,6 +64,28 @@ for invalid in [teamOpponentArtwork + "&x=1", teamOpponentArtwork + "\n", teamOp
 }
 require(!AccountTransportPolicy.account(path: teamOpponentArtwork, method: "POST"), "team opponent art became mutable")
 
+let bossAttemptID = "0123456789abcdef0123456789abcdef"
+for suffix in ["narration", "audio"] {
+    let path = "/app/v1/game/boss/attempts/\(bossAttemptID)/\(suffix)"
+    require(AccountTransportPolicy.account(path: path, method: "POST"), "approved Baron \(suffix) route unavailable")
+    require(!AccountTransportPolicy.account(path: path, method: "GET"), "Baron \(suffix) route accepted GET")
+    require(AccountTransportPolicy.accountResponseLimit(path: path, method: "POST") == 1024 * 1024,
+            "Baron \(suffix) response limit widened")
+    for invalid in [path + "?x=1", path + "/extra", path + "\n",
+                    path.replacingOccurrences(of: bossAttemptID, with: "0123456789abcdef0123456789abcdeG"),
+                    path.replacingOccurrences(of: bossAttemptID, with: String(bossAttemptID.dropFirst()))] {
+        require(!AccountTransportPolicy.account(path: invalid, method: "POST"), "invalid Baron \(suffix) route accepted: \(invalid)")
+    }
+}
+require(AccountTransportPolicy.account(path: "/app/v1/game/boss/attempts/\(bossAttemptID)/choose", method: "POST"),
+        "existing Baron choose route rejected")
+require(AccountTransportPolicy.account(path: "/app/v1/game/boss/attempts/\(bossAttemptID)/cancel", method: "POST"),
+        "existing Baron cancel route rejected")
+require(!AccountTransportPolicy.account(path: "/app/v1/game/boss/attempts/\(bossAttemptID)/choose", method: "GET"),
+        "Baron choose route accepted GET")
+require(!AccountTransportPolicy.account(path: "/app/v1/game/boss/attempts/\(bossAttemptID)/cancel", method: "GET"),
+        "Baron cancel route accepted GET")
+
 let sealedScenarioCatalog = "/app/v1/sealed-cases/scenarios"
 require(AccountTransportPolicy.account(path: sealedScenarioCatalog, method: "GET"), "sealed scenario catalog unavailable")
 for method in ["POST", "PUT", "DELETE"] {
