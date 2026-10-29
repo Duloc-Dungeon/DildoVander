@@ -46,6 +46,15 @@ internal static class CharacterPortraitTests
                 Check(!PortraitContentPolicy.ValidMessage(secret), "unsafe generated message rejected");
             }
             Check(!PortraitContentPolicy.ValidMessage(new string('x', 251)), "oversized message rejected");
+            foreach (var missing in new[] { "null", " NULL ", "undefined", " Undefined " })
+            {
+                Check(!PortraitContentPolicy.ValidMessage(missing) && !PortraitContentPolicy.ValidLoadingMessage(missing),
+                    "serialized missing values never become generated copy");
+                Check(!CharacterWelcomePolicy.ValidText(CharacterWelcomePolicy.Fallback with { Joke = missing })
+                    && !CharacterWelcomePolicy.ValidText(CharacterWelcomePolicy.Fallback with { Identity = missing })
+                    && !CharacterWelcomePolicy.ValidText(CharacterWelcomePolicy.Fallback with { Teaser = missing }),
+                    "persisted welcome fields reject serialized missing values before display");
+            }
             var finalFallback = PortraitContentPolicy.FinalMessageFallback(new("Raven", "wizarding world"));
             Check(finalFallback == "Tvá pověst dorazila před tebou. Už jsme se jí omluvili.",
                 "text failure uses the stable, non-identifying Czech fallback");
@@ -86,6 +95,14 @@ internal static class CharacterPortraitTests
             && result.Welcome?.Identity == PortraitExperienceHandler.Identity
             && result.FinalMessage == PortraitExperienceHandler.Joke + " " + PortraitExperienceHandler.Identity,
             "one Responses call parses structured welcome and retains the legacy finalMessage projection");
+        foreach (var missing in new[] { "null", " NULL ", "undefined" })
+        {
+            handler.MissingText = missing;
+            var invalid = await provider.GenerateExperienceAsync(job, "Keep the surprise secret.", true, CancellationToken.None);
+            Check(invalid.LoadingMessage is null && invalid.Welcome == CharacterWelcomePolicy.Fallback
+                && invalid.FinalMessage == CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback),
+                "serialized missing text from the provider selects the real welcome fallback");
+        }
     }
 
     private static void WelcomeContract()
@@ -210,6 +227,7 @@ internal static class CharacterPortraitTests
         internal const string Joke = "Tvá pověst čeká u dveří. Doufá, že si jí nevšimneš.";
         internal const string Identity = "Vystupuješ jako Raven ze světa Original fiction.";
         internal int Calls { get; private set; }
+        internal string? MissingText { get; set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
@@ -230,7 +248,7 @@ internal static class CharacterPortraitTests
             using var writerInput = JsonDocument.Parse(payload.GetProperty("input").GetString()!.Split('\n', 2)[1]);
             Check(writerInput.RootElement.GetProperty("welcome").GetProperty("character").GetProperty("inputIdentity").GetString() == Identity,
                 "unverified identity is grounded in the exact supplied character name and world");
-            var text = JsonSerializer.Serialize(new { loadingMessage = Loading, joke = Joke, identity = Identity, teaser = "", usedFactIds = Array.Empty<string>(), teaserId = (string?)null });
+            var text = JsonSerializer.Serialize(new { loadingMessage = MissingText ?? Loading, joke = MissingText ?? Joke, identity = Identity, teaser = "", usedFactIds = Array.Empty<string>(), teaserId = (string?)null });
             var response = JsonSerializer.Serialize(new
             {
                 status = "completed",

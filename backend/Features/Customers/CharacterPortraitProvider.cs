@@ -99,8 +99,7 @@ internal static class CharacterWelcomePolicy
             && value.UsedFactIds is { Length: 0 }) { return true; }
         var input = job.Input;
         var enrichment = job.Enrichment;
-        if (value is null || value.Joke == "Opona má trému. Slyšela, koho má představit." || string.IsNullOrWhiteSpace(value.Joke) || !SafeText(value.Joke, 120) || !ValidIdentity(value.Identity)
-            || !SafeText(value.Teaser, 100) || value.Joke.Length + value.Identity.Length + value.Teaser.Length + 2 > 250
+        if (value is null || value.Joke == "Opona má trému. Slyšela, koho má představit." || !ValidText(value)
             || value.UsedFactIds is null || value.UsedFactIds.Length > 6
             || value.UsedFactIds.Distinct(StringComparer.Ordinal).Count() != value.UsedFactIds.Length)
         {
@@ -127,7 +126,12 @@ internal static class CharacterWelcomePolicy
 
     internal static bool ValidIdentity(string? text) => SafeText(text, 120);
 
+    internal static bool ValidText(CharacterWelcome value) => !string.IsNullOrWhiteSpace(value.Joke)
+        && SafeText(value.Joke, 120) && ValidIdentity(value.Identity) && SafeText(value.Teaser, 100)
+        && value.Joke.Length + value.Identity.Length + value.Teaser.Length + 2 <= 250;
+
     private static bool SafeText(string? text, int maximum) => text is not null && text.Length <= maximum
+        && !PortraitContentPolicy.IsSerializedMissingValue(text)
         && !text.Any(char.IsControl) && !text.Contains('<') && !text.Contains('>')
         && !text.Contains('`') && !text.Contains('*') && !text.Contains('_')
         && !ContainsForbiddenWelcomeTopic(text);
@@ -239,7 +243,12 @@ internal static class PortraitContentPolicy
         + "\nŘiď se touto uloženou tvůrčí poznámkou pouze tam, kde neporušuje tajemství: "
         + (direction ?? "");
 
+    internal static bool IsSerializedMissingValue(string text) =>
+        text.Trim().Equals("null", StringComparison.OrdinalIgnoreCase)
+        || text.Trim().Equals("undefined", StringComparison.OrdinalIgnoreCase);
+
     internal static bool ValidMessage(string? message) => !string.IsNullOrWhiteSpace(message)
+        && !IsSerializedMissingValue(message)
         && message.Length <= 250 && !message.Any(char.IsControl)
         && !message.Contains('<') && !message.Contains('>')
         && !new[] { "suitcase", "conversation", "combat", "keepsake", "bluetooth", "operator",
@@ -392,7 +401,10 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
             instructions = PortraitContentPolicy.SafetyInstructions + "\n"
                 + PortraitContentPolicy.LoadingMessageInstructions
                 + CharacterWelcomePolicy.Prompt
-                + " Return only a JSON object with nullable loadingMessage and the five welcome fields. No Markdown.",
+                + " Return only a JSON object with nullable loadingMessage and the five welcome fields. No Markdown."
+                + " The joke must contain an actual joke, never a missing-value placeholder."
+                + " For an omitted loadingMessage use JSON null, never the strings null or undefined."
+                + " For omitted identity or teaser use an empty string.",
             // JSON mode validates the input messages, not the separate instructions field.
             input = "Return a JSON object for the requested fields. Character data follows:\n" + JsonSerializer.Serialize(new
             {

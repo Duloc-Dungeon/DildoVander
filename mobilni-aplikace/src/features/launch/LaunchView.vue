@@ -13,6 +13,7 @@ import { clearInvitationRegistration, getInvitationRegistration, invitationRegis
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
 import { launchCopy as copy } from './launchCopy';
+import { characterWelcomeText } from './characterWelcomeText';
 import PortraitCurtain from './PortraitCurtain.vue';
 import CharacterEntrance from './CharacterEntrance.vue';
 import PrelaunchWand from './PrelaunchWand.vue';
@@ -93,11 +94,13 @@ const statusMessage = computed(() => {
   if (registration.value?.status === 'confirmed' && registration.value.writeStarted && invitationVisibleMs.value < invitationIntroDuration) return copy.value.waiting;
   return copy.value.saved;
 });
-const finalMessage = computed(() => state.value?.artwork?.finalMessage || copy.value.finalFallback);
+const finalMessage = computed(() => characterWelcomeText(state.value?.artwork?.finalMessage) || copy.value.finalFallback);
 const receptionJoke = computed(() => {
   const artwork = state.value?.artwork;
-  if (canPrepareWand.value) return artwork?.welcome?.joke?.trim() || artwork?.loadingMessage?.trim() || finalMessage.value;
-  return artwork?.loadingMessage?.trim() || artwork?.welcome?.joke?.trim()
+  const welcomeJoke = characterWelcomeText(artwork?.welcome?.joke);
+  const loadingJoke = characterWelcomeText(artwork?.loadingMessage);
+  if (canPrepareWand.value) return welcomeJoke || loadingJoke || finalMessage.value;
+  return loadingJoke || welcomeJoke
     || 'Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.';
 });
 const receptionStatus = computed(() => {
@@ -519,8 +522,8 @@ onBeforeUnmount(() => {
           <p class="launch-status" role="status" aria-atomic="true">{{ receptionStatus }}</p>
           <p class="launch-joke">{{ receptionJoke }}</p>
           <template v-if="canPrepareWand && state?.artwork?.welcome">
-            <p v-if="state.artwork.welcome.identity" class="launch-identity">{{ state.artwork.welcome.identity }}</p>
-            <p v-if="state.artwork.welcome.teaser" class="launch-teaser">{{ state.artwork.welcome.teaser }}</p>
+            <p v-if="characterWelcomeText(state.artwork.welcome.identity)" class="launch-identity">{{ characterWelcomeText(state.artwork.welcome.identity) }}</p>
+            <p v-if="characterWelcomeText(state.artwork.welcome.teaser)" class="launch-teaser">{{ characterWelcomeText(state.artwork.welcome.teaser) }}</p>
           </template>
           <p v-if="portraitSource && revealed && hasPortrait" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
         </div>
@@ -637,6 +640,7 @@ onBeforeUnmount(() => {
 .group-opening-art span { font: 800 clamp(14rem, 60vw, 28rem)/.8 var(--wns-display); letter-spacing: -.1em; }
 .group-opening-copy h1 { color: var(--wns-text, #f5f5f0); text-shadow: none; font-family: var(--wns-display); font-weight: 800; letter-spacing: -.06em; }
 .launch-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
+.launch-page h1[tabindex='-1']:focus { outline: none; }
 @media (min-width: 760px) { .launch-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, .85fr); align-items: center; gap: 2rem; } .launch-copy { order: 1; } .launch-art { order: 2; } .launch-text { grid-column: 1 / -1; } }
 @media (max-width: 759px) { .launch-copy { border-radius: 24px; } .launch-art { max-width: min(100%, 44.8vh); margin-inline: auto; } }
 .reception-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(100%, 62rem); margin: 0 auto 24px; padding: 0; list-style: none; }

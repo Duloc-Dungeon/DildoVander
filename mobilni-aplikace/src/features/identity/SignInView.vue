@@ -10,6 +10,7 @@ import amberWand from '../../assets/wns-v2/art/wand-amber.png';
 import accessKey from '../../assets/brand/midnight/access-key.webp';
 import SceneShell from '../../components/scene/SceneShell.vue';
 import { defaultSignedInDestination } from '../customer/customerJourney';
+import { isCustomerAccount } from '../../application/access';
 import { customerCopy, type CustomerCopyKey } from '../../application/customerCopy';
 import { launchAllowed } from '../../application/launchAccess';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
@@ -138,6 +139,7 @@ async function submit(): Promise<void> {
   error.value = '';
   busy.value = true;
   const focusTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const returningAccount = !!account.value;
   try {
     const betaRegistration = !account.value && enrollment.value && enrollmentKind.value === 'invite' && betaEntry.value;
     const invitationRegistration = !account.value && enrollment.value && enrollmentKind.value === 'invite' && !betaEntry.value;
@@ -169,9 +171,18 @@ async function submit(): Promise<void> {
       await router.replace('/launch');
       return;
     }
-    await router.replace(customerEnrollment.value
+    let destination = customerEnrollment.value
       ? '/me/character'
-      : defaultSignedInDestination(account.value, route.query.return));
+      : defaultSignedInDestination(account.value, route.query.return);
+    if (!returningAccount && isCustomerAccount(account.value) && !account.value?.roles.includes('Owner')
+      && ['/me/character', '/me/account'].includes(destination)) {
+      try {
+        const policy = await accountRequest<{ allowed: boolean }>('/app/v1/launch');
+        launchAllowed.value = policy.allowed === true;
+        if (policy.allowed === false) destination = '/launch';
+      } catch { /* Account access remains available when launch status cannot be checked. */ }
+    }
+    await router.replace(destination);
   } catch (cause) {
     const uncertainCompletion = cause && typeof cause === 'object' && 'code' in cause && cause.code === 'customer_enrollment_completion_uncertain';
     if (pendingBetaDraft.value && uncertainCompletion) {
@@ -332,6 +343,7 @@ async function submit(): Promise<void> {
 .signin-content :deep(.lost-access-help) { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .signin-content :deep(.lost-access-help summary) { min-height: 44px; padding-block: 10px; }
 .signin-page :deep(:focus-visible) { outline: 2px solid var(--wns-focus-ring); outline-offset: 4px; }
+.signin-page h1[tabindex='-1']:focus { outline: none; }
 @media (max-width: 359px) { .signin-page { padding-inline: max(16px, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) max(16px, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))); } }
 @media (max-height: 550px) { .signin-masthead { margin-bottom: 24px; } .signin-art { height: 10rem; } }
 @media (min-width: 600px) { .signin-page { padding-block: 32px; } }

@@ -7,6 +7,7 @@ import { usePrivateCharacterPortrait } from './privateCharacterPortrait';
 import curtain from '../../assets/brand/invitation-curtain-small.webp';
 import AwButton from '../../components/AwButton.vue';
 import type { PrelaunchWelcome } from '../launch/generatedPrelaunchCharacter';
+import { characterWelcomeText } from '../launch/characterWelcomeText';
 
 const props = defineProps<{ profileId: string; revision: number; name: string }>();
 interface PortraitState {
@@ -96,11 +97,11 @@ onBeforeUnmount(() => {
     <figcaption>
       <h2>{{ english ? 'Your portrait' : 'Tvůj portrét' }}</h2>
       <div v-if="welcome" class="private-character-avatar__welcome">
-        <p class="private-character-avatar__joke">{{ welcome.joke }}</p>
-        <p v-if="welcome.identity">{{ welcome.identity }}</p>
-        <p v-if="welcome.teaser" class="private-character-avatar__privacy">{{ welcome.teaser }}</p>
+        <p v-if="characterWelcomeText(welcome.joke)" class="private-character-avatar__joke">{{ characterWelcomeText(welcome.joke) }}</p>
+        <p v-if="characterWelcomeText(welcome.identity)">{{ characterWelcomeText(welcome.identity) }}</p>
+        <p v-if="characterWelcomeText(welcome.teaser)" class="private-character-avatar__privacy">{{ characterWelcomeText(welcome.teaser) }}</p>
       </div>
-      <p v-else-if="portrait.url.value && state?.artwork?.finalMessage">{{ state.artwork.finalMessage }}</p>
+      <p v-else-if="portrait.url.value && characterWelcomeText(state?.artwork?.finalMessage)">{{ characterWelcomeText(state?.artwork?.finalMessage) }}</p>
       <p v-if="readFailed" role="status">Stav portrétu se nepodařilo načíst. Zkus ho obnovit.</p>
       <p v-else-if="failed" role="status">Portrét se nepodařilo připravit. Postava zůstává uložená. Zkus to znovu.</p>
       <p v-else-if="!state?.artwork" role="status">Postava je uložená. Ještě potřebuje svůj portrét.</p>

@@ -61,6 +61,9 @@ try{
       await page.goto(origin+'/signin#invite=fixture-code-not-live-1234567890');
       await page.getByLabel('Jméno postavy').waitFor({timeout:10000}).catch(async error=>{await page.screenshot({path:path.join(output,'failure-signin.png'),fullPage:true});console.log(page.url(),await page.locator('body').innerText(),errors);throw error;});
       assert.equal(await page.getByRole('checkbox').isChecked(),false);
+      const title = page.locator('#sign-in-title');
+      await title.focus();
+      assert.equal(await title.evaluate(element => getComputedStyle(element).outlineStyle), 'none', 'signup heading has no focus border');
       await capture(page,`signin-invite-${width}x${height}-${theme}-cs`,{route:'/signin',state:'invitation',viewport:`${width}x${height}`,theme,language:'cs'});
       if(width===390){await page.getByLabel('Jméno postavy').focus();await page.setViewportSize({width,height:440});await capture(page,`signin-keyboard-${width}x440-${theme}-cs`,{route:'/signin',state:'focused input; keyboard-sized viewport, not native keyboard',viewport:`${width}x440`,theme,language:'cs'});await page.setViewportSize({width,height});}
       signedIn=true;ready=false;long=false;

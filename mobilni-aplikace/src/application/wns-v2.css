@@ -171,6 +171,9 @@ html { scrollbar-color: var(--wns-line) var(--wns-bg); }
   max-width: var(--customer-content-width);
   padding: var(--wns-space-32) var(--customer-page-gutter) var(--wns-space-48);
 }
+.application-shell.launch-mode .application-main > .customer-page--account {
+  padding-top: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + var(--wns-space-24));
+}
 :root[data-theme] .customer-mode .application-header {
   padding-inline: max(var(--customer-page-gutter), calc((100% - var(--customer-content-width)) / 2 + var(--customer-page-gutter)));
 }
