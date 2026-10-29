@@ -15,6 +15,7 @@ import GameRanking from './GameRanking.vue';
 import GameRules from './GameRules.vue';
 import GameSpellToken from './GameSpellToken.vue';
 import GameClash from './GameClash.vue';
+import GameYoloStage from './GameYoloStage.vue';
 import { useGameWandArtwork } from './useGameWandArtwork';
 import { useOpponentWandArtwork } from './useOpponentWandArtwork';
 import { account, accountRequest } from '../identity/session';
@@ -50,8 +51,7 @@ const useLoadouts = ref(false);
 const taskOutcome = ref<'done' | 'skip'>();
 const selected = ref<Choice>();
 const spark = ref(false);
-const showAllStory = ref(false);
-const storyStep = ref(1);
+const yoloRevealed = ref(false);
 const practice = computed(() => route.path === '/play/practice');
 const chronicle = computed(() => route.path === '/play/chronicle');
 const challenge = computed(() => route.path === '/play/challenge');
@@ -108,6 +108,11 @@ const resultTitle = computed(() => {
   return result === 'win' ? 'Tohle bylo tvoje.' : 'Dnes slaví soupeř.';
 });
 const liveMessage = computed(() => {
+  if (match.value?.mode === 'yolo') {
+    if (uncertain.value) return 'Stav přenosu ověřujeme se serverem.';
+    return match.value.status === 'complete' && match.value.yolo?.status === 'complete'
+      ? 'Příběh je připraven. Dějství odhalíš tlačítkem Další část.' : '';
+  }
   if (busy.value) return 'Potvrzujeme tah…';
   if (uncertain.value) return 'Výsledek odeslání ověřujeme se serverem.';
   if (match.value?.ownChoiceLocked) return 'Tvůj tah je uzamčený. Čekáme na soupeře.';
@@ -125,6 +130,7 @@ function updateMatch(value: Match) {
   if (match.value?.id !== value.id || match.value?.completedRounds !== value.completedRounds) {
     selected.value = undefined; spark.value = false;
   }
+  if (match.value?.id !== value.id) yoloRevealed.value = false;
   if (match.value?.id !== value.id || match.value?.partyTask?.status !== value.partyTask?.status) {
     taskOutcome.value = undefined;
   }
@@ -303,7 +309,7 @@ onBeforeUnmount(() => {
 
 <template>
   <SceneShell class="game-scene game-experience"
-    :class="{ 'responsive-table': tableDuel, 'game-duel-scene': playerDuel, 'game-boss-scene': bossSetup && bossProfile?.revealed || match?.mode === 'boss' }"
+    :class="{ 'responsive-table': tableDuel, 'game-duel-scene': playerDuel, 'game-yolo-scene': match?.mode === 'yolo', 'game-boss-scene': bossSetup && bossProfile?.revealed || match?.mode === 'boss' }"
     :data-duel-result="playerDuel && completed ? match?.result : undefined"
     :data-boss-phase="match?.mode === 'boss' ? match.phase : undefined" labelled-by="game-title">
     <div v-if="bossSetup && bossProfile?.revealed || match?.mode === 'boss'" :key="match?.phase" class="boss-scene-light" aria-hidden="true" />
@@ -346,8 +352,8 @@ onBeforeUnmount(() => {
       </template>
       <template v-else-if="practice || match">
         <div class="game-match-heading" :class="{ 'game-sr': tableDuel }">
-          <p class="game-eyebrow">{{ practice ? 'Trénink · bez XP' : modeName(match!.mode) }}</p>
-          <h1 id="game-title">{{ practice ? 'Zkus kouzlo.' : match!.mode === 'boss' ? 'Zápas s bossem' : match!.opponent.displayName }}</h1>
+          <p v-if="match?.mode !== 'yolo'" class="game-eyebrow">{{ practice ? 'Trénink · bez XP' : modeName(match!.mode) }}</p>
+          <h1 id="game-title">{{ practice ? 'Zkus kouzlo.' : match!.mode === 'yolo' ? 'YOLO lóže' : match!.mode === 'boss' ? 'Zápas s bossem' : match!.opponent.displayName }}</h1>
         </div>
         <PaperSurface v-if="!practice && match?.status === 'incoming'" class="game-paper">
           <p class="game-eyebrow">Výzva u stolu</p>
@@ -366,22 +372,10 @@ onBeforeUnmount(() => {
 
         <PaperSurface v-else-if="match?.needsLoadout" class="game-paper"><GameLoadouts :key="match.block" :busy="busy" :uncertain="uncertain" :locked="match.ownLoadoutLocked" @confirm="loadout => mutate('loadout', { loadout })" /></PaperSurface>
         <template v-else-if="practice || match?.status === 'active' || completed || match?.mode === 'yolo'">
-          <div v-if="match?.mode === 'yolo'" class="game-yolo">
-            <GameCharacter character="commentator" :expression="completed ? 2 : 0" />
-            <PaperSurface class="game-paper">
-              <p class="game-eyebrow">Rozhodčí bez licence</p><h2>Bohumil Křivopísk</h2>
-              <p v-if="!match.yolo?.beats?.length">{{ match.yolo?.status === 'failed' ? 'Přenos se nepovedl. Zatím nemáme vítěze.' : 'Křivopísk hledá pravidla. Zatím neúspěšně.' }}</p>
-              <template v-else><p v-for="(beat, index) in match.yolo.beats.slice(0, showAllStory ? 3 : storyStep)" :key="index">{{ beat.text }}</p>
-                <AwButton v-if="storyStep < 3 && !showAllStory" @click="storyStep++">Další část</AwButton>
-                <AwButton v-if="!showAllStory" @click="showAllStory = true">Ukázat celý výsledek</AwButton>
-                <p v-if="showAllStory || storyStep === 3"><strong>{{ match.yolo.verdict }}</strong></p>
-              </template>
-              <p>YOLO fikce · bez bojových XP</p>
-              <AwButton v-if="match.yolo?.status === 'failed'" :busy="busy" @click="mutate('retry')">Opakovat přenos</AwButton>
-              <AwButton v-if="match.yolo?.status === 'generating' || match.yolo?.status === 'failed'" :busy="busy" @click="mutate('cancel')">Zrušit přenos bez výsledku</AwButton>
-              <RouterLink v-if="match.yolo?.status === 'complete' && match.partyTask?.status !== 'pending'" class="aw-button aw-button--primary" :to="{path: '/play/challenge', query: {mode: 'yolo', opponent: match.opponent.id}}">Odveta</RouterLink>
-            </PaperSurface>
-          </div>
+          <GameYoloStage v-if="match?.mode === 'yolo'" :key="match.id" :match="match" :player-name="playerName"
+            :wand-url="playerWand.url.value" :wand-name="playerWand.name.value" :synthetic="playerWand.synthetic.value"
+            :opponent-wand-url="opponentWand.url.value" :busy="busy" :uncertain="uncertain"
+            @retry="mutate('retry')" @cancel="mutate('cancel')" @revealed="yoloRevealed = $event" />
           <template v-else>
             <template v-if="match?.mode === 'boss'">
               <GameBossStage :phase="match.phase" :expression="match.result === 'win' ? 2 : (match.opponentEnergy ?? 5) <= 2 ? 1 : 0">
@@ -445,7 +439,7 @@ onBeforeUnmount(() => {
           <p v-if="match?.opponentInventory && (match.mode === 'boss' || match.mode === 'tactical')" class="game-helper">Soupeři zbývá: Úder {{ match.opponentInventory.strike }}, Lest {{ match.opponentInventory.trick }}, Štít {{ match.opponentInventory.shield }}.</p>
           <AwButton v-if="match?.mode === 'boss' && match.status === 'active'" class="game-exit" :busy="busy" @click="mutate('cancel')">Ukončit pokus bez výsledku</AwButton>
           <AwButton v-if="match?.canCancel && match.status === 'active' && match.mode !== 'boss'" class="game-exit" :busy="busy" @click="mutate('cancel')">Ukončit zápas bez výsledku</AwButton>
-          <PaperSurface v-if="match?.partyTask" class="game-paper game-task">
+          <PaperSurface v-if="match?.partyTask && (match.mode !== 'yolo' || yoloRevealed)" class="game-paper game-task">
             <p class="game-eyebrow">Úkol po prohře · {{ match.partyTask.category === 'classic' ? 'Klasika' : match.partyTask.category === 'adult' ? 'Dvojsmysly 18+' : 'Flirt' }}</p><h2>{{ match.partyTask.title }}</h2><p>{{ match.partyTask.text }}</p>
             <template v-if="match.result === 'loss' && match.partyTask.status === 'pending'">
               <p>Úkol můžeš odmítnout. V obou případech potvrď výsledek, aby se uložil.</p>
