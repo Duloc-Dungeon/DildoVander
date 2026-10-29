@@ -22,6 +22,12 @@ colors:
   placeholder: "#9ba69e"
   navigation-bg: "#111413"
   navigation-muted: "#9ca7a0"
+  sealed-paper: "#f2e6c8"
+  sealed-ink: "#29291f"
+  sealed-muted: "#5d5b48"
+  sealed-line: "#b5aa8f"
+  sealed-green: "#324e3b"
+  sealed-green-hover: "#243d2c"
 typography:
   headline:
     fontFamily: "'Manrope Variable', sans-serif"
@@ -52,6 +58,7 @@ rounded:
   card: "22px"
   sheet: "24px"
   hero: "28px"
+  sealed-dossier: "12px"
 spacing:
   "8": "8px"
   "12": "12px"
@@ -99,6 +106,16 @@ components:
     textColor: "{colors.text}"
     rounded: "{rounded.field}"
     padding: "16px"
+  sealed-dossier:
+    backgroundColor: "{colors.sealed-paper}"
+    textColor: "{colors.sealed-ink}"
+    rounded: "{rounded.sealed-dossier}"
+    padding: "clamp(16px, 4vw, 28px)"
+  sealed-share:
+    backgroundColor: "{colors.sealed-green}"
+    textColor: "{colors.sealed-paper}"
+    rounded: "{rounded.sealed-dossier}"
+    padding: "12px 16px"
 ---
 
 # Wand Night Stand — schválený design v2
@@ -487,6 +504,12 @@ Přehled tvrzení ukazuje autora, rozsah sdílení, odkaz na část řetězce a 
 ověření hned. Úplný původní text je pod klávesnicově přístupným rozbalením;
 dlouhá zpráva s více stopami tak nezahltí všechny řádky. Ovládání vlastních
 stop má pro čtečky obrazovky doplněný kontext příslušného řetězce.
+
+Drobné popisky částí používají 0,8125 rem. Rozbalení vlastní stopy má
+nejméně 52 px, rozbalení tvrzení 44 px a tlačítko sdílení 48 px. Názvy
+opakovaných tvrzení obsahují pro čtečku i pořadí v přehledu. Fokus ovládání
+používá `--wns-focus-ring`: na světlém spisu místní `#324e3b`, na tmavém
+okolí výchozí mintovou. Zelená při hoveru tlačítka přechází na `#243d2c`.
 
 Otevření spisu má jeden místní `clip-path` přechod 280 ms; při omezeném
 pohybu je obsah ihned statický. Ovládání ani herní stav na efekt nečekají.

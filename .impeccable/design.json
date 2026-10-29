@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T04:30:48.008Z",
+  "generatedAt": "2026-10-29T04:47:41.761Z",
   "title": "Wand Night Stand — schválený design v2",
   "extensions": {
     "colorMeta": {
@@ -283,6 +283,90 @@
           "oklch(0.8 0.0159248 158.008)",
           "oklch(0.95 0.0159248 158.008)"
         ]
+      },
+      "sealed-paper": {
+        "role": "neutral",
+        "displayName": "Papír vyšetřovacího spisu",
+        "tonalRamp": [
+          "oklch(0.15 0.041594 88.797)",
+          "oklch(0.25 0.041594 88.797)",
+          "oklch(0.35 0.041594 88.797)",
+          "oklch(0.45 0.041594 88.797)",
+          "oklch(0.55 0.041594 88.797)",
+          "oklch(0.65 0.041594 88.797)",
+          "oklch(0.8 0.041594 88.797)",
+          "oklch(0.95 0.041594 88.797)"
+        ]
+      },
+      "sealed-ink": {
+        "role": "neutral",
+        "displayName": "Inkoust vyšetřovacího spisu",
+        "tonalRamp": [
+          "oklch(0.15 0.017642 107.496)",
+          "oklch(0.25 0.017642 107.496)",
+          "oklch(0.35 0.017642 107.496)",
+          "oklch(0.45 0.017642 107.496)",
+          "oklch(0.55 0.017642 107.496)",
+          "oklch(0.65 0.017642 107.496)",
+          "oklch(0.8 0.017642 107.496)",
+          "oklch(0.95 0.017642 107.496)"
+        ]
+      },
+      "sealed-muted": {
+        "role": "neutral",
+        "displayName": "Vedlejší inkoust spisu",
+        "tonalRamp": [
+          "oklch(0.15 0.029486 102.481)",
+          "oklch(0.25 0.029486 102.481)",
+          "oklch(0.35 0.029486 102.481)",
+          "oklch(0.45 0.029486 102.481)",
+          "oklch(0.55 0.029486 102.481)",
+          "oklch(0.65 0.029486 102.481)",
+          "oklch(0.8 0.029486 102.481)",
+          "oklch(0.95 0.029486 102.481)"
+        ]
+      },
+      "sealed-line": {
+        "role": "neutral",
+        "displayName": "Linka vyšetřovacího spisu",
+        "tonalRamp": [
+          "oklch(0.15 0.039487 88.486)",
+          "oklch(0.25 0.039487 88.486)",
+          "oklch(0.35 0.039487 88.486)",
+          "oklch(0.45 0.039487 88.486)",
+          "oklch(0.55 0.039487 88.486)",
+          "oklch(0.65 0.039487 88.486)",
+          "oklch(0.8 0.039487 88.486)",
+          "oklch(0.95 0.039487 88.486)"
+        ]
+      },
+      "sealed-green": {
+        "role": "secondary",
+        "displayName": "Doložená část a fokus spisu",
+        "tonalRamp": [
+          "oklch(0.15 0.046726 154.112)",
+          "oklch(0.25 0.046726 154.112)",
+          "oklch(0.35 0.046726 154.112)",
+          "oklch(0.45 0.046726 154.112)",
+          "oklch(0.55 0.046726 154.112)",
+          "oklch(0.65 0.046726 154.112)",
+          "oklch(0.8 0.046726 154.112)",
+          "oklch(0.95 0.046726 154.112)"
+        ]
+      },
+      "sealed-green-hover": {
+        "role": "secondary",
+        "displayName": "Odezva sdílení při hoveru",
+        "tonalRamp": [
+          "oklch(0.15 0.043297 153.758)",
+          "oklch(0.25 0.043297 153.758)",
+          "oklch(0.35 0.043297 153.758)",
+          "oklch(0.45 0.043297 153.758)",
+          "oklch(0.55 0.043297 153.758)",
+          "oklch(0.65 0.043297 153.758)",
+          "oklch(0.8 0.043297 153.758)",
+          "oklch(0.95 0.043297 153.758)"
+        ]
       }
     },
     "typographyMeta": {
@@ -400,6 +484,11 @@
         "name": "yolo-clash",
         "value": "900ms cubic-bezier(.16,1,.3,1)",
         "purpose": "Jednorázový světelný střet při ručním odhalení druhého dějství YOLO. Polling jej neopakuje; omezený pohyb ponechá statickou scénu."
+      },
+      {
+        "name": "sealed-dossier-open",
+        "value": "280ms cubic-bezier(.16,1,.3,1)",
+        "purpose": "Místní otevření vyšetřovacího spisu přes clip-path; jen při no-preference, bez čekání herního stavu a bez animace při omezeném pohybu."
       }
     ],
     "breakpoints": [
@@ -581,6 +670,21 @@
       "description": "Samostatný náhled pořadí dějství a čtecí hierarchie; nehraje souboj ani nevybírá vítěze.",
       "html": "<section class=\"ds-yolo\" aria-label=\"Ukázka dějství YOLO\"><ol class=\"ds-yolo__acts\" aria-label=\"Dějství příběhu\"><li data-read=\"true\"><span>1</span>Nástup</li><li data-read=\"true\" aria-current=\"step\"><span>2</span>Střet</li><li data-read=\"false\"><span>3</span>Rozsudek</li></ol><div class=\"ds-yolo__story\"><h2 tabindex=\"-1\">Střet</h2><p>Ukázka čtení příběhu. Výsledek přijde až s rozsudkem.</p></div></section>",
       "css": ".ds-yolo{--wns-amber:#ffc662;--wns-text:#f5f5f0;--wns-muted:#b2b9b6;--wns-line:#343939;--wns-bg:#080909;--wns-mint:#b8f3d4;--wns-on-mint:#102419;--wns-focus-ring:#b8f3d4;--wns-font-family:'Manrope Variable', sans-serif;box-sizing:border-box;width:min(100%,760px);padding:24px;background:var(--wns-bg);color:var(--wns-text);font-family:var(--wns-font-family);line-height:1.55}.ds-yolo *{box-sizing:border-box;min-width:0}.ds-yolo p{font-size:1.125rem;line-height:1.75;max-width:65ch}.ds-yolo__acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0; margin: 0 0 24px; list-style: none; }\n.ds-yolo__acts li { display: flex; flex-wrap: wrap; gap: 8px; border-top: 2px solid var(--wns-line); padding-top: 12px; font-size: .875rem; color: var(--wns-muted); }\n.ds-yolo__acts li[data-read='true'] { border-color: var(--wns-amber); color: var(--wns-text); }\n.ds-yolo__acts li[aria-current] { font-weight: 800; }\n.ds-yolo__acts li > span { font-variant-numeric: tabular-nums; }\n.ds-yolo .ds-yolo__story h2,\n.ds-yolo .ds-yolo__status h2 { margin: 0 0 16px; font-size: clamp(1.75rem, 6vw, 2.5rem); }\n.ds-yolo__story h2:focus-visible { outline: 2px solid var(--wns-focus-ring); outline-offset: 4px; }"
+    },
+    {
+      "name": "Pod pečetí — vyšetřovací spis",
+      "kind": "custom",
+      "refersTo": "sealed-dossier",
+      "description": "Syntetický příklad neúplného řetězce A/B/C. Skutečný spis počítá jen vlastní autorizované stopy; název postavy ani sdílená zpráva chybějící část nenahradí.",
+      "html": "<section class=\"ds-sealed-preview\"><section class=\"ds-sealed-dossier\" aria-labelledby=\"ds-sealed-title\"><h2 id=\"ds-sealed-title\">Důkazní řetězce</h2><p>Spojuj různé části A, B a C stejného řetězce.</p><article class=\"ds-sealed-chain\"><header class=\"ds-sealed-chain-heading\"><h3 id=\"ds-sealed-chain-R01\">Řetězec R01</h3><span>2 ze 3 částí</span></header><ol class=\"ds-sealed-chain-links\" aria-label=\"Části řetězce\"><li class=\"ds-is-owned\"><strong>A</strong><span>Doloženo</span></li><li class=\"ds-is-owned\"><strong>B</strong><span>Doloženo</span></li><li><strong>C</strong><span>Chybí</span></li></ol><p class=\"ds-sealed-chain-reading\">Chybí C. Z neúplného řetězce zatím nedělej závěr o viníkovi.</p><details class=\"ds-sealed-evidence-part\"><summary aria-describedby=\"ds-sealed-chain-R01\"><span><span class=\"ds-sealed-part-family\">Část A</span><strong>Zápis z knihy návštěv</strong></span></summary><p>Okruh kandidátů: Host 2, Host 3.</p><small>R01-A · Získáno během hry</small><button type=\"button\" class=\"ds-aw-button\" aria-describedby=\"ds-sealed-chain-R01\">Připravit sdílení části A</button></details></article></section></section>",
+      "css": ".ds-sealed-preview{--wns-text:#f5f5f0;--wns-muted:#b2b9b6;--wns-line:#343939;--wns-surface:#191b1b;--wns-mint:#b8f3d4;--wns-focus-ring:#b8f3d4;background:#080909;color:var(--wns-text);font-family:'Manrope Variable',sans-serif;font-size:15px;line-height:1.65;padding:24px}.ds-sealed-preview h2{line-height:1.25;margin:0 0 16px}.ds-sealed-preview p{margin-block:12px}.ds-sealed-preview small{display:block;line-height:1.5}.ds-sealed-preview :is(button,summary):focus-visible{outline:3px solid var(--wns-focus-ring);outline-offset:4px}.ds-sealed-preview .ds-sealed-dossier {\n  --wns-text: #29291f;\n  --wns-muted: #5d5b48;\n  --wns-line: #b5aa8f;\n  --wns-focus-ring: #324e3b;\n  color: var(--wns-text);\n  background: #f2e6c8;\n  padding: clamp(16px, 4vw, 28px);\n  border-radius: 12px;\n  overflow-wrap: anywhere;\n}\n.ds-sealed-dossier ::selection { background: #324e3b; color: #f2e6c8; }\n.ds-sealed-preview .ds-sealed-dossier h2 { color: var(--wns-text); font-size: clamp(1.5rem, 5vw, 2rem); letter-spacing: -.03em; }\n.ds-sealed-dossier > p { max-width: 65ch; }\n.ds-sealed-preview .ds-sealed-chain { padding-top: 24px; margin-top: 28px; border-top: 1px solid var(--wns-line); }\n.ds-sealed-chain-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }\n.ds-sealed-preview .ds-sealed-chain-heading h3 { color: var(--wns-text); margin: 0; font-size: 1.125rem; }\n.ds-sealed-chain-heading > span { color: var(--wns-muted); font-size: .875rem; font-variant-numeric: tabular-nums; }\n.ds-sealed-chain-links { display: flex; list-style: none; padding: 0; margin: 24px 0; gap: 16px; }\n.ds-sealed-chain-links li { position: relative; flex: 1; min-width: 0; text-align: center; }\n.ds-sealed-chain-links li:not(:last-child)::after { content: ''; position: absolute; top: 22px; left: calc(50% + 28px); width: calc(100% - 40px); border-top: 1px solid var(--wns-line); }\n.ds-sealed-chain-links strong { display: grid; place-items: center; width: 44px; height: 44px; margin: auto; border: 1px dashed #736c56; border-radius: 50%; font-size: 1.125rem; }\n.ds-sealed-chain-links .ds-is-owned strong { background: #324e3b; border: 1px solid #324e3b; color: #f2e6c8; }\n.ds-sealed-chain-links span { display: block; margin-top: 8px; font-size: .8125rem; color: var(--wns-muted); }\n.ds-sealed-preview .ds-sealed-chain-reading { margin: 20px 0; font-size: .9375rem; }\n.ds-sealed-evidence-part { border-top: 1px solid var(--wns-line); padding-block: 4px 12px; }\n:is(.ds-sealed-evidence-part, .ds-sealed-claim-text) > summary { min-height: 52px; display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; list-style: none; padding-block: 8px; }\n:is(.ds-sealed-evidence-part, .ds-sealed-claim-text) > summary::-webkit-details-marker { display: none; }\n:is(.ds-sealed-evidence-part, .ds-sealed-claim-text) > summary::after { content: ''; flex: 0 0 7px; height: 7px; border-right: 2px solid; border-bottom: 2px solid; transform: rotate(45deg); }\n:is(.ds-sealed-evidence-part, .ds-sealed-claim-text)[open] > summary::after { transform: rotate(225deg); }\n.ds-sealed-evidence-part summary strong { display: block; font-size: .9375rem; }\n.ds-sealed-part-family { display: block; color: var(--wns-muted); font-size: .8125rem; margin-bottom: 4px; }\n.ds-sealed-preview .ds-sealed-dossier small { color: var(--wns-muted); font-size: .8125rem; }\n.ds-sealed-preview .ds-sealed-dossier .ds-aw-button { background: #324e3b; color: #f2e6c8; border: 0; min-height: 48px; width: 100%; margin-top: 16px; padding: 12px 16px; border-radius: 12px; }\n.ds-sealed-preview .ds-sealed-claims { margin-top: 32px; }\n.ds-sealed-claims .ds-sealed-muted { color: var(--wns-muted); }\n.ds-sealed-claims .ds-sealed-entries { list-style: none; padding: 0; }\n.ds-sealed-claims .ds-sealed-entries li { white-space: normal; padding-block: 16px; border-bottom: 1px solid var(--wns-line); }\n.ds-sealed-claims .ds-sealed-entries li p { margin-block: 8px; }\n.ds-sealed-claims .ds-sealed-entries small { display: block; color: var(--wns-muted); font-size: .875rem; }\n.ds-sealed-claim-author { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }\n.ds-sealed-claim-author > span { color: var(--wns-muted); font-size: .8125rem; }\n.ds-sealed-claim-text { margin-top: 8px; }\n.ds-sealed-claim-text > summary { color: var(--wns-muted); min-height: 44px; font-size: .875rem; font-weight: 700; }\n.ds-sealed-claim-text p { white-space: pre-wrap; overflow-wrap: anywhere; }\n.ds-sealed-preview .ds-sealed-dossier-door { margin-block: 28px; padding-block: 24px; border-block: 1px solid var(--wns-line); }\n.ds-sealed-preview .ds-sealed-dossier-door h3 { margin-top: 0; font-size: 1.35rem; }\n.ds-sealed-dossier-door .ds-aw-button { width: 100%; }\n.ds-sealed-preview .ds-sealed-latest-outcome { margin-block: 28px; }\n.ds-sealed-preview .ds-sealed-latest-outcome h3 { margin-bottom: 8px; }\n.ds-sealed-preview .ds-sealed-exploration { margin-block: 24px; }\n.ds-sealed-exploration { border-bottom: 1px solid var(--wns-line); }\n.ds-sealed-exploration > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto 10px; align-items: center; gap: 12px; min-height: 56px; padding-block: 12px; font-weight: 700; cursor: pointer; list-style: none; }\n.ds-sealed-exploration > summary::-webkit-details-marker { display: none; }\n.ds-sealed-exploration > summary::after { content: ''; width: 7px; height: 7px; border-right: 2px solid; border-bottom: 2px solid; transform: rotate(45deg); }\n.ds-sealed-exploration[open] > summary::after { transform: rotate(225deg); }\n.ds-sealed-exploration .ds-sealed-summary-count { font-size: .875rem; color: var(--wns-muted); font-weight: 400; }\n.ds-sealed-exploration .ds-sealed-muted { color: var(--wns-muted); }\n.ds-sealed-source-plan { list-style: none; margin: 24px 0 0; padding: 0; }\n.ds-sealed-source-plan > li { border-top: 1px solid var(--wns-line); padding-block: 20px; }\n.ds-sealed-source-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 16px; }\n.ds-sealed-source-heading > span { color: var(--wns-muted); font-size: .8125rem; font-variant-numeric: tabular-nums; }\n.ds-sealed-route { display: flex; flex-wrap: wrap; list-style: none; gap: 8px 12px; padding: 0; font-size: .875rem; }\n.ds-sealed-route li { display: flex; gap: 12px; align-items: center; }\n.ds-sealed-route li:not(:last-child)::after { content: ''; width: 8px; height: 8px; border-top: 1px solid; border-right: 1px solid; transform: rotate(45deg); }\n.ds-sealed-route-warning { color: var(--wns-amber); }\n.ds-sealed-source-plan .ds-aw-button { width: 100%; }\n.ds-sealed-preview .ds-sealed-action-guidance { background: var(--wns-surface); padding: 16px; border-radius: 12px; font-size: .9375rem; }\n.ds-sealed-message-count { color: var(--wns-muted); font-size: .875rem; font-variant-numeric: tabular-nums; }\n@media (hover: hover) {\n  .ds-sealed-evidence-part summary:hover { color: #324e3b; }\n  .ds-sealed-exploration > summary:hover { color: var(--wns-mint); }\n  .ds-sealed-claim-text > summary:hover { color: var(--wns-text); }\n  .ds-sealed-preview .ds-sealed-dossier .ds-aw-button:hover:not(:disabled) { background: #243d2c; }\n}\n@media (prefers-reduced-motion: no-preference) {\n  .ds-sealed-dossier { animation: ds-sealed-dossier-open 280ms cubic-bezier(.16, 1, .3, 1); }\n  @keyframes ds-sealed-dossier-open {\n    from { clip-path: inset(0 0 12% 0 round 12px); }\n    to { clip-path: inset(0 0 0 0 round 12px); }\n  }\n}\n"
+    },
+    {
+      "name": "Pod pečetí — sdílené tvrzení",
+      "kind": "custom",
+      "description": "Syntetická výpověď: autor, rozsah sdílení, uvedený řetězec a vlastní ověření jsou viditelné; celý původní text je v nativním details. Rozbalení nemění vlastnictví důkazu.",
+      "html": "<section class=\"ds-sealed-preview\"><section class=\"ds-sealed-claims\" aria-labelledby=\"ds-sealed-claims-title\"><h3 id=\"ds-sealed-claims-title\">Sdílená tvrzení o stopách</h3><p class=\"ds-sealed-muted\">Každé zůstává tvrzením autora; do doložených částí se nezapočítává.</p><ol class=\"ds-sealed-entries\"><li><p class=\"ds-sealed-claim-author\"><strong>Host 2</strong><span>Veřejně</span></p><p>Uvádí řetězec R01, část B.</p><small>Tuto stopu ve vlastním spisu nemáš.</small><details class=\"ds-sealed-claim-text\"><summary aria-label=\"Celé tvrzení 1: Host 2, řetězec R01, část B\">Celé tvrzení</summary><p>Moje pozorování ze salonu.\n\nStopa R01-B · řetězec R01 · část B.\nOkruh kandidátů: Host 3, Host 4.</p></details></li></ol></section></section>",
+      "css": ".ds-sealed-preview{--wns-text:#f5f5f0;--wns-muted:#b2b9b6;--wns-line:#343939;--wns-surface:#191b1b;--wns-mint:#b8f3d4;--wns-focus-ring:#b8f3d4;background:#080909;color:var(--wns-text);font-family:'Manrope Variable',sans-serif;font-size:15px;line-height:1.65;padding:24px}.ds-sealed-preview h2{line-height:1.25;margin:0 0 16px}.ds-sealed-preview p{margin-block:12px}.ds-sealed-preview small{display:block;line-height:1.5}.ds-sealed-preview :is(button,summary):focus-visible{outline:3px solid var(--wns-focus-ring);outline-offset:4px}.ds-sealed-preview .ds-sealed-dossier {\n  --wns-text: #29291f;\n  --wns-muted: #5d5b48;\n  --wns-line: #b5aa8f;\n  --wns-focus-ring: #324e3b;\n  color: var(--wns-text);\n  background: #f2e6c8;\n  padding: clamp(16px, 4vw, 28px);\n  border-radius: 12px;\n  overflow-wrap: anywhere;\n}\n.ds-sealed-dossier ::selection { background: #324e3b; color: #f2e6c8; }\n.ds-sealed-preview .ds-sealed-dossier h2 { color: var(--wns-text); font-size: clamp(1.5rem, 5vw, 2rem); letter-spacing: -.03em; }\n.ds-sealed-dossier > p { max-width: 65ch; }\n.ds-sealed-preview .ds-sealed-chain { padding-top: 24px; margin-top: 28px; border-top: 1px solid var(--wns-line); }\n.ds-sealed-chain-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }\n.ds-sealed-preview .ds-sealed-chain-heading h3 { color: var(--wns-text); margin: 0; font-size: 1.125rem; }\n.ds-sealed-chain-heading > span { color: var(--wns-muted); font-size: .875rem; font-variant-numeric: tabular-nums; }\n.ds-sealed-chain-links { display: flex; list-style: none; padding: 0; margin: 24px 0; gap: 16px; }\n.ds-sealed-chain-links li { position: relative; flex: 1; min-width: 0; text-align: center; }\n.ds-sealed-chain-links li:not(:last-child)::after { content: ''; position: absolute; top: 22px; left: calc(50% + 28px); width: calc(100% - 40px); border-top: 1px solid var(--wns-line); }\n.ds-sealed-chain-links strong { display: grid; place-items: center; width: 44px; height: 44px; margin: auto; border: 1px dashed #736c56; border-radius: 50%; font-size: 1.125rem; }\n.ds-sealed-chain-links .ds-is-owned strong { background: #324e3b; border: 1px solid #324e3b; color: #f2e6c8; }\n.ds-sealed-chain-links span { display: block; margin-top: 8px; font-size: .8125rem; color: var(--wns-muted); }\n.ds-sealed-preview .ds-sealed-chain-reading { margin: 20px 0; font-size: .9375rem; }\n.ds-sealed-evidence-part { border-top: 1px solid var(--wns-line); padding-block: 4px 12px; }\n:is(.ds-sealed-evidence-part, .ds-sealed-claim-text) > summary { min-height: 52px; display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; list-style: none; padding-block: 8px; }\n:is(.ds-sealed-evidence-part, .ds-sealed-claim-text) > summary::-webkit-details-marker { display: none; }\n:is(.ds-sealed-evidence-part, .ds-sealed-claim-text) > summary::after { content: ''; flex: 0 0 7px; height: 7px; border-right: 2px solid; border-bottom: 2px solid; transform: rotate(45deg); }\n:is(.ds-sealed-evidence-part, .ds-sealed-claim-text)[open] > summary::after { transform: rotate(225deg); }\n.ds-sealed-evidence-part summary strong { display: block; font-size: .9375rem; }\n.ds-sealed-part-family { display: block; color: var(--wns-muted); font-size: .8125rem; margin-bottom: 4px; }\n.ds-sealed-preview .ds-sealed-dossier small { color: var(--wns-muted); font-size: .8125rem; }\n.ds-sealed-preview .ds-sealed-dossier .ds-aw-button { background: #324e3b; color: #f2e6c8; border: 0; min-height: 48px; width: 100%; margin-top: 16px; padding: 12px 16px; border-radius: 12px; }\n.ds-sealed-preview .ds-sealed-claims { margin-top: 32px; }\n.ds-sealed-claims .ds-sealed-muted { color: var(--wns-muted); }\n.ds-sealed-claims .ds-sealed-entries { list-style: none; padding: 0; }\n.ds-sealed-claims .ds-sealed-entries li { white-space: normal; padding-block: 16px; border-bottom: 1px solid var(--wns-line); }\n.ds-sealed-claims .ds-sealed-entries li p { margin-block: 8px; }\n.ds-sealed-claims .ds-sealed-entries small { display: block; color: var(--wns-muted); font-size: .875rem; }\n.ds-sealed-claim-author { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }\n.ds-sealed-claim-author > span { color: var(--wns-muted); font-size: .8125rem; }\n.ds-sealed-claim-text { margin-top: 8px; }\n.ds-sealed-claim-text > summary { color: var(--wns-muted); min-height: 44px; font-size: .875rem; font-weight: 700; }\n.ds-sealed-claim-text p { white-space: pre-wrap; overflow-wrap: anywhere; }\n.ds-sealed-preview .ds-sealed-dossier-door { margin-block: 28px; padding-block: 24px; border-block: 1px solid var(--wns-line); }\n.ds-sealed-preview .ds-sealed-dossier-door h3 { margin-top: 0; font-size: 1.35rem; }\n.ds-sealed-dossier-door .ds-aw-button { width: 100%; }\n.ds-sealed-preview .ds-sealed-latest-outcome { margin-block: 28px; }\n.ds-sealed-preview .ds-sealed-latest-outcome h3 { margin-bottom: 8px; }\n.ds-sealed-preview .ds-sealed-exploration { margin-block: 24px; }\n.ds-sealed-exploration { border-bottom: 1px solid var(--wns-line); }\n.ds-sealed-exploration > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto 10px; align-items: center; gap: 12px; min-height: 56px; padding-block: 12px; font-weight: 700; cursor: pointer; list-style: none; }\n.ds-sealed-exploration > summary::-webkit-details-marker { display: none; }\n.ds-sealed-exploration > summary::after { content: ''; width: 7px; height: 7px; border-right: 2px solid; border-bottom: 2px solid; transform: rotate(45deg); }\n.ds-sealed-exploration[open] > summary::after { transform: rotate(225deg); }\n.ds-sealed-exploration .ds-sealed-summary-count { font-size: .875rem; color: var(--wns-muted); font-weight: 400; }\n.ds-sealed-exploration .ds-sealed-muted { color: var(--wns-muted); }\n.ds-sealed-source-plan { list-style: none; margin: 24px 0 0; padding: 0; }\n.ds-sealed-source-plan > li { border-top: 1px solid var(--wns-line); padding-block: 20px; }\n.ds-sealed-source-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 16px; }\n.ds-sealed-source-heading > span { color: var(--wns-muted); font-size: .8125rem; font-variant-numeric: tabular-nums; }\n.ds-sealed-route { display: flex; flex-wrap: wrap; list-style: none; gap: 8px 12px; padding: 0; font-size: .875rem; }\n.ds-sealed-route li { display: flex; gap: 12px; align-items: center; }\n.ds-sealed-route li:not(:last-child)::after { content: ''; width: 8px; height: 8px; border-top: 1px solid; border-right: 1px solid; transform: rotate(45deg); }\n.ds-sealed-route-warning { color: var(--wns-amber); }\n.ds-sealed-source-plan .ds-aw-button { width: 100%; }\n.ds-sealed-preview .ds-sealed-action-guidance { background: var(--wns-surface); padding: 16px; border-radius: 12px; font-size: .9375rem; }\n.ds-sealed-message-count { color: var(--wns-muted); font-size: .875rem; font-variant-numeric: tabular-nums; }\n@media (hover: hover) {\n  .ds-sealed-evidence-part summary:hover { color: #324e3b; }\n  .ds-sealed-exploration > summary:hover { color: var(--wns-mint); }\n  .ds-sealed-claim-text > summary:hover { color: var(--wns-text); }\n  .ds-sealed-preview .ds-sealed-dossier .ds-aw-button:hover:not(:disabled) { background: #243d2c; }\n}\n@media (prefers-reduced-motion: no-preference) {\n  .ds-sealed-dossier { animation: ds-sealed-dossier-open 280ms cubic-bezier(.16, 1, .3, 1); }\n  @keyframes ds-sealed-dossier-open {\n    from { clip-path: inset(0 0 12% 0 round 12px); }\n    to { clip-path: inset(0 0 0 0 round 12px); }\n  }\n}\n"
     }
   ],
   "narrative": {
