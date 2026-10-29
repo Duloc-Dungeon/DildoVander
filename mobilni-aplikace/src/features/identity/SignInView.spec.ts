@@ -47,6 +47,7 @@ function createSignInRouter() {
       { path: '/support', component: { template: '<div />' } },
       { path: '/suitcase', component: { template: '<div />' } },
       { path: '/me/character', component: { template: '<div />' } },
+      { path: '/me/account', component: { template: '<div />' } },
       { path: '/keepsake/:pathMatch(.*)*', component: { template: '<div />' } },
     ],
   });
@@ -504,6 +505,19 @@ describe('sign-in destinations', () => {
     expect(api.authenticate).toHaveBeenCalledWith('signin', '', '', false);
     expect(router.currentRoute.value.path).toBe('/me/character');
     wrapper.unmount();
+  });
+
+  it.each([false, true])('reconciles an account return against evening access (%s)', async allowed => {
+    api.authenticate.mockImplementation(async () => {
+      account.value = { id: 'customer', displayName: 'Ron Weasley', roles: ['Customer'] };
+    });
+    api.request.mockImplementation(async path => path === '/app/v1/launch' ? { allowed } : { available: true });
+    const { router, wrapper } = await mountSignIn('/me/account');
+    try {
+      await wrapper.get('form').trigger('submit');
+      await flushPromises();
+      expect(router.currentRoute.value.path).toBe(allowed ? '/me/account' : '/launch');
+    } finally { wrapper.unmount(); }
   });
 
   it('preserves the authorized account keepsake return after customer sign-in', async () => {

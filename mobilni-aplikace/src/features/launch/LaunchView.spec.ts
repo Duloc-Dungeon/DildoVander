@@ -309,6 +309,23 @@ it('shows the loading joke before the portrait and preserves the welcome in the 
     expect(view.get('[aria-current="step"]').text()).not.toBe('Čekárna');
   } finally { view.unmount(); }
 });
+it('reads the personal joke from welcome when only the loading field is invalid', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    const result = await original(path, method);
+    return path === '/app/v1/prelaunch/character' ? { ...result, artwork: {
+      status: 'running', loadingMessage: 'null', finalMessage: 'FINAL FIELD',
+      welcome: { joke: 'WELCOME JOKE FIELD', identity: 'IDENTITY FIELD', teaser: 'TEASER FIELD' },
+    } } : result;
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('WELCOME JOKE FIELD');
+    expect(view.get('[aria-current="step"]').text()).toBe('Portrét');
+  } finally { view.unmount(); }
+});
 it('preserves an unfinished same-account draft and clears it from another account’s view', async () => {
   const view = entry();
   try {

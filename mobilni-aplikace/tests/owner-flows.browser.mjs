@@ -193,6 +193,19 @@ try {
     await capture(page, `owner-sound-enabled-${width}`);
     await sound.click();
     assert.equal(await sound.getAttribute('aria-pressed'), 'false');
+    const groupSelect = page.getByRole('combobox', { name: /Skupina hráčů/ });
+    await groupSelect.focus();
+    assert.equal(await groupSelect.evaluate(element => {
+      const style = getComputedStyle(element);
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--wns-text)';
+      element.parentElement.append(probe);
+      const expected = getComputedStyle(probe).color;
+      probe.remove();
+      const rect = element.getBoundingClientRect();
+      return style.color === expected && rect.height >= 44 && rect.right <= innerWidth;
+    }), true, 'group select uses the theme and fits the mobile viewport');
+    await capture(page, `owner-group-select-${width}`);
     await Promise.all([
       page.waitForResponse(response => response.url().endsWith('/app/v1/customer/groups/active') && response.request().method() === 'PUT'),
       page.getByRole('combobox', { name: /Skupina hráčů/ }).selectOption('owner-saturday'),

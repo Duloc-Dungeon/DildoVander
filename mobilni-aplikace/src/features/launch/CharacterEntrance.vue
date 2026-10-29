@@ -4,6 +4,7 @@ import AwButton from '../../components/AwButton.vue';
 import userIcon from '../../assets/wns-v2/icons/regular/user.svg';
 import type { PrelaunchCharacterResponse } from './generatedPrelaunchCharacter';
 import { characterDisplayName } from '../customer/characterLabel';
+import { characterWelcomeText } from './characterWelcomeText';
 
 const props = defineProps<{
   character: PrelaunchCharacterResponse['character'];
@@ -22,7 +23,7 @@ const heading = ref<HTMLElement>();
 const personalSince = ref(0);
 let lastTick = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
-const personalJoke = computed(() => props.artwork?.welcome?.joke?.trim() || props.artwork?.loadingMessage?.trim() || '');
+const personalJoke = computed(() => characterWelcomeText(props.artwork?.welcome?.joke) || characterWelcomeText(props.artwork?.loadingMessage));
 const showPersonal = computed(() => !!personalJoke.value && elapsed.value >= 900);
 const unavailable = computed(() => !props.image && (props.failed || props.readFailed
   || ['failed', 'not_requested', 'unavailable'].includes(props.artwork?.status ?? '') || elapsed.value >= 15_000));

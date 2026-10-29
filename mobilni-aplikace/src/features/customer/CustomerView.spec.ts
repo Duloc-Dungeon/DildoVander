@@ -35,6 +35,20 @@ const router = async (path = '/me/character') => {
 afterEach(() => { vi.clearAllMocks(); api.disconnect.mockResolvedValue(undefined); api.supported = true; api.setAccount({ id: 'customer-1', displayName: 'Guest', roles: ['Customer'], openAiConsent: true }); interfaceLanguagePreference.setLanguage('cs'); vi.useRealTimers(); });
 
 describe('customer character and digital workshop', () => {
+  it('does not load the character on account settings, but loads it when moving to the character pane', async () => {
+    api.request.mockImplementation(async (path: string) => path.endsWith('/character') ? { profile } : { items: [] });
+    const navigation = await router('/me/account');
+    const wrapper = mount(CustomerView, { global: { plugins: [navigation] } });
+    try {
+      await flushPromises();
+      expect(api.request.mock.calls.some(([path]) => path === '/app/v1/customer/character')).toBe(false);
+      expect(wrapper.text()).not.toContain('Stav rozhovoru se nepodařilo načíst');
+      await navigation.push('/me/character');
+      await flushPromises();
+      expect(api.request.mock.calls.some(([path]) => path === '/app/v1/customer/character')).toBe(true);
+      expect(wrapper.text()).toContain(profile.userInput.name);
+    } finally { wrapper.unmount(); }
+  });
   it('shows only the current server-assigned wand on the profile and clears it when the account changes', async () => {
     const wand = { wandId: 'wand-1', physicalSlot: 2, name: 'Měsíční ozvěna', material: 'Tis', core: 'Vlákno', temperament: 'Klidná', lore: 'Příběh.', designDescription: 'Digitální kresba.', affinity: 'Světlo', weakness: 'Hluk',
       spells: ['strike', 'trick', 'shield'].map((action, index) => ({ action, name: `Kouzlo ${index}`, description: 'Popis kouzla.' })) };

@@ -60,7 +60,7 @@ async function changeGroup(event: Event): Promise<void> {
 <template>
   <section v-if="owner" class="owner-player-controls" aria-label="Skupina hráčů">
     <label v-if="context?.groups.length">Skupina hráčů
-      <select :value="context.groupId ?? ''" :disabled="busy" @change="changeGroup">
+      <select class="aw-select" :value="context.groupId ?? ''" :disabled="busy" @change="changeGroup">
         <option v-if="!context.groupId" value="" disabled>Vyber skupinu</option>
         <option v-for="group in context.groups" :key="group.id" :value="group.id">{{ group.name }}</option>
       </select>
@@ -73,6 +73,6 @@ async function changeGroup(event: Event): Promise<void> {
 
 <style scoped>
 .owner-player-controls { position: relative; z-index: 2; display: grid; gap: .5rem; margin: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + .5rem) 1rem .5rem; padding: .75rem 1rem; border: 1px solid var(--aw-border-subtle); border-radius: var(--aw-radius-card); background: var(--aw-surface); }
-label { display: grid; gap: .35rem; }
-select { width: 100%; min-height: 2.75rem; }
+label { display: grid; gap: .35rem; min-width: 0; }
+select { width: 100%; min-width: 0; min-height: 2.75rem; }
 </style>

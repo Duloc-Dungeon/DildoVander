@@ -9,6 +9,14 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('progressive character entrance', () => {
+  it('keeps the general introduction when generated text contains a serialized null', async () => {
+    const view = mount(CharacterEntrance, { props: { ...initial, character, artwork: { status: 'running', loadingMessage: 'null', welcome: { ...welcome, joke: ' NULL ' } } } });
+    try {
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(view.attributes('data-entrance')).toBe('waiting');
+      expect(view.get('.entrance-joke').text()).toContain('Slavná osoba se ještě hledá');
+    } finally { view.unmount(); }
+  });
   it('shows and clears the display label without changing the character name', async () => {
     const view = mount(CharacterEntrance, { props: { ...initial, character: { ...character, label: 'Petr' }, failed: true } });
     try {
