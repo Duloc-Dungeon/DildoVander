@@ -61,7 +61,7 @@ export async function createWorkshopFixtureServer(port = 0, { reference = false 
       if (url.pathname === `${base}/sessions` && request.method === 'POST') {
         session ??= { id, profileId: 'synthetic-profile', profileRevision: 1, tier: JSON.parse(body).upgrade ? 2 : 1, status: 'asking', question: null, steps: [], messages: [], wand: null, artwork: null };
       } else if (request.method === 'GET' && session?.status === 'generating') session = complete();
-      else if (url.pathname.endsWith('/artwork/retry')) session.artwork = { locator, assetId: locator, status: 'ready', canRetry: false, version: 1, synthetic: !reference };
+      else if (url.pathname.endsWith('/artwork/retry')) session.artwork = { locator, assetId: locator, status: 'ready', canRetry: false, canRepair: true, version: 1, synthetic: !reference };
       else if (url.pathname.endsWith('/finish')) session.status = 'generating';
       else if (url.pathname.endsWith('/messages') && request.method === 'POST') {
         const message = JSON.parse(body); exchange++;

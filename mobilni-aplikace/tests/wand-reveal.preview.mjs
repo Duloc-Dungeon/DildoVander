@@ -12,4 +12,4 @@ await fetch(base);
 await fetch(`${base}/sessions/${session.id}/artwork/retry`, { method: 'POST', body: '{}' });
 console.log(`Saved-reference preview: ${fixture.origin}${waitingRoom ? '/launch' : '/play/wand'}`);
 console.log(waitingRoom ? 'Use the mirror replay control to repeat the waiting-room reveal.'
-  : 'Reload to replay the full reveal. Pointer movement only bends an active reveal.');
+  : 'Saved artwork stays static on reload. The living-trunk browser test exercises a newly completed reveal.');

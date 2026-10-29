@@ -334,7 +334,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
     </ol>
     <div class="trunk-workshop__scene" :data-artwork-visible="!wand || artworkState === 'ready'">
       <div class="trunk-workshop__presentation">
-        <TrunkStage v-show="!wand || artworkState === 'ready'" :stage="stage" :activity-label="activityLabel" :assistant-output-level="outputLevel" :wand-artwork-url="artworkUrl" :wand-name="wand?.name" :artwork-status="artworkState" :show-caption="false" :show-artwork-status="false" @artwork-loaded="artworkDecoded = true" @artwork-error="artworkError = 'Ilustraci se nepodařilo načíst.'" />
+        <TrunkStage v-show="!wand || artworkState === 'ready'" :stage="stage" :activity-label="activityLabel" :assistant-output-level="outputLevel" :wand-artwork-url="artworkUrl" :wand-name="wand?.name" :artwork-status="artworkState" :animate-reveal="newlyCompleted" :show-caption="false" :show-artwork-status="false" @artwork-loaded="artworkDecoded = true" @artwork-error="artworkError = 'Ilustraci se nepodařilo načíst.'" />
         <div v-if="wand && (artworkMessage || session?.artwork?.canRepair)" class="trunk-workshop__artwork-notice">
           <p v-if="artworkMessage" role="status">{{ artworkMessage }}</p>
           <button v-if="session?.artwork?.canRetry || artworkError" type="button" class="trunk-workshop__text-action" :disabled="busy" @click="artworkAction()">Zkusit ilustraci znovu</button>
@@ -406,9 +406,9 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__conversation { display: grid; align-content: start; gap: 1rem; min-width: 0; }
 .trunk-workshop__hint { color: var(--wns-muted); font-size: .9rem; line-height: 1.5; }
 .trunk-workshop__finish { display: grid; gap: .65rem; padding-top: 1rem; border-top: 1px solid var(--wns-line); }
-.trunk-workshop__artwork-notice { display: grid; justify-items: center; gap: .5rem; padding: 1rem; text-align: center; }
+.trunk-workshop__artwork-notice { display: grid; justify-items: center; gap: .5rem; padding: .5rem; color: var(--wns-text); text-align: center; }
 .trunk-workshop__artwork-notice p { margin: 0; }
-.trunk-workshop__artwork-notice .trunk-workshop__text-action { color: inherit; text-align: center; }
+.trunk-workshop__artwork-notice .trunk-workshop__text-action { color: var(--wns-mint); text-align: center; }
 .trunk-workshop__conversation :is(p,h2) { margin: 0; }
 .trunk-workshop__question { font-size: clamp(1.25rem, 5vw, 1.65rem); line-height: 1.4; font-weight: 650; }
 .trunk-workshop__conversation progress { width: 100%; height: .3rem; accent-color: var(--wns-mint); }
@@ -424,8 +424,9 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__transcript li p { white-space: pre-wrap; margin: .5rem 0; }
 .trunk-workshop__leave { color: var(--wns-muted); min-height: 44px; display: inline-flex; align-items: center; }
 .trunk-workshop__verdict { padding: 1.25rem; border-radius: var(--wns-radius-card); background: var(--wns-violet); color: var(--wns-on-violet); }
-.trunk-workshop[data-result='true'] .trunk-workshop__presentation { display: grid; width: min(100%, clamp(15rem, calc(66.666svh - 15rem), 30rem)); aspect-ratio: 2 / 3; padding: 0; margin-inline: auto; }
-.trunk-workshop[data-result='true'] .trunk-workshop__presentation > * { grid-area: 1 / 1; align-self: center; min-width: 0; }
+.trunk-workshop[data-result='true'] .trunk-workshop__presentation { display: grid; gap: .5rem; width: min(100%, clamp(15rem, calc(66.666svh - 15rem), 30rem)); padding: 0; margin-inline: auto; background: transparent; overflow: visible; }
+.trunk-workshop[data-result='true'] .trunk-workshop__presentation > * { min-width: 0; }
+.trunk-workshop[data-result='true'] .trunk-workshop__presentation :deep(.trunk-stage) { background: var(--wns-violet); color: var(--wns-on-violet); border-radius: var(--wns-radius-card); overflow: hidden; }
 .trunk-workshop[data-result='true'] :deep(.trunk-stage__artwork) { width: 100%; min-height: 0; aspect-ratio: 2 / 3; }
 .trunk-workshop[data-result='true'] :deep(.trunk-stage__wand) { max-height: none; }
 .trunk-workshop__announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -457,7 +458,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 }
 .trunk-workshop__presentation { box-sizing: border-box; padding: .75rem; background: var(--wns-amber); color: var(--wns-on-amber); border-radius: var(--wns-radius-card); overflow: hidden; }
 .trunk-workshop__presentation :deep(.trunk-stage) { color: inherit; }
-.trunk-workshop[data-stage='forging'] .trunk-workshop__presentation, .trunk-workshop[data-result='true'] .trunk-workshop__presentation { background: var(--wns-violet); color: var(--wns-on-violet); }
+.trunk-workshop[data-stage='forging'] .trunk-workshop__presentation { background: var(--wns-violet); color: var(--wns-on-violet); }
 .trunk-workshop[data-stage='unavailable'] .trunk-workshop__presentation, .trunk-workshop[data-stage='error'] .trunk-workshop__presentation { background: var(--wns-surface-raised); color: var(--wns-muted); }
 .trunk-workshop__conversation { padding-block: .5rem; }
 .trunk-workshop .trunk-workshop__conversation .trunk-workshop__greeting { font-size: clamp(1.5rem, 3vw, 2.2rem); line-height: 1.2; letter-spacing: -.025em; text-wrap: balance; }
