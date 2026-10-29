@@ -25,7 +25,7 @@ function match(state) {
   return { id, mode: state === 'yolo' ? 'yolo' : ['tactical','loadout'].includes(state) ? 'tactical' : state === 'boss' ? 'boss' : 'quick', status: ['result', 'early-result', 'adult', 'yolo'].includes(state) ? 'complete' : state === 'incoming' ? 'incoming' : 'active',
     revision: 3, canAccept: state === 'incoming', canCancel: false,
     opponent: { id: 'two', displayName: state === 'long' ? 'Eliška z NeuvěřitelněDlouhéhoKouzelnickéhoRodu' : 'Eliška', xp: 24, matchesPlayed: 3,
-      ...(!['boss', 'yolo'].includes(state) ? { wandArtworkUrl: `/app/v1/game/matches/${id}/opponent/wand-artwork?revision=${artworkHashes[opponentKind]}`, wandName: wandSnapshot(opponentKind).name, wandSynthetic: true } : {}) },
+      ...(state !== 'boss' ? { wandArtworkUrl: `/app/v1/game/matches/${id}/opponent/wand-artwork?revision=${artworkHashes[opponentKind]}`, wandName: wandSnapshot(opponentKind).name, wandSynthetic: true } : {}) },
     rounds: ['result', 'adult'].includes(state) ? [{ index: 1, playerChoice: 'trick', opponentChoice: 'shield', winner: 'player', playerPoints: 2, opponentPoints: 0 }] : [],
     completedRounds: state === 'early-result' ? 4 : ['result', 'adult'].includes(state) ? 7 : 0, totalRounds: ['tactical','loadout'].includes(state) ? 8 : state === 'boss' ? 12 : 7, block: 1,
     playerScore: state === 'early-result' ? 4 : state === 'adult' ? 3 : state === 'result' ? 5 : 0, opponentScore: state === 'adult' ? 5 : state === 'result' ? 3 : 0,
@@ -40,6 +40,10 @@ function match(state) {
 function teamMatch(state, halftimeEndsAt) {
   return { id, status: state === 'team-half' ? 'halftime' : 'active', revision: 4,
     teamMembers:['one','two'], opponents:['three','four'], acceptedBy:['one','two','three','four'],
+    opponentWands: Object.fromEntries([['three', 'thorn'], ['four', 'moon']].map(([user, kind]) => [user, {
+      wandArtworkUrl: `/app/v1/game/teams/${id}/opponents/${user}/wand-artwork?revision=${artworkHashes[kind]}`,
+      wandName: wandSnapshot(kind).name, wandSynthetic: true,
+    }])),
     rounds:[], teamScore:3, opponentScore:2, completedRounds:state === 'team-half' ? 4 : 1,
     ownSparks:2, ownInventory:{strike:2,trick:2,shield:2}, ownChoiceLocked:false, allFourLocked:[false,false,false,false],
     halftimeEndsAt, xpAwarded:0, sparkBalances:{one:2,two:1,three:2,four:2}, ownTransferLocked:false, onTeamA:true };
@@ -86,6 +90,13 @@ export async function createGameFixtureServer(port = 0) {
     }
     if (url.pathname === `/app/v1/game/matches/${id}/opponent/wand-artwork`) {
       const kind = wandKind === 'moon' ? 'thorn' : 'moon';
+      if (request.method !== 'GET' || url.search !== `?revision=${artworkHashes[kind]}`) return json({}, 404);
+      response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      response.end(await readFile(new URL(`./generated-wands/${kind}.png`, import.meta.url))); return;
+    }
+    const teamArtwork = url.pathname.match(new RegExp(`^/app/v1/game/teams/${id}/opponents/(three|four)/wand-artwork$`));
+    if (teamArtwork) {
+      const kind = teamArtwork[1] === 'three' ? 'thorn' : 'moon';
       if (request.method !== 'GET' || url.search !== `?revision=${artworkHashes[kind]}`) return json({}, 404);
       response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
       response.end(await readFile(new URL(`./generated-wands/${kind}.png`, import.meta.url))); return;

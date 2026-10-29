@@ -4,7 +4,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Kufr.Backend.Features.Access;
+using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
+using Kufr.Backend.Features.Keepsakes;
 using Kufr.Backend.Features.Launch;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Data.Sqlite;
@@ -24,7 +26,9 @@ internal sealed record GameTeamView(string Id, string Status, long Revision,
     IReadOnlyList<GameTeamRound> Rounds, int TeamScore, int OpponentScore, int CompletedRounds,
     int OwnSparks, IReadOnlyDictionary<string,int> OwnInventory, bool OwnChoiceLocked, IReadOnlyList<bool> AllFourLocked,
     long? HalftimeEndsAt, string? Result, int XpAwarded,
-    IReadOnlyDictionary<string,int> SparkBalances, bool OwnTransferLocked, bool OnTeamA, string RulesVersion = "mobile-game-v0.3");
+    IReadOnlyDictionary<string,int> SparkBalances, bool OwnTransferLocked, bool OnTeamA, string RulesVersion = "mobile-game-v0.3",
+    IReadOnlyDictionary<string, GameTeamOpponentWand>? OpponentWands = null);
+internal sealed record GameTeamOpponentWand(string WandArtworkUrl, string WandName, bool WandSynthetic);
 internal sealed record GameTeamsLobby(IReadOnlyList<GameTeamView> Teams);
 
 internal sealed partial class GameStore
@@ -364,12 +368,35 @@ internal static class GameTeamEndpoints
         {
             if (request.OpponentIds is null || request.OpponentIds.Count != 2) { throw new GameFault(400, "team_participants_invalid"); }
             await EnsureLiveParticipants(context, [User(context), request.PartnerId, .. request.OpponentIds]);
-            return Results.Ok(store.CreateTeamMatch(Group(context), User(context), request, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+            var result = store.CreateTeamMatch(Group(context), User(context), request, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            return Results.Ok(await WithOpponentWandsAsync(result, context));
         });
         group.MapGet("/{id}", async (string id, HttpContext context, GameStore store) =>
         {
             var result = store.ReadTeamMatch(id, Group(context), User(context), DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-            await EnsureLiveParticipants(context, result.TeamMembers.Concat(result.Opponents)); return Results.Ok(result);
+            await EnsureLiveParticipants(context, result.TeamMembers.Concat(result.Opponents));
+            return Results.Ok(await WithOpponentWandsAsync(result, context));
+        });
+        group.MapGet("/{id}/opponents/{opponentId}/wand-artwork", async (string id, string opponentId,
+            string? revision, HttpContext context, GameStore store) =>
+        {
+            var match = store.ReadTeamMatch(id, Group(context), User(context), DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            await EnsureLiveParticipants(context, match.TeamMembers.Concat(match.Opponents));
+            if (!match.Opponents.Contains(opponentId, StringComparer.Ordinal)
+                || revision is not { Length: 64 } || revision.Any(character => !Uri.IsHexDigit(character))
+                || context.RequestServices.GetService<KeepsakeStore>() is not { } keepsakes)
+            {
+                return ApiProblem.Create(context, 404, "game_wand_artwork_unavailable");
+            }
+            var artwork = await GameEndpoints.ReadCurrentOpponentWandArtworkAsync(opponentId, context,
+                context.RequestServices.GetRequiredService<CharacterProfileStore>(), keepsakes, revision, includeBytes: true);
+            if (artwork?.Bytes is not { } bytes)
+            {
+                return ApiProblem.Create(context, 404, "game_wand_artwork_unavailable");
+            }
+            context.Response.Headers.CacheControl = "no-store";
+            context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            return Results.File(bytes, "image/png", enableRangeProcessing: false);
         });
         foreach (var action in new[] { "accept", "decline", "cancel", "choose", "transfer" })
         {
@@ -377,9 +404,30 @@ internal static class GameTeamEndpoints
             {
                 var prior = store.ReadTeamMatch(id, Group(context), User(context), DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                 await EnsureLiveParticipants(context, prior.TeamMembers.Concat(prior.Opponents));
-                return Results.Ok(store.MutateTeam(id, Group(context), User(context), action, request, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+                var result = store.MutateTeam(id, Group(context), User(context), action, request, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                return Results.Ok(await WithOpponentWandsAsync(result, context));
             });
         }
+    }
+    private static async Task<GameTeamView> WithOpponentWandsAsync(GameTeamView match, HttpContext context)
+    {
+        if (context.RequestServices.GetService<KeepsakeStore>() is not { } keepsakes)
+        {
+            return match;
+        }
+        var profiles = context.RequestServices.GetRequiredService<CharacterProfileStore>();
+        var opponents = new Dictionary<string, GameTeamOpponentWand>(StringComparer.Ordinal);
+        foreach (var opponentId in match.Opponents)
+        {
+            var artwork = await GameEndpoints.ReadCurrentOpponentWandArtworkAsync(opponentId, context, profiles, keepsakes);
+            if (artwork is not null)
+            {
+                opponents[opponentId] = new(
+                    $"/app/v1/game/teams/{match.Id}/opponents/{Uri.EscapeDataString(opponentId)}/wand-artwork?revision={Uri.EscapeDataString(artwork.Sha256)}",
+                    artwork.Name, artwork.Synthetic);
+            }
+        }
+        return match with { OpponentWands = opponents };
     }
     private static string User(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new GameFault(401, "account_required");
     private static string Group(HttpContext context) => (string)context.Items["team-group"]!;

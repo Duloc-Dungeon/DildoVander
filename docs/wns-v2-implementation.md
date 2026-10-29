@@ -1,5 +1,32 @@
 # WNS v2 — implementace a skutečně provedené kontroly
 
+## Týmová hra a trénink — 29. října 2026
+
+- `TeamView` a `team.css` přebírají dvoubarevné jeviště, ukazují všechny čtyři
+  účastníky a jejich skutečné potvrzení tahu. Osobní dvojice a její poslední
+  zveřejněná kouzla mají vlastní světelný střet; týmové body zůstávají serverové.
+  Vlastní hůlka pochází z osobního archivu; soupeřova z nové autorizované
+  týmové projekce `opponentWands`, podle stejné osobní dvojice jako zveřejněná výměna.
+- Mapování publikačního pořadí kouzel je ověřené pro obě strany, oba hráčské
+  sloty a obě poloviny. Pořadí B kouzel v DTO je po přestávce již přepárované;
+  potvrzení tahů naopak zůstává kanonické A0/A1/B0/B1.
+- Trénink používá stejné nasvícení a pravdivý lokální verdikt, dál bez XP,
+  úkolů nebo herních API zápisů. Opakování vyčistí skóre i výsledek.
+  Cvičný soupeř má obecnou fialovou hůlku, označenou jako cvičnou.
+- YOLO ukazuje skutečné hůlky obou hráčů staticky; příběh neprodukuje
+  domyšlené RPS tahy. Nedostupná ilustrace přejde na neutrální obrys.
+- Týmová PNG cesta kontroluje účastníka, skupinu, protější tým, aktuální
+  publikaci a revizi; používá stejné schvalování jako 1 na 1 a `no-store`/`nosniff`.
+  HTTP testy pokrývají odmítnutí spoluhráče/cizího účtu, stažení ilustrace,
+  starou revizi a odebraný přístup účastníka.
+- `test:team-practice:browser` prošel na 320/390/768/1280 px: soukromá volba,
+  potvrzení čtyř hráčů, odhalení dvojice, přestávka/předání/expirace, druhá
+  polovina, konečné skóre, dokončení a opakování tréninku, klávesnice,
+  omezený pohyb a 200% text. Ověřuje také přesné dekódované pixely schválené
+  hůlky před střídáním a po něm, odstranění odvolané ilustrace, cvičnou hůlku
+  a statické hůlky v YOLO. Data jsou syntetická; nejde o živý multiplayer
+  ani o ověření fyzických telefonů.
+
 ## Boss a hráčské duely — 29. října 2026
 
 - `GameBossStage`, `GameBossEnergy` a `boss.css` doplňují stínové představení

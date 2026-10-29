@@ -16,6 +16,7 @@ internal static class GameWandArtworkTests
         {
             await VerifyPublishedProjectionAsync(directory);
             VerifyMatchParticipantFence(directory);
+            await MobileGameTests.RunTeamWandArtworkHttpAsync();
             Console.WriteLine("Game wand artwork projection and match participant checks passed.");
         }
         finally

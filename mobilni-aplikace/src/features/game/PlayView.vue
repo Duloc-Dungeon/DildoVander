@@ -71,6 +71,12 @@ const completed = computed(() => practice.value ? practiceDone.value : match.val
 const tableDuel = computed(() => practice.value || Boolean(match.value && match.value.mode !== 'yolo'
   && (match.value.status === 'active' || match.value.status === 'complete')));
 const playerDuel = computed(() => tableDuel.value && (match.value?.mode === 'quick' || match.value?.mode === 'tactical'));
+const theatricalDuel = computed(() => practice.value || playerDuel.value);
+const duelResult = computed(() => {
+  if (!completed.value) return undefined;
+  if (!practice.value) return match.value?.result;
+  return playerScore.value === opponentScore.value ? 'draw' : playerScore.value > opponentScore.value ? 'win' : 'loss';
+});
 const roundCount = computed(() => practice.value ? 7 : match.value?.totalRounds ?? 0);
 const completedRoundCount = computed(() => practice.value ? practiceRounds.value.length : match.value?.completedRounds ?? 0);
 const playerName = computed(() => account.value?.roles?.includes('Owner') ? 'Olivander'
@@ -303,8 +309,8 @@ onBeforeUnmount(() => {
 
 <template>
   <SceneShell class="game-scene game-experience"
-    :class="{ 'responsive-table': tableDuel, 'game-duel-scene': playerDuel, 'game-boss-scene': bossSetup && bossProfile?.revealed || match?.mode === 'boss' }"
-    :data-duel-result="playerDuel && completed ? match?.result : undefined"
+    :class="{ 'responsive-table': tableDuel, 'game-duel-scene': theatricalDuel, 'game-practice-scene': practice, 'game-boss-scene': bossSetup && bossProfile?.revealed || match?.mode === 'boss' }"
+    :data-duel-result="theatricalDuel ? duelResult : undefined"
     :data-boss-phase="match?.mode === 'boss' ? match.phase : undefined" labelled-by="game-title">
     <div v-if="bossSetup && bossProfile?.revealed || match?.mode === 'boss'" :key="match?.phase" class="boss-scene-light" aria-hidden="true" />
     <div class="game-content">
@@ -367,6 +373,8 @@ onBeforeUnmount(() => {
         <PaperSurface v-else-if="match?.needsLoadout" class="game-paper"><GameLoadouts :key="match.block" :busy="busy" :uncertain="uncertain" :locked="match.ownLoadoutLocked" @confirm="loadout => mutate('loadout', { loadout })" /></PaperSurface>
         <template v-else-if="practice || match?.status === 'active' || completed || match?.mode === 'yolo'">
           <div v-if="match?.mode === 'yolo'" class="game-yolo">
+            <GameClash :key="match.id" :wand-url="playerWand.url.value" :wand-name="playerWand.name.value" :synthetic="playerWand.synthetic.value"
+              :opponent-wand-url="opponentWand.url.value" :opponent-wand-name="match.opponent.wandName ?? undefined" :opponent-synthetic="match.opponent.wandSynthetic" />
             <GameCharacter character="commentator" :expression="completed ? 2 : 0" />
             <PaperSurface class="game-paper">
               <p class="game-eyebrow">Rozhodčí bez licence</p><h2>Bohumil Křivopísk</h2>
@@ -405,14 +413,14 @@ onBeforeUnmount(() => {
               <div><span>{{ opponentName }}</span><strong :key="`opponent-${opponentScore}`">{{ opponentScore }}</strong></div>
               <span class="game-player-avatar game-player-avatar--opponent" aria-hidden="true">{{ opponentName.slice(0, 1) }}</span>
             </div>
-            <div :class="{ 'boss-round': match?.mode === 'boss', 'duel-round': playerDuel }">
+            <div :class="{ 'boss-round': match?.mode === 'boss', 'duel-round': theatricalDuel }">
               <p class="game-round-label">{{ completed ? 'Dohráno' : `Výměna ${Math.min((practice ? practiceRounds.length : match!.completedRounds) + 1, practice ? 7 : match!.totalRounds)} ze ${practice ? 7 : match!.totalRounds}` }}<span v-if="match?.mode === 'tactical'"> · blok {{ match.block }}</span></p>
               <div class="game-round-dots" aria-hidden="true"><span v-for="round in roundCount" :key="round" :class="{ done: round <= completedRoundCount, current: !completed && round === completedRoundCount + 1 }" /></div>
             </div>
             <div v-if="match?.mode !== 'boss' || lastRound" class="game-table-stage" :class="{ 'game-table-stage--complete': completed }">
-            <GameClash v-if="match?.mode !== 'boss'" :key="practice ? 'practice' : match?.id" :theatrical="playerDuel" :round="lastRound" :locked="match?.ownChoiceLocked" :wand-url="playerWand.url.value" :wand-name="playerWand.name.value" :synthetic="playerWand.synthetic.value" :opponent-wand-url="opponentWand.url.value" :opponent-wand-name="match?.opponent.wandName ?? undefined" :opponent-synthetic="match?.opponent.wandSynthetic" />
+            <GameClash v-if="match?.mode !== 'boss'" :key="practice ? 'practice' : match?.id" :theatrical="theatricalDuel" :round="lastRound" :locked="match?.ownChoiceLocked" :wand-url="playerWand.url.value" :wand-name="playerWand.name.value" :synthetic="playerWand.synthetic.value" :practice-opponent="practice" :opponent-wand-url="opponentWand.url.value" :opponent-wand-name="match?.opponent.wandName ?? undefined" :opponent-synthetic="match?.opponent.wandSynthetic" />
             <PaperSurface v-if="lastRound" class="game-paper game-reveal" :key="completedRoundCount" aria-live="polite" aria-atomic="true">
-              <p :class="playerDuel ? 'duel-round-verdict' : 'game-eyebrow'" :data-winner="playerDuel ? lastRound.winner : undefined">{{ playerDuel ? duelRoundTitle : 'Poslední odhalení' }}</p>
+              <p :class="theatricalDuel ? 'duel-round-verdict' : 'game-eyebrow'" :data-winner="theatricalDuel ? lastRound.winner : undefined">{{ theatricalDuel ? duelRoundTitle : 'Poslední odhalení' }}</p>
               <p v-if="lastRound">{{ roundText(lastRound) }}</p>
               <p v-else>Úder přeruší lest. Lest obejde štít. Štít zastaví úder. Oba hráči volí tajně.</p>
             </PaperSurface>

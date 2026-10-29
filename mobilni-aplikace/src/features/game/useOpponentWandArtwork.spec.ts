@@ -23,6 +23,36 @@ beforeEach(() => {
 });
 afterEach(() => { wrapper.unmount(); vi.restoreAllMocks(); });
 describe('approved match opponent artwork', () => {
+  const teamPath = (opponent = 'two', revision = 'b'.repeat(64)) => `/app/v1/game/teams/${id}/opponents/${opponent}/wand-artwork?revision=${revision}`;
+  const team = (path = teamPath()) => ({ id, opponents: ['two', 'three'], opponentWands: { two: { wandArtworkUrl: path }, three: { wandArtworkUrl: teamPath('three') } } });
+  it('loads the selected team opponent and replaces it after the pair changes', async () => {
+    await state.refreshTeam(team(), 'two');
+    await state.refreshTeam(team(), 'two');
+    expect(api.transport).toHaveBeenCalledTimes(1);
+    await state.refreshTeam(team(), 'three');
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:opponent');
+    expect(api.transport).toHaveBeenLastCalledWith(teamPath('three'), expect.objectContaining({ cache: 'no-store', redirect: 'error' }));
+  });
+  it.each([teamPath('three'), path, teamPath() + '&account=other', teamPath() + '\n', 'https://foreign.invalid/image.png'])('rejects an unbound team image: %s', async invalid => {
+    await state.refreshTeam(team(invalid), 'two');
+    expect(api.transport).not.toHaveBeenCalled();
+  });
+  it('clears a withdrawn team image and never accepts a teammate', async () => {
+    await state.refreshTeam(team(), 'two');
+    await state.refreshTeam({ id, opponents: ['two', 'three'] }, 'two');
+    expect(state.url.value).toBe('');
+    await state.refreshTeam({ ...team(), opponentWands: { one: { wandArtworkUrl: teamPath('one') } } }, 'one');
+    expect(api.transport).toHaveBeenCalledTimes(1);
+  });
+  it('discards a late image for the previous team pairing', async () => {
+    let resolve!: (response: Response) => void;
+    api.transport.mockReturnValueOnce(new Promise<Response>(done => { resolve = done; }));
+    const previous = state.refreshTeam(team(), 'two');
+    await state.refreshTeam(team(), 'three');
+    resolve(new Response(new Blob(['old image'], { type: 'image/png' })));
+    await previous;
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  });
   it('loads only the exact match and revision route and caches unchanged metadata', async () => {
     await state.refresh(match()); await state.refresh(match());
     expect(api.transport).toHaveBeenCalledTimes(1);

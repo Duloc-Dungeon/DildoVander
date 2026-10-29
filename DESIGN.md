@@ -431,6 +431,10 @@ Scéna staví dvě celé hůlky proti sobě. Osobní ilustrace mají svislou kom
 2:3, skutečnou průhlednost a rozdílné okraje; scéna je natočí hroty ke středu,
 zachová rukojeť i hrot a nepřebarvuje jejich materiál. Název patří pod příslušnou
 hůlku. Nedostupný obrázek zastupuje jednoduchý neutrální obrys.
+Rychlý a taktický duel, YOLO i 2 na 2 používají skutečnou schválenou ilustraci
+soupeře přes autorizovanou cestu konkrétního zápasu a revize. YOLO ukazuje
+hůlky staticky vedle příběhu, bez domyšlené výměny kouzel. Změna soupeře,
+revize, účtu nebo odvolání obrázku odstraní předchozí ilustraci.
 
 Zveřejněná výměna spustí nejvýše dvousekundový střet: úder má ostrou stopu,
 lest vlnivý proud a štít oblouk v místě nárazu. Jantar a fialová rozlišují
@@ -458,7 +462,8 @@ výměny a možnost ukončit aktivní pokus zůstávají čitelné bez animace.
 
 ### Duely mezi hráči
 
-`game-duel-scene` platí pro aktivní a dokončené rychlé a taktické duely.
+`game-duel-scene` platí pro aktivní a dokončené rychlé a taktické duely,
+lokální trénink a samostatně upravenou týmovou scénu.
 Hráč má jantarovou, soupeř fialovou stranu; stejné barvy propojují iniciály,
 hůlky a výsledek zveřejněné výměny. Skóre používá skutečná herní jména a body.
 Počet výměn a průběh stojí na jednom pružném řádku jako u bosse.
@@ -473,7 +478,32 @@ vysvětluje stejný stav jako světlo; konečný výsledek zápasu vlastní samo
 Omezený pohyb ponechá v obou scénách úplný statický stav. PvP efekt se
 nepřehrává při načtení historie, stejném pollingu, skrytém dokumentu nebo
 mimo viditelnou scénu. Herní pravidla, souhlasy a preference zvuku se nemění.
-Trénink, YOLO a týmové obrazovky tento místní výtvarný režim nepřebírají.
+YOLO tento místní výtvarný režim nepřebírá.
+
+Trénink zůstává označený „bez XP“. Stejná scéna a slovní verdikt reagují
+na skutečně odehranou lokální výměnu; nevytvářejí herní API zápisy ani odměnu.
+Nový trénink vynuluje místní skóre i nasvícení výsledku.
+Soupeř v tréninku má výslovně označenou „Cvičnou hůlku“ z existující fialové
+ilustrace. Její diagonální kompozice se natočí hrotem ke středu scény.
+
+### Týmová hra 2 na 2
+
+`TeamView` ukazuje oba týmy po dvou jménech, skutečné týmové skóre a potvrzení
+tahu každého hráče. Kanonické pořadí `allFourLocked` (A0, A1, B0, B1) se
+překládá podle strany diváka. Neznámý stav není nehotový tah ani domyšlený počet.
+Přestávka zachovává serverový termín, předání jiskry a zřetelné potvrzení;
+scéna střetu v ní uvolní místo těmto ovládacím prvkům.
+
+Jednorázový střet zobrazuje pouze osobní dvojici zveřejněné výměny. Její
+známá cyklická pravidla určují světlo, zatímco týmové body i konečný výsledek
+zůstávají serverové. Popisek odděluje poslední dvojici od následujícího soupeře.
+Publikovaná kouzla B už mají po přestávce pořadí dvojic; toto pořadí se nesmí
+zaměnit s kanonickým pořadím jmen a potvrzených tahů.
+Týmová projekce poskytuje `opponentWands` podle kanonických ID obou soupeřů.
+Scéna vybere jméno i autorizovaný obrázek stejné osobní dvojice, kterou ukazuje
+zveřejněná výměna. Potvrzení nové dvojice se nesmí spojit s ilustrací té staré.
+Chybějící nebo odvolaný obrázek zastoupí neutrální obrys; soukromé URL jiných
+domén se nepoužívá. Načtená výměna zůstává statická stejně jako v duelu.
 
 ### Kaskáda a rozsah
 

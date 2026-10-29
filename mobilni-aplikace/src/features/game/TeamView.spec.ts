@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 
 const api = vi.hoisted(() => ({
   gameRequest: vi.fn(),
+  accountRequest: vi.fn(),
   setAccount: (_value: unknown) => {},
 }));
 
@@ -11,16 +12,17 @@ vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
   const account = ref<unknown>({ id: 'one' });
   api.setAccount = value => { account.value = value; };
-  return { account };
+  return { account, accountRequest: api.accountRequest };
 });
 
-vi.mock('./game', () => ({
+vi.mock('./game', async () => ({
   actions: [
     { id: 'strike', name: 'Úder', beats: 'Přeruší lest' },
     { id: 'trick', name: 'Lest', beats: 'Obejde štít' },
     { id: 'shield', name: 'Štít', beats: 'Zastaví úder' },
   ],
   actionName: (choice?: string) => choice ?? '—',
+  practiceRound: (await vi.importActual<typeof import('./game')>('./game')).practiceRound,
   gameRequest: api.gameRequest,
   gameErrorText: () => 'Obnov stav.',
   GameError: class GameError extends Error { constructor(public status: number) { super(); } },
@@ -75,12 +77,13 @@ async function render() {
     ],
   });
   await router.push(`/play/team/${matchId}`);
-  wrapper = mount(TeamView, { global: { plugins: [router] } });
+  wrapper = mount(TeamView, { global: { plugins: [router], stubs: { GameClash: true } } });
   await flushPromises();
   return wrapper;
 }
 
 beforeEach(() => {
+  api.accountRequest.mockResolvedValue({ wand: null });
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(epoch);
   currentMatch = teamMatch();
@@ -96,6 +99,62 @@ afterEach(() => {
 });
 
 describe('team duel halftime', () => {
+  it.each([
+    [true, 0, 1, 'strike', 'shield', 'opponent'], [true, 1, 1, 'trick', 'strike', 'opponent'],
+    [false, 0, 1, 'shield', 'strike', 'player'], [false, 1, 1, 'strike', 'trick', 'player'],
+    [true, 0, 5, 'strike', 'strike', 'draw'], [true, 1, 5, 'trick', 'shield', 'player'],
+    [false, 0, 5, 'shield', 'trick', 'opponent'], [false, 1, 5, 'strike', 'strike', 'draw'],
+  ] as const)('shows the correct published pair for side A=%s slot %s round %s', async (onTeamA, position, roundIndex, ownChoice, otherChoice, winner) => {
+    const ownTeam = onTeamA ? ['one', 'two'] : ['three', 'four'];
+    const otherTeam = onTeamA ? ['three', 'four'] : ['one', 'two'];
+    const user = ownTeam[position];
+    const people = [lobby.player, ...lobby.opponents];
+    const ownPlayer = people.find(player => player.id === user)!;
+    const currentLobby = { ...lobby, player: ownPlayer, opponents: people.filter(player => player.id !== user) };
+    api.setAccount({ id: user });
+    // The server serializes B choices by pairing, rather than canonical player slot.
+    const publishedB = roundIndex <= 4 ? ['shield', 'strike'] : ['strike', 'shield'];
+    currentMatch = teamMatch({ status: 'active', onTeamA, teamMembers: ownTeam, opponents: otherTeam, completedRounds: roundIndex,
+      opponentWands: Object.fromEntries(otherTeam.map(user => [user, { wandName: `Hůlka hráče ${user}` }])),
+      rounds: [{ index: roundIndex, choiceA0: 'strike', choiceA1: 'trick', choiceB0: publishedB[0], choiceB1: publishedB[1], teamAPoints: 2, teamBPoints: 3 }] });
+    api.gameRequest.mockImplementation(async (path: string) => path === '' ? currentLobby : structuredClone(currentMatch));
+    const view = await render();
+    const round = view.getComponent({ name: 'GameClash' }).props('round');
+    expect(round).toMatchObject({ index: roundIndex, playerChoice: ownChoice, opponentChoice: otherChoice });
+    expect(round.winner).toBe(winner);
+    expect(round).not.toHaveProperty('playerPoints');
+    const pairedOpponent = otherTeam[roundIndex <= 4 ? position : 1 - position];
+    expect(view.getComponent({ name: 'GameClash' }).props('opponentWandName')).toBe(`Hůlka hráče ${pairedOpponent}`);
+    expect(view.get('.game-reveal').text()).toContain(`${ownChoice} proti ${otherChoice}`);
+    expect(view.get('.team-round-points').text()).toContain(onTeamA ? 'Tvůj tým +2 · Soupeři +3' : 'Tvůj tým +3 · Soupeři +2');
+  });
+
+  it('maps canonical A/B readiness into the B viewer roster without revealing a private choice', async () => {
+    api.setAccount({ id: 'three' });
+    currentMatch = teamMatch({ status: 'active', onTeamA: false, teamMembers: ['three', 'four'], opponents: ['one', 'two'],
+      allFourLocked: [true, false, false, true], ownChoiceLocked: false, rounds: [] });
+    const people = [lobby.player, ...lobby.opponents];
+    const currentLobby = { ...lobby, player: people.find(player => player.id === 'three')!, opponents: people.filter(player => player.id !== 'three') };
+    api.gameRequest.mockImplementation(async (path: string) => path === '' ? currentLobby : structuredClone(currentMatch));
+    const view = await render();
+    expect(view.findAll('.team-player').map(player => player.attributes('data-ready'))).toEqual(['false', 'true', 'true', 'false']);
+    expect(view.get('.team-readiness').text()).toBe('Potvrzené tahy: 2 ze 4.');
+    expect(view.getComponent({ name: 'GameClash' }).props('round')).toBeUndefined();
+    await view.get('input[value="strike"]').setValue();
+    currentMatch = teamMatch({ ...currentMatch, revision: 6, allFourLocked: [true, true, false, true] });
+    window.dispatchEvent(new Event('online')); await flushPromises();
+    expect(view.get('.team-readiness').text()).toBe('Potvrzené tahy: 3 ze 4.');
+    expect(view.get('input[value="strike"]').element).toHaveProperty('checked', true);
+    expect(view.getComponent({ name: 'GameClash' }).props('round')).toBeUndefined();
+  });
+
+  it('does not report an invented readiness count when remote states are missing', async () => {
+    currentMatch = teamMatch({ status: 'active', allFourLocked: [] });
+    const view = await render();
+    expect(view.get('.team-readiness').text()).toBe('Čekáme na stav hráčů.');
+    expect(view.text()).toContain('Stav neznámý');
+  });
+
   it('derives remaining seconds from the server deadline and stays expired after a late poll', async () => {
     const view = await render();
     expect(view.get('[role="timer"]').text()).toBe('3 s');

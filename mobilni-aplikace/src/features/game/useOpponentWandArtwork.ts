@@ -3,6 +3,17 @@ import { account, accountTransport } from '../identity/session';
 import { mediaEssence } from '../archive/client';
 import type { Match } from './game';
 
+export interface OpponentWandMetadata {
+  wandArtworkUrl?: string | null;
+  wandName?: string | null;
+  wandSynthetic?: boolean | null;
+}
+interface TeamWandScope {
+  id: string;
+  opponents: string[];
+  opponentWands?: Record<string, OpponentWandMetadata> | null;
+}
+
 /** Only the match-scoped, revision-bound route can supply the opponent's approved PNG. */
 export function useOpponentWandArtwork() {
   const url = ref('');
@@ -25,7 +36,20 @@ export function useOpponentWandArtwork() {
       || typeof path !== 'string' || /\s/.test(path) || !new RegExp(`^/app/v1/game/matches/${matchId}/opponent/wand-artwork\\?revision=[a-f0-9]{64}$`, 'i').test(path)) {
       clear(); return;
     }
-    const nextKey = `${accountId}/${matchId}/${match.opponent.id}/${path}`;
+    return load(accountId, path, `${accountId}/${matchId}/${match.opponent.id}/${path}`);
+  }
+  async function refreshTeam(match: TeamWandScope | undefined, opponentId: string | undefined) {
+    const accountId = account.value?.id;
+    const path = opponentId ? match?.opponentWands?.[opponentId]?.wandArtworkUrl : undefined;
+    const prefix = `/app/v1/game/teams/${match?.id}/opponents/${encodeURIComponent(opponentId ?? '')}/wand-artwork?revision=`;
+    if (!accountId || !match || !/^[a-f0-9]{32}$/i.test(match.id) || !opponentId
+      || !match.opponents.includes(opponentId) || typeof path !== 'string'
+      || !path.startsWith(prefix) || !/^[a-f0-9]{64}$/i.test(path.slice(prefix.length))) {
+      clear(); return;
+    }
+    return load(accountId, path, `${accountId}/${match.id}/${opponentId}/${path}`);
+  }
+  async function load(accountId: string, path: string, nextKey: string) {
     if (key === nextKey && (url.value || pending)) return pending;
     clear(); key = nextKey;
     const token = generation;
@@ -48,5 +72,5 @@ export function useOpponentWandArtwork() {
   }
   watch(() => account.value?.id, clear, { flush: 'sync' });
   onScopeDispose(clear);
-  return { url, refresh, clear };
+  return { url, refresh, refreshTeam, clear };
 }
