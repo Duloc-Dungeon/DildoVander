@@ -11,7 +11,7 @@ const defaultArtwork = fileURLToPath(new URL('../../src/assets/wns-v2/art/wand-a
 
 
 const wand = { wandId: 'synthetic-browser-wand', name: 'Tichý přístav', material: 'Jasan', core: 'Vlákno mlhy', temperament: 'Trpělivá', lore: 'Pamatuje si cestu domů.', designDescription: 'Štíhlá stříbrná hůlka.', affinity: 'Mlha', weakness: 'Spěch', combatArchetype: 'balanced', combatRulesVersion: 'wand-archetypes-v1', spells: ['strike', 'trick', 'shield'].map((action, index) => ({ action, name: ['Tichý úder', 'Mlhavý obrat', 'Noční clona'][index], description: 'Fiktivní testovací kouzlo.' })) };
-export async function createWorkshopFixtureServer(port = 0, { reference = false, curtainPreview = false } = {}) {
+export async function createWorkshopFixtureServer(port = 0, { reference = false } = {}) {
   const fixtureArtwork = reference
     ? fileURLToPath(new URL('./wand-reveal-reference/wand-reference.png', import.meta.url)) : defaultArtwork;
   const selectedWand = reference ? {
@@ -31,10 +31,6 @@ export async function createWorkshopFixtureServer(port = 0, { reference = false,
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     const json = (value, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(value)); };
-    if (curtainPreview && url.pathname === '/__preview/curtain') {
-      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      response.end(await readFile(new URL('../curtain-replay.preview.html', import.meta.url))); return;
-    }
     if (url.pathname === '/__workshop/open-night') { nightAllowed = true; return json({}); }
     if (url.pathname.startsWith('/__workshop/')) {
       state = url.pathname.split('/').at(-1); session = null; requests.length = 0; exchange = 0;

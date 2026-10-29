@@ -13,8 +13,9 @@ import { clearInvitationRegistration, getInvitationRegistration, invitationRegis
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
 import { launchCopy as copy } from './launchCopy';
-import { characterWelcomeText } from './characterWelcomeText';
+import { characterIntroductionFallback, characterIntroductionText, characterWelcomeText } from './characterWelcomeText';
 import PortraitCurtain from './PortraitCurtain.vue';
+import CharacterIntroduction from './CharacterIntroduction.vue';
 import CharacterEntrance from './CharacterEntrance.vue';
 import PrelaunchWand from './PrelaunchWand.vue';
 import SceneShell from '../../components/scene/SceneShell.vue';
@@ -45,6 +46,7 @@ const readError = ref('');
 const displayedError = computed(() => error.value || readError.value);
 const remaining = ref(0);
 const revealed = ref(false);
+const portraitReplay = ref(0);
 const workshopOpen = ref(false);
 const wandComplete = ref(false);
 const receptionSteps = ['Postava', 'Portrét', 'Hůlka', 'Čekárna'];
@@ -99,14 +101,9 @@ const statusMessage = computed(() => {
   if (registration.value?.status === 'confirmed' && registration.value.writeStarted && invitationVisibleMs.value < invitationIntroDuration) return copy.value.waiting;
   return copy.value.saved;
 });
-const finalMessage = computed(() => characterWelcomeText(state.value?.artwork?.finalMessage) || copy.value.finalFallback);
 const receptionJoke = computed(() => {
-  const artwork = state.value?.artwork;
-  const welcomeJoke = characterWelcomeText(artwork?.welcome?.joke);
-  const loadingJoke = characterWelcomeText(artwork?.loadingMessage);
-  if (canPrepareWand.value) return welcomeJoke || loadingJoke || finalMessage.value;
-  return loadingJoke || welcomeJoke
-    || 'Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.';
+  const personal = characterIntroductionText(state.value?.artwork ?? null, canPrepareWand.value);
+  return personal || characterIntroductionFallback;
 });
 const receptionStatus = computed(() => {
   if (displayedError.value || phase.value === 'failed') return '';
@@ -185,7 +182,7 @@ watch(() => registration.value?.status, status => {
   if (status === 'confirmed' && controller) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
 });
 watch(hasPortrait, ready => { if (ready) finishInvitationPresentation(); });
-watch(characterIdentity, () => { revealed.value = false; workshopOpen.value = false; wandComplete.value = false; }, { flush: 'sync' });
+watch(characterIdentity, () => { revealed.value = false; portraitReplay.value = 0; workshopOpen.value = false; wandComplete.value = false; }, { flush: 'sync' });
 watch(canPrepareWand, available => { if (!available) workshopOpen.value = false; }, { flush: 'sync' });
 function onWorkshopOpen(open: boolean): void {
   workshopOpen.value = open;
@@ -550,7 +547,7 @@ onBeforeUnmount(() => {
         </header>
         <div v-if="writing || state?.character" class="reception-introduction" :class="{ 'launch-final': canPrepareWand }">
           <p class="launch-status" role="status" aria-atomic="true">{{ receptionStatus }}</p>
-          <p class="launch-joke">{{ receptionJoke }}</p>
+          <CharacterIntroduction class="launch-joke" :active="presentationForeground" :replay-key="portraitReplay" :text="receptionJoke" />
           <template v-if="canPrepareWand && state?.artwork?.welcome">
             <p v-if="characterWelcomeText(state.artwork.welcome.identity)" class="launch-identity">{{ characterWelcomeText(state.artwork.welcome.identity) }}</p>
             <p v-if="characterWelcomeText(state.artwork.welcome.teaser)" class="launch-teaser">{{ characterWelcomeText(state.artwork.welcome.teaser) }}</p>
@@ -558,7 +555,7 @@ onBeforeUnmount(() => {
           <p v-if="portraitSource && revealed && hasPortrait" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
         </div>
       </PaperSurface>
-      <PortraitCurtain v-if="!readError || state?.character || writing" class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" :unavailable="phase === 'failed'" @revealed="revealed = $event" @failed="portrait.fail()" />
+      <PortraitCurtain v-if="!readError || state?.character || writing" class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation || portrait.pending.value" :unavailable="phase === 'failed'" @revealed="revealed = $event" @replay="portraitReplay++" @failed="portrait.fail()" />
       <p v-if="!writing && !state?.character" class="launch-text launch-status" role="status">{{ statusMessage }}</p>
     </section>
     <section v-if="state?.character || account && policy && !policy.allowed && !characterVerified" v-show="!workshopOpen" class="reception-waiting" aria-label="Čekání na večer">
@@ -658,7 +655,7 @@ onBeforeUnmount(() => {
 .launch-joke { color: var(--wns-text, #f5f5f0); font: 700 clamp(1.5rem, 6vw, 2.5rem)/1.35 var(--wns-display); letter-spacing: -.035em; }
 .launch-identity { color: var(--wns-muted, #b2b9b6); font: 500 1rem/1.55 var(--wns-display); }
 .launch-teaser, .launch-generic { color: var(--wns-muted, #b2b9b6); }
-.launch-art { overflow: visible; border-radius: 30px; background: var(--wns-violet, #c8b9fc); }
+.launch-art { overflow: visible; background: transparent; }
 .launch-form { gap: 1.25rem; }
 .launch-form .aw-input { border-radius: 14px; color: var(--wns-text, #f5f5f0); background: var(--wns-surface-raised, #222626); border-color: var(--wns-line, #343939); }
 .fixed-universe, .launch-consent, .launch-data-details { color: var(--wns-text, #f5f5f0); }

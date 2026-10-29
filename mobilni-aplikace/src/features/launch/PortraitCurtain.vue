@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import PortraitMirror from '../../components/scene/PortraitMirror.vue';
 import placeholder from '../../assets/brand/midnight/placeholder.webp';
 import userIcon from '../../assets/wns-v2/icons/regular/user.svg';
-import ViewportCurtain from '../../components/scene/ViewportCurtain.vue';
 import { presentationForeground } from './launchPresentation';
 
 const props = defineProps<{ image: string; identity: string; alt: string; preparing: boolean; unavailable?: boolean }>();
-const emit = defineEmits<{ revealed: [value: boolean]; failed: [] }>();
+const emit = defineEmits<{ revealed: [value: boolean]; failed: []; replay: [] }>();
 const stage = ref<HTMLElement>();
 const phase = ref<'closed' | 'opening' | 'open'>('closed');
 const visible = ref(false);
@@ -14,14 +14,16 @@ const reduced = ref(false);
 const storagePrefix = 'wand.portrait-seen.v1.';
 let observer: IntersectionObserver | undefined;
 let media: MediaQueryList | undefined;
+let completion: ReturnType<typeof setTimeout> | undefined;
 let generation = 0;
-const openingGeneration = ref(0);
 const open = computed(() => phase.value !== 'closed');
 function seen(): boolean {
   try { return !!props.identity && localStorage.getItem(storagePrefix + props.identity) === 'seen'; } catch { return false; }
 }
 function cancel(): void {
   generation++;
+  if (completion) clearTimeout(completion);
+  completion = undefined;
   if (!seen()) { phase.value = 'closed'; emit('revealed', false); }
 }
 function finish(expected: number): void {
@@ -36,12 +38,11 @@ function evaluate(): void {
   if (!visible.value || !presentationForeground.value) { cancel(); return; }
   if (phase.value !== 'closed') return;
   const expected = ++generation;
-  openingGeneration.value = expected;
   phase.value = reduced.value ? 'open' : 'opening';
   if (reduced.value) {
     // Two paints establish an actual static presentation; no animationend dependency.
     requestAnimationFrame(() => requestAnimationFrame(() => finish(expected)));
-  }
+  } else completion = setTimeout(() => finish(expected), 1_100);
 }
 function motion(event: MediaQueryListEvent): void { reduced.value = event.matches; cancel(); evaluate(); }
 function leaving(): void { visible.value = false; cancel(); }
@@ -64,21 +65,19 @@ onBeforeUnmount(() => { cancel(); observer?.disconnect(); media?.removeEventList
 
 <template>
   <div ref="stage" class="portrait-stage" :class="{ 'is-open': open || unavailable, 'is-preparing': preparing, 'reduced-motion': reduced }" :data-curtain="phase">
+    <PortraitMirror :key="identity" :open="open || !!unavailable" :active="presentationForeground" :preparing="preparing && !image && !unavailable" :animate-reveal="phase === 'opening'" :replayable="phase === 'open' && !!image && !unavailable" @replay="emit('replay')">
     <img v-if="image" class="portrait-stage-image" :src="image" :alt="alt" :aria-hidden="phase !== 'open'" fetchpriority="high" @error="emit('failed')" />
     <img v-else-if="unavailable" class="portrait-missing-avatar" :src="userIcon" alt="" aria-hidden="true" />
     <img v-else class="portrait-stage-placeholder" :src="placeholder" alt="" aria-hidden="true" />
-    <ViewportCurtain v-if="phase === 'opening' && visible && presentationForeground && !reduced" :duration-ms="1_100" :active="visible && presentationForeground" @finished="finish(openingGeneration)" />
     <p v-if="unavailable && !image" class="portrait-unavailable">Portrét zatím chybí.<br />Postava má místo jisté.</p>
+    </PortraitMirror>
   </div>
 </template>
 
 <style scoped>
-.portrait-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: visible; isolation: isolate; background: var(--wns-violet, #c8b9fc); border-radius: 30px; }
-.portrait-stage-image, .portrait-stage-placeholder { position: absolute; left: 9%; top: 7%; width: 82%; height: 89%; object-fit: cover; object-position: 50% 30%; border-radius: 24px; }
-.portrait-stage-image { opacity: 0; transition: opacity .28s ease-out; }
-.portrait-stage:not([data-curtain='closed']) .portrait-stage-image { opacity: 1; }
+.portrait-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: visible; isolation: isolate; }
+.portrait-stage-image, .portrait-stage-placeholder { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
 .portrait-stage-placeholder { object-position: center; }
 .portrait-unavailable { position: absolute; inset: auto 9% 7%; margin: 0; padding: 16px; border-radius: 12px; background: var(--wns-violet); color: var(--wns-on-violet); text-align: center; font-size: .875rem; line-height: 1.5; }
 .portrait-missing-avatar { position: absolute; width: 40%; height: 40%; inset: 20% 30% auto; }
-@media (prefers-reduced-motion: reduce) { .portrait-stage-image { transition: none; } }
 </style>

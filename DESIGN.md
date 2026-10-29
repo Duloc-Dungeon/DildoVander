@@ -43,7 +43,7 @@ typography:
     letterSpacing: "-0.025em"
   body:
     fontFamily: "'Manrope Variable', sans-serif"
-    fontSize: "15px"
+    fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.65
   label:
@@ -60,6 +60,7 @@ rounded:
   hero: "28px"
   sealed-dossier: "12px"
 spacing:
+  "4": "4px"
   "8": "8px"
   "12": "12px"
   "14": "14px"
@@ -67,6 +68,8 @@ spacing:
   "20": "20px"
   "24": "24px"
   "32": "32px"
+  "40": "40px"
+  "48": "48px"
 components:
   button-primary:
     backgroundColor: "{colors.mint}"
@@ -122,6 +125,12 @@ components:
 
 ## Overview
 
+Obnoveno podle implementace 29. října 2026. Dokument zachovává současný
+výtvarný směr a popisuje sdílenou aplikaci Vue pro web a Capacitor; nepřevádí
+technické viewery na zákaznické téma. Zdrojové tokeny, aplikační adaptér,
+skutečné komponenty a jejich místní odchylky mají přednost před historickým
+mockupem. Rozšíření pro náhledy a pohyb jsou v `.impeccable/design.json`.
+
 **Creative North Star: "Wand Night Stand — design v2"**
 
 Téměř černé pozadí, místní Manrope s českou diakritikou, velké samostatné
@@ -156,6 +165,11 @@ Manrope OFL a Phosphor MIT se distribuují s výsledným webovým balíkem.
 
 ## Colors
 
+Paleta v záhlaví je společná vrstva. Ilustrace hůlky, soukromý portrét,
+odznaky kroniky a herní materiály si zachovávají barvy svého obsahu; nejsou
+zdrojem dalších ovládacích barev. Mintová akce ani barevné upozornění samy
+nepotvrzují úspěch operace — text vždy uvádí skutečný stav.
+
 Světlé pastelové akcenty nesou akci nebo konkrétní objekt; tmavé neutrály drží
 čitelné společné pozadí. Normativní hodnoty jsou v záhlaví, původ v `tokens.css`.
 
@@ -172,7 +186,7 @@ Světlé pastelové akcenty nesou akci nebo konkrétní objekt; tmavé neutrály
 ### Tertiary
 
 - **Fialová** (`violet`, `on-violet`): alternativní scénická plocha, například
-  opona. **Broskvová** (`peach`, `on-peach`) se používá také pro nebezpečnou
+  mlha zrcadla. **Broskvová** (`peach`, `on-peach`) se používá také pro nebezpečnou
   akci a náhradní podobu portrétu. **Modrá** (`blue`) zůstává informačním akcentem.
 
 ### Neutral
@@ -194,6 +208,10 @@ nadpisy. Vzorkování vykresleného webu na 390 a 1280 px potvrdilo Manrope.
 - **Body:** základ obsahu; odstavce hlavního obsahu používají řádkování 1,65.
   Kořenový text a některé herní popisky dědí 1,55. Token původní předlohy
   pro 14px tělo proto nepopisuje každé aktuálně vykreslené místo.
+  Záhlaví používá relativní velikost `1rem`; nevynucuje neimplementovaný
+  společný 15px základ. Pole používají 1 rem, popisky a poznámky menší místní
+  role. Původní tokeny předlohy obsahují škálu 10/11/14/16/17/22/36 px;
+  není to příkaz přepsat všechny současné komponenty na tyto hodnoty.
 - **Label:** tučné ovládání; navigační popisek je samostatná menší role 0,7 rem.
 
 Stránka postavy má vlastní větší nadpis a herní obrazovka kompaktnější nadpis.
@@ -206,6 +224,21 @@ nejde o nový společný nadpis. Energie používá tabulkové číslice, hodnot
 1,25 rem a menší tlumený jmenovatel 0,875 rem.
 
 ## Layout
+
+**Pravidlo vlastníka povrchu.** Aplikační shell, zákaznický shell a jednotlivé
+scény mají vlastní šířky a breakpointy. Hodnota předlohy 393 × 852 px je
+referenční plátno, nikoli breakpoint nebo požadavek na rozměr telefonu.
+
+| Povrch | Vlastník a kompozice |
+| --- | --- |
+| Přihlášení a pozvánka | `SignInView`: formulář a přístupové klíče, bezpečné okraje a čitelný další krok. |
+| `/launch` | `LaunchView`: příprava postavy, živé zrcadlo, předání do dílny a čekání na otevření večera. |
+| Představení po vstupu | `CharacterEntrance`: portrét a osobní text, od 760 px dvě oblasti, na telefonu pod sebou. |
+| `/me/character` a `/me/account` | `CustomerView`: přehled role, další krok a samostatná správa účtu. |
+| `/me/keepsakes` | `CustomerKeepsakes`: ilustrovaná kronika před rozbalovacím archivem a dalšími záznamy. |
+| `/play/wand` | `WandWorkshopView`: rozhovor a kompaktní scéna, po dokončení vlastní animace ilustrace hůlky. |
+| Hry, týmy a Pod pečetí | Vlastní herní komponenty zachovávají stav zápasu a mají místní kompaktní scény. |
+| Správa a AI laboratoř | Oprávněné nástroje a tabulky používají stejnou typografii, kontrast a stavy formulářů; neproměňují se v herní scénu. |
 
 Zákaznický obsah má jednu hlavní oblast. Spodní lišta má čtyři destinace na mobilu
 i široké obrazovce. Za běžné velikosti jsou stejně široké; při zvětšení textu
@@ -244,13 +277,17 @@ nejméně 44px dotykový cíl. Pořadí a fokus ovládání zůstávají použit
 ## Elevation & Depth
 
 Základ je plochý: karty, hlavní tlačítka a dialogy v adaptéru v2 mají vypnuté
-stíny. Hloubku vyjadřuje rozdíl ploch, jemná linka, obraz a opona. Starší zlaté
+stíny. Hloubku vyjadřuje rozdíl ploch, jemná linka, obraz a místní optika skla. Starší zlaté
 gradienty a stíny z kompatibilní vrstvy nejsou novou společnou normou.
 
 Boss a hráčské duely mají místní světelnou clonu: oříznuté barevné paprsky,
 rozostřené o 6 px na samostatné dekorativní vrstvě za postavou nebo hůlkami.
 Text a ovládání zůstávají ostré. Statické nasvícení nemá vlastní běžící smyčku;
 není to sklo, stín všech karet ani nový aplikační ambient.
+
+Zrcadlo používá vlastní slabý odraz, masku mlhy a jeden odlesk. Výsledná hůlka
+má samostatnou scénu s částicemi a nasvícením. Žádný z těchto nástupů se
+nevrství s celoplošnou oponou; ostatní ovládání nedostává plošný skleněný filtr.
 
 ## Shapes
 
@@ -262,6 +299,12 @@ Lokální výjimky jsou skutečné, nikoli nové globální tokeny: zákaznická
 používá 24px karty, slavnostní představení oblouk. Hlavní tlačítka i odkazy
 stylované jako hlavní tlačítko mají společný 16px poloměr; zákaznické stránky
 už nepřepisují tuto podobu pilulkou.
+
+Portrét v živém zrcadle má poměr 4 : 5 a místní oblouk
+`48% 48% 20px 20px`, s jemným jantarovým obrysem odsazeným o 7 px.
+Ovládání přehrání je kruhový 44px cíl. Kronika má místní 1rem panely,
+náhledy 88 × 66 px a ilustraci detailu 4 : 3. Tyto tvary nejsou novým
+poloměrem pro běžné formuláře nebo dialogy.
 
 ## Components
 
@@ -378,13 +421,65 @@ zůstává viditelný; údaje o přístupu, propojení a odpojení patří do po
 konkrétní památky. Na širokém kontejneru jsou další herní záznamy vedle kolekce,
 na mobilu za ní. Původní oprávnění a potvrzení odpojení zůstávají závazná.
 
+### Ilustrovaná kronika a památky
+
+`CustomerChronicle` je první obsah památek, před rozbalením staršího archivu.
+Časová osa a detail mají na široké obrazovce sloupce 0,9 : 1,1; do 48 rem
+se skládají pod sebe a filtry se ovládají přes vlastní rozbalení. Detail je
+na široké obrazovce přichycený 1 rem pod horním okrajem, na telefonu statický.
+Položka má nejméně 76px výšku a ilustrace detailu nepřesahuje 34 rem.
+
+Uzamčený záznam ukazuje pouze bezpečný název stavu. Otevřený záznam zobrazuje
+skutečný název, účastníky a dostupnou ilustraci. Prázdná kronika, načítání,
+chyba, odpojení i změna přihlášení mají samostatnou zprávu; chybějící
+ilustrace má náhradu a odznak není automaticky přidělen jen kvůli vzhledu.
+Typ události, postava a odznak filtrují serverové záznamy. Starší archiv
+zachovává svoje hledání, soukromí a přístupové akce v následném rozbalení.
+`/play/chronicle` vede do `/me/keepsakes`, nikoli do druhé souběžné kroniky.
+
+`ChronicleMatchReveal` je místní upozornění po zápase: odkaz na potvrzenou
+novou vzpomínku, mintový akcent a normální klávesnicový fokus. Nejde o
+další překryvnou scénu ani o důkaz skutečného hostování ilustrace.
+
 ### Představení postavy
 
-Dvoukřídlá opona a dekódovaný soukromý portrét tvoří jeden slavnostní moment.
+Představení i čekárna používají společné živé zrcadlo (`PortraitMirror`):
+mlha se za 1,1 sekundy vyčistí od středu a sklem jednou přejde odlesk.
+Časovou osu řídí `motion-v` 2.9.0, v pozadí se pozastaví; hotový portrét
+ani polling ji neopakují. Sdílený `CharacterIntroduction` uvádí stejnou
+osobní větu a krátký přechod textu; při omezeném pohybu zůstává statický.
+Sklo má jemný stálý odraz, zamlžení drobné kapky a jednorázový užší odlesk.
+Po odhalení lze tlačítkem na zrcadle zopakovat obraz i stejnou osobní větu.
+Přehrání nemění uloženou postavu, stav prvního odhalení ani přístup k další
+akci; nevyvolává nové načtení nebo generaci. Při omezeném pohybu a chybějícím
+portrétu se ovládání nepřehratelného efektu nenabízí.
+Při skutečné přípravě či načítání portrétu mlha pomalu mění světlo a polohu
+v cyklu 4,6 sekundy. Pohyb nepředstírá postup výroby; při načtení obrázku nebo
+chybě končí, v pozadí a mimo záběr je pozastavený. Omezený pohyb a pomalé
+obnovování obrazovky používají statickou mlhu.
 Chybějící obrázek má náhradní podobu a pravdivý stav. Nevyvolávej novou
-generaci kvůli přehrání efektu. Pravidlo deseti sekund v popředí před zobrazením
-„Pokračovat“ je výslovná místní výjimka vlastníka v `PRODUCT.md`, ne obecný
-časovač pro všechna tlačítka. Omezený pohyb zachovává obsah bez přesunů a škálování.
+generaci kvůli přehrání efektu. Současný průchod nabízí „Pokračovat“ při
+připravené postavě a dekódovaném portrétu. Při nedokončené přípravě umožní
+pokračování po pěti minutách v popředí; po dokončeném ručním pokusu o obnovu
+i bez hotové přípravy. Ověřování vstupu zůstává samostatným stavem čekání.
+To popisuje aktuální `CharacterEntrance`, nikoli nový časovač pro jiné akce.
+Omezený pohyb zachovává obsah bez přesunů a škálování.
+
+| Stav portrétu | Zobrazení a přechod |
+| --- | --- |
+| Příprava nebo stahování | Zavřené sklo, osobní či náhradní věta a pomalu proměnlivá mlha. Bez procent nebo odhadu zbývajícího času. |
+| Mimo záběr / aplikace v pozadí | Smyčka mlhy stojí; v popředí pokračuje. Čtení a dostupnost serverových akcí neurčuje tato animace. |
+| První dekódovaný portrét | Mlha se vyčistí od středu a přejde odlesk. V čekárně se první odhalení zaznamená až po dokončení nad správnou revizí a alespoň polovinou viditelné scény. |
+| Přerušené první odhalení | Nedokončená revize zůstává neviděná a může se přehrát znovu. |
+| Známá dokončená revize / polling | Portrét a text zůstávají klidné; stejná odpověď nezačne nový nástup. |
+| Ruční přehrání | Jen místní obraz a stejný text; žádná nová žádost o portrét či generaci. Klávesnicový fokus zůstává na ovládání; potřebný posun přiblíží zrcadlo do záběru. |
+| Chybějící obrázek / chyba | Ikona role, pravdivá zpráva a dostupná obnova; nekonečná animace přípravy končí. |
+| Omezený pohyb / pomalé obnovování | Statické sklo a výsledek; bez smyčky, přesunů a ovládání přehrání neaktivního efektu. |
+
+`CharacterIntroduction` má příchod 480 ms, nejvýše 8px posun a 1px rozostření,
+odchod 180 ms. Klíč obsahu mění pouze jiná věta nebo výslovné přehrání.
+`PortraitCurtain` zůstává názvem vlastníka kompatibilních hooků
+`data-curtain`; látkovou ani celoplošnou oponu už nevykresluje.
 
 ### Příprava postavy a předání do dílny
 
@@ -402,16 +497,13 @@ nikoli nová globální varianta všech karet.
 
 Osobní věta vedle portrétu má výraznou sazbu (`clamp(1.4rem, 5vw, 2.1rem)`,
 váha 650, řádkování 1,4) a krátkou čtecí míru (28 ch). Stav přípravy je
-samostatný, aby vtip nezastoupil informaci nebo chybu. `PortraitCurtain`
-otevírá jednu oponu přes celý výřez okna (1,1 s); stejný `ViewportCurtain`
-používá příchod postavy (1,2 s). Opona se přes Vue Teleport vykresluje přímo
-pod `body`, takže ji neořízne karta, sloupec ani transformovaný rodič.
-Před otevřením má dva snímky pro ustavení neprůhledného zavřeného stavu.
-Průběh řídí Motion (`motion-v`); pevná vrstva se neposouvá ani neotáčí.
-Tmavé švestkové záhyby nahrazují obrysové dveřní panely a mají přesah 2 px
-za okraje okna, včetně horní hrany při neceločíselném škálování.
-Při omezeném pohybu zůstává statické odhalení bez této vrstvy. Při chybě
-se zobrazuje ikona postavy a doslovný náhradní text.
+samostatný, aby vtip nezastoupil informaci nebo chybu. Společné zrcadlo
+popisuje oddíl „Představení postavy“. Náhled hůlky patří `TrunkStage` a po
+dekódování správné ilustrace používá vlastní `WandRevealField` (4,2 s).
+Jeho pevná vrstva, světlo a částice jsou jedním nástupem; žádná další opona
+se přes ni neotevírá. Omezený pohyb, neviditelný dokument, nedostupný canvas
+nebo opakované pomalé snímky ponechají klidný obsah. Odměřený průběh efektu
+nenahrazuje skutečný stav výroby a nedoplňuje chybějící ilustraci.
 Čekárna po dokončení uchovává osobní větu i přístup k uložené hůlce;
 přehrání scény samo nevyrábí nový obsah.
 
@@ -516,6 +608,14 @@ Baron nejvýše 5 také v exhibici. Hodnoty mají český číselný formát, p�
 ukazatele `role="meter"` a vodorovné pásy s odezvou 0,35 s. Neznámá hodnota
 je pomlčka, nikoli domyšlený stav. Nápověda, Baronova jiskra, výsledek poslední
 výměny a možnost ukončit aktivní pokus zůstávají čitelné bez animace.
+
+### Baronův text a hlas
+
+`GameBossNarration` při změně revize souboje načítá odpovídající text.
+Načítání, chyba textu a chyba zvuku jsou oddělené. Hlas má výslovné zapnutí
+a respektuje společné vypnutí zvuku; skrytý dokument, stará revize či
+odchod z komponenty ruší staré přehrávání. Jde o podporu čitelného komentáře,
+nikoli další vizuální signalizaci skóre nebo podmínku dalšího tahu.
 
 ### Duely mezi hráči
 
@@ -673,8 +773,10 @@ mohou výsledek upravit. Samotná existence tokenu nedokládá jeho použití.
 - **Don't** zaváděj trvalý ambient, povinné částice nebo nový font místo Manrope.
 - **Don't** nech herní výsledek nebo oprávnění záviset na doběhu animace.
 - **Don't** přenášej lokální oblouk, pilulku nebo časovou výjimku na celý systém.
+- **Don't** vrstvi oponu na vlastní animaci hůlky či portrétu; používej jejich skutečné nástupy.
+- **Don't** předstírej postup přípravy procenty nebo pohybem, když už běh skončil chybou.
 
-## Závazné hranice
+### Závazné hranice
 
 Vue/TypeScript/Pinia/Capacitor zůstávají produkční stack. React showroom je pouze
 reference. Oprávnění, passkeys, souhlasy, revize, příkazy, historie, Stop a herní
@@ -694,10 +796,40 @@ se nesmí poslat klientovi a následně skrýt CSS. EXPERIENCE, PRESENTATION a
 COVERT_ACTION jsou perspektivy. Odeslaná věta není provedená akce a nepozorovaný
 výsledek zůstává neznámý. FEIGN_SLEEP zachovává bdělou obranu; REST skutečně uspává.
 
-## Evidence a rozpracovanost
+### Evidence, zdroje a údržba
 
 Viz `docs/wns-v2-implementation.md`. Úspěšný build ani syntetický browser server
 neprokazují živou AI, skutečný multiplayer, nativní export nebo bezpečnost hardwaru.
 
 Samostatná scéna magického kufru, její přirozený GPT Live rozhovor a původ použitých
 ilustrací jsou popsané v `docs/magicky-kufr-workshop.md`.
+
+
+Audit vychází ze skutečných implementací a zachovává platné lokální výjimky:
+
+| Zdroj | Vlastnictví |
+| --- | --- |
+| `mobilni-aplikace/src/assets/wns-v2/design/tokens.css` | Základní paleta, škály, dotykové cíle a pohyb předlohy. |
+| `mobilni-aplikace/src/application/wns-v2.css` | Aplikační mapování, tlačítka, formuláře, navigace a společný fokus. |
+| `mobilni-aplikace/src/application/application.css` a `consumer-brand.css` | Základ a kompatibilní vrstva; pořadí importů a specificita stále platí. |
+| `mobilni-aplikace/src/application/router.ts` | Skutečné cesty, přesměrování a vlastníci obrazovek. |
+| `mobilni-aplikace/src/components/scene/PortraitMirror.vue` | Materiál skla, čekání, maska, odlesk a přehrání. |
+| `mobilni-aplikace/src/features/launch/CharacterIntroduction.vue` | Sdílený osobní text a jeho jednorázový pohyb. |
+| `mobilni-aplikace/src/features/launch/CharacterEntrance.vue` a `PortraitCurtain.vue` | Stav první prezentace, dostupnost pokračování a viděné revize. |
+| `mobilni-aplikace/src/features/game/TrunkStage.vue` a `WandRevealField.vue` | Skutečný hlasový výstup, dekódovaná hůlka a její vlastní nástup. |
+| `mobilni-aplikace/src/features/customer/CustomerChronicle.vue` | Časová osa, detail, filtry, ilustrace a odznaky. |
+| `mobilni-aplikace/src/features/game/GameBossNarration.vue` | Revizovaný text a volitelný hlas. |
+
+Při další obnově porovnej celé médium i hlavní lokální výjimky; neodvozuj
+vzhled celé aplikace z jedné obrazovky. Aktualizuj zároveň doprovodný soubor
+`.impeccable/design.json`: primitivní hodnoty zůstávají v záhlaví tohoto
+dokumentu, doprovodný soubor drží pohyb, breakpointy a samostatné ukázky.
+Ukázky v panelu jsou dokumentační, bez soukromých portrétů či volání providerů.
+
+Pro změny portrétu spusť `npm run test:mirror-reveal:browser --prefix mobilni-aplikace`.
+Další dotčené průchody vlastní `test:character-entrance:browser`,
+`test:prelaunch-wand:browser` a `test:launch:browser` ve stejném balíčku.
+Nejprve sestav aktuální web přes `npm run build --prefix mobilni-aplikace`;
+scénáře používají jeho skutečný výstup a syntetický backend.
+Screenshot nebo úspěšný test není potvrzení nativního telefonu ani živých
+AI služeb. Vizuální dokumentace neuděluje oprávnění k nasazení.

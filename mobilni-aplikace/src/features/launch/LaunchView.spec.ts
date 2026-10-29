@@ -491,7 +491,7 @@ it('polls for a not-yet-available character during the entrance without generati
   try {
     await flushPromises();
     await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
-    expect(view.text()).toContain('Slavná osoba se ještě hledá');
+    expect(view.text()).toContain('Zrcadlo si zatím vyjednává');
     persisted = true;
     await vi.advanceTimersByTimeAsync(5000); await flushPromises();
     image.value = 'blob:portrait';
