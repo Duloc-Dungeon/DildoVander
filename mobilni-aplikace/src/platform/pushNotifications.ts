@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 import { PushNotifications } from '@capacitor/push-notifications';
 
 export type PushPlatform = 'web' | 'android' | 'ios';
+export type PushPermission = 'prompt' | 'granted' | 'denied';
 export interface PushSettings {
   web: boolean;
   android: boolean;
@@ -133,6 +134,11 @@ export async function requestPushPermission(): Promise<boolean> {
   return (await PushNotifications.requestPermissions()).receive === 'granted';
 }
 
+export async function readPushPermission(): Promise<PushPermission> {
+  const state = pushPlatform() === 'web' ? Notification.permission : (await PushNotifications.checkPermissions()).receive;
+  return state === 'granted' || state === 'denied' ? state : 'prompt';
+}
+
 export async function registerPush(settings: PushSettings, check: () => void): Promise<PushRegistration> {
   const platform = pushPlatform();
   check();
@@ -167,8 +173,7 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 export async function hasPushPermission(): Promise<boolean> {
-  return pushPlatform() === 'web' ? Notification.permission === 'granted'
-    : (await PushNotifications.checkPermissions()).receive === 'granted';
+  return await readPushPermission() === 'granted';
 }
 
 export async function unregisterLocalPush(): Promise<void> {
