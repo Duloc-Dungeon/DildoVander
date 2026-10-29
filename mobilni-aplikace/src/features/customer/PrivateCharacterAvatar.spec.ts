@@ -20,6 +20,14 @@ beforeEach(() => { api.request.mockReset(); });
 afterEach(() => { mounted.splice(0).forEach(view => view.unmount()); });
 function render() { const view = mount(PrivateCharacterAvatar, { props: { profileId: 'profile-a', revision: 1, name: 'Alžběta' } }); mounted.push(view); return view; }
 
+it('hides serialized missing welcome fields in an existing portrait', async () => {
+  api.request.mockResolvedValue({ ...state(), artwork: { status: 'ready', welcome: { joke: 'null', identity: ' NULL ', teaser: 'undefined' } } });
+  const view = render();
+  await flushPromises();
+  expect(view.find('.private-character-avatar__joke').exists()).toBe(false);
+  expect(view.text()).not.toMatch(/null|undefined/i);
+});
+
 it('reuses the existing private portrait with reads only and keeps it separate from wand artwork', async () => {
   api.request.mockResolvedValue(state());
   const view = render();

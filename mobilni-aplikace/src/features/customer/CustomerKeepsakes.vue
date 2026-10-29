@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { reactive, ref } from 'vue';
 import caretDown from '../../assets/wns-v2/icons/regular/caret-down.svg';
 import AccountArchiveList from '../identity/AccountArchiveList.vue';
+import CustomerChronicle from './CustomerChronicle.vue';
 import CustomerCompletionUpdates from './CustomerCompletionUpdates.vue';
 import CustomerDuelHistory from './CustomerDuelHistory.vue';
 import CustomerGameTitles from './CustomerGameTitles.vue';
@@ -16,15 +17,23 @@ const expanded = reactive<Record<SectionKey, boolean>>({
   cases: false,
   battles: false,
 });
+const archiveOpen = ref(false);
 
 function syncExpanded(key: SectionKey, event: Event): void {
   expanded[key] = (event.currentTarget as HTMLDetailsElement).open;
+}
+function syncArchive(event: Event): void {
+  archiveOpen.value = (event.currentTarget as HTMLDetailsElement).open;
 }
 </script>
 
 <template>
   <section class="customer-keepsakes" aria-label="Památky z večerů a her">
-    <AccountArchiveList :locale="locale" />
+    <CustomerChronicle class="customer-keepsakes__chronicle" />
+    <details class="customer-keepsakes__archive" @toggle="syncArchive">
+      <summary>Uložené památky z dílny</summary>
+      <AccountArchiveList v-if="archiveOpen" :locale="locale" />
+    </details>
 
     <div class="customer-keepsakes__secondary">
       <h2 id="customer-keepsakes-secondary-title">Další záznamy</h2>
@@ -54,6 +63,7 @@ function syncExpanded(key: SectionKey, event: Event): void {
 
 <style scoped>
 .customer-keepsakes { display: grid; gap: var(--wns-space-40); min-width: 0; align-items: start; }
+.customer-keepsakes__chronicle { grid-column: 1 / -1; }
 .customer-keepsakes :deep(.account-collection.aw-card) { container: customer-collection / inline-size; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .customer-keepsakes__secondary { display: grid; gap: var(--wns-space-4); min-width: 0; }
 .customer-keepsakes__secondary > h2 { margin: 0 0 .75rem; font: 750 1.2rem/1.3 var(--wns-font-family, sans-serif); }

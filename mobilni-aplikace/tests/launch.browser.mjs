@@ -26,7 +26,10 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const image = await readFile(new URL('./fixtures/characters/matylda.webp', import.meta.url));
+// Optional local media remains outside the repository; no video is checked in.
+const rickrollVideo = process.env.RICKROLL_TEST_MP4 ? await readFile(process.env.RICKROLL_TEST_MP4) : null;
 let account = { id: 'launch-guest', displayName: 'Host', roles: ['Customer'], openAiConsent: true };
+let characterReads = 0;
 let character = null;
 let artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
 let config = {
@@ -44,6 +47,7 @@ const loadedScripts = [];
 let releasePolicy;
 const pendingPolicy = new Promise(resolve => { releasePolicy = resolve; });
 let browser;
+let countdownDeadline = null;
 try {
   browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}), ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
@@ -53,12 +57,28 @@ try {
     if (request.resourceType() === 'script') loadedScripts.push(url.pathname);
     if (url.origin !== origin) { await route.abort(); return; }
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
+    if (url.pathname === '/app/v1/launch/rickroll') return json({ available: !!rickrollVideo, url: rickrollVideo ? '/app/v1/launch/rickroll.mp4' : null });
+    if (url.pathname === '/app/v1/launch/rickroll.mp4' && rickrollVideo) {
+      const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers().range ?? '');
+      const start = range ? Number(range[1]) : 0;
+      const end = range?.[2] ? Math.min(Number(range[2]), rickrollVideo.length - 1) : rickrollVideo.length - 1;
+      return route.fulfill({ status: range ? 206 : 200, contentType: 'video/mp4',
+        headers: { 'Accept-Ranges': 'bytes', ...(range ? { 'Content-Range': `bytes ${start}-${end}/${rickrollVideo.length}` } : {}) },
+        body: rickrollVideo.subarray(start, end + 1) });
+    }
     if (url.pathname === '/app/v1/session' && request.method() === 'GET') return json({ enabled: true, account, csrfToken: 'fake-csrf', origin });
+    if (url.pathname === '/app/v1/passkeys/request-options') return json({ challenge: 'AQID', allowCredentials: [] });
+    if (url.pathname === '/app/v1/passkeys/sign-in') {
+      account = { id: 'launch-guest', displayName: 'Ron Weasley', roles: ['Customer'], openAiConsent: true };
+      return json({});
+    }
+    if (url.pathname === '/app/v1/customer/character') { characterReads++; return json({ code: 'launch_required' }, 403); }
+    if (url.pathname === '/app/v1/account') return json({ sessions: [], grants: [], associations: [], passkeys: [], passkeyCount: 1, recentPasskey: false });
     if (url.pathname === '/app/v1/push' && request.method() === 'GET') return json({ web: false, android: false, ios: false, publicKey: null, enabled: false });
     if (url.pathname === '/app/v1/session' && request.method() === 'DELETE') { account = null; return route.fulfill({ status: 204, body: '' }); }
     if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'launch-fixture-beta', groupName: 'Interní beta', joinedAt: Math.floor(Date.now() / 1000), accessRevision: 1, fixedUniverse: null, recruitmentOpen: false, launchAt: null });
     if (url.pathname === '/app/v1/enrollment/default') return json({ available: true, groupId: 'launch-fixture-beta', groupName: 'Interní beta', fixedUniverse: null, universe: null });
-    if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
+    if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked || countdownDeadline !== null && Date.now() >= countdownDeadline), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: countdownDeadline ?? Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'GET') return json({ character, artwork: character ? artwork : null });
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'PUT') {
       const body = request.postDataJSON(); writes.push(body);
@@ -172,7 +192,7 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-czech-migrated.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   character.status = 'ready';
-  artwork = { status: 'running', loadingMessage: null, finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
+  artwork = { status: 'running', loadingMessage: 'null', welcome: { joke: ' null ', identity: '', teaser: '' }, finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByText('Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.').waitFor();
   const fallbackLoading = await page.locator('.launch-status').innerText();
@@ -198,6 +218,32 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'launch-desktop-personalized-ready.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   character = { profileId: 'legacy-profile', revision: 8, name: 'Eliška', universe: 'Starý svět', status: 'ready' };
+  const savedCharacter = character;
+  character = { ...character, name: 'Ron Weasley', universe: 'Harry Potter' };
+  account = null;
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator.credentials, 'get', { value: async () => ({
+      id: 'fixture', rawId: new Uint8Array([1, 2, 3]).buffer, type: 'public-key',
+      getClientExtensionResults: () => ({}),
+      response: { clientDataJSON: new ArrayBuffer(1), authenticatorData: new ArrayBuffer(1), signature: new ArrayBuffer(1), userHandle: null },
+    }) });
+  });
+  await page.goto(`${origin}/signin?return=/me/account`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Přihlásit přístupovým klíčem', exact: true }).click();
+  await page.waitForURL(`${origin}/launch`);
+  await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
+  assert.equal(await page.getByRole('heading', { name: 'Ron Weasley', exact: true }).count(), 1);
+  await page.screenshot({ path: path.join(screenshots, 'returning-guest-wand-preparation.png'), fullPage: true });
+  const readsBeforeAccount = characterReads;
+  await page.goto(`${origin}/me/account`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Můj účet', exact: true }).waitFor();
+  assert.equal(characterReads, readsBeforeAccount, 'account settings do not request a prelaunch-blocked character');
+  assert.equal(await page.getByText('Stav rozhovoru se nepodařilo načíst.', { exact: false }).count(), 0);
+  await page.evaluate(() => document.documentElement.style.setProperty('--safe-area-inset-top', '50px'));
+  assert(await page.getByRole('heading', { name: 'Můj účet', exact: true }).evaluate(element => element.getBoundingClientRect().top >= 50));
+  await page.screenshot({ path: path.join(screenshots, 'waiting-room-account-safe-area.png'), fullPage: true });
+  character = savedCharacter;
+  await page.goto(`${origin}/launch`, { waitUntil: 'networkidle' });
   artwork = null;
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByText('Postava je uložená. Ještě jí připravíme portrét.').waitFor();
@@ -219,7 +265,7 @@ try {
   await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();
   await page.getByRole('heading', { name: 'Příprava večera' }).waitFor();
-  await page.getByText('Pokročilé: globální beta a produkční plán', { exact: true }).click();
+  await page.getByText('Datum a čas otevření výchozí skupiny', { exact: true }).click();
   await page.getByLabel('Použít beta odpočítávání').check();
   await page.getByLabel('Časové pásmo').selectOption('Europe/Prague');
   await page.getByLabel('Otevření beta účastníkům').fill('2026-03-30T10:00');
@@ -235,8 +281,31 @@ try {
   assert.equal(writes.length, 5);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(screenshots, 'launch-desktop-admin.png'), fullPage: true });
+  for (const [audience, width, height] of rickrollVideo ? [['production', 390, 844], ['beta', 1440, 1000]] : []) {
+    account = { id: 'launch-guest', displayName: 'Host', roles: audience === 'beta' ? ['Customer', 'Beta'] : ['Customer'], openAiConsent: true };
+    config.productionUnlocked = false;
+    countdownDeadline = Date.now() + 5_000;
+    await page.setViewportSize({ width, height });
+    await page.goto(`${origin}/launch`, { waitUntil: 'networkidle' });
+    await page.locator('.character-countdown-grid').waitFor();
+    assert.equal(await page.locator('.rickroll-video').isVisible(), false);
+    // A normal earlier app tap may grant autoplay; no play/entry button is pressed at zero.
+    await page.locator('.launch-wordmark').click();
+    await page.locator('.rickroll-video').waitFor();
+    await page.waitForFunction(() => {
+      const video = document.querySelector('.rickroll-video video');
+      return video && !video.paused && video.currentTime > 0 && video.volume === 0.8 && !video.muted;
+    });
+    assert.equal(await page.locator('.group-opening, .reception-waiting').count(), 0);
+    const frame = await page.locator('.rickroll-video video').boundingBox();
+    assert(frame && frame.width >= 200 && frame.height >= 200 && frame.x + frame.width <= width);
+    await page.screenshot({ path: path.join(screenshots, `rickroll-${audience}.png`), fullPage: true });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('.group-opening').waitFor();
+    assert.equal(await page.locator('.rickroll-video').isVisible(), false, 'restart after zero must enter normally');
+  }
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ mobile: '390x844', tablet: '820x1180', desktop: '1440x1000', states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'admin schedule save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
+  console.log(JSON.stringify({ mobile: '390x844', tablet: '820x1180', desktop: '1440x1000', realMp4Playback: !!rickrollVideo, states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'admin schedule save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
   await context.close();
 } finally {
   if (browser) await browser.close();

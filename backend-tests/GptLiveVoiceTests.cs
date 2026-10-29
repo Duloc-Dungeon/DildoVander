@@ -39,6 +39,36 @@ internal static class GptLiveVoiceTests
             Require(fallback.CustomVoiceId is null && (string)fallback.SessionVoice == "vesper",
                 "missing and invalid voice IDs use the supported built-in voice");
         }
+        var statePath = Path.Combine(Path.GetTempPath(), "workshop-voice-" + Guid.NewGuid().ToString("N") + ".json");
+        const string description = "Original expressive adult Czech baritone with a lightly gravelly texture.";
+        try
+        {
+            File.WriteAllText(statePath, JsonSerializer.Serialize(new
+            {
+                customVoiceId = "voice_workshop_fixture", prompt = description
+            }));
+            var section = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConfigurationPath"] = statePath
+            }).Build();
+            var savedVoice = GptLiveVoiceOptions.Read(section);
+            Require(savedVoice.CustomVoiceId == "voice_workshop_fixture" && savedVoice.Description == description,
+                "provisioned voice state restores both the ID and its original acoustic description");
+            Require(savedVoice.UseFallback().Description is null,
+                "a built-in fallback does not retain the rejected custom voice description");
+            section["CustomVoiceId"] = "voice_override_fixture";
+            section["Description"] = new string('x', 4097);
+            Require(GptLiveVoiceOptions.Read(section) is { CustomVoiceId: "voice_override_fixture", Description: null },
+                "explicit voice override ignores the saved voice description and bounds operator-provided text");
+            section["CustomVoiceId"] = "invalid";
+            section["Description"] = description;
+            Require(GptLiveVoiceOptions.Read(section).Description is null,
+                "invalid custom IDs cannot attach an acoustic description to a built-in voice");
+        }
+        finally
+        {
+            File.Delete(statePath);
+        }
         using var rejected = JsonDocument.Parse("""{"error":{"code":"voice_not_found"}}""");
         using var capacity = JsonDocument.Parse("""{"error":{"code":"rate_limit_exceeded"}}""");
         Require(options.Voice.CanRetryStartup(rejected.RootElement)

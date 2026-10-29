@@ -13,7 +13,8 @@ vi.mock('../features/identity/session', async () => {
     refreshIdentity: vi.fn(async () => { account.value = state.account; }),
   };
 });
-import { installAccessGuard } from './accessGuard';
+import { installAccessGuard, waitingRoomRedirect } from './accessGuard';
+import { launchAllowed } from './launchAccess';
 import { account, refreshIdentity } from '../features/identity/session';
 import { notifications } from './notifications';
 import { setOwnerPlayer } from './ownerMode';
@@ -42,6 +43,27 @@ function createGuardedRouter() {
 }
 
 beforeEach(() => { vi.clearAllMocks(); state.account = null; account.value = null; state.launchAllowed = false; state.membership = 'active'; });
+
+describe('already open evening reconciliation', () => {
+  it('returns an open customer screen to waiting only after a confirmed closure', () => {
+    account.value = { id: 'guest', displayName: 'Guest', roles: ['Customer'] };
+    const route = { path: '/play', meta: { requiresAccount: true } };
+    launchAllowed.value = null;
+    expect(waitingRoomRedirect(route)).toBeNull();
+    launchAllowed.value = false;
+    expect(waitingRoomRedirect(route)).toEqual({ path: '/launch', replace: true });
+  });
+  it.each(['/me/account', '/access-revoked', '/privacy', '/support', '/launch'])('keeps %s available while closed', path => {
+    account.value = { id: 'guest', displayName: 'Guest', roles: ['Customer'] };
+    launchAllowed.value = false;
+    expect(waitingRoomRedirect({ path, meta: { requiresAccount: true } })).toBeNull();
+  });
+  it.each(['Owner', 'Administrator', 'Operator', 'Viewer', 'Tester'])('preserves the %s exception', role => {
+    account.value = { id: 'staff', displayName: 'Staff', roles: [role] };
+    launchAllowed.value = false;
+    expect(waitingRoomRedirect({ path: '/play', meta: { requiresAccount: true } })).toBeNull();
+  });
+});
 
 describe('launch access navigation', () => {
   it('allows the owner player to prepare before launch without a customer membership', async () => {

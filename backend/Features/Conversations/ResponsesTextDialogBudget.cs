@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Kufr.Backend.Features.OpenAi;
 
 namespace Kufr.Backend.Features.Conversations;
 
@@ -34,15 +35,17 @@ internal static class ResponsesTextDialogBudget
         ? 0
         : Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(context));
 
-    internal static long CalculateActualMicroUsd(TextDialogResponse response, string expectedModel = Model)
-        => CalculateUsageMicroUsd(response.ReturnedModel, response.ServiceTier, response.InputTokens, response.OutputTokens, expectedModel);
+    internal static long CalculateActualMicroUsd(TextDialogResponse response, string expectedModel = Model,
+        string requestedTier = OpenAiServiceTierPolicy.Standard)
+        => CalculateUsageMicroUsd(response.ReturnedModel, response.ServiceTier, response.InputTokens, response.OutputTokens,
+            expectedModel, requestedTier);
 
     internal static long CalculateUsageMicroUsd(string returnedModel, string? serviceTier, int inputTokens, int outputTokens,
-        string expectedModel = Model)
+        string expectedModel = Model, string requestedTier = OpenAiServiceTierPolicy.Standard)
     {
         if (!IsSupportedModel(expectedModel)
             || returnedModel != expectedModel
-            || serviceTier != "default"
+            || !OpenAiServiceTierPolicy.TryRateMultiplier(requestedTier, serviceTier, out var multiplier)
             || inputTokens < 0
             || outputTokens < 0)
         {
@@ -54,10 +57,10 @@ internal static class ResponsesTextDialogBudget
         // reports cached tokens; round up fractional microdollars once.
         return expectedModel switch
         {
-            // Terra Standard: cache writes $1.25/M, output $5/M.
-            Model => checked((inputTokens * 5L + 3) / 4 + outputTokens * 5L),
-            // Explicit legacy Sol Standard: cache writes $2.50/M, output $10/M.
-            LegacyModel => checked((inputTokens * 5L + 1) / 2 + outputTokens * 10L),
+            // Terra Standard: cache writes $1.25/M, output $5/M; Fast doubles both.
+            Model => checked((inputTokens * 5L * multiplier + 3) / 4 + outputTokens * 5L * multiplier),
+            // Explicit legacy Sol Standard: cache writes $2.50/M, output $10/M; Fast doubles both.
+            LegacyModel => checked((inputTokens * 5L * multiplier + 1) / 2 + outputTokens * 10L * multiplier),
             _ => throw new TextDialogUnavailableException("Provider model cannot be priced.")
         };
     }

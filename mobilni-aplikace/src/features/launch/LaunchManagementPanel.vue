@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import curtain from '../../assets/brand/invitation-curtain-small.webp';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
@@ -43,6 +43,12 @@ const lastActionSection = ref<'schedule' | 'messages' | 'artwork' | null>(null);
 const scheduleDisclosure = ref<HTMLDetailsElement>();
 const messagesDisclosure = ref<HTMLDetailsElement>();
 const artworkDisclosure = ref<HTMLDetailsElement>();
+async function openProductionSchedule(): Promise<void> {
+  if (!scheduleDisclosure.value) return;
+  scheduleDisclosure.value.open = true;
+  await nextTick();
+  scheduleDisclosure.value.querySelector<HTMLInputElement>('#production-launch')?.focus();
+}
 const timezone = computed(() => config.value?.timeZone || 'Europe/Prague');
 const upcomingPreview = computed(() => previewAudience.value === 'beta' ? betaDate.value : productionDate.value);
 const displayedCountdown = computed(() => {
@@ -182,15 +188,15 @@ onBeforeUnmount(() => { if (previewTimer) clearInterval(previewTimer); });
     <AdminReauthentication v-if="reauthenticationRequired" @verified="reauthenticationRequired = false; error = ''; message = 'Totožnost byla ověřena. Původní změnu nyní odešlete znovu.'" />
     <AwNotice v-if="auxiliaryWarning" tone="warning">{{ auxiliaryWarning }}</AwNotice>
     <AwNotice v-if="message" tone="info" role="status">{{ message }}</AwNotice>
-    <BetaAdmissionPanel />
+    <BetaAdmissionPanel @edit-production-schedule="openProductionSchedule" />
     <p v-if="!config && !error" role="status">Načítání nastavení…</p>
     <template v-if="config">
       <details ref="scheduleDisclosure" class="launch-admin__disclosure">
-        <summary>Pokročilé: globální beta a produkční plán</summary>
+        <summary>Datum a čas otevření výchozí skupiny</summary>
         <section class="aw-card launch-admin__schedule"><h3>Čas otevření</h3><p>Brány pro beta a produkční publikum platí společně pro web i iOS. Vydání jednotlivých distribucí se provádí samostatně. Časy se zadávají a zobrazují v pásmu <strong>{{ config.timeZone }}</strong>, včetně změn letního času.</p>
           <label for="launch-time-zone">Časové pásmo</label><select id="launch-time-zone" v-model="config.timeZone" class="aw-select"><option value="Europe/Prague">Europe/Prague · Praha</option><option value="UTC">UTC</option><option value="America/New_York">America/New_York · New York</option><option value="America/Los_Angeles">America/Los_Angeles · Los Angeles</option></select>
           <fieldset><legend>Beta pozvaní</legend><label><input v-model="config.betaEnabled" type="checkbox" /> Použít beta odpočítávání</label><AwField id="beta-launch" label="Otevření beta účastníkům"><input id="beta-launch" v-model="betaDate" class="aw-input" type="datetime-local" /></AwField><label><input v-model="config.betaUnlocked" type="checkbox" /> Ručně otevřít beta přístup</label><p class="launch-admin__effect">{{ config.betaUnlocked ? 'Beta účty získají plný přístup ihned po uložení.' : config.betaEnabled ? (betaDate ? 'Aktivní bude přístup od zvoleného času.' : 'Beta plán čeká na datum.') : 'Beta plán je vypnutý; beta účty zachovávají dosavadní chráněný přístup.' }}</p></fieldset>
-          <fieldset><legend>Produkční publikum</legend><label><input v-model="config.productionEnabled" type="checkbox" /> Použít produkční odpočítávání</label><AwField id="production-launch" label="Otevření běžným účtům"><input id="production-launch" v-model="productionDate" class="aw-input" type="datetime-local" /></AwField><label><input v-model="config.productionUnlocked" type="checkbox" /> Ručně otevřít produkční přístup</label><p class="launch-admin__effect">{{ config.productionUnlocked ? 'Běžné účty získají plný přístup ihned po uložení.' : config.productionEnabled ? (productionDate ? 'Aktivní bude přístup od zvoleného času.' : 'Plán čeká na datum.') : 'Produkční brána je vypnutá.' }}</p></fieldset>
+          <fieldset><legend>Produkce a výchozí skupina</legend><label><input v-model="config.productionEnabled" type="checkbox" /> Použít produkční odpočítávání</label><AwField id="production-launch" label="Otevření večera výchozí skupině"><input id="production-launch" v-model="productionDate" class="aw-input" type="datetime-local" /></AwField><label><input v-model="config.productionUnlocked" type="checkbox" /> Ručně otevřít produkční přístup</label><p class="launch-admin__effect">{{ config.productionUnlocked ? 'Výchozí skupina i produkční účty bez skupiny získají plný přístup ihned po uložení.' : config.productionEnabled ? (productionDate ? 'Hosté výchozí skupiny počkají do zvoleného data a času. Večer se potom otevře automaticky.' : 'Hosté výchozí skupiny čekají na nastavení data a času.') : 'Odpočítávání je vypnuté. Výchozí skupina i produkční účty bez skupiny mají plný přístup.' }}</p><p>Změna budoucího termínu vrátí výchozí skupinu do čekárny i po dřívějším otevření. Přijímání nových účastníků se nastavuje samostatně.</p></fieldset>
           <div class="launch-admin__preview"><p class="eyebrow">Živý náhled · {{ previewAudience === 'beta' ? 'beta' : 'produkce' }}</p><label for="launch-audience">Publikum</label><select id="launch-audience" v-model="previewAudience" class="aw-select"><option value="beta">Beta pozvaní</option><option value="production">Produkce</option></select><strong>{{ displayedCountdown }}</strong></div>
           <AwNotice tone="warning">Zapnutí plánu s časem v minulosti nebo ručním odemčením změní přístup hned po uložení.</AwNotice>
           <AwButton :busy="busy" @click="save('schedule')">Uložit plán</AwButton>

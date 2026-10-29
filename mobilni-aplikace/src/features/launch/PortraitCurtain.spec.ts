@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PortraitCurtain from './PortraitCurtain.vue';
+import PortraitMirror from '../../components/scene/PortraitMirror.vue';
 import { presentationForeground } from './launchPresentation';
 let intersect: (entries: any[]) => void;
 let reduced = false;
@@ -58,5 +59,25 @@ it('shows the missing portrait without marking an image as revealed or seen', as
     expect(view.text()).toContain('Portrét zatím chybí.');
     expect(localStorage.length).toBe(0);
     expect(view.emitted('revealed')?.some(event => event[0] === true)).toBe(false);
+  } finally { view.unmount(); }
+});
+
+it('offers replay only after the first presentation is recorded and forwards it without changing seen state', async () => {
+  const view = stage();
+  try {
+    visibility(1);
+    await nextTick();
+    expect(view.getComponent(PortraitMirror).props('replayable')).toBe(false);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(view.getComponent(PortraitMirror).props('replayable')).toBe(true);
+    visibility(.2);
+    await nextTick();
+    expect(view.getComponent(PortraitMirror).props('active')).toBe(true);
+    const seen = Object.entries(localStorage);
+    const revelations = view.emitted('revealed')?.length;
+    view.getComponent(PortraitMirror).vm.$emit('replay');
+    expect(view.emitted('replay')).toHaveLength(1);
+    expect(view.emitted('revealed')?.length).toBe(revelations);
+    expect(Object.entries(localStorage)).toEqual(seen);
   } finally { view.unmount(); }
 });

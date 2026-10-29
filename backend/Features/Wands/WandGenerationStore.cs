@@ -153,10 +153,12 @@ internal sealed partial class WandGenerationStore
             reader.IsDBNull(6) ? null : Deserialize<GeneratedWandSnapshot>(reader.GetString(6)));
     }
 
-    internal WandGenerationJob? Claim(string accountId, string operationId, bool retry)
+    internal WandGenerationJob? Claim(string accountId, string operationId, bool retry,
+        (string GroupId, long AccessRevision)? workshopSnapshot = null)
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
+        RequireWorkshopSnapshot(connection, transaction, accountId, operationId, workshopSnapshot);
         var session = Read(connection, transaction, accountId, operationId)
             ?? throw new WandGenerationException("wand_session_unavailable", 404);
         RequireNotRevoked(connection, transaction, accountId, session.ProfileId);
@@ -215,10 +217,13 @@ internal sealed partial class WandGenerationStore
     }
 
     internal GeneratedWandSnapshot Select(string accountId, string operationId, string profileId,
-        long profileRevision, int physicalSlot, int currentReadyMask = 63)
+        long profileRevision, int physicalSlot, int currentReadyMask = 63,
+        (string GroupId, long AccessRevision)? workshopSnapshot = null)
     {
         using var connection = Open();
+        EnsureWorkshop(connection);
         using var transaction = connection.BeginTransaction();
+        RequireWorkshopSnapshot(connection, transaction, accountId, operationId, workshopSnapshot);
         RequireNotRevoked(connection, transaction, accountId, profileId);
         var session = Read(connection, transaction, accountId, operationId)
             ?? throw new WandGenerationException("wand_session_unavailable", 404);
@@ -238,6 +243,7 @@ internal sealed partial class WandGenerationStore
         Execute(connection, transaction,
             "UPDATE wand_generation_sessions SET state='selected',selected_json=$wand WHERE id=$id AND state='ready'",
             ("$wand", Serialize(candidate)), ("$id", session.SessionId));
+        CaptureSelectedWandChronicle(connection, transaction, accountId, operationId, session.SessionId, candidate);
         transaction.Commit();
         return candidate;
     }
@@ -288,6 +294,14 @@ internal sealed partial class WandGenerationStore
         EnsureMobile(connection);
         EnsureWorkshop(connection);
         using var transaction = connection.BeginTransaction();
+        if (profileId == "*")
+        {
+            Kufr.Backend.Features.Keepsakes.ChronicleSourceOutbox.EraseAccount(connection, transaction, accountId);
+        }
+        else
+        {
+            Kufr.Backend.Features.Keepsakes.ChronicleSourceOutbox.EraseProfile(connection, transaction, accountId, profileId);
+        }
         Execute(connection, transaction,
             "INSERT OR IGNORE INTO wand_generation_revocations VALUES($account,$profile)",
             ("$account", accountId), ("$profile", profileId));

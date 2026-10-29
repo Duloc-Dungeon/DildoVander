@@ -1,5 +1,42 @@
 import Foundation
 
+// Exercise the production options parser before the bridge can create a credential request.
+func requirePasskeyOptionsRejection(status: Int, body: String, code: String) {
+    do {
+        _ = try NativePasskeyOptionsResponse.parse(status: status, body: body)
+        fatalError("Rejected passkey options reached credential launch")
+    } catch let rejection as NativePasskeyOptionsResponse.Rejected {
+        require(rejection.status == status && rejection.code == code, "passkey options lost rejection status/code")
+        require(rejection.localizedDescription == NativePasskeyOptionsResponse.failureMessage,
+                "passkey rejection exposed server response text")
+    } catch { fatalError("Passkey options lost structured rejection: \(error)") }
+}
+
+for code in ["beta_enrollment_closed", "beta_enrollment_unavailable", "beta_enrollment_closed_or_changed",
+             "invitation_expired_or_used", "reauthentication_required", "csrf_required"] {
+    requirePasskeyOptionsRejection(status: 403, body: "{\"code\":\"\(code)\",\"message\":\"private response text\"}", code: code)
+}
+requirePasskeyOptionsRejection(status: 503, body: "{\"code\":\"beta_enrollment_unavailable\"}", code: "beta_enrollment_unavailable")
+for body in ["", "<html>private response text</html>", "[]", "{}", "{", "{\"code\":42}", "{\"code\":true}",
+             "{\"code\":null}", "{\"code\":\"\"}", "{\"code\":\"private response text\"}",
+             "{\"code\":\"beta_enrollment_closed\\n\"}", "{\"code\":\"Beta_enrollment_closed\"}",
+             "{\"code\":\"\(String(repeating: "a", count: 65))\"}",
+             "{\"code\":\"beta_enrollment_closed\",\"detail\":\"\(String(repeating: "x", count: NativePasskeyOptionsResponse.maxBytes))\"}"] {
+    requirePasskeyOptionsRejection(status: 403, body: body, code: "passkey_rejected")
+}
+requirePasskeyOptionsRejection(status: 302, body: "{\"code\":\"beta_enrollment_closed\"}", code: "passkey_rejected")
+do {
+    let options = try NativePasskeyOptionsResponse.parse(status: 200, body: "{\"challenge\":\"test-challenge\",\"rpId\":\"dildovander.de\"}")
+    require(options["challenge"] as? String == "test-challenge", "valid passkey options stopped parsing")
+} catch { fatalError("Valid passkey options failed: \(error)") }
+for body in ["", "[]", "{", String(repeating: "x", count: NativePasskeyOptionsResponse.maxBytes + 1)] {
+    do {
+        _ = try NativePasskeyOptionsResponse.parse(status: 200, body: body)
+        fatalError("Invalid successful passkey options reached credential launch")
+    } catch is NativePasskeyOptionsResponse.InvalidResponse { }
+    catch { fatalError("Invalid passkey options produced an unexpected failure: \(error)") }
+}
+
 let opponentArtwork = "/app/v1/game/matches/" + String(repeating: "a", count: 32) + "/opponent/wand-artwork?revision=" + String(repeating: "b", count: 64)
 require(AccountTransportPolicy.account(path: opponentArtwork, method: "GET"), "approved opponent art route unavailable")
 require(AccountTransportPolicy.accountResponseLimit(path: opponentArtwork, method: "GET") == 32 * 1024 * 1024, "opponent PNG size cap changed")
@@ -26,6 +63,28 @@ for invalid in [teamOpponentArtwork + "&x=1", teamOpponentArtwork + "\n", teamOp
     require(AccountTransportPolicy.accountResponseLimit(path: invalid, method: "GET") == 1024 * 1024, "invalid team opponent art route received binary limit")
 }
 require(!AccountTransportPolicy.account(path: teamOpponentArtwork, method: "POST"), "team opponent art became mutable")
+
+let bossAttemptID = "0123456789abcdef0123456789abcdef"
+for suffix in ["narration", "audio"] {
+    let path = "/app/v1/game/boss/attempts/\(bossAttemptID)/\(suffix)"
+    require(AccountTransportPolicy.account(path: path, method: "POST"), "approved Baron \(suffix) route unavailable")
+    require(!AccountTransportPolicy.account(path: path, method: "GET"), "Baron \(suffix) route accepted GET")
+    require(AccountTransportPolicy.accountResponseLimit(path: path, method: "POST") == 1024 * 1024,
+            "Baron \(suffix) response limit widened")
+    for invalid in [path + "?x=1", path + "/extra", path + "\n",
+                    path.replacingOccurrences(of: bossAttemptID, with: "0123456789abcdef0123456789abcdeG"),
+                    path.replacingOccurrences(of: bossAttemptID, with: String(bossAttemptID.dropFirst()))] {
+        require(!AccountTransportPolicy.account(path: invalid, method: "POST"), "invalid Baron \(suffix) route accepted: \(invalid)")
+    }
+}
+require(AccountTransportPolicy.account(path: "/app/v1/game/boss/attempts/\(bossAttemptID)/choose", method: "POST"),
+        "existing Baron choose route rejected")
+require(AccountTransportPolicy.account(path: "/app/v1/game/boss/attempts/\(bossAttemptID)/cancel", method: "POST"),
+        "existing Baron cancel route rejected")
+require(!AccountTransportPolicy.account(path: "/app/v1/game/boss/attempts/\(bossAttemptID)/choose", method: "GET"),
+        "Baron choose route accepted GET")
+require(!AccountTransportPolicy.account(path: "/app/v1/game/boss/attempts/\(bossAttemptID)/cancel", method: "GET"),
+        "Baron cancel route accepted GET")
 
 let sealedScenarioCatalog = "/app/v1/sealed-cases/scenarios"
 require(AccountTransportPolicy.account(path: sealedScenarioCatalog, method: "GET"), "sealed scenario catalog unavailable")
@@ -1366,11 +1425,75 @@ for status in [401, 403, 404] {
 }
 print("PASS SealedCase native routes, method/query denial and frozen portrait MIME/byte bounds")
 
+@MainActor private func nativeGameLiveSchedulingTests() async throws {
+    let pollPath = "/app/v1/game/live?id=connection_1-abc&_=1793275200000"
+    require(AccountTransportPolicy.gameLiveRead(path: pollPath, method: "GET"), "live read lane unavailable")
+    require(AccountTransportPolicy.account(path: pollPath, method: "GET"), "live polling route unavailable")
+    require(AccountTransportPolicy.account(path: "/app/v1/game/live/negotiate?negotiateVersion=1", method: "POST"), "live negotiate unavailable")
+    for path in ["/app/v1/game/live", pollPath + "&id=other", pollPath + "&access_token=secret", "/app/v1/game/live/other?id=one"] {
+        require(!AccountTransportPolicy.gameLiveRead(path: path, method: "GET"), "unbounded live read admitted")
+        require(!AccountTransportPolicy.account(path: path, method: "GET"), "unbounded live route admitted")
+    }
+    require(!AccountTransportPolicy.gameLiveRead(path: pollPath, method: "POST"), "mutation bypassed account FIFO")
+    require(!AccountTransportPolicy.account(path: pollPath, method: "POST"), "timestamp on live mutation accepted")
+
+    let gate = AccountRequestScheduler()
+    let config = AccountGameLiveHTTP.configuration()
+    config.protocolClasses = [DelayedIdentityProtocol.self]
+    require(config.httpCookieStorage == nil && !config.httpShouldSetCookies, "live session can persist credentials")
+    let live = URLSession(configuration: config)
+    let ordinaryConfig = URLSessionConfiguration.ephemeral
+    ordinaryConfig.protocolClasses = [DelayedIdentityProtocol.self]
+    let ordinary = URLSession(configuration: ordinaryConfig)
+    defer { live.invalidateAndCancel(); ordinary.invalidateAndCancel() }
+    let snapshot = AccountPrioritySessionSnapshot(binding: "player-one", csrf: "csrf", cookieHeaders: ["Cookie": "__Host-dv-account=frozen"])
+    let poll = Task { @MainActor in
+        let lease = try gate.acquireGameLiveRead()
+        defer { gate.releaseGameLiveRead(lease) }
+        let request = URLRequest(url: URL(string: "https://native-account.invalid/game-live-held")!)
+        let _ = try await live.data(for: snapshot.authorize(request))
+        try gate.requireCurrent(lease)
+    }
+    await eventually { DelayedIdentityProtocol.received["/game-live-held"] != nil }
+    do { _ = try gate.acquireGameLiveRead(); fatalError("duplicate live poll escaped bound") }
+    catch AccountRequestScheduler.Failure.queueFull { }
+    let command = Task { @MainActor in
+        let lease = try await gate.acquire()
+        defer { gate.release(lease) }
+        var request = URLRequest(url: URL(string: "https://native-account.invalid/game-command")!)
+        request.httpMethod = "POST"
+        let _ = try await ordinary.data(for: request)
+        try gate.requireCurrent(lease)
+    }
+    // The command must enter HTTP while the poll is still suspended.
+    await eventually { DelayedIdentityProtocol.received["/game-command"] != nil }
+    DelayedIdentityProtocol.received["/game-command"]!.complete()
+    try await command.value
+    DelayedIdentityProtocol.received["/game-live-held"]!.complete(cookie: "__Host-dv-account=untrusted; Path=/; Secure", cookieStorage: live.configuration.httpCookieStorage)
+    try await poll.value
+
+    let oldRead = try gate.acquireGameLiveRead()
+    let ceremony = try await gate.acquire(ceremony: true)
+    try await gate.beginCredentialCommit(ceremony)
+    do { try gate.requireCurrent(oldRead); fatalError("old live response crossed credential epoch") }
+    catch AccountRequestScheduler.Failure.contextChanged { }
+    do { _ = try gate.acquireGameLiveRead(); fatalError("live read started during credential commit") }
+    catch AccountRequestScheduler.Failure.contextChanged { }
+    gate.releaseGameLiveRead(oldRead); gate.release(ceremony)
+    let renewedRead = try gate.acquireGameLiveRead()
+    gate.invalidateQueuedScope()
+    do { try gate.requireCurrent(renewedRead); fatalError("live response crossed logout epoch") }
+    catch AccountRequestScheduler.Failure.contextChanged { }
+    gate.releaseGameLiveRead(renewedRead)
+    print("PASS game live read concurrency, bounded lane, cookie isolation and credential epoch fencing")
+}
+
 DispatchQueue.global().asyncAfter(deadline: .now() + 20) { fatalError("Native account scheduling regression timed out") }
 Task { @MainActor in
     do {
         try await anonymousAccountBootstrapTests()
         try await nativeAccountSchedulingTests()
+        try await nativeGameLiveSchedulingTests()
         try await accountDataShareLifecycleTests()
         print("PASS account data share lifecycle success, duplicate, cancellation and cleanup behavior")
         exit(0)

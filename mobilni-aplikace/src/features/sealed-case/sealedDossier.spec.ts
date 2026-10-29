@@ -58,12 +58,16 @@ describe('investigation dossier', () => {
 
   it('blocks missing public action parameters without testing the secret state of a target', () => {
     const base = { chapter: 1, expectedActionRevision: 0, confirmed: true, intent: 7 };
-    expect(planProblem(base)).toContain('zdroj');
-    expect(planProblem({ ...base, resourceId: 'R01-A' })).toBe('');
+    expect(planProblem(base)).toContain('konkrétní stopu');
+    expect(planProblem({ ...base, resourceId: 'R01-A', method: 'DELAY' })).toBe('');
+    expect(planProblem({ ...base, resourceId: 'R01-A', method: 'REDIRECT' })).toContain('adresáta');
+    expect(planProblem({ ...base, resourceId: 'R01-A', method: 'REDIRECT', targetId: 'two' })).toBe('');
     expect(planProblem({ ...base, intent: 10 })).toContain('postavu');
     expect(planProblem({ ...base, intent: 10, targetId: 'unknown-state' })).toBe('');
     expect(planProblem({ ...base, intent: 4 })).toBe('');
     expect(planProblem({ ...base, intent: 0 })).toBe('');
     expect(planProblem({ ...base, intent: 0, destination: 'SALON' })).toContain('Vyčkávání neumožňuje přesun');
+    expect(planProblem({ ...base, intent: 3, preparedIntent: 4 })).toContain('Příprava pátrání nemá herní účinek');
+    expect(planProblem({ ...base, intent: 3, preparedIntent: 6 })).toBe('');
   });
 });

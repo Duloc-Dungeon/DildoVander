@@ -34,9 +34,49 @@ function view(phase) {
     expectedPlayers: 8, readyPlayers: 8, ownId: 'one', ownReady: true, ownScenarioConsent: true, canManage: true, canStart: true,
     lobbyRevision: 9, ownState: 'Awake', ownTeam: 'Guardian', ownKit: 'Archivář', teamMembers: [], location: 'ARCHIV',
     locations: { ARCHIV: 'Archiv', SALON: 'Salon' }, adjacentLocations: ['SALON'], players, ownPlan: null,
-    choices: ['Pátrat v archivu', 'Chránit sebe', 'Připravit se'].map((label, i) => ({ id: `${i}`, label, benefit: 'Pouze doložený výsledek.', cost: 'Jeden tah.', risk: 'Úspěch není zaručen.', plan: { ...plan, intent: [4, 2, 3][i], preparedIntent: i === 2 ? 4 : null } })),
+    choices: [
+      { id: 'investigate', label: 'Pátrat', benefit: 'Doložený výsledek.', cost: 'Jeden tah.', risk: 'Nový nález není zaručen.', plan: { ...plan, intent: 4 } },
+      { id: 'guard', label: 'Chránit sebe', benefit: 'Přítomná ochrana.', cost: 'Jeden tah.', risk: 'Nejde o důkaz útoku.', plan: { ...plan, intent: 2, targetId: null } },
+      { id: 'delay-A1', label: 'Zdržet stopu', benefit: 'Odloží novou dostupnost.', cost: 'Jeden tah.', risk: 'Může selhat.', plan: { ...plan, intent: 7, method: 'DELAY', resourceId: 'A1', targetId: null } },
+    ],
     clues: [{ id: 'A1', chain: '1', family: 'A', candidates: ['p2', 'p3', 'p4'], sourceEvent: `${caseId}:prelude` }], sources: [{ id: 'A1', label: 'Záznam z archivní knihy' }],
     ownOversight: true, ownItems: [], visibleItems: [], notes: ['Zaznamenaná vlastní zkušenost.'], statements: [], ownOutcomes: [], finale: null };
+}
+const shortId = 'sc_' + 'b'.repeat(32);
+const shortPlayers = Array.from({ length: 8 }, (_, index) => ({
+  id: `pilot-${index + 1}`, name: `Pilot ${index + 1}`, seat: `S${index + 1}`,
+  state: 'Awake', location: index < 2 ? 'VESTIBUL' : 'SALON', mask: null, portraitUrl: null,
+}));
+function shortView(ownId, phase = 'lobby', chapter = 1) {
+  const index = Number(ownId.slice(-1)) - 1;
+  return {
+    id: shortId, phase, serverNow: 1000, chapter, chapters: 3,
+    planningEndsAt: 2000, quietEndsAt: 3000, finaleEndsAt: 9000,
+    expectedPlayers: 8, readyPlayers: 0, ownId, ownReady: false, ownScenarioConsent: false,
+    canManage: ownId === 'pilot-1', canStart: false, lobbyRevision: 1,
+    ownState: 'Awake', ownTeam: index === 1 || index === 4 ? 'Conspirator' : 'Guardian', ownKit: 'Badatel',
+    ownObjective: `SOUKROMÝ_CÍL_${ownId}`, teamMembers: [], location: index < 2 ? 'VESTIBUL' : 'SALON',
+    locations: { VESTIBUL: 'Vstupní síň', SALON: 'Salon', KOMORA: 'Komora' },
+    adjacentLocations: index < 2 ? ['SALON'] : ['VESTIBUL', 'KOMORA'],
+    routes: { VESTIBUL: ['SALON'], SALON: ['VESTIBUL', 'KOMORA'], KOMORA: ['SALON'] },
+    players: shortPlayers, ownPlan: null,
+    choices: [
+      { id: 'investigate', label: 'Pátrat', benefit: 'Výsledek podle zkušenosti.', cost: 'Jeden tah.', risk: 'Nový nález není zaručen.', plan: { chapter, expectedActionRevision: 0, confirmed: true, intent: 4 } },
+      { id: 'guard', label: 'Chránit sebe', benefit: 'Přítomná ochrana.', cost: 'Jeden tah.', risk: 'Nedokazuje útok.', plan: { chapter, expectedActionRevision: 0, confirmed: true, intent: 2 } },
+      { id: 'sabotage-delay', label: 'Zdržet stopu', benefit: 'Zdrží novou dostupnost.', cost: 'Jeden tah.', risk: 'Může selhat.', plan: { chapter, expectedActionRevision: 0, confirmed: true, intent: 7, method: 'DELAY' } },
+    ],
+    clues: ownId === 'pilot-1' ? [{ id: 'A1', chain: '1', family: 'A', candidates: ['pilot-2'], sourceEvent: 'PRIVATE_EVENT_SOURCE' }] : [],
+    sources: chapter === 3 && index < 2
+      ? [{ id: 'C1', label: 'Rozpis krbu · část C' }]
+      : [{ id: index < 2 ? 'A1' : 'A2', label: `Kniha příchodů · část A · ${index < 2 ? 'síň' : 'salon'}` }],
+    sourceSchedule: [
+      { family: 'A', label: 'Kniha příchodů', location: 'VESTIBUL', releaseChapter: 1 },
+      { family: 'C', label: 'Rozpis krbu', location: 'KOMORA', releaseChapter: 3 },
+    ],
+    ownOversight: false, ownItems: [], visibleItems: [], notes: [], statements: [], ownOutcomes: [],
+    scenario: neighbours, publicNarration: { text: 'Před domovní schůzí se uvolnil pořadník krbu.' },
+    finale: null,
+  };
 }
 try {
   for (const width of [320, 390, 1280]) {
@@ -79,14 +119,15 @@ try {
     const assertNoHorizontalOverflow = async label => assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label} overflow ${width}`);
     await page.getByRole('button', { name: 'Moje akce', exact: true }).click();
-    await page.getByRole('button', { name: /Pátrat v archivu/ }).click();
+    await page.getByRole('button', { name: /Pátrat/ }).click();
     assert.equal(requests.length, 0, 'draft selection is local');
     const extraPlanOptions = page.locator('details').filter({ has: page.getByText('Další možnosti tahu', { exact: true }) });
     await extraPlanOptions.waitFor({ state: 'attached' });
     assert.equal(await extraPlanOptions.evaluate(element => element.open), false, 'optional plan controls start collapsed');
-    for (const label of ['Adresát / cíl', 'Místo', 'Předmět / stopa']) {
+    for (const label of ['Adresát / cíl', 'Místo']) {
       assert.equal(await page.locator('.sealed-draft label').filter({ hasText: label }).first().isVisible(), true, `${label} remains reachable in the core draft`);
     }
+    assert.equal(await page.locator('.sealed-draft label').filter({ hasText: 'Předmět / stopa' }).count(), 0, 'investigation follows existing automatic clue selection');
     const confirm = page.getByRole('button', { name: /Výslovně potvrdit plán/ });
     await confirm.waitFor();
     await screenshot('planning-action-draft');
@@ -96,7 +137,7 @@ try {
     }
     await screenshot('planning-action-options');
     await extraPlanOptions.locator('summary').click();
-    await page.getByRole('button', { name: /Pátrat v archivu/ }).focus();
+    await page.getByRole('button', { name: /Pátrat/ }).focus();
     let confirmationReachedByKeyboard = false;
     for (let index = 0; index < 40 && !confirmationReachedByKeyboard; index++) {
       await page.keyboard.press('Tab');
@@ -267,6 +308,265 @@ try {
     assert.equal(await page.getByLabel('Zpráva', { exact: true }).count(), 0, 'observer cannot compose a player message');
     await context.close();
   }
+
+  // Deterministic synthetic API walkthrough for the three-chapter human pilot.
+  // Eight isolated browser contexts represent eight separate player sessions;
+  // they do not exercise real accounts, a live server, or human decisions.
+  const pilot = { created: false, phase: 'lobby', chapter: 1, ready: new Set(), plans: new Map(), outcomes: new Map(),
+    positions: new Map(shortPlayers.map(player => [player.id, player.location])), ballots: new Map(), actions: [], actionReceipts: new Set(),
+    createRequests: [], dropCreateAck: true, dropFirstActionAck: true, finale: null };
+  const sessions = [];
+  for (let index = 0; index < shortPlayers.length; index++) {
+    const playerId = `pilot-${index + 1}`;
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+    const page = await context.newPage();
+    page.on('pageerror', error => errors.push(error.message));
+    const projection = () => {
+      const value = shortView(playerId, pilot.phase, pilot.chapter);
+      value.readyPlayers = pilot.ready.size;
+      value.ownReady = pilot.ready.has(playerId);
+      value.ownScenarioConsent = pilot.ready.has(playerId);
+      value.canStart = pilot.ready.size === 8;
+      value.location = pilot.positions.get(playerId);
+      value.sources = pilot.chapter === 3 && value.location === 'KOMORA'
+        ? [{ id: 'C1', label: 'Rozpis krbu · část C' }]
+        : [{ id: value.location === 'VESTIBUL' ? 'A1' : 'A2', label: `Kniha příchodů · část A · ${value.location === 'VESTIBUL' ? 'síň' : 'salon'}` }];
+      value.adjacentLocations = value.location === 'VESTIBUL' ? ['SALON'] : value.location === 'KOMORA' ? ['SALON'] : ['VESTIBUL', 'KOMORA'];
+      value.ownPlan = pilot.plans.get(`${playerId}:${pilot.chapter}`) ?? null;
+      value.ownOutcomes = pilot.outcomes.get(playerId) ?? [];
+      value.ownSubmitted = pilot.ballots.has(playerId);
+      if (pilot.phase === 'finale' || pilot.phase === 'finished') value.finale = { ...pilot.finale,
+        ownSubmitted: pilot.ballots.has(playerId), ownBallot: pilot.ballots.get(playerId) ?? [] };
+      return value;
+    };
+    await page.route('**/app/v1/sealed-cases**', async route => {
+      const request = route.request(); const pathname = new URL(request.url()).pathname;
+      if (request.method() === 'GET') {
+        if (pathname.endsWith('/scenarios')) return route.fulfill({ json: scenarioCatalog });
+        if (pathname.endsWith('/current')) return route.fulfill({ json: { id: pilot.created ? shortId : null } });
+        return route.fulfill({ json: projection() });
+      }
+      const body = request.postDataJSON();
+      if (pathname === '/app/v1/sealed-cases') {
+        pilot.created = true;
+        pilot.createRequests.push(body);
+        if (pilot.dropCreateAck) {
+          pilot.dropCreateAck = false;
+          return route.abort('failed');
+        }
+        return route.fulfill({ json: { id: shortId } });
+      }
+      if (pathname.endsWith('/lobby')) {
+        pilot.ready.add(playerId);
+        return route.fulfill({ json: { accepted: true } });
+      }
+      if (pathname.endsWith('/start')) {
+        pilot.phase = 'planning';
+        return route.fulfill({ json: { accepted: true } });
+      }
+      if (pathname.endsWith('/actions')) {
+        const key = `${playerId}:${body.plan.chapter}`;
+        const receipt = `${key}:${body.operationId}`;
+        if (!pilot.actionReceipts.has(receipt)) {
+          pilot.actionReceipts.add(receipt);
+          pilot.actions.push({ playerId, plan: body.plan, operationId: body.operationId });
+          pilot.plans.set(key, { ...body.plan, id: `action-${playerId}-${body.plan.chapter}`, actorId: playerId, revision: body.plan.expectedActionRevision + 1 });
+        }
+        if (playerId === 'pilot-1' && body.plan.chapter === 1 && pilot.dropFirstActionAck) {
+          pilot.dropFirstActionAck = false;
+          return route.abort('failed');
+        }
+        return route.fulfill({ json: { accepted: true } });
+      }
+      if (pathname.endsWith('/ballots')) {
+        pilot.ballots.set(playerId, body.nominees);
+        return route.fulfill({ json: { accepted: true } });
+      }
+      return route.fulfill({ json: { accepted: true } });
+    });
+    sessions.push({ context, page, playerId, projection });
+  }
+
+  const first = sessions[0].page;
+  await first.goto(`${origin}/play/pod-peceti?new=1`);
+  await first.getByLabel('Scénář', { exact: true }).selectOption(neighbours.id);
+  await first.getByRole('button', { name: 'Založit případ' }).click();
+  await first.getByRole('button', { name: 'Ověřit původní založení' }).waitFor();
+  await first.getByRole('button', { name: 'Ověřit původní založení' }).click();
+  await first.waitForURL(`**/play/pod-peceti/${shortId}`);
+  assert.equal(pilot.created, true);
+  assert.equal(pilot.createRequests.length, 2);
+  assert.deepEqual(pilot.createRequests[0], pilot.createRequests[1], 'a short-game lost response retries the same creation operation');
+  assert.equal(pilot.createRequests[0].expectedPlayers, 8);
+  assert.equal(pilot.createRequests[0].variant, 'first');
+  assert.equal(pilot.createRequests[0].scenarioId, neighbours.id);
+  const pendingCreates = await first.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('dv:sealed-create:')));
+  assert.deepEqual(pendingCreates, [], 'confirmed create removes its retry record');
+  const createLog = `simulated-8-session-${shortId}`;
+  await first.getByRole('button', { name: 'Zahájit případ' }).waitFor();
+  assert.equal(await first.locator('summary').filter({ hasText: 'Krátká pravidla případu' }).count(), 1, 'the private-intro screen makes the rules available before consent');
+  await first.locator('summary').filter({ hasText: 'Krátká pravidla případu' }).click();
+  for (const text of ['soukromý cíl', 'výslovném potvrzení', 'Vlastní stopa je doložený důkaz', 'A/B/C', 'Soukromý telefon']) {
+    await first.getByText(new RegExp(text, 'i')).first().waitFor();
+  }
+  await first.screenshot({ path: path.join(output, 'pilot-short-private-intro.png'), fullPage: true });
+  await first.locator('label').filter({ hasText: 'Přijímám scénářovou minulost' }).locator('input').check();
+  await first.getByRole('button', { name: 'Připojit mou postavu' }).click();
+  for (const session of sessions.slice(1)) {
+    await session.page.goto(`${origin}/play/pod-peceti/${shortId}`);
+    await session.page.locator('label').filter({ hasText: 'Přijímám scénářovou minulost' }).locator('input').check();
+    await session.page.getByRole('button', { name: 'Připojit mou postavu' }).click();
+  }
+  assert.equal(pilot.ready.size, 8, 'eight isolated sessions explicitly accept the private introduction');
+  await first.reload();
+  await first.getByRole('button', { name: 'Zahájit případ' }).click();
+  for (const session of sessions) await session.page.reload();
+  for (const session of sessions) {
+    await session.page.getByRole('button', { name: 'Moje akce', exact: true }).click();
+    assert.deepEqual(await session.page.locator('.sealed-choices strong').allTextContents(), ['Pátrat', 'Chránit sebe', 'Zdržet stopu']);
+    await session.page.locator('.sealed-identity summary').click();
+    await session.page.getByText(session.projection().ownObjective, { exact: true }).waitFor();
+    assert.equal((await session.page.locator('.sealed-content').innerText()).includes('SOUKROMÝ_CÍL_pilot-1') && session.playerId !== 'pilot-1', false,
+      'a separate session does not receive another player’s private objective');
+  }
+  await first.screenshot({ path: path.join(output, 'pilot-short-action-menu.png'), fullPage: true });
+  const act = async (session, intentIndex, destination = null, sourceId = null) => {
+    const page = session.page;
+    await page.getByRole('button', { name: 'Moje akce', exact: true }).click();
+    await page.locator('.sealed-choices button').nth(intentIndex).click();
+    if (destination) {
+      const exploration = page.locator('.sealed-exploration');
+      if (!(await exploration.evaluate(element => element.open))) await exploration.locator('summary').click();
+      await page.getByRole('button', { name: `Připravit přesun: ${destination === 'SALON' ? 'Salon' : 'Komora'}` }).first().click();
+    }
+    if (sourceId) await page.locator('.sealed-draft label').filter({ hasText: 'Předmět / stopa' }).locator('select').selectOption(sourceId);
+    const before = pilot.actions.length;
+    await page.getByRole('button', { name: 'Výslovně potvrdit plán' }).click();
+    if (session.playerId === 'pilot-1' && pilot.chapter === 1) {
+      await page.getByRole('button', { name: 'Ověřit původní potvrzení' }).waitFor();
+      await page.reload();
+      await page.getByRole('button', { name: 'Moje akce', exact: true }).click();
+      await page.getByRole('button', { name: 'Ověřit původní potvrzení' }).click();
+      await page.getByText('Tvůj plán je uložený a čeká na společné vyhodnocení.', { exact: false }).waitFor();
+      const attempts = pilot.actions.filter(item => item.playerId === session.playerId && item.plan.chapter === 1);
+      assert.equal(attempts.length, 1, 'the lost acknowledgement retry preserves one action effect');
+      assert.equal(attempts[0].plan.destination, 'SALON');
+    } else {
+      assert.equal(pilot.actions.length, before + 1, 'selecting an action requires a separate explicit confirmation');
+      await page.getByText('Tvůj plán je uložený a čeká na společné vyhodnocení.', { exact: false }).waitFor();
+    }
+  };
+
+  await act(sessions[0], 0, 'SALON');
+  await act(sessions[1], 1, 'SALON');
+  await act(sessions[2], 2, null, 'A2');
+  await act(sessions[3], 0);
+  await act(sessions[4], 1);
+  await act(sessions[5], 2, null, 'A2');
+  await act(sessions[6], 0);
+  await act(sessions[7], 1);
+  assert.equal(pilot.actions.length, 8, 'all eight players confirm one chapter-one action');
+  await first.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await first.screenshot({ path: path.join(output, 'pilot-short-chapter-one-mobile.png'), fullPage: true });
+
+  const resolveChapter = chapter => {
+    for (const [playerId, plan] of pilot.plans) {
+      const [actor, planChapter] = playerId.split(':');
+      if (Number(planChapter) !== chapter) continue;
+      if (plan.destination) pilot.positions.set(actor, plan.destination);
+      const intent = ['Hold', 'Rest', 'Guard', 'Prepare', 'Investigate', 'Follow', 'Steal', 'Sabotage'][plan.intent];
+      const outcome = { chapter, actor, target: null, intent, result: 'Tah se vyhodnotil', eventRef: '',
+        observation: intent === 'Investigate' ? 'Místo bez nové dostupné stopy.' : null,
+        actionObservation: intent === 'Sabotage' ? { actionRef: plan.id, chapter, kind: actor === 'pilot-3' ? 'DELAY_SUCCEEDED' : 'DELAY_NOT_OBSERVED' } : null };
+      pilot.outcomes.set(actor, [...(pilot.outcomes.get(actor) ?? []), outcome]);
+      pilot.plans.delete(playerId);
+    }
+    pilot.chapter = chapter + 1;
+  };
+  resolveChapter(1);
+  for (const session of sessions) await session.page.reload();
+  await sessions[2].page.getByText('Tvá zaznamenaná zkušenost potvrzuje úspěšné zdržení nové dostupnosti této stopy.', { exact: true }).waitFor();
+  await sessions[5].page.getByText('Výsledek zůstává neznámý; neříká nic o cizí ochraně.', { exact: false }).waitFor();
+  assert.equal((await sessions[1].page.locator('.sealed-content').innerText()).includes('odrazil útok'), false,
+    'the protected player receives no invented observation of an attack');
+  await first.getByRole('button', { name: 'Moje akce', exact: true }).click();
+  await first.locator('.sealed-exploration summary').waitFor();
+  await first.getByRole('button', { name: 'Chránit sebe', exact: false }).click();
+  await first.locator('.sealed-exploration summary').click();
+  await first.getByRole('button', { name: 'Připravit přesun: Komora' }).click();
+  await first.getByRole('button', { name: 'Výslovně potvrdit plán' }).click();
+  await first.getByText('Tvůj plán je uložený a čeká na společné vyhodnocení.', { exact: false }).waitFor();
+  for (const session of sessions.slice(1)) {
+    const index = Number(session.playerId.slice(-1));
+    await act(session, index % 3 === 0 ? 2 : index % 2 === 0 ? 1 : 0, index === 2 ? 'KOMORA' : null,
+      index % 3 === 0 ? 'A2' : null);
+  }
+  resolveChapter(2);
+  for (const session of sessions) await session.page.reload();
+  await first.getByRole('button', { name: 'Moje akce', exact: true }).click();
+  await first.locator('.sealed-exploration summary').click();
+  await first.getByText('Dorazil jsi včas; zdroj C je teď uvolněný a viditelný.', { exact: true }).waitFor();
+  assert.equal(pilot.positions.get('pilot-1'), 'KOMORA');
+  assert.equal(first.url().includes(shortId), true, createLog);
+  await first.locator('.sealed-choices button').nth(2).click();
+  const finalSource = first.locator('.sealed-draft label').filter({ hasText: 'Předmět / stopa' }).locator('select');
+  assert.deepEqual(await finalSource.locator('option').allTextContents(), ['Vyber dostupný zdroj', 'Rozpis krbu · část C']);
+  await finalSource.selectOption('C1');
+  await first.getByText('V poslední kapitole po úspěchu nikdo tuto stopu nově nezíská', { exact: false }).waitFor();
+  await first.setViewportSize({ width: 320, height: 844 });
+  assert.equal(await first.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'short action form fits a 320px mobile viewport');
+  const normalTextSize = Number.parseFloat(await first.locator('.sealed-action-guidance').evaluate(element => getComputedStyle(element).fontSize));
+  await first.locator('.sealed-draft').screenshot({ path: path.join(output, 'pilot-short-delay-form-normal.png') });
+  await first.screenshot({ path: path.join(output, 'pilot-short-final-delay.png'), fullPage: true });
+  await first.evaluate(() => {
+    const textSizes = [...document.querySelectorAll('body *')]
+      .filter(element => [...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()))
+      .map(element => [element, Number.parseFloat(getComputedStyle(element).fontSize)]);
+    for (const [element, fontSize] of textSizes) element.style.setProperty('font-size', `${fontSize * 2}px`, 'important');
+  });
+  const enlargedTextSize = Number.parseFloat(await first.locator('.sealed-action-guidance').evaluate(element => getComputedStyle(element).fontSize));
+  assert.ok(enlargedTextSize >= normalTextSize * 1.9, 'representative action text actually scales to 200%');
+  assert.equal(await first.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'short action form remains usable at 200% text');
+  await first.getByRole('button', { name: 'Výslovně potvrdit plán' }).scrollIntoViewIfNeeded();
+  assert.equal(await first.getByRole('button', { name: 'Výslovně potvrdit plán' }).isVisible(), true, 'plan confirmation remains reachable after scrolling at 200% text');
+  await first.locator('.sealed-draft').screenshot({ path: path.join(output, 'pilot-short-delay-form-200-percent.png') });
+  await first.screenshot({ path: path.join(output, 'pilot-short-final-delay-200-percent.png'), fullPage: true });
+  await first.getByRole('button', { name: 'Výslovně potvrdit plán' }).click();
+  await first.getByText('Tvůj plán je uložený a čeká na společné vyhodnocení.', { exact: false }).waitFor();
+  const lastDelay = pilot.actions.find(item => item.playerId === 'pilot-1' && item.plan.chapter === 3);
+  assert.equal(lastDelay.plan.resourceId, 'C1');
+  assert.equal(lastDelay.plan.method, 'DELAY');
+  pilot.outcomes.set('pilot-1', [...(pilot.outcomes.get('pilot-1') ?? []), {
+    chapter: 3, actor: 'pilot-1', target: null, intent: 'Sabotage', result: 'Tah se vyhodnotil', eventRef: '',
+    actionObservation: { actionRef: 'action-pilot-1-3', chapter: 3, kind: 'DELAY_SUCCEEDED' },
+  }]);
+  pilot.phase = 'finale';
+  pilot.finale = { phase: 'ballot', ballotSize: 2, ownSubmitted: false, ownBallot: [], runoffCandidates: [], runoffPlaces: 0,
+    selected: null, winner: null, conspirators: null, reconstruction: null };
+  for (const session of sessions) await session.page.reload();
+  await first.screenshot({ path: path.join(output, 'pilot-short-secret-ballot.png'), fullPage: true });
+  for (const session of sessions) {
+    const page = session.page;
+    const nominees = session.playerId === 'pilot-2' ? ['Pilot 3', 'Pilot 5']
+      : session.playerId === 'pilot-5' ? ['Pilot 2', 'Pilot 3'] : ['Pilot 2', 'Pilot 5'];
+    for (const nominee of nominees) await page.getByRole('checkbox', { name: nominee, exact: true }).check();
+    await page.getByRole('button', { name: 'Potvrdit tajný hlas' }).click();
+    assert.equal(pilot.ballots.has(session.playerId), true);
+  }
+  pilot.phase = 'finished';
+  pilot.finale = { phase: 'released', ballotSize: 2, ownSubmitted: true, ownBallot: [], runoffCandidates: [], runoffPlaces: 0,
+    selected: ['pilot-2', 'pilot-5'], winner: neighbours.guardianLabel, conspirators: ['pilot-2', 'pilot-5'],
+    message: 'Pořadník se do finále dobelhal.',
+    reconstruction: pilot.actions.map((item, index) => ({ chapter: item.plan.chapter, actor: item.playerId, target: null,
+      intent: ['Hold', 'Rest', 'Guard', 'Prepare', 'Investigate', 'Follow', 'Steal', 'Sabotage'][item.plan.intent],
+      result: 'Potvrzený tah', eventRef: `event-${index + 1}` })) };
+  await first.reload();
+  await first.getByRole('heading', { name: 'Tvá stopa v případu' }).waitFor();
+  await first.getByText('Vítězí Sousedé', { exact: false }).waitFor();
+  assert.equal(pilot.ballots.size, 8, 'all eight isolated sessions cast a secret ballot before the synthetic reveal');
+  for (const session of sessions) await session.context.close();
+  console.log('PASS simulated human-pilot browser walk: short-game creation, eight isolated sessions and private objectives, equal action menu, chapter-one lost-ack retry, chapter-two arrival, final DELAY, eight secret ballots and reconstruction. Synthetic fixture only; no live backend or human outcomes.');
+
   assert.deepEqual(errors, []);
   console.log(`PASS sealed client: 320/390/1280px, scenario catalog and separate duration, scenario finale/exports, explicit draft and retry, journal/conversations/empty/long/ballot/quiet states, responsive end reachability, lost create/AI acknowledgements and reload, privacy and no page errors. ${output}`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

@@ -1,8 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const native = vi.hoisted(() => ({ platform: 'web', register: vi.fn(), addListener: vi.fn(), unregister: vi.fn(), availability: vi.fn() }));
+const native = vi.hoisted(() => ({ platform: 'web', register: vi.fn(), addListener: vi.fn(), unregister: vi.fn(), availability: vi.fn(), checkPermissions: vi.fn() }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => native.platform, isPluginAvailable: () => true }, registerPlugin: () => ({ pushAvailability: native.availability }) }));
 vi.mock('@capacitor/push-notifications', () => ({ PushNotifications: native }));
-import { decodeApplicationKey, listenForNativePush, nativePushConfigured, registerPush, safePushPath, unregisterLocalPush } from './pushNotifications';
+import { decodeApplicationKey, listenForNativePush, nativePushConfigured, readPushPermission, registerPush, safePushPath, unregisterLocalPush } from './pushNotifications';
+
+describe('notification permission state', () => {
+  it.each(['default', 'granted', 'denied'])('distinguishes web %s without asking for permission', async permission => {
+    native.platform = 'web';
+    vi.stubGlobal('Notification', { permission });
+    expect(await readPushPermission()).toBe(permission === 'default' ? 'prompt' : permission);
+    vi.unstubAllGlobals();
+  });
+  it.each(['prompt', 'prompt-with-rationale', 'granted', 'denied'])('reads native %s without registering', async receive => {
+    native.platform = 'android'; native.checkPermissions.mockResolvedValue({ receive });
+    expect(await readPushPermission()).toBe(receive === 'prompt-with-rationale' ? 'prompt' : receive);
+    native.platform = 'web';
+  });
+});
 
 describe('push destinations', () => {
   it('admits only known internal destinations', () => {

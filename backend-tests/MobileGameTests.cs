@@ -344,6 +344,126 @@ internal static partial class MobileGameTests
         }
     }
 
+    private static async Task<ClientWebSocket> ConnectGameLiveAsync(HttpFixture fixture, HttpClient client,
+        string origin = "https://localhost")
+    {
+        var address = new Uri(fixture.BaseAddress + GameLiveHub.Path);
+        var socketAddress = new UriBuilder(address) { Scheme = "wss" }.Uri;
+        var socket = new ClientWebSocket();
+        socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        socket.Options.SetRequestHeader("Cookie", fixture.CookiesFor(client).GetCookieHeader(address));
+        socket.Options.SetRequestHeader("Origin", origin);
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(socketAddress, timeout.Token);
+        var handshake = Encoding.UTF8.GetBytes("{\"protocol\":\"json\",\"version\":1}\u001e");
+        await socket.SendAsync(handshake, WebSocketMessageType.Text, true, timeout.Token);
+        var response = await ReceiveGameLiveFrameAsync(socket, timeout.Token);
+        if (response != "{}\u001e")
+        {
+            socket.Dispose();
+            throw new InvalidOperationException("The game SignalR handshake was rejected.");
+        }
+        return socket;
+    }
+
+    private static async Task<(string Path, string ConnectionToken)> ConnectGameLiveLongPollingAsync(
+        HttpFixture fixture, HttpClient client)
+    {
+        using var negotiateResponse = await client.PostAsync(
+            GameLiveHub.Path + "/negotiate?negotiateVersion=1", new StringContent(""));
+        negotiateResponse.EnsureSuccessStatusCode();
+        var negotiation = await negotiateResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var connectionToken = negotiation.GetProperty("connectionToken").GetString()
+            ?? throw new InvalidOperationException("SignalR negotiation omitted its connection token.");
+        var path = GameLiveHub.Path + "?id=" + Uri.EscapeDataString(connectionToken);
+
+        var initialPoll = client.GetAsync(path, HttpCompletionOption.ResponseHeadersRead);
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        var handshake = new StringContent("{\"protocol\":\"json\",\"version\":1}\u001e",
+            Encoding.UTF8, "text/plain");
+        using var handshakeResponse = await client.PostAsync(path, handshake);
+        handshakeResponse.EnsureSuccessStatusCode();
+        using var initialResponse = await initialPoll.WaitAsync(TimeSpan.FromSeconds(5));
+        initialResponse.EnsureSuccessStatusCode();
+        var handshakeFrame = await initialResponse.Content.ReadAsStringAsync();
+        if (string.IsNullOrEmpty(handshakeFrame))
+        {
+            using var handshakePoll = await client.GetAsync(path, HttpCompletionOption.ResponseHeadersRead)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            handshakePoll.EnsureSuccessStatusCode();
+            handshakeFrame = await handshakePoll.Content.ReadAsStringAsync();
+        }
+        if (!handshakeFrame.Contains("{}\u001e", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"The game SignalR LongPolling handshake was rejected: {handshakeFrame}");
+        }
+
+        return (path, connectionToken);
+    }
+
+    private static async Task<string> ReceiveGameLiveLongPollEventAsync(Task<HttpResponseMessage> pendingPoll)
+    {
+        using var response = await pendingPoll.WaitAsync(TimeSpan.FromSeconds(5));
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    private static async Task<bool> GameLiveRejectsOriginAsync(HttpFixture fixture, HttpClient client)
+    {
+        var address = new Uri(fixture.BaseAddress + GameLiveHub.Path);
+        var socketAddress = new UriBuilder(address) { Scheme = "wss" }.Uri;
+        using var socket = new ClientWebSocket();
+        socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        socket.Options.SetRequestHeader("Cookie", fixture.CookiesFor(client).GetCookieHeader(address));
+        socket.Options.SetRequestHeader("Origin", "https://attacker.invalid");
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            await socket.ConnectAsync(socketAddress, timeout.Token);
+            var handshake = Encoding.UTF8.GetBytes("{\"protocol\":\"json\",\"version\":1}\u001e");
+            await socket.SendAsync(handshake, WebSocketMessageType.Text, true, timeout.Token);
+            var firstFrame = await ReceiveGameLiveFrameAsync(socket, timeout.Token);
+            if (firstFrame != "{}\u001e")
+            {
+                return true;
+            }
+
+            var pendingFrame = ReceiveGameLiveFrameAsync(socket, CancellationToken.None);
+            await Task.WhenAny(pendingFrame, Task.Delay(TimeSpan.FromMilliseconds(250)));
+            return pendingFrame.IsFaulted || pendingFrame.IsCompletedSuccessfully
+                || socket.State is WebSocketState.Aborted or WebSocketState.Closed;
+        }
+        catch (WebSocketException)
+        {
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return true;
+        }
+    }
+
+    private static async Task<string> ReceiveGameLiveFrameAsync(ClientWebSocket socket, CancellationToken token)
+    {
+        var buffer = new byte[4096];
+        using var message = new MemoryStream();
+        while (true)
+        {
+            var result = await socket.ReceiveAsync(buffer.AsMemory(), token);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                throw new WebSocketException("The game SignalR connection closed.");
+            }
+            message.Write(buffer, 0, result.Count);
+            if (result.EndOfMessage)
+            {
+                return Encoding.UTF8.GetString(message.ToArray());
+            }
+        }
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken token)
     {
         while (!condition())
@@ -476,14 +596,14 @@ internal static partial class MobileGameTests
             }
             Check(block.Block == 2 && block.CompletedRounds == 4 && block.PlayerInventory.Values.Sum() == 6,
                 "tactical inventory resets after the first four exchanges");
-            for (var round = 4; round < 8; round++)
+            for (var round = 4; round < 8 && block.Status == "active"; round++)
             {
                 var first = reopened.Mutate(tactical.Id, "group-a", "alice", "choose",
                     new($"tactical-a-{round}", block.Revision, Choice: aliceChoices[round % 4]), 106 + round);
                 block = reopened.Mutate(tactical.Id, "group-a", "bob", "choose",
                     new($"tactical-b-{round}", first.Revision, Choice: bobChoices[round % 4]), 106 + round);
             }
-            Check(block.Status == "complete", "eight tactical exchanges complete the match");
+            Check(block.Status == "complete", "tactical match ends once no reversal is possible");
             PlayTacticalMatch(reopened, "tactical-progression-one", 500);
             PlayTacticalMatch(reopened, "tactical-progression-two", 600);
             var configured = reopened.Challenge("group-a", "alice", "Alice", "bob", "Bob",
@@ -756,7 +876,7 @@ internal static partial class MobileGameTests
         var current = store.Mutate(challenge.Id, "group-a", "bob", "accept", new($"{prefix}-accept", challenge.Revision), now + 1);
         string[] left = ["strike", "trick", "shield", "strike"];
         string[] right = ["trick", "shield", "strike", "trick"];
-        for (var round = 0; round < 8; round++)
+        for (var round = 0; round < 8 && current.Status == "active"; round++)
         {
             var first = store.Mutate(challenge.Id, "group-a", "alice", "choose",
                 new($"{prefix}-left-{round}", current.Revision, Choice: left[round % 4]), now + 2 + round);
@@ -766,6 +886,18 @@ internal static partial class MobileGameTests
         Check(current.Status == "complete", "tactical progression match completes");
     }
 
+    internal static GameMatchView PlayYoloDecisions(GameStore store, GameMatchView current, string prefix,
+        string group = "group-a", string left = "alice", string right = "bob")
+    {
+        string[] choices = ["levitate", "protect", "finish"];
+        for (var act = 0; act < 3; act++)
+        {
+            var first = store.Mutate(current.Id, group, left, "choose", new($"{prefix}-left-{act}", current.Revision, Choice: choices[act]), 902 + act);
+            current = store.Mutate(current.Id, group, right, "choose", new($"{prefix}-right-{act}", first.Revision, Choice: choices[act]), 902 + act);
+        }
+        return current;
+    }
+
     private static void VerifyYoloStoreLifecycle(GameStore store, string dataRoot)
     {
         var playerBefore = store.Lobby("group-a", "alice", "Alice", []).Player;
@@ -773,8 +905,9 @@ internal static partial class MobileGameTests
             new("bob", "yolo", "yolo-store-challenge-1", TasksEnabled: true, AdultConsent: true), 900);
         var generating = store.Mutate(challenge.Id, "group-a", "bob", "accept",
             new("yolo-store-accept-1", challenge.Revision, TasksEnabled: true, AdultConsent: true), 901);
-        Check(generating.Status == "generating" && generating.TotalRounds == 0 && generating.Yolo?.Status == "generating",
-            "accepted YOLO match enters async generation without round choices");
+        Check(generating.Status == "active" && generating.TotalRounds == 0 && generating.Yolo?.Status == "choosing",
+            "accepted YOLO match starts three simultaneous decisions");
+        generating = PlayYoloDecisions(store, generating, "store-first");
         Check(store.TryClaimYolo(challenge.Id, generating.Revision)
             && !store.TryClaimYolo(challenge.Id, generating.Revision), "YOLO provider job has one durable active claim");
         using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
@@ -801,7 +934,7 @@ internal static partial class MobileGameTests
         Check(frozen?.Challenger.Name == "Alena" && repeatedFreeze?.Challenger.Name == "Alena",
             "YOLO retry uses the first frozen public profile snapshot");
         store.CompleteYolo(challenge.Id, generating.Revision,
-            new("bob", "Boris wins the fictional bout.", [new("A fictional exchange.", ["alice:name", "bob:name"]), new("A second fictional exchange.", ["alice:universe", "bob:universe"]), new("The closing fictional exchange.", ["alice:wandName", "bob:wandName"])]));
+            new("bob", "Boris wins the fictional bout.", [new("A fictional exchange.", ["alice:name", "bob:name"]), new("A second fictional exchange.", ["alice:universe", "bob:universe"]), new("The closing fictional exchange.", ["alice:wandName", "bob:wandName"])], DecisiveChoice: "bob:3"));
         var completed = store.Read(challenge.Id, "group-a", "alice");
         Check(completed.Status == "complete" && completed.Yolo?.WinnerId == "bob" && completed.XpAwarded == 0
             && completed.PartyTask?.Status == "pending"
@@ -822,6 +955,7 @@ internal static partial class MobileGameTests
             new("bob", "yolo", "yolo-store-challenge-2"), 910);
         var retrying = store.Mutate(retryChallenge.Id, "group-a", "bob", "accept",
             new("yolo-store-accept-2", retryChallenge.Revision), 911);
+        retrying = PlayYoloDecisions(store, retrying, "store-retry");
         Check(store.TryClaimYolo(retryChallenge.Id, retrying.Revision), "second YOLO job can claim independently");
         store.FailYolo(retryChallenge.Id, retrying.Revision, "yolo_generation_failed");
         var failed = store.Read(retryChallenge.Id, "group-a", "alice");
@@ -848,6 +982,65 @@ internal static partial class MobileGameTests
             new("alice", "Cancelled result should not commit.", []));
         Check(cancelled.Status == "cancelled" && store.Read(retryChallenge.Id, "group-a", "alice").Yolo?.Status == "cancelled",
             "cancel wins atomically over a pending provider completion");
+    }
+
+    private sealed class PreparedGameProvider : IGameYoloProvider
+    {
+        public Task<GameYoloSetting> PrepareAsync(GameYoloProfile left, GameYoloProfile right, CancellationToken token) =>
+            Task.FromResult(GameYoloPreparationTests.Setting());
+        public Task<GameYoloResult> GenerateAsync(GameYoloProfile left, GameYoloProfile right, CancellationToken token) =>
+            Task.FromResult(new GameYoloResult(null, "Oba splnili cíl díky přípravě.",
+                [new("První plány.", []), new("Příprava plánů.", []), new("Oba splnili cíl.", [])], "draw", $"{left.Id}:3"));
+    }
+
+    internal static async Task RunYoloDecisionHttpAsync()
+    {
+        await using var fixture = await HttpFixture.StartAsync(withKeepsakes: true, yoloProvider: new PreparedGameProvider());
+        using var alice = fixture.Client();
+        using var bob = fixture.Client();
+        await fixture.LoginAsync(alice, fixture.AliceId);
+        await fixture.LoginAsync(bob, fixture.BobId);
+        alice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(alice));
+        bob.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(bob));
+        fixture.SetGameXp(fixture.AliceId, 30, 3);
+        fixture.SetGameXp(fixture.BobId, 30, 3);
+        using var challengeResponse = await alice.PostAsJsonAsync("/app/v1/game/matches", new { opponentId = fixture.BobId, mode = "yolo", operationId = Guid.NewGuid().ToString("N") });
+        Check(challengeResponse.StatusCode == HttpStatusCode.Created, "two HTTP participants can start YOLO");
+        var challenge = await challengeResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var path = "/app/v1/game/matches/" + challenge.GetProperty("id").GetString();
+        using var accepted = await bob.PostAsJsonAsync(path + "/accept", new { operationId = Guid.NewGuid().ToString("N"), expectedRevision = challenge.GetProperty("revision").GetInt64() });
+        Check(accepted.StatusCode == HttpStatusCode.OK, "opponent accepts decision scenario over HTTP");
+        var state = await accepted.Content.ReadFromJsonAsync<JsonElement>();
+        Check(state.GetProperty("status").GetString() == "preparing", "HTTP acceptance queues AI scenario preparation");
+        for (var attempt = 0; attempt < 100 && state.GetProperty("status").GetString() != "active"; attempt++)
+        {
+            await Task.Delay(20);
+            state = await bob.GetFromJsonAsync<JsonElement>(path);
+        }
+        Check(state.GetProperty("status").GetString() == "active", "prepared AI scenario becomes playable over HTTP");
+        string[] choices = ["levitate", "protect", "finish"];
+        for (var act = 0; act < 3; act++)
+        {
+            var operation = Guid.NewGuid().ToString("N");
+            var command = new { operationId = operation, expectedRevision = state.GetProperty("revision").GetInt64(), choice = choices[act] };
+            using var first = await alice.PostAsJsonAsync(path + "/choose", command);
+            Check(first.StatusCode == HttpStatusCode.OK, "first HTTP choice saved");
+            var locked = await first.Content.ReadFromJsonAsync<JsonElement>();
+            using var replay = await alice.PostAsJsonAsync(path + "/choose", command);
+            Check(replay.StatusCode == HttpStatusCode.OK, "replayed HTTP confirmation is idempotent");
+            var opponentView = await bob.GetFromJsonAsync<JsonElement>(path);
+            var scenario = opponentView.GetProperty("yolo").GetProperty("scenario");
+            Check(scenario.GetProperty("revealed").GetArrayLength() == act && scenario.GetProperty("opponentChoiceLocked").GetBoolean(),
+                "opponent HTTP snapshot exposes only the lock and prior completed acts");
+            using var second = await bob.PostAsJsonAsync(path + "/choose", new { operationId = Guid.NewGuid().ToString("N"), expectedRevision = locked.GetProperty("revision").GetInt64(), choice = choices[act] });
+            Check(second.StatusCode == HttpStatusCode.OK, "second HTTP choice reveals both consequences");
+            state = await second.Content.ReadFromJsonAsync<JsonElement>();
+            Check(state.GetProperty("yolo").GetProperty("scenario").GetProperty("revealed").GetArrayLength() == act + 1,
+                "joint HTTP reveal contains exactly the completed acts");
+        }
+        Check(state.GetProperty("status").GetString() == "generating" && state.GetProperty("xpAwarded").GetInt32() == 0,
+            "only sixth confirmation starts AI resolution and never awards XP");
+        Console.WriteLine("YOLO two-client HTTP decision/replay/privacy checks passed without paid calls.");
     }
 
     internal static async Task RunHttpAsync()
@@ -1039,8 +1232,43 @@ internal static partial class MobileGameTests
         Check(withoutCsrf.StatusCode == HttpStatusCode.BadRequest, "account mutation rejects missing CSRF");
         var csrf = await fixture.CsrfAsync(alice);
         alice.DefaultRequestHeaders.Add("X-DV-CSRF", csrf);
+        using (var unauthenticated = fixture.Client())
+        using (var negotiate = await unauthenticated.PostAsync(
+            "/app/v1/game/live/negotiate?negotiateVersion=1", new StringContent("")))
+        {
+            Check(negotiate.StatusCode == HttpStatusCode.Unauthorized,
+                "unauthenticated clients cannot negotiate a game SignalR connection");
+        }
+        Check(await GameLiveRejectsOriginAsync(fixture, bob),
+            "game SignalR rejects an authenticated WebSocket handshake from an unapproved origin");
+        using var bobLive = await ConnectGameLiveAsync(fixture, bob);
+        using var bobLongPollClient = fixture.Client();
+        await fixture.LoginAsync(bobLongPollClient, fixture.BobId);
+        bobLongPollClient.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(bobLongPollClient));
+        var bobLongPoll = await ConnectGameLiveLongPollingAsync(fixture, bobLongPollClient);
+        using (var invalidChallenge = await alice.PostAsJsonAsync("/app/v1/game/matches", new
+        {
+            opponentId = fixture.ForeignId, mode = "quick", operationId = "http-invalid-game-live-01"
+        }))
+        {
+            Check(invalidChallenge.StatusCode == HttpStatusCode.NotFound,
+                "a rejected cross-group game command does not succeed");
+        }
+        var pendingNotification = ReceiveGameLiveFrameAsync(bobLive, CancellationToken.None);
+        var quietPeriod = await Task.WhenAny(pendingNotification, Task.Delay(TimeSpan.FromMilliseconds(250)));
+        Check(quietPeriod != pendingNotification, "a rejected game command does not notify other players");
+        var pendingLongPoll = bobLongPollClient.GetAsync(bobLongPoll.Path, HttpCompletionOption.ResponseHeadersRead);
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
         var challengeResponse = await alice.PostAsJsonAsync("/app/v1/game/matches", challengeBody);
         Check(challengeResponse.StatusCode == HttpStatusCode.Created, "CSRF protected challenge succeeds");
+        var changeFrame = await pendingNotification.WaitAsync(TimeSpan.FromSeconds(5));
+        Check(changeFrame.Contains("\"target\":\"gameChanged\"", StringComparison.Ordinal)
+            && changeFrame.Contains("\"arguments\":[]", StringComparison.Ordinal),
+            "successful game commands notify the other active player without sending game data");
+        var longPollNotification = await ReceiveGameLiveLongPollEventAsync(pendingLongPoll);
+        Check(longPollNotification.Contains("\"target\":\"gameChanged\"", StringComparison.Ordinal)
+            && longPollNotification.Contains("\"arguments\":[]", StringComparison.Ordinal),
+            "successful game commands notify a native LongPolling client without sending game data");
         var challengeJson = await challengeResponse.Content.ReadFromJsonAsync<JsonElement>();
         var matchId = challengeJson.GetProperty("id").GetString()!;
         Check(challengeJson.GetProperty("canCancel").GetBoolean(), "challenger receives correct action authority");
@@ -1170,6 +1398,147 @@ internal static partial class MobileGameTests
             "game polling and commands do not consume the shared account/sign-in allowance");
     }
 
+    internal static async Task RunBossRickrollHttpAsync()
+    {
+        await using var fixture = await HttpFixture.StartAsync();
+        using var alice = fixture.Client();
+        using var aliceDevice = fixture.Client();
+        using var bob = fixture.Client();
+        using var customer = fixture.Client();
+        using var staleOwner = fixture.Client();
+        using var owner = fixture.Client();
+        await fixture.LoginAsync(alice, fixture.AliceId);
+        await fixture.LoginAsync(aliceDevice, fixture.AliceId);
+        await fixture.LoginAsync(bob, fixture.BobId);
+        await fixture.LoginAsync(customer, fixture.AliceId);
+        await fixture.MakeOwnerAsync(fixture.PausedId);
+        await fixture.LoginAsync(staleOwner, fixture.PausedId);
+        alice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(alice));
+        aliceDevice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(aliceDevice));
+        bob.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(bob));
+        customer.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(customer));
+        staleOwner.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(staleOwner));
+
+        const string adminRoute = "/app/v1/admin/game/groups/";
+        var toggleRoute = adminRoute + fixture.ActiveGroupId + "/boss/rickroll";
+        using (var noCsrf = fixture.Client())
+        {
+            await fixture.LoginAsync(noCsrf, fixture.PausedId);
+            using var denied = await noCsrf.PostAsJsonAsync(toggleRoute,
+                new { operationId = Guid.NewGuid().ToString("D"), expectedRevision = 0, enabled = true });
+            Check(denied.StatusCode == HttpStatusCode.BadRequest,
+                "boss Rickroll toggle requires same-origin CSRF protection");
+        }
+        using (var ordinaryRole = await customer.PostAsJsonAsync(toggleRoute,
+            new { operationId = Guid.NewGuid().ToString("D"), expectedRevision = 0, enabled = true }))
+            Check(ordinaryRole.StatusCode == HttpStatusCode.Forbidden,
+                "ordinary customer cannot change the boss Rickroll toggle");
+
+        await fixture.SetSessionAuthenticatedAtAsync(fixture.PausedId, DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds());
+        using (var stale = await staleOwner.PostAsJsonAsync(toggleRoute,
+            new { operationId = Guid.NewGuid().ToString("D"), expectedRevision = 0, enabled = true }))
+            Check(stale.StatusCode == HttpStatusCode.Forbidden
+                && (await stale.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "recent_passkey_required",
+                "owner toggle requires a recent passkey session");
+        await fixture.LoginAsync(owner, fixture.PausedId);
+        owner.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(owner));
+        using (var inactive = await owner.PostAsJsonAsync(adminRoute + fixture.PausedGroupId + "/boss/rickroll",
+            new { operationId = Guid.NewGuid().ToString("D"), expectedRevision = 0, enabled = true }))
+            Check(inactive.StatusCode == HttpStatusCode.Conflict,
+                "owner cannot configure a group that has not opened");
+
+        Check(!fixture.BossStore.ReadBoss(fixture.ActiveGroupId).RickrollEnabled
+            && fixture.BossStore.ReadBoss(fixture.ActiveGroupId).RickrollRevision == 0,
+            "HTTP fixture begins with a disabled Rickroll setting at revision zero");
+        using (var invalidOperation = await owner.PostAsJsonAsync(toggleRoute,
+            new { operationId = (string?)null, expectedRevision = 0, enabled = true }))
+            Check(invalidOperation.StatusCode == HttpStatusCode.BadRequest
+                && (await invalidOperation.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "operation_id_invalid",
+                "null operation id is rejected as a client error instead of failing the endpoint");
+        var enableOperation = Guid.NewGuid().ToString("D");
+        using (var enabled = await owner.PostAsJsonAsync(toggleRoute,
+            new { operationId = enableOperation, expectedRevision = 0, enabled = true }))
+        {
+            Check(enabled.StatusCode == HttpStatusCode.OK, "recent owner can enable boss Rickroll");
+            var profile = await enabled.Content.ReadFromJsonAsync<JsonElement>();
+            Check(profile.GetProperty("rickrollEnabled").GetBoolean()
+                && profile.GetProperty("rickrollRevision").GetInt64() == 1
+                && profile.GetProperty("revision").GetInt64() == 0,
+                "toggle response carries the updated boss profile and independent revision");
+        }
+        using (var replay = await owner.PostAsJsonAsync(toggleRoute,
+            new { operationId = enableOperation, expectedRevision = 0, enabled = true }))
+            Check(replay.StatusCode == HttpStatusCode.OK
+                && (await replay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("rickrollRevision").GetInt64() == 1,
+                "replayed toggle operation does not advance the revision twice");
+        using (var operationConflict = await owner.PostAsJsonAsync(toggleRoute,
+            new { operationId = enableOperation, expectedRevision = 0, enabled = false }))
+            Check(operationConflict.StatusCode == HttpStatusCode.Conflict,
+                "toggle operation id cannot be replayed with a changed payload");
+        using (var staleRevision = await owner.PostAsJsonAsync(toggleRoute,
+            new { operationId = Guid.NewGuid().ToString("D"), expectedRevision = 0, enabled = false }))
+            Check(staleRevision.StatusCode == HttpStatusCode.Conflict,
+                "stale Rickroll revision cannot overwrite newer configuration");
+
+        using (var unrevealed = await alice.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }))
+            Check(unrevealed.StatusCode == HttpStatusCode.OK
+                && !(await unrevealed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("play").GetBoolean(),
+                "enabled Rickroll is not claimed before the boss is revealed");
+        fixture.SetGameXp(fixture.AliceId, 30, 3);
+        fixture.SetGameXp(fixture.BobId, 30, 3);
+        using (var reveal = await owner.PostAsJsonAsync(adminRoute + fixture.ActiveGroupId + "/boss",
+            new { operationId = Guid.NewGuid().ToString("D"), expectedRevision = 0 }))
+            Check(reveal.StatusCode == HttpStatusCode.OK, "recent owner reveals the boss for the active fixture group");
+        await fixture.RemoveWandAsync();
+
+        using (var disabled = await owner.PostAsJsonAsync(toggleRoute,
+            new { operationId = Guid.NewGuid().ToString("D"), expectedRevision = 1, enabled = false }))
+            Check(disabled.StatusCode == HttpStatusCode.OK, "owner can disable Rickroll with its current independent revision");
+        using (var noPlay = await alice.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }))
+            Check(noPlay.StatusCode == HttpStatusCode.OK
+                && !(await noPlay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("play").GetBoolean(),
+                "disabled Rickroll does not claim a player account");
+        using (var reenabled = await owner.PostAsJsonAsync(toggleRoute,
+            new { operationId = Guid.NewGuid().ToString("D"), expectedRevision = 2, enabled = true }))
+            Check(reenabled.StatusCode == HttpStatusCode.OK, "owner can re-enable Rickroll at the next revision");
+
+        fixture.SetRickrollMediaAvailable(false);
+        using (var missingMedia = await alice.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }))
+            Check(missingMedia.StatusCode == HttpStatusCode.OK
+                && !(await missingMedia.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("play").GetBoolean(),
+                "unavailable media does not consume the player's claim");
+        fixture.SetRickrollMediaAvailable(true);
+        var concurrent = await Task.WhenAll(
+            alice.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }),
+            aliceDevice.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }));
+        try
+        {
+            var plays = 0;
+            foreach (var response in concurrent)
+            {
+                using (response)
+                {
+                    Check(response.StatusCode == HttpStatusCode.OK, "concurrent authenticated claim request succeeds");
+                    if ((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("play").GetBoolean()) { plays++; }
+                }
+            }
+            Check(plays == 1, "no-wand boss player on two concurrent devices receives one play claim");
+        }
+        finally { foreach (var response in concurrent) { response.Dispose(); } }
+        using (var repeated = await alice.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }))
+            Check(repeated.StatusCode == HttpStatusCode.OK
+                && !(await repeated.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("play").GetBoolean(),
+                "subsequent device or request receives no second play");
+        using (var anotherPlayer = await bob.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }))
+            Check(anotherPlayer.StatusCode == HttpStatusCode.OK
+                && (await anotherPlayer.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("play").GetBoolean(),
+                "another eligible player gets an independent claim");
+        using (var ownerClaim = await owner.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }))
+            Check(ownerClaim.StatusCode == HttpStatusCode.Forbidden,
+                "account without an active player group cannot claim");
+        Console.WriteLine("Boss Rickroll HTTP: CSRF, admin/recent-role/group gates, toggle revisions, media availability and per-player claims passed.");
+    }
+
     private sealed partial class HttpFixture : IAsyncDisposable
     {
         private const string Bootstrap = "mobile-game-http-bootstrap";
@@ -1182,10 +1551,13 @@ internal static partial class MobileGameTests
         private readonly SafeWorkshopLogProvider liveLog;
         private readonly Dictionary<HttpClient, CookieContainer> clientCookies = new();
         internal string BaseAddress => baseAddress;
+        internal IServiceProvider ChronicleServices => app.Services;
+        internal Kufr.Backend.Features.Chronicle.ChronicleStore Chronicle => app.Services.GetRequiredService<Kufr.Backend.Features.Chronicle.ChronicleStore>();
         internal ScriptedLiveSocketFactory? LiveSocketFactory { get; private set; }
         internal WandGenerationStore Wands => app.Services.GetRequiredService<WandGenerationStore>();
         internal KeepsakeStore Keepsakes => app.Services.GetRequiredService<KeepsakeStore>();
         internal MobileWorkshopLiveRuntime LiveRuntime => app.Services.GetRequiredService<MobileWorkshopLiveRuntime>();
+        internal GameStore BossStore => app.Services.GetRequiredService<GameStore>();
         internal CharacterProfileStore Profiles => app.Services.GetRequiredService<CharacterProfileStore>();
         internal int TextDialogueCalls => textWorkshopProvider.ReplyCount;
         internal TextWorkshopProvider TextWorkshopProvider => textWorkshopProvider;
@@ -1207,11 +1579,21 @@ internal static partial class MobileGameTests
             app.Services.GetRequiredService<AccountConfiguration>().AllowedOrigins[0] = origin;
         }
 
+        internal void SetRickrollMediaAvailable(bool available)
+        {
+            var path = Path.Combine(root, "rickroll.mp4");
+            if (available) { File.WriteAllBytes(path, [0, 1, 2, 3, 4, 5, 6, 7]); }
+            else if (File.Exists(path)) { File.Delete(path); }
+        }
+
         internal static async Task<HttpFixture> StartAsync(bool withLiveTransport = false, GptLiveClient? liveClient = null,
             TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true,
-            bool includeLiveDelegations = true, bool withKeepsakes = false)
+            bool includeLiveDelegations = true, bool withKeepsakes = false, IGameYoloProvider? yoloProvider = null,
+            IGameBossNarrator? bossNarrator = null, IGameBossSpeech? bossSpeech = null)
         {
             var root = Path.Combine(Path.GetTempPath(), "mobile-game-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+            var mediaPath = Path.Combine(root, "rickroll.mp4");
+            await File.WriteAllBytesAsync(mediaPath, [0, 1, 2, 3, 4, 5, 6, 7]);
             using var rsa = RSA.Create(2048);
             var request = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             var san = new SubjectAlternativeNameBuilder(); san.AddDnsName("localhost"); request.CertificateExtensions.Add(san.Build());
@@ -1232,6 +1614,7 @@ internal static partial class MobileGameTests
                 ["ApplicationIdentity:Bootstrap:TokenSha256"] = AccountEndpoints.Hash(Bootstrap),
                 ["ApplicationIdentity:RequestsPerMinute"] = withLiveTransport ? "10" : "120",
                 ["Backend:DatabasePath"] = Path.Combine(root, "journal.sqlite"),
+                ["Rickroll:FilePath"] = mediaPath,
                 ["Keepsake:Enabled"] = withKeepsakes ? "true" : "false",
                 ["Keepsake:GenerationEnabled"] = withKeepsakes ? "true" : "false",
                 ["Keepsake:DataRoot"] = Path.Combine(root, "archives"),
@@ -1246,6 +1629,11 @@ internal static partial class MobileGameTests
             builder.Services.AddAccountIdentity(builder.Configuration);
             builder.Services.AddLaunchManagement(builder.Configuration);
             builder.Services.AddMobileGame(builder.Configuration);
+            builder.Services.AddSingleton<RickrollMedia>();
+            builder.Services.AddSingleton(new Kufr.Backend.Features.Chronicle.ChronicleStore(Path.Combine(root, "chronicle")));
+            if (yoloProvider is not null) builder.Services.AddSingleton<IGameYoloProvider>(yoloProvider);
+            if (bossNarrator is not null) builder.Services.AddSingleton<IGameBossNarrator>(bossNarrator);
+            if (bossSpeech is not null) builder.Services.AddSingleton<IGameBossSpeech>(bossSpeech);
             if (withKeepsakes)
                 builder.Services.AddSingleton(new KeepsakeStore(builder.Configuration, TimeProvider.System));
             builder.Services.AddSingleton(new CharacterProfileStore(Path.Combine(root, "profiles")));
@@ -1264,7 +1652,9 @@ internal static partial class MobileGameTests
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
-            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
+            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapGameLive(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
+            Kufr.Backend.Features.Chronicle.ChronicleEndpoints.MapMobileChronicle(app);
+            app.MapLaunchChronicle();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
             app.MapGet("/test/csrf", (HttpContext context, IAntiforgery antiforgery) => Results.Json(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
             app.MapPost("/test/login/{id}", async (string id, HttpContext context, AccountDatabase db, SignInManager<AccountUser> signIn) =>
@@ -1483,6 +1873,15 @@ internal static partial class MobileGameTests
             client.DefaultRequestHeaders.Add("Origin", origin);
         }
 
+        internal async Task SetSessionAuthenticatedAtAsync(string accountId, long authenticatedAt)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+            var sessions = await db.Sessions.Where(item => item.UserId == accountId).ToListAsync();
+            foreach (var session in sessions) { session.AuthenticatedAt = authenticatedAt; }
+            await db.SaveChangesAsync();
+        }
+
         internal async Task MarkForeignCharacterPreparedAsync()
         {
             await MarkCharacterPreparedAsync(ForeignId);
@@ -1559,7 +1958,10 @@ internal static partial class MobileGameTests
         }
         internal Task SeedWandTierAsync(string owner, int tier) =>
             MobileWandTests.Seed(Profiles, Wands, owner, tier);
-        internal void SetGameXp(string owner, int xp)
+        internal void SetGameXp(string owner, int xp, int matches = 0)
+            => SetGameXp(ActiveGroupId, owner, xp, matches);
+
+        internal void SetGameXp(string groupId, string owner, int xp, int matches = 0)
         {
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
                 { DataSource = Path.Combine(root, "accounts", "mobile-game.sqlite") }.ToString());
@@ -1567,12 +1969,13 @@ internal static partial class MobileGameTests
             using var command = connection.CreateCommand();
             command.CommandText = """
                 INSERT INTO game_players(group_id,user_id,xp,matches)
-                VALUES($group,$user,$xp,0)
-                ON CONFLICT(group_id,user_id) DO UPDATE SET xp=$xp
+                VALUES($group,$user,$xp,$matches)
+                ON CONFLICT(group_id,user_id) DO UPDATE SET xp=$xp,matches=MAX(game_players.matches,$matches)
                 """;
-            command.Parameters.AddWithValue("$group", ActiveGroupId);
+            command.Parameters.AddWithValue("$group", groupId);
             command.Parameters.AddWithValue("$user", owner);
             command.Parameters.AddWithValue("$xp", xp);
+            command.Parameters.AddWithValue("$matches", matches);
             command.ExecuteNonQuery();
         }
         internal async Task<string> CreateBossAttemptAsync()

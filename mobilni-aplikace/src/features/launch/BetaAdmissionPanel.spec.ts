@@ -23,6 +23,12 @@ beforeEach(() => {
     if (path === '/app/v1/admin/launch/beta-admission') return { revision: 3, groupId, groupName: 'Interní beta', recruitmentOpen: true, fixedUniverse: null };
     if (path === '/app/v1/admin/launch/groups') return { groups: effectiveGroups };
     if (path === '/app/v1/admin/launch/waiting-room') return { members: [effectiveMember] };
+    if (path.endsWith('/chronicle-close') && method === 'POST') {
+      const id = path.split('/')[6];
+      const closedAt = 1790000000;
+      effectiveGroups = effectiveGroups.map(item => item.id === id ? { ...item, chronicleClosedAt: closedAt, revision: item.revision + 1 } : item);
+      return { closedAt };
+    }
     if (path.endsWith('/countdown') && method === 'PUT') {
       const request = body as { durationSeconds: number; forceStartAtEnd: boolean };
       const id = path.split('/')[6];
@@ -31,6 +37,17 @@ beforeEach(() => {
     return {};
   });
 });
+
+async function independentGroupPanel() {
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation((path: string, ...args: unknown[]) => path === '/app/v1/admin/launch/beta-admission'
+    ? Promise.resolve({ revision: 3, groupId: secondGroupId, groupName: 'Sobota', recruitmentOpen: true, fixedUniverse: null })
+    : original(path, ...args));
+  const view = mount(BetaAdmissionPanel);
+  await flushPromises();
+  await view.get('#management-group').setValue(groupId);
+  return view;
+}
 
 describe('owner waiting room and group countdown', () => {
   it('marks previous readiness unverified after a failed refresh instead of presenting stale counts', async () => {
@@ -62,9 +79,11 @@ describe('owner waiting room and group countdown', () => {
       expect(readiness.text()).toContain('1');
       expect(readiness.text()).toContain('Přijímání hostů');
       expect(readiness.text()).toContain('Otevřené');
-      expect(readiness.text()).toContain('Odpočet není potvrzený');
+      expect(readiness.text()).toContain('Produkční termín není nastavený');
       expect(view.find('#waiting-room').exists()).toBe(true);
-      expect(view.find('#countdown-minutes').exists()).toBe(true);
+      expect(view.find('#countdown-minutes').exists()).toBe(false);
+      await view.get('.waiting-room__production-schedule button').trigger('click');
+      expect(view.emitted('edit-production-schedule')).toHaveLength(1);
       expect(view.find<HTMLDetailsElement>('details[aria-labelledby="waiting-room-title"]').element.open).toBe(false);
       expect(view.find<HTMLDetailsElement>('details[aria-labelledby="beta-admission-settings-title"]').element.open).toBe(false);
       expect(view.get('#beta-admission-group').element.closest('details')?.getAttribute('aria-labelledby')).toBe('beta-admission-settings-title');
@@ -73,7 +92,7 @@ describe('owner waiting room and group countdown', () => {
 
   it('requires saving an initial countdown draft before confirming a new group', async () => {
     effectiveGroups[0] = group(groupId, 'Interní beta', { countdownDurationSeconds: null });
-    const view = mount(BetaAdmissionPanel);
+    const view = await independentGroupPanel();
     try {
       await flushPromises();
       const confirm = () => view.findAll('button').find(button => button.text() === 'Potvrdit a spustit odpočet')!;
@@ -94,7 +113,7 @@ describe('owner waiting room and group countdown', () => {
       if (method === 'PUT') throw Object.assign(new Error('Nejprve ověřte svou totožnost.'), { code: 'recent_passkey_required' });
       return defaultRequest(path, method, ...args);
     });
-    const view = mount(BetaAdmissionPanel);
+    const view = await independentGroupPanel();
     try {
       await flushPromises();
       await view.get('#countdown-minutes').setValue(25);
@@ -216,7 +235,7 @@ describe('owner waiting room and group countdown', () => {
   });
 
   it('saves a duration draft without starting the countdown and requires a separate confirmation', async () => {
-    const view = mount(BetaAdmissionPanel);
+    const view = await independentGroupPanel();
     await flushPromises();
     await view.get('#countdown-minutes').setValue('25');
     await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
@@ -234,7 +253,7 @@ describe('owner waiting room and group countdown', () => {
   });
 
   it('makes Force an after-expiry action and exposes manual start only after a non-force expiry', async () => {
-    const view = mount(BetaAdmissionPanel);
+    const view = await independentGroupPanel();
     await flushPromises();
     await view.get('.waiting-room__force input').setValue(true);
     await view.findAll('button').find(button => button.text() === 'Uložit návrh odpočtu')!.trigger('click');
@@ -246,12 +265,28 @@ describe('owner waiting room and group countdown', () => {
     view.unmount();
 
     effectiveGroups = [group(groupId, 'Interní beta', { launchAt: Date.now() - 1000, countdownConfirmedAt: Date.now() - 601000 })];
-    const expired = mount(BetaAdmissionPanel);
+    const expired = await independentGroupPanel();
     await flushPromises();
     await expired.findAll('button').find(button => button.text() === 'Spustit noc')!.trigger('click');
     await flushPromises();
     expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/start`, 'POST', { expectedRevision: 2 }, undefined, `Otevřít noc pro skupinu Interní beta?`);
     expired.unmount();
+  });
+
+  it('saves an explicit evening finale from revealed memories and then hides the action', async () => {
+    effectiveGroups = [group(groupId, 'Interní beta', { openedAt: Date.now() - 1000 })];
+    const view = mount(BetaAdmissionPanel);
+    await flushPromises();
+    expect(view.text()).toContain('Uloží se závěrečná kronika');
+    const close = view.findAll('button').find(button => button.text() === 'Uložit závěr večera');
+    expect(close).toBeDefined();
+    await close!.trigger('click');
+    await flushPromises();
+    expect(api.request).toHaveBeenCalledWith(`/app/v1/admin/launch/groups/${groupId}/chronicle-close`, 'POST', { expectedRevision: 2 }, undefined,
+      'Uložit závěr večera pro skupinu Interní beta? Kronika použije jen už odhalené vzpomínky.');
+    expect(view.text()).toContain('Závěr večera pro skupinu Interní beta byl uložen.');
+    expect(view.findAll('button').some(button => button.text() === 'Uložit závěr večera')).toBe(false);
+    view.unmount();
   });
 
   it('reconciles an ambiguous assignment before enabling another mutation', async () => {

@@ -1,4 +1,5 @@
 using Kufr.Backend.Features.SealedCase;
+using Kufr.Backend.Features.Customers;
 
 // Focused durable-store acceptance checks. HTTP auth and app route composition
 // remain with the lead because Program.cs and existing auth adapters are owned there.
@@ -161,7 +162,7 @@ internal static class SealedCasePersistenceTests
             Equal(2L, recovered.Revision);
             Equal(0, recovered.LastChapter);
             Equal(System.Text.Json.JsonSerializer.Serialize(initialized), System.Text.Json.JsonSerializer.Serialize(recovered));
-            Equal("1.0.0", System.Text.Json.JsonDocument.Parse(recovered.ContentVersionJson).RootElement.GetProperty("rulesVersion").GetString());
+            Equal("1.1.0", System.Text.Json.JsonDocument.Parse(recovered.ContentVersionJson).RootElement.GetProperty("rulesVersion").GetString());
             var restored = SealedGame.Restore(recovered.Checkpoint);
             Equal(player.Copy().VerifiedSleepEvidence["other"], restored.Players["owner"].VerifiedSleepEvidence["other"]);
             Equal(System.Text.Json.JsonSerializer.Serialize(game.Checkpoint()), System.Text.Json.JsonSerializer.Serialize(restored.Checkpoint()));
@@ -363,31 +364,76 @@ internal static class SealedCasePersistenceTests
 
     internal static void WriteRestartFixture(string path)
     {
-        var store = new SealedCaseStore(path);
-        var setup = store.Create("restart-group", "owner", 1, operationId: "restart-operation");
-        store.InitializeWorld(setup.Id, setup.GroupId, 1, 2, new SealedGame([
-            new SealedPlayer("owner", knownPlayers: ["other"], observedPlayers: ["other"]),
-            new SealedPlayer("other", knownPlayers: ["owner"], observedPlayers: ["owner"])], "restart-private-seed"));
-        store.ResolveWorldChapter(setup.Id, setup.GroupId, 1, 2, 3, [new("rest", "owner", 1, SealedIntent.Rest), new("hold", "other", 1, SealedIntent.Hold)]);
-        var result = store.ResolveWorldChapter(setup.Id, setup.GroupId, 2, 3, 4, RestartOrders());
-        File.WriteAllText(path + ".expected.json", System.Text.Json.JsonSerializer.Serialize(result with { Replayed = true }));
-        File.WriteAllText(path + ".id", setup.Id);
-        Console.WriteLine("PASS restart writer: committed chapter 2, rolls, token and checkpoint.");
+        var clock = new SealedCaseTimingTests.TimingClock { Now = 1_000 };
+        var store = new SealedCaseStore(path, clock: clock);
+        const string scenarioId = "HP_SPOLECENSTVI_KRBU_V1";
+        var created = store.Create("restart-group", "p1", clock.Now, 8, "first", "restart-create", scenarioId: scenarioId);
+        for (var i = 1; i <= 8; i++)
+        {
+            var account = "p" + i; var reference = "restart-snapshot-" + account;
+            var profile = new CharacterProfile("restart-profile-" + account, 1, new("Pilot " + account, "Test"), "ready", null, null, clock.Now);
+            store.Append(created.Id, created.GroupId, account, "lobby", "restart-ready-" + account, i, clock.Now,
+                new SealedCaseLobbyEntry(account, true, true, reference), lobbyCapacity: 8,
+                capturePrivateSnapshot: () => SealedCasePrivateSnapshot.From(reference, account, profile, null));
+        }
+        var start = store.StartTimeline(created.Id, created.GroupId, "p1", "restart-start", store.Read(created.Id).Revision);
+        var game = SealedScenario.Create(store.ReadRoster(created.Id, created.GroupId), "first",
+            SealedScenarioCatalog.FromSetup(System.Text.Json.JsonDocument.Parse(created.SetupJson).RootElement));
+        var initialized = store.InitializeWorld(created.Id, created.GroupId, start.Revision, clock.Now, game);
+        clock.Now = start.Timing.IntroductionEndsAt;
+        var confirmation = new SealedPlanConfirmation(1, 0, true, SealedIntent.Guard);
+        var plan = store.ConfirmPlan(created.Id, created.GroupId, "p1", "restart-plan-ch1", initialized.Revision, confirmation);
+        var confirmed = store.ReadOwnPlan(created.Id, created.GroupId, "p1", 1).Action!;
+        var retry = store.Create("restart-group", "p1", clock.Now, 8, "first", "restart-create", scenarioId: scenarioId);
+        if (retry.Id != created.Id || retry.SetupJson != created.SetupJson) throw new InvalidOperationException("Create retry changed the initialized pilot case.");
+        File.WriteAllText(path + ".expected.json", System.Text.Json.JsonSerializer.Serialize(new
+        {
+            id = created.Id, setupJson = created.SetupJson, groupId = created.GroupId, eventId = plan.EventId, revision = plan.Revision,
+            action = confirmed, start = start.Timing, introEndsAt = start.Timing.IntroductionEndsAt,
+            chapterOneQuietEndsAt = start.Timing.IntroductionEndsAt + SealedCaseRules.Schedule("first", 8).PlanningSeconds + SealedCaseRules.Schedule("first", 8).QuietSeconds
+        }));
+        Console.WriteLine("PASS restart writer: created current eight-player Krb short case and committed a confirmed chapter-one self-Guard plan.");
     }
 
     internal static void VerifyRestartFixture(string path)
     {
-        var store = new SealedCaseStore(path); var id = File.ReadAllText(path + ".id");
-        var world = store.ReadWorld(id, "restart-group");
-        Equal(4L, world.Revision); Equal(2, world.LastChapter);
-        Equal(0, world.Checkpoint.Players.Single(p => p.Id == "owner").ExtremeToken);
-        var retry = store.ResolveWorldChapter(id, "restart-group", 2, 3, 999999, RestartOrders());
-        Equal(File.ReadAllText(path + ".expected.json"), System.Text.Json.JsonSerializer.Serialize(retry));
-        File.WriteAllText(path + ".events.json", System.Text.Json.JsonSerializer.Serialize(store.ReadWorldHistory(id, "restart-group").SelectMany(r => r.Events)));
-        Console.WriteLine("PASS restart reader: exact stored outcome/rolls/IDs/version, no second spend or reroll.");
-    }
+        using var expected = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path + ".expected.json"));
+        var root = expected.RootElement;
+        var id = root.GetProperty("id").GetString()!; var groupId = root.GetProperty("groupId").GetString()!;
+        var clock = new SealedCaseTimingTests.TimingClock { Now = root.GetProperty("introEndsAt").GetInt64() };
+        var store = new SealedCaseStore(path, clock: clock);
+        var world = store.ReadWorld(id, groupId);
+        Equal(0, world.LastChapter);
+        using var manifest = System.Text.Json.JsonDocument.Parse(world.ContentVersionJson);
+        Equal("1.1.0", manifest.RootElement.GetProperty("rulesVersion").GetString());
+        Equal("HP_SPOLECENSTVI_KRBU_V1", manifest.RootElement.GetProperty("scenarioId").GetString());
+        var ownPlan = store.ReadOwnPlan(id, groupId, "p1", 1);
+        Equal(SealedIntent.Guard, ownPlan.Action!.Intent); Equal(null, ownPlan.Action.TargetId);
+        Equal(root.GetProperty("action").GetRawText(), System.Text.Json.JsonSerializer.Serialize(ownPlan.Action));
+        Equal(root.GetProperty("revision").GetInt64(), world.Revision);
+        var setup = store.Create(groupId, "p1", clock.Now, 8, "first", "restart-create", scenarioId: "HP_SPOLECENSTVI_KRBU_V1");
+        Equal(id, setup.Id); Equal(root.GetProperty("setupJson").GetString(), setup.SetupJson);
+        var replay = store.ConfirmPlan(id, groupId, "p1", "restart-plan-ch1", root.GetProperty("revision").GetInt64() - 1,
+            new SealedPlanConfirmation(1, 0, true, SealedIntent.Guard));
+        Equal(true, replay.Replayed); Equal(root.GetProperty("eventId").GetString(), replay.EventId);
 
-    private static SealedAction[] RestartOrders() => [new("attack", "owner", 2, SealedIntent.Lethal, "other", Method: "BREAKING_SEAL", LethalConfirmed: true), new("sleep", "other", 2, SealedIntent.Rest)];
+        clock.Now = root.GetProperty("chapterOneQuietEndsAt").GetInt64();
+        var chapterOne = store.ResolveConfirmedChapter(id, groupId, 1, store.Read(id).Revision);
+        Equal(1, chapterOne.Chapter);
+        var chapterOneRetry = store.ResolveConfirmedChapter(id, groupId, 1, chapterOne.Revision - 1);
+        Equal(true, chapterOneRetry.Replayed); Equal(System.Text.Json.JsonSerializer.Serialize(chapterOne.Events), System.Text.Json.JsonSerializer.Serialize(chapterOneRetry.Events));
+        var secondPlanning = store.ReadTimeline(id, groupId);
+        clock.Now = secondPlanning.IntroductionEndsAt + SealedCaseRules.Schedule("first", 8).PlanningSeconds + SealedCaseRules.Schedule("first", 8).QuietSeconds;
+        var chapterTwoPlan = store.ConfirmPlan(id, groupId, "p1", "restart-plan-ch2", chapterOne.Revision,
+            new SealedPlanConfirmation(2, 0, true, SealedIntent.Investigate));
+        clock.Now = secondPlanning.PlanningEndsAt;
+        var chapterTwoResolution = store.ResolveConfirmedChapter(id, groupId, 2, chapterTwoPlan.Revision);
+        Equal(2, chapterTwoResolution.Chapter);
+        var after = store.ReadWorld(id, groupId);
+        Equal(2, after.LastChapter); Equal(SealedIntent.Investigate, store.ReadOwnPlan(id, groupId, "p1", 2).Action!.Intent);
+        File.WriteAllText(path + ".events.json", System.Text.Json.JsonSerializer.Serialize(store.ReadWorldHistory(id, groupId).SelectMany(r => r.Events)));
+        Console.WriteLine("PASS restart reader: restored confirmed plan, replayed create/plan/resolve idempotently, then resolved chapter two.");
+    }
 
     private static string TempPath() => Path.Combine(Path.GetTempPath(), "sealed-case-" + Guid.NewGuid().ToString("N") + ".sqlite");
     private static void Delete(string path)

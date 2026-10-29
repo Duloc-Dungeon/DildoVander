@@ -93,6 +93,7 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
         CAPPluginMethod(name: "guestRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareGuestFile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareAccountDataFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "shareChronicleImage", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareAuthenticatedResource", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "shareGuestLink", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "accountTransport", returnType: CAPPluginReturnPromise),
@@ -121,6 +122,9 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
     private let prioritySession: URLSession = {
         let config = AccountPriorityHTTP.configuration()
         return URLSession(configuration: config, delegate: AccountNoRedirect(), delegateQueue: nil)
+    }()
+    private let gameLiveSession: URLSession = {
+        URLSession(configuration: AccountGameLiveHTTP.configuration(), delegate: AccountNoRedirect(), delegateQueue: nil)
     }()
     private var publishedCookieDigest: String?
     private var publishedPrioritySession: AccountPrioritySessionSnapshot?
@@ -243,8 +247,11 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
             var ordinaryLease: AccountRequestScheduler.Lease?
             defer { if let lease = ordinaryLease { requestScheduler.release(lease) } }
             let priority = AccountTransportPolicy.priorityCancellation(path: path, method: method, deviceId: device, body: request.httpBody ?? Data())
+            let gameLiveRead = AccountTransportPolicy.gameLiveRead(path: path, method: method)
             if priority {
                 result = try await sendPriorityCancellation(request, requestId: requestId)
+            } else if gameLiveRead {
+                result = try await sendGameLiveRead(request)
             } else {
                 let commit = AccountTransportPolicy.credentialCommit(path: path, method: method)
                 if path == "/app/v1/session", method == "DELETE" {
@@ -272,13 +279,25 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                   http.url?.host == origin.host, http.url?.scheme == origin.scheme, http.url?.port == origin.port else { throw AccountError.invalidResponse }
             if [401, 403].contains(http.statusCode) { try clearOfflineSession(origin: origin) }
             try acceptAccountDeletion(path: path, method: method, status: http.statusCode, body: result.0, origin: origin)
-            if !priority { try persistAccountCookie(origin: origin) }
+            if !priority && !gameLiveRead { try persistAccountCookie(origin: origin) }
             var headers: [String: String] = [:]
             for name in ["Content-Type", "X-Twin-Media-Accepted-Bytes", "Retry-After", "X-Request-Id"] {
                 if let value = http.value(forHTTPHeaderField: name) { headers[name.lowercased()] = value }
             }
             call.resolve(["status": http.statusCode, "headers": headers, "bodyBase64": result.0.base64EncodedString()])
         }
+    }
+
+    @MainActor private func sendGameLiveRead(_ original: URLRequest) async throws -> (Data, URLResponse) {
+        guard let snapshot = publishedPrioritySession else { throw AccountError.verificationFailed }
+        let lease = try requestScheduler.acquireGameLiveRead()
+        defer { requestScheduler.releaseGameLiveRead(lease) }
+        try requestScheduler.requireCurrent(lease)
+        guard publishedPrioritySession?.binding == snapshot.binding else { throw AccountRequestScheduler.Failure.contextChanged }
+        let result = try await gameLiveSession.data(for: snapshot.authorize(original))
+        try requestScheduler.requireCurrent(lease)
+        guard publishedPrioritySession?.binding == snapshot.binding else { throw AccountRequestScheduler.Failure.contextChanged }
+        return result
     }
 
     @MainActor private func sendPriorityCancellation(_ original: URLRequest, requestId: UUID) async throws -> (Data, URLResponse) {
@@ -413,6 +432,14 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
     }
 
     @objc public func shareAccountDataFile(_ call: CAPPluginCall) {
+        sharePreparedAccountFile(call, chronicleImage: false)
+    }
+
+    @objc public func shareChronicleImage(_ call: CAPPluginCall) {
+        sharePreparedAccountFile(call, chronicleImage: true)
+    }
+
+    private func sharePreparedAccountFile(_ call: CAPPluginCall, chronicleImage: Bool) {
         performAccountRequest(call) { [self] requestId in
             guard accountDataShare == nil else { throw AccountDataFileFailure.busy }
             let lifecycle = AccountDataShareLifecycle()
@@ -427,7 +454,10 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                     let mediaType = call.getString("mediaType") ?? ""
                     let encoded = call.getString("bodyBase64") ?? ""
                     let file = try await Task.detached(priority: .userInitiated) {
-                        try AccountDataTemporaryFile.prepare(filename: filename, mediaType: mediaType, bodyBase64: encoded)
+                        if chronicleImage {
+                            return try AccountDataTemporaryFile.prepareChronicleImage(filename: filename, mediaType: mediaType, bodyBase64: encoded)
+                        }
+                        return try AccountDataTemporaryFile.prepare(filename: filename, mediaType: mediaType, bodyBase64: encoded)
                     }.value
                     try lifecycle.ownCleanup { try file.cleanup() }
                     try Task.checkCancellation()
@@ -688,7 +718,8 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                 case "add": optionsPath = "/app/v1/passkeys/options"; completionPath = "/app/v1/passkeys/complete"
                 default: throw AccountError.invalidPath
                 }
-                let options = try json(await send(path: optionsPath, method: "POST", body: body))
+                let optionsResult = try await send(path: optionsPath, method: "POST", body: body)
+                let options = try NativePasskeyOptionsResponse.parse(status: optionsResult.0, body: optionsResult.1)
                 try requestScheduler.requireCurrent(lease)
                 guard let challengeValue = options["challenge"] as? String, let challenge = Self.decode(challengeValue) else { throw AccountError.invalidResponse }
                 let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: config.1)
@@ -712,6 +743,8 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
                 authorization.presentationContextProvider = self
                 controller = authorization
                 authorization.performRequests()
+            } catch let rejection as NativePasskeyOptionsResponse.Rejected {
+                finish(error: rejection.localizedDescription, expected: lease, code: rejection.code, status: rejection.status)
             } catch { finish(error: error.localizedDescription, expected: lease) }
         }
     }
@@ -778,11 +811,14 @@ public final class KufrIdentityPlugin: CAPPlugin, CAPBridgedPlugin,
         }
     }
 
-    @MainActor private func finish(error: String?, expected: AccountRequestScheduler.Lease, code: String? = nil) {
+    @MainActor private func finish(error: String?, expected: AccountRequestScheduler.Lease, code: String? = nil, status: Int? = nil) {
         guard ceremonyLease?.id == expected.id else { return }
         let call = pending
         pending = nil; controller = nil; completionPath = ""; ceremonyLease = nil; credentialCompletionActive = false
-        if let error = error { call?.reject(error, code) } else { call?.resolve() }
+        if let error = error {
+            let data: [String: Any] = status.map { ["status": $0] } ?? [:]
+            call?.reject(error, code, nil, data)
+        } else { call?.resolve() }
         requestScheduler.release(expected)
     }
 

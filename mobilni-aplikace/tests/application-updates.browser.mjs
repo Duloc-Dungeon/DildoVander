@@ -84,6 +84,9 @@ try {
   assert.equal(await page.locator('.application-shell').count(), 0, 'initial policy verification must finish before route mount');
   await page.evaluate(() => window.__releaseVersion());
   await page.getByRole('heading', { name: 'Je čas na aktualizaci' }).waitFor();
+  const heading = page.getByRole('heading', { name: 'Je čas na aktualizaci' });
+  assert.equal(await heading.evaluate(element => document.activeElement === element), true, 'update is announced through heading focus');
+  assert.equal(await heading.evaluate(element => getComputedStyle(element).outlineStyle), 'none', 'automatic heading focus has no border');
   assert.equal(await page.locator('.application-shell').count(), 0, 'deep route must remain unmounted');
   const update = page.getByRole('link', { name: 'Aktualizovat aplikaci' });
   assert.equal(await update.getAttribute('href'), 'https://example.test/ios/');

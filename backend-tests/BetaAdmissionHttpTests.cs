@@ -24,6 +24,7 @@ internal static partial class AccountIdentityTests
         await CsrfAsync(owner);
         var launch = fixture.App.Services.GetRequiredService<LaunchPolicyStore>();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        ConfigureProduction(now + 3_600_000);
         var selected = launch.CreateOrSelectBetaGroup("fixture-owner",
             new(launch.ReadBetaAdmission().Revision), now);
         await CsrfAsync(guest);
@@ -36,7 +37,6 @@ internal static partial class AccountIdentityTests
             "closed recruitment rejects public customer enrollment");
 
         var group = launch.ReadGroup(selected.Group.Id)!;
-        launch.UpdateGroup("fixture-owner", group.Id, new(group.Revision, group.Name, now + 3_600_000), now);
         var opened = launch.UpdateBetaAdmission("fixture-owner",
             new(selected.Admission.Revision, group.Id, true, "The Shire"), now);
         var optionsResponse = await guest.PostAsJsonAsync("/app/v1/customer/enrollment/options",
@@ -77,6 +77,17 @@ internal static partial class AccountIdentityTests
             && account.LaunchGroupAccessRevision == 1,
             "membership and fixed universe are saved on the account using server-selected values");
         Check(finalConfig.RecruitmentOpen, "owner can reopen enrollment after a rejected stale ceremony");
+        var waiting = await JsonAsync(await guest.GetAsync("/app/v1/launch"));
+        Check(!waiting.GetProperty("allowed").GetBoolean()
+            && waiting.GetProperty("launchAt").GetInt64() == now + 3_600_000,
+            "public registration automatically joins the default and waits for the already configured production term");
+        ConfigureProduction(now - 1000);
+        Check((await JsonAsync(await guest.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean(),
+            "passing the production term automatically opens an enrolled customer's default group");
+        ConfigureProduction(now + 7_200_000);
+        Check(!(await JsonAsync(await guest.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean()
+            && (await guest.GetAsync("/app/v1/customer/character")).StatusCode == (HttpStatusCode)423,
+            "an already open customer's existing session returns to waiting when production is moved into the future");
 
         await CsrfAsync(owner);
         var invitation = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",
@@ -101,9 +112,15 @@ internal static partial class AccountIdentityTests
         Check(admittedAccount.LaunchGroupId == group.Id && admittedAccount.LaunchGroupAccessRevision == 1,
             "explicit admission commits group membership and revision on the account");
 
-        Check((await guest.PutAsJsonAsync("/app/v1/prelaunch/character",
-            new { expectedRevision = 0, name = "Guest", universe = "The Shire" })).StatusCode == HttpStatusCode.Conflict,
-            "membership does not imply AI consent");
+        await SeedAsync(fixture.App, db => db.Users.Where(user => user.Id == accountId)
+            .ExecuteUpdateAsync(update => update.SetProperty(user => user.OpenAiConsentAt, (long?)null)
+                .SetProperty(user => user.OpenAiConsentVersion, 0)));
+        using var missingConsent = await guest.PutAsJsonAsync("/app/v1/prelaunch/character",
+            new { expectedRevision = 0, name = "Guest", universe = "The Shire" });
+        Check(missingConsent.StatusCode == HttpStatusCode.Conflict,
+            "membership does not imply account AI consent for a legacy account");
+        Check((await guest.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true })).StatusCode
+            == HttpStatusCode.NoContent, "legacy member explicitly grants AI consent before character preparation");
         Check((await guest.PutAsJsonAsync("/app/v1/prelaunch/character",
             new { expectedRevision = 0, name = "Guest", universe = "Forged", openAiConsent = true })).StatusCode == HttpStatusCode.Conflict,
             "direct character writes cannot forge the fixed universe");
@@ -125,6 +142,10 @@ internal static partial class AccountIdentityTests
         var guestAccess = await JsonAsync(await guest.GetAsync("/app/v1/customer/access"));
         Check(guestAccess.GetProperty("state").GetString() == "revoked",
             "existing session reads explicit revoked access state");
+        ConfigureProduction(now - 1000);
+        Check((await JsonAsync(await guest.GetAsync("/app/v1/customer/access"))).GetProperty("state").GetString() == "revoked",
+            "opening production does not restore revoked membership");
+        ConfigureProduction(now + 7_200_000);
         using var rejectedGameRequest = await guest.GetAsync("/app/v1/customer/character");
         Check((int)rejectedGameRequest.StatusCode == 403
             && (await ReadJsonAsync(rejectedGameRequest)).GetProperty("code").GetString() == "customer_access_revoked",
@@ -151,6 +172,15 @@ internal static partial class AccountIdentityTests
             "restoring during closed recruitment returns the same saved character");
 
         Console.WriteLine("Beta enrollment configuration, ceremony fencing and member access HTTP tests passed.");
+
+        void ConfigureProduction(long? term)
+        {
+            var configuration = launch.Read();
+            launch.Update("fixture-owner", new(configuration.Revision, configuration.BetaEnabled,
+                configuration.BetaLaunchAt, configuration.BetaUnlocked, true, term, false,
+                configuration.TimeZone, configuration.Teaser, configuration.InitialLoadingMessage,
+                configuration.PersonalizedLoadingEnabled, configuration.PersonalizedLoadingPrompt), now);
+        }
     }
 
     private static async Task<System.Text.Json.JsonElement> ReadJsonAsync(HttpResponseMessage response) =>

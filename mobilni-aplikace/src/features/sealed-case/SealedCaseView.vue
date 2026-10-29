@@ -29,12 +29,36 @@ const pendingCreate = ref<CreateCaseRequest>();
 const selectedScenario = computed(() => view.value ? scenarioFor(view.value)
   : catalog.value?.scenarios.find(scenario => scenario.id === scenarioId.value) ?? legacyScenario);
 const scenarioAvailable = computed(() => !!catalog.value?.scenarios.some(scenario => scenario.id === scenarioId.value));
-const actionNames = computed(() => intentNames.map((label, index) => index === 9 ? selectedScenario.value.extremeActionLabel : label));
-const actionText = (value: string) => value === 'Lethal' ? selectedScenario.value.extremeActionLabel : intentText(value);
+const actionNames = computed(() => intentNames.map((label, index) => index === 9 ? selectedScenario.value.extremeActionLabel
+  : view.value?.chapters === 3 && index === 2 ? 'Chránit sebe'
+    : view.value?.chapters === 3 && index === 7 ? 'Zdržet stopu' : label));
+const actionText = (value: string) => value === 'Lethal' ? selectedScenario.value.extremeActionLabel
+  : view.value?.chapters === 3 && value === 'Guard' ? 'Chránit sebe'
+    : view.value?.chapters === 3 && value === 'Sabotage' ? 'Zdržet stopu' : intentText(value);
+const actionChoices = computed(() => {
+  const current = view.value;
+  if (!current || current.chapters !== 3 || current.ownState !== 'Awake') return current?.choices ?? [];
+  const byIntent = (intent: number) => current.choices.find(choice => choice.plan.intent === intent);
+  const basis = current.choices[0]?.plan ?? current.ownPlan ?? {
+    chapter: current.chapter, expectedActionRevision: 0, confirmed: true, intent: 4,
+  };
+  const choiceFor = (intent: number, id: string, label: string) => byIntent(intent) ?? {
+    id, label, benefit: '', cost: 'Spotřebuje jeden hlavní tah.', risk: '', plan: { ...basis, intent },
+  };
+  const investigate = choiceFor(4, 'investigate', 'Pátrat');
+  const guard = choiceFor(2, 'guard-self', 'Chránit sebe');
+  const sabotage = choiceFor(7, 'delay', 'Zdržet stopu');
+  return [
+    { ...investigate, id: 'short-investigate', label: 'Pátrat', benefit: 'Můžeš získat novou stopu, známou stopu, nebo žádnou novou dostupnou stopu.', cost: 'Spotřebuje jeden hlavní tah.', risk: 'Nový nález není zaručen.' },
+    { ...guard, id: 'short-guard-self', label: 'Chránit sebe', benefit: 'Po přesunech blokuje cizí sabotáž ve stejné místnosti v této kapitole.', cost: 'Spotřebuje jeden hlavní tah; nepátráš.', risk: 'Ochrana sama nepotvrzuje, že k útoku došlo.' },
+    { ...sabotage, id: 'short-delay', label: 'Zdržet stopu', benefit: 'Odloží nové získání jedné vybrané stopy do další kapitoly; již získané kopie zůstávají.', cost: 'Spotřebuje jeden hlavní tah; nepátráš současně.', risk: 'Může selhat. Zůstaneš u zdroje; přesun plánuj v jiném tahu. V poslední kapitole úspěch blokuje nové pátrací nálezy do hlasování.', plan: { ...sabotage.plan, targetId: null, resourceId: null, destination: null, method: 'DELAY' } },
+  ];
+});
 const tabs = computed(() => view.value?.ownState === 'Operator'
   ? [{ id: 'story', text: 'Příběh' }, { id: 'messages', text: 'Rozhovory' }]
   : [{ id: 'story', text: 'Příběh' }, { id: 'action', text: 'Moje akce' }, { id: 'journal', text: 'Deník' }, { id: 'messages', text: 'Rozhovory' }]);
 const tab = ref('story'); const draft = ref<Plan>(); const pending = ref<{ operationId: string; plan: Plan }>();
+const lastDraftIntent = ref<number | null>(null);
 const createKey = () => account.value ? `dv:sealed-create:${account.value.id}` : '';
 const aiCount = ref(1);
 const aiPending = ref<{ operationId: string; expectedRevision: number; count: number }>();
@@ -43,7 +67,16 @@ const aiRemaining = computed(() => view.value ? view.value.expectedPlayers - vie
 const oversight = ref<string | null>(null);
 const message = ref(''); const recipient = ref('PUBLIC'); const ballot = ref<string[]>([]); const personalText = ref('');
 const pane = ref<'own' | 'experienced' | 'presented' | 'planned'>('experienced');
-const draftProblem = computed(() => planProblem(draft.value));
+const draftProblem = computed(() => {
+  const v = view.value; const plan = draft.value;
+  if (v?.chapters === 3 && plan?.intent === 7) {
+    if (plan.destination) return 'Zdržení vyžaduje, abys zůstal u zdroje, který teď vidíš. Přesun je samostatný tah.';
+    if (!plan.resourceId || !v.sources.some(source => source.id === plan.resourceId)) {
+      return 'Vyber jednu z uvolněných stop, které teď vidíš v tomto místě.';
+    }
+  }
+  return planProblem(plan);
+});
 const chains = computed(() => evidenceChains(view.value?.clues ?? []));
 const latestOutcome = computed(() => view.value?.ownOutcomes.at(-1));
 const shareStatus = ref('');
@@ -102,7 +135,7 @@ function restoreDraft() {
   if (!key()) return;
   try {
     const stored = JSON.parse(localStorage.getItem(key()) ?? 'null');
-    if (stored?.draft && Number.isInteger(stored.draft.chapter)) { draft.value = stored.draft; personalText.value = stored.personalText ?? ''; }
+    if (stored?.draft && Number.isInteger(stored.draft.chapter)) { draft.value = stored.draft; lastDraftIntent.value = stored.draft.intent; personalText.value = stored.personalText ?? ''; }
     if (stored?.pending?.operationId && stored.pending.plan) pending.value = stored.pending;
   } catch { /* A malformed local draft never becomes a server action. */ }
 }
@@ -206,16 +239,65 @@ async function ready() {
   if (v.ownReady) { await mutate('/scenario-consent', { operationId: operation() }); return; }
   await mutate('/lobby', { operationId: operation(), expectedRevision: v.lobbyRevision, ready: true, consent: true, scenarioConsent: true });
 }
+function sanitizePlan(plan: Plan): Plan {
+  const next = { ...plan };
+  const intent = next.intent;
+  const targetIntents = [2, 5, 6, 7, 8, 9, 10, 12, 17];
+  const resourceIntents = [4, 6, 7, 12, 13, 17];
+  const shortSelfGuard = intent === 2 && view.value?.chapters === 3;
+  const redirectTarget = intent === 7 && view.value?.chapters !== 3 && next.method === 'REDIRECT';
+  next.targetId = shortSelfGuard || (intent === 7 && !redirectTarget) || !targetIntents.includes(intent) ? null : next.targetId ?? null;
+  next.resourceId = resourceIntents.includes(intent) ? next.resourceId ?? null : null;
+  next.preparedIntent = intent === 3 ? next.preparedIntent ?? null : null;
+  next.method = intent === 7 || [8, 9].includes(intent) ? next.method ?? null : null;
+  if (intent === 7 && !next.method) next.method = 'DELAY';
+  next.lethalConfirmed = intent === 9 ? next.lethalConfirmed : false;
+  if (![4, 5, 6, 7, 8, 9, 10, 15, 17].includes(intent) || intent === 2 || (view.value?.chapters === 3 && intent === 7)) next.condition = null;
+  if (view.value?.chapters === 3 && intent === 7) next.method = 'DELAY';
+  if (view.value?.chapters === 3 && intent === 7) next.destination = null;
+  if (view.value?.chapters === 3 && [2, 7].includes(intent)) next.shelteredPosition = false;
+  return next;
+}
 function choose(plan: Plan) {
-  pending.value = undefined;
+  if (pending.value) return;
+  const sameShortTurn = view.value?.chapters === 3 && draft.value?.chapter === plan.chapter
+    && draft.value.expectedActionRevision === plan.expectedActionRevision;
+  const keepMovement = sameShortTurn && [2, 4].includes(plan.intent) ? draft.value?.destination : null;
+  const keepInvestigationSource = sameShortTurn && plan.intent === 4 && draft.value?.intent === 4
+    ? draft.value.resourceId : null;
   draft.value = {
     ...plan,
     targetId: plan.targetId ?? null,
-    destination: plan.destination ?? null,
-    resourceId: plan.resourceId ?? null,
+    destination: keepMovement ?? plan.destination ?? null,
+    resourceId: keepInvestigationSource ?? plan.resourceId ?? null,
     defensePolicy: plan.defensePolicy ?? null,
     condition: plan.condition ? { ...plan.condition } : null,
   };
+  draft.value = sanitizePlan(draft.value);
+  lastDraftIntent.value = draft.value.intent;
+  saveDraft();
+}
+function changeDraftIntent() {
+  if (!draft.value || pending.value) return;
+  const changed = draft.value.intent !== lastDraftIntent.value;
+  const next = sanitizePlan(draft.value);
+  if (changed) {
+    // A parameter that belonged to the previous action must be selected again
+    // when switching into a target or source action.
+    if (next.intent === 2) next.targetId = null;
+    if (next.intent === 7) {
+      next.targetId = null;
+      next.resourceId = null;
+      next.method = 'DELAY';
+    }
+  }
+  draft.value = next;
+  lastDraftIntent.value = next.intent;
+  saveDraft();
+}
+function changeDraftMethod() {
+  if (!draft.value || pending.value) return;
+  if (draft.value.intent === 7 && draft.value.method === 'DELAY') draft.value.targetId = null;
   saveDraft();
 }
 function rebase() {
@@ -266,8 +348,8 @@ const ballotCandidates = computed(() => view.value?.players.filter(p => p.id !==
   && (view.value!.finale?.phase !== 'runoff' || view.value!.finale.runoffCandidates.includes(p.id))) ?? []);
 watch(draft, saveDraft, { deep: true }); watch(personalText, saveDraft);
 watch(() => [route.params.id, account.value?.id], () => { message.value = ''; recipient.value = 'PUBLIC'; shareStatus.value = ''; });
-watch(() => [route.params.id, route.query.new], () => { generation++; controller?.abort(); clearTimeout(timer); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; loading.value = false; busy.value = false; error.value = ''; void refresh(); });
-watch(() => account.value?.id, () => { generation++; controller?.abort(); clearTimeout(timer); if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; pending.value = undefined; aiPending.value = undefined; catalog.value = undefined; catalogError.value = ''; scenarioId.value = defaultScenarioId; restoreCreateRequest(); loading.value = false; busy.value = false; error.value = ''; void refresh(); });
+watch(() => [route.params.id, route.query.new], () => { generation++; controller?.abort(); clearTimeout(timer); view.value = undefined; draft.value = undefined; lastDraftIntent.value = null; pending.value = undefined; aiPending.value = undefined; loading.value = false; busy.value = false; error.value = ''; void refresh(); });
+watch(() => account.value?.id, () => { generation++; controller?.abort(); clearTimeout(timer); if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; lastDraftIntent.value = null; pending.value = undefined; aiPending.value = undefined; catalog.value = undefined; catalogError.value = ''; scenarioId.value = defaultScenarioId; restoreCreateRequest(); loading.value = false; busy.value = false; error.value = ''; void refresh(); });
 function resume() { if (document.visibilityState === 'visible') void refresh(); }
 onMounted(() => { restoreCreateRequest(); void refresh(); window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume); });
 onBeforeUnmount(() => { disposed = true; generation++; controller?.abort(); clearTimeout(timer); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); });
@@ -398,6 +480,18 @@ async function openAction() {
             <template v-if="!view.ownReady || !view.ownScenarioConsent">
               <div class="sealed-consent">
                 <h3>Než se připojíš</h3>
+                <details class="sealed-disclosure sealed-rules">
+                  <summary>Krátká pravidla případu</summary>
+                  <ul class="sealed-help">
+                    <li>Máš vlastní soukromý cíl. Na konci tajně hlasuješ o podezřelých; hlasuj podle toho, čemu sám věříš.</li>
+                    <li>V jednom tahu zvolíš jednu hlavní akci a můžeš se přesunout do sousedního místa. Návrh začne platit až po výslovném potvrzení.</li>
+                    <li>Vlastní stopa je doložený důkaz. Zpráva druhého je jeho tvrzení; tvůj odhad zůstává podezřením. Úplný vlastní řetězec A/B/C umožní správný závěr.</li>
+                    <li>Stopy A, B a C se uvolňují na různých místech a v různých kapitolách. Cesta do posledního místa se plánuje před poslední kapitolou.</li>
+                    <li>Chránit sebe stojí hlavní tah; přítomná ochrana v této kapitole blokuje cizí sabotáž ve stejné místnosti, sama ale nedokazuje útok.</li>
+                    <li>Zdržení stopy ovlivní její nové získání pátráním do další kapitoly. Již získané kopie zůstávají; úspěšné zdržení v poslední kapitole platí až do hlasování.</li>
+                    <li>Soukromý telefon, role, spis a potvrzený plán patří hráči; neukazuj je na cizím telefonu ani na snímku obrazovky. Informace sdílej ústně nebo vědomě odeslanou zprávou.</li>
+                  </ul>
+                </details>
                 <section v-if="view.publicNarration?.text" class="sealed-prelude" aria-labelledby="sealed-prelude-title">
                   <h4 id="sealed-prelude-title">Co se stalo před hrou</h4>
                   <p>{{ view.publicNarration.text }}</p>
@@ -496,6 +590,11 @@ async function openAction() {
                 <p>Kapitola {{ latestOutcome.chapter }} · {{ actionText(latestOutcome.intent) }}</p>
                 <p>{{ resultText(latestOutcome.result) }}</p>
                 <p v-if="latestOutcome.observation">{{ latestOutcome.observation }}</p>
+                <template v-if="latestOutcome.intent === 'Sabotage' && latestOutcome.actionObservation?.chapter === latestOutcome.chapter">
+                  <p v-if="latestOutcome.actionObservation.kind === 'DELAY_SUCCEEDED'">Tvá zaznamenaná zkušenost potvrzuje úspěšné zdržení nové dostupnosti této stopy.</p>
+                  <p v-else-if="latestOutcome.actionObservation.kind === 'DELAY_NOT_OBSERVED'">Nemáš oprávněný podklad k potvrzení úspěchu. Výsledek zůstává neznámý; neříká nic o cizí ochraně.</p>
+                </template>
+                <p v-else-if="latestOutcome.intent === 'Sabotage'">Výsledek zdržení zatím z tvé zkušenosti neznáš.</p>
               </section>
               <SealedExplorationPlan v-if="view.ownState === 'Awake' && ['planning', 'quiet'].includes(view.phase)" :play="view" />
             </template>
@@ -515,13 +614,14 @@ async function openAction() {
               <p v-if="view.phase !== 'planning'" class="sealed-muted">Teď se nové tahy nepotvrzují. {{ view.phase === 'quiet' ? 'Telefon může stranou; potvrzený plán zůstává uložený.' : 'Další postup určuje aktuální fáze případu.' }}</p>
 
               <template v-if="view.phase === 'planning'">
-                <SealedExplorationPlan v-if="view.ownState === 'Awake'" :play="view" :actionable="!pending && !busy && draft?.intent !== 0" @travel="prepareTravel" />
+                <SealedExplorationPlan v-if="view.ownState === 'Awake'" :play="view" :actionable="!pending && !busy && draft?.intent !== 0 && !(view.chapters === 3 && draft?.intent === 7)" @travel="prepareTravel" />
                 <div class="sealed-choices">
-                  <AwButton v-for="choice in view.choices" :key="choice.id" :aria-pressed="draft?.intent === choice.plan.intent" @click="choose(choice.plan)">
+                  <AwButton v-for="choice in actionChoices" :key="choice.id" :aria-pressed="draft?.intent === choice.plan.intent" :disabled="!!pending || (view.chapters === 3 && choice.plan.intent === 7 && !view.sources.length)" @click="choose(choice.plan)">
                     <strong>{{ choice.label }}</strong><span>{{ choice.benefit }}</span><small>{{ choice.cost }} · {{ choice.risk }}</small>
                   </AwButton>
                 </div>
-                <p v-if="!view.choices.length">Pro tuto chvíli nejsou dostupné žádné návrhy tahu. Obnov stav nebo vyčkej na další fázi.</p>
+                <p v-if="view.chapters === 3 && view.ownState === 'Awake' && !view.sources.length" class="sealed-muted">Zdržení zatím není možné: v tomto místě nevidíš žádnou uvolněnou stopu k výběru. Veřejný rozpis neodhaluje budoucí obsah.</p>
+                <p v-else-if="!actionChoices.length">Pro tuto chvíli nejsou dostupné žádné návrhy tahu. Obnov stav nebo vyčkej na další fázi.</p>
                 <section v-if="draft" class="sealed-draft" aria-labelledby="sealed-draft-title">
                   <h3 id="sealed-draft-title">Tvůj návrh: {{ actionNames[draft.intent] }}</h3>
                   <p class="sealed-muted">Zatím není odeslaný. Uloží se až tvým výslovným potvrzením.</p>
@@ -533,37 +633,47 @@ async function openAction() {
                     <textarea v-model="personalText" maxlength="500" placeholder="Popiš jeden tah své postavy s dostupnými prostředky." />
                   </label>
                   <label v-if="view.chapters === 6">Proveditelný typ akce
-                    <select v-model.number="draft.intent"><option v-for="(label, intent) in actionNames" :key="intent" :value="intent">{{ label }}</option></select>
+                    <select v-model.number="draft.intent" :disabled="!!pending" @change="changeDraftIntent"><option v-for="(label, intent) in actionNames" :key="intent" :value="intent">{{ label }}</option></select>
                   </label>
-                  <p v-if="actionGuidance(draft.intent)" class="sealed-action-guidance">{{ actionGuidance(draft.intent) }}</p>
+                  <p v-if="actionGuidance(draft.intent, draft.method ?? undefined, draft.targetId ?? undefined)" class="sealed-action-guidance">{{ actionGuidance(draft.intent, draft.method ?? undefined, draft.targetId ?? undefined) }}</p>
                   <div class="sealed-fields">
-                    <label>Adresát / cíl
+                    <label v-if="(draft.intent !== 2 || view.chapters !== 3) && (draft.intent !== 7 || (view.chapters !== 3 && draft.method === 'REDIRECT'))">Adresát / cíl
                       <select v-model="draft.targetId"><option :value="null">Bez cíle / já</option><option v-for="player in view.players.filter(p => p.id !== view!.ownId)" :key="player.id" :value="player.id">{{ player.name }}</option></select>
                     </label>
-                    <label v-if="view.ownState === 'Awake'">Místo
+                    <label v-if="view.ownState === 'Awake' && !(view.chapters === 3 && draft.intent === 7)">Místo
                       <select v-model="draft.destination"><option :value="null">Zůstávám</option><option v-for="place in view.adjacentLocations" :key="place" :value="place">{{ view.locations[place] }}</option></select>
                     </label>
                   </div>
-                  <label v-if="[4, 6, 7, 12, 13, 17].includes(draft.intent)">Předmět / stopa
+                  <label v-if="[4, 6, 7, 12, 13, 17].includes(draft.intent)">{{ draft.intent === 4 ? 'Viditelná stopa k pátrání (volitelné)' : 'Předmět / stopa' }}
                     <select v-model="draft.resourceId">
-                      <option :value="null">Vyber dostupný zdroj</option>
-                      <option v-for="item in [...view.ownItems, ...view.visibleItems]" :key="item.id" :value="item.id">{{ item.name }} · {{ name(item.ownerId) }}</option>
-                      <option v-for="source in view.sources" :key="source.id" :value="source.id">{{ source.label }}</option>
-                      <option v-for="clue in view.clues.filter(c => !view!.sources.some(s => s.id === c.id))" :key="clue.id" :value="clue.id">{{ clueLabel(clue.id) }}</option>
+                      <option :value="null">{{ draft.intent === 4 ? 'Bez určení zdroje' : 'Vyber dostupný zdroj' }}</option>
+                      <template v-if="draft.intent === 4 || (draft.intent === 7 && view.chapters === 3)">
+                        <option v-for="source in view.sources" :key="source.id" :value="source.id">{{ source.label }}</option>
+                      </template>
+                      <template v-else>
+                        <option v-for="item in [...view.ownItems, ...view.visibleItems]" :key="item.id" :value="item.id">{{ item.name }} · {{ name(item.ownerId) }}</option>
+                        <option v-for="source in view.sources" :key="source.id" :value="source.id">{{ source.label }}</option>
+                        <option v-for="clue in view.clues.filter(c => !view!.sources.some(s => s.id === c.id))" :key="clue.id" :value="clue.id">{{ clueLabel(clue.id) }}</option>
+                      </template>
                       <template v-if="draft.intent === 13"><option v-for="(label, place) in view.locations" :key="place" :value="place">{{ label }}</option></template>
                     </select>
+                    <small v-if="draft.intent === 7 && view.chapters === 3">ID zdroje samo o sobě nezpřístupňuje jeho obsah ani nevytváří vlastní stopu.</small>
                   </label>
                   <label v-if="draft.intent === 3">Připravit pro
-                    <select v-model.number="draft.preparedIntent"><option v-for="(label, intent) in actionNames" :key="intent" :value="intent" :disabled="[0, 1, 3].includes(intent)">{{ label }}</option></select>
+                    <select v-model.number="draft.preparedIntent"><option :value="null">Vyber účinnou akci</option><option v-for="intent in [6, 8, 9]" :key="intent" :value="intent">{{ actionNames[intent] }}</option></select>
                   </label>
-                  <label v-if="draft.intent === 7">Zásah do jediného doručení
-                    <select v-model="draft.method"><option value="DELAY">Odložit o jednu kapitolu</option><option value="REDIRECT">Přesměrovat na zvoleného oprávněného adresáta</option></select>
+                  <p v-if="draft.intent === 7 && view.chapters === 3" class="sealed-muted">Zdržení ovlivňuje novou dostupnost celé stopy pro pátrání, ne jen jedno doručení jednomu člověku. Další kapitola stopu znovu zpřístupní; poslední kapitola přejde rovnou k hlasování.</p>
+                  <p v-if="draft.intent === 7 && view.chapters === 3" class="sealed-muted">Zůstáváš v místě zdroje, který teď vidíš. Přesun do jiného místa vyžaduje samostatný tah.</p>
+                  <label v-if="draft.intent === 7 && view.chapters !== 3">Metoda sabotáže
+                    <select v-model="draft.method" @change="changeDraftMethod"><option value="DELAY">Zdržet celou stopu o jednu kapitolu</option><option value="REDIRECT">Přesměrovat jedno doručení k oprávněnému adresátovi</option></select>
                   </label>
+                  <p v-if="draft.intent === 7 && view.chapters === 6 && draft.method === 'DELAY'" class="sealed-muted">Zdržení mění dostupnost celé konkrétní stopy pro nové pátrání; již získané kopie zůstávají.</p>
+                  <p v-else-if="draft.intent === 7 && view.chapters === 6 && draft.method === 'REDIRECT'" class="sealed-muted">Přesměrování mění adresáta jednoho doručení. Jeho obsah ani historie stopy se tím nemění.</p>
                   <label v-if="[8, 9].includes(draft.intent)">Prostředek
                     <select v-model="draft.method"><option value="IMPACT_SEAL">Pečeť zásahu</option><option value="BREAKING_SEAL">Zlomová pečeť · jeden Krajní čin</option></select>
                   </label>
 
-                  <details class="sealed-disclosure">
+                  <details v-if="view.chapters === 6" class="sealed-disclosure">
                     <summary>Další možnosti tahu</summary>
                     <label class="sealed-check"><input v-model="draft.shelteredPosition" type="checkbox" /> Zaujmu dosažitelné kryté místo: {{ view.locations.ARCHIV ?? 'Archiv' }} nebo {{ view.locations.POKOJE ?? 'Hostinské pokoje' }}. Jinde krytí nevznikne.</label>
                     <label>Jak se bránit
@@ -672,13 +782,16 @@ async function openAction() {
             <label class="sealed-check"><input v-model="disconnectConfirmed" type="checkbox" /> Potvrzuji, že tato postava už v partii nepokračuje.</label>
             <AwButton variant="danger" :busy="busy" :disabled="!disconnectId || !disconnectConfirmed" @click="mutate('/disconnect', { operationId: operation(), playerId: disconnectId })">Zapsat odpojení</AwButton>
           </details>
-          <details class="sealed-disclosure">
-            <summary>Jak pokračovat ve hře</summary>
+          <details class="sealed-disclosure sealed-rules">
+            <summary>Pravidla případu</summary>
             <ul class="sealed-help">
-              <li><strong>Moje akce:</strong> vyber návrh, doplň potřebné údaje a výslovně ho potvrď. Samotný výběr ani zpráva v rozhovoru tah neuloží.</li>
-              <li><strong>Deník:</strong> odlišuje vlastní zkušenosti, tvrzení, vyhodnocené plány a doložené stopy.</li>
-              <li><strong>Klidový úsek:</strong> potvrzený plán se vyhodnocuje. Telefon může stranou.</li>
-              <li><strong>Závěrečné hlasování:</strong> hlasuj podle vlastních stop. Po odhalení uvidíš výsledek a můžeš si uložit vzpomínku.</li>
+              <li>Máš soukromý cíl a na konci tajně hlasuješ podle vlastního úsudku.</li>
+              <li>Každý tah má jednu hlavní akci a nanejvýš jeden sousední přesun. Návrh se uloží až po výslovném potvrzení; rozepsaná zpráva tah nemění.</li>
+              <li>Vlastní stopa je důkaz; cizí zpráva je tvrzení; vlastní odhad je podezření. Úplný vlastní řetězec A/B/C umožní správný závěr.</li>
+              <li>Rozpis A/B/C ukazuje místo a kapitolu uvolnění. K místu C je třeba dorazit před jeho uvolněním v kapitole 3.</li>
+              <li>Ochrana sebe stojí tah a v této kapitole brání cizí sabotáži ve stejné místnosti. Bez vlastní oprávněné zkušenosti se nedozvíš, zda k útoku došlo.</li>
+              <li>Zdržení jedné stopy může selhat a blokuje její nové získání do další kapitoly; již získané kopie zůstávají. V poslední kapitole po úspěchu nikdo nově nezíská tuto stopu pátráním před hlasováním.</li>
+              <li>Soukromý telefon, role, spis a potvrzený plán patří hráči; neukazuj je na cizím telefonu ani na snímku obrazovky. Informace sdílej ústně nebo vědomě odeslanou zprávou.</li>
             </ul>
           </details>
         </aside>

@@ -117,8 +117,17 @@ internal static partial class SealedCaseHttpTests
         // A suspended old worker and a restarted runner must execute one canonical decision.
         var first = runner.RunOnceAsync(CancellationToken.None); var blockedBot = await provider.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         fixture.AdvanceSeconds(121); await runner.RunOnceAsync(CancellationToken.None); provider.Release.TrySetResult(); await first;
-        var accepted = store.ReadOwnPlan(id, game.Group, blockedBot, 1).Action!;
-        Equal(SealedIntent.Hold, accepted.Intent); Equal(1, provider.Calls[blockedBot + ":plan-1"]);
+        var accepted = store.ReadOwnPlan(id, game.Group, blockedBot, 1).Action;
+        Check(accepted is not null, "restarted and late workers share one confirmed legal plan");
+        Equal(SealedIntent.Guard, accepted!.Intent);
+        Check(accepted.TargetId is null && accepted.Destination is null, "restart fallback protects the bot in place");
+        Equal(1, provider.Calls[blockedBot + ":plan-1"]);
+        var fallbackView = store.ReadAiPlay(id, game.Group, blockedBot, () => authority.AcquireAccount("p1"));
+        foreach (var state in new[] { SealedPlayerState.Sleeping, SealedPlayerState.Unconscious, SealedPlayerState.Echo })
+        {
+            var inactive = SealedCaseAiPlayers.Fallback(fallbackView with { OwnState = state.ToString() }).Plan;
+            Equal(SealedIntent.Hold, inactive!.Intent);
+        }
         await runner.RunOnceAsync(CancellationToken.None); Check(provider.Calls.Values.All(count => count == 1), "no paid retry or duplicate dispatch");
         // Stale chapter projections cannot reserve a request in the following chapter.
         fixture.AdvanceSeconds(schedule.PlanningSeconds - 121 + schedule.QuietSeconds);
@@ -167,6 +176,13 @@ internal static partial class SealedCaseHttpTests
         Equal(HttpStatusCode.Forbidden, (await owner.PostAsJsonAsync(largePrefix + "/actions", new
         { operationId = "owner-cannot-act", plan = new SealedPlanConfirmation(1, 0, true, SealedIntent.Hold) })).StatusCode);
         fixture.AdvanceSeconds(SealedCaseRules.Schedule("full", 30).IntroductionSeconds);
+        var fullGame = store.RunningAiCases().Single(item => item.Id == largeId);
+        var fullBot = fullGame.Players[0];
+        var fullView = store.ReadAiPlay(largeId, fullGame.Group, fullBot, () => authority.AcquireAccount("p1"));
+        var fullFallback = SealedCaseAiPlayers.Fallback(fullView).Plan!;
+        store.ConfirmPlan(largeId, fullGame.Group, fullBot, "full-fallback", store.Read(largeId).Revision,
+            fullFallback, () => authority.AcquireAccount("p1"));
+        Equal(SealedIntent.Guard, store.ReadOwnPlan(largeId, fullGame.Group, fullBot, 1).Action!.Intent);
         await runner.RunOnceAsync(CancellationToken.None);
         var operatorView = (await owner.GetFromJsonAsync<SealedPlayView>(largePrefix + "/play?viewerId=" + largeLobby.Players[0].Id))!;
         Equal("Operator", operatorView.OwnState); Check(!operatorView.CanJoin, "running observer never gains a player seat"); Check(operatorView.OwnTeam is null && operatorView.OwnPlan is null, "owner cannot impersonate a bot projection");

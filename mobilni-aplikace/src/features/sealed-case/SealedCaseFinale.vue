@@ -10,7 +10,9 @@ const props = defineProps<{
 defineEmits<{ export: [personal: boolean]; 'new-case': [] }>();
 const playerName = (id: string) => props.view.players.find(player => player.id === id)?.name ?? 'Host';
 const scenario = computed(() => scenarioFor(props.view));
-const actionText = (value: string) => value === 'Lethal' ? scenario.value.extremeActionLabel : intentText(value);
+const actionText = (value: string) => value === 'Lethal' ? scenario.value.extremeActionLabel
+  : props.view.chapters === 3 && value === 'Guard' ? 'Chránit sebe'
+    : props.view.chapters === 3 && value === 'Sabotage' ? 'Zdržet stopu' : intentText(value);
 </script>
 
 <template>

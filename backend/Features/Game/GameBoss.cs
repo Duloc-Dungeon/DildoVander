@@ -6,12 +6,14 @@ using System.Text.Json;
 using Kufr.Backend.Features.Access;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
+using Kufr.Backend.Features.Customers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Game;
 
-internal sealed record GameBossView(bool Revealed, bool Rescued, int ReferenceXp, long Revision, string? ActiveAttemptId = null);
+internal sealed record GameBossView(bool Revealed, bool Rescued, int ReferenceXp, long Revision, string? ActiveAttemptId = null,
+    bool RickrollEnabled = false, long RickrollRevision = 0, bool RickrollSeen = false);
 internal sealed record GameBossCommand(string OperationId, long ExpectedRevision,
     string? Choice = null, int SparkBid = 0, int? ExpectedReferenceXp = null);
 internal sealed record GameBossPreview(GameBossView Profile, int? ProposedReferenceXp, int ActivePlayers, int? MinXp, int? MaxXp);
@@ -39,8 +41,19 @@ internal sealed partial class GameStore
             CREATE INDEX IF NOT EXISTS ix_boss_owner ON game_boss_attempts(group_id,user_id);
             CREATE TABLE IF NOT EXISTS game_boss_operations(
                 operation_id TEXT PRIMARY KEY, actor TEXT NOT NULL, fingerprint TEXT NOT NULL, target TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS game_boss_rickroll_groups(
+                group_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL, revision INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS game_boss_rickroll_operations(
+                operation_id TEXT PRIMARY KEY, actor TEXT NOT NULL, fingerprint TEXT NOT NULL, group_id TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS game_boss_rickroll_claims(
+                user_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, claimed_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS game_boss_narration(
+                attempt_id TEXT PRIMARY KEY REFERENCES game_boss_attempts(id) ON DELETE CASCADE,
+                revision INTEGER NOT NULL, context_key TEXT NOT NULL, text TEXT, audio BLOB, audio_key TEXT,
+                claim TEXT, claim_until INTEGER NOT NULL DEFAULT 0);
             """;
         command.ExecuteNonQuery();
+        EnsureBossNarrationAudioSchema(connection);
     }
 
     internal GameBossView ReadBoss(string groupId, string? userId = null)
@@ -48,7 +61,13 @@ internal sealed partial class GameStore
         using var connection = Open();
         EnsureBossTables(connection);
         var profile = ReadBossProfile(connection, null, groupId);
+        profile = profile with
+        {
+            RickrollEnabled = ReadBossRickrollEnabled(connection, null, groupId),
+            RickrollRevision = ReadBossRickrollRevision(connection, null, groupId)
+        };
         if (userId is null) { return profile; }
+        profile = profile with { RickrollSeen = HasBossRickrollClaim(connection, null, userId) };
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT id,state_json FROM game_boss_attempts WHERE group_id=$group AND user_id=$user";
         command.Parameters.AddWithValue("$group", groupId); command.Parameters.AddWithValue("$user", userId);
@@ -101,6 +120,7 @@ internal sealed partial class GameStore
             insert.CommandText = "INSERT INTO game_boss_groups(group_id,reference_xp,rescued,revision) VALUES($group,$xp,0,1)";
             insert.Parameters.AddWithValue("$group", groupId); insert.Parameters.AddWithValue("$xp", median);
             insert.ExecuteNonQuery();
+            EnqueueBossArrivalChronicle(connection, transaction, groupId, eligible, median);
             RecordBossOperation(connection, transaction, request.OperationId, actor, fingerprint, groupId);
             transaction.Commit();
             return new(true, false, median, 1);
@@ -111,6 +131,7 @@ internal sealed partial class GameStore
     {
         using var connection = Open(); EnsureBossTables(connection);
         var profile = ReadBossProfile(connection, null, groupId);
+        profile = profile with { RickrollEnabled = ReadBossRickrollEnabled(connection, null, groupId), RickrollRevision = ReadBossRickrollRevision(connection, null, groupId) };
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT user_id,xp FROM game_players WHERE group_id=$group AND matches>0 AND xp>0";
         command.Parameters.AddWithValue("$group", groupId);
@@ -123,7 +144,8 @@ internal sealed partial class GameStore
         return new(profile, median, values.Count, values.Count == 0 ? null : values[0], values.Count == 0 ? null : values[^1]);
     }
 
-    internal GameBossAttemptView StartBoss(string groupId, string userId, GameBossCommand request)
+    internal GameBossAttemptView StartBoss(string groupId, string userId, GameBossCommand request,
+        GameYoloProfile? frozenProfile = null)
     {
         lock (_writeGate)
         {
@@ -150,11 +172,10 @@ internal sealed partial class GameStore
             var attempt = new BossAttempt
             {
                 Id = Guid.NewGuid().ToString("N"), GroupId = groupId, UserId = userId,
-                Strength = stats.Xp < 30 ? Math.Max(1m, (decimal)stats.Xp / profile.ReferenceXp)
-                    : (decimal)stats.Xp / profile.ReferenceXp,
-                BossEnergy = stats.Xp < 30 ? 3 : 5,
+                Strength = BossStrength(stats.Xp, profile.ReferenceXp),
                 Exhibition = stats.Xp < 30,
                 Seed = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
+                ChronicleProfile = frozenProfile,
             };
             PrepareBossChoice(attempt);
             SaveBossAttempt(connection, transaction, attempt, insert: true);
@@ -170,7 +191,8 @@ internal sealed partial class GameStore
         return BossProjection(ReadBossAttempt(connection, null, groupId, userId, id));
     }
 
-    internal GameBossAttemptView ChooseBoss(string groupId, string userId, string id, GameBossCommand request)
+    internal GameBossAttemptView ChooseBoss(string groupId, string userId, string id, GameBossCommand request,
+        IReadOnlySet<string>? eligibleMembers = null)
     {
         lock (_writeGate)
         {
@@ -186,7 +208,7 @@ internal sealed partial class GameStore
             if (request.Choice is not ("strike" or "trick" or "shield") || request.SparkBid is < 0 or > 1)
             { throw new GameFault(400, "boss_choice_invalid"); }
             if (request.SparkBid > (attempt.Exhibition ? 0 : attempt.PlayerSparks)
-                || !attempt.Exhibition && attempt.PlayerInventory[request.Choice] == 0)
+                || attempt.PlayerInventory[request.Choice] == 0)
             { throw new GameFault(409, "boss_inventory_exhausted"); }
             // The boss's choice was persisted before this request, independently of the player's card.
             var winner = request.Choice == attempt.BossChoice ? "draw"
@@ -197,7 +219,7 @@ internal sealed partial class GameStore
             attempt.BossEnergy = Math.Max(0, attempt.BossEnergy - playerDamage);
             attempt.PlayerEnergy = Math.Max(0, attempt.PlayerEnergy - bossDamage);
             attempt.PlayerSparks -= request.SparkBid; attempt.BossSparks -= attempt.BossBid;
-            if (!attempt.Exhibition) { attempt.PlayerInventory[request.Choice]--; }
+            attempt.PlayerInventory[request.Choice]--;
             attempt.BossInventory[attempt.BossChoice]--;
             attempt.Rounds.Add(new(attempt.Rounds.Count + 1, request.Choice, attempt.BossChoice, winner,
                 request.SparkBid, attempt.BossBid, playerDamage, bossDamage));
@@ -205,11 +227,17 @@ internal sealed partial class GameStore
             if (attempt.BossEnergy == 0 || attempt.PlayerEnergy == 0 || attempt.Rounds.Count == 12)
             {
                 attempt.Status = "complete"; attempt.Result = attempt.BossEnergy == 0 ? "win" : "loss";
+                attempt.CompletedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 if (attempt.Result == "win")
                 {
                     using var rescue = connection.CreateCommand(); rescue.Transaction = transaction;
                     rescue.CommandText = "UPDATE game_boss_groups SET rescued=1,revision=revision+1 WHERE group_id=$group AND rescued=0";
-                    rescue.Parameters.AddWithValue("$group", groupId); rescue.ExecuteNonQuery();
+                    rescue.Parameters.AddWithValue("$group", groupId);
+                    if (rescue.ExecuteNonQuery() == 1)
+                    {
+                        EnqueueBossRescueChronicle(connection, transaction, attempt,
+                            eligibleMembers ?? new HashSet<string>([userId], StringComparer.Ordinal));
+                    }
                 }
             }
             else
@@ -218,6 +246,7 @@ internal sealed partial class GameStore
                 PrepareBossChoice(attempt);
             }
             SaveBossAttempt(connection, transaction, attempt, insert: false);
+            if (attempt.Status == "complete") { EnqueuePersonalBossChronicle(connection, transaction, attempt); }
             RecordBossOperation(connection, transaction, request.OperationId, userId, fingerprint, id);
             transaction.Commit();
             return BossProjection(attempt);
@@ -250,13 +279,26 @@ internal sealed partial class GameStore
         using var exists = connection.CreateCommand(); exists.Transaction = transaction;
         exists.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='game_boss_attempts'";
         if (Convert.ToInt32(exists.ExecuteScalar()) == 0) { return; }
+        using (var ensure = connection.CreateCommand())
+        {
+            ensure.Transaction = transaction;
+            ensure.CommandText = "CREATE TABLE IF NOT EXISTS game_boss_rickroll_operations(operation_id TEXT PRIMARY KEY, actor TEXT NOT NULL, fingerprint TEXT NOT NULL, group_id TEXT NOT NULL); CREATE TABLE IF NOT EXISTS game_boss_rickroll_claims(user_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, claimed_at INTEGER NOT NULL);";
+            ensure.ExecuteNonQuery();
+        }
         using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "DELETE FROM game_boss_attempts WHERE user_id=$user; DELETE FROM game_boss_operations WHERE actor=$user;";
+        command.CommandText = "DELETE FROM game_boss_attempts WHERE user_id=$user; DELETE FROM game_boss_operations WHERE actor=$user; DELETE FROM game_boss_rickroll_operations WHERE actor=$user; DELETE FROM game_boss_rickroll_claims WHERE user_id=$user;";
         command.Parameters.AddWithValue("$user", userId); command.ExecuteNonQuery();
     }
 
     private static bool Beats(string left, string right) => (left, right) is
         ("strike", "trick") or ("trick", "shield") or ("shield", "strike");
+    private static decimal BossStrength(int xp, int referenceXp)
+    {
+        // Everyone can win at the same baseline. XP continuously improves damage, with
+        // diminishing returns below 3x so outliers cannot skip the fight in one hit.
+        var earnedXp = Math.Max(0m, xp);
+        return 1m + 2m * earnedXp / (earnedXp + Math.Max(1m, referenceXp));
+    }
     private static Dictionary<string, int> BossStock() => new() { ["strike"] = 2, ["trick"] = 2, ["shield"] = 2 };
     private static void PrepareBossChoice(BossAttempt attempt)
     {
@@ -345,10 +387,12 @@ internal sealed partial class GameStore
         public string Seed { get; set; } = "";
         public string Status { get; set; } = "active";
         public long Revision { get; set; } = 1;
+        public long? CompletedAt { get; set; }
         public decimal PlayerEnergy { get; set; } = 6;
         public decimal BossEnergy { get; set; } = 5;
         public decimal Strength { get; set; }
         public bool Exhibition { get; set; }
+        public GameYoloProfile? ChronicleProfile { get; set; }
         public int PlayerSparks { get; set; } = 2;
         public int BossSparks { get; set; } = 2;
         public string BossChoice { get; set; } = "strike";
@@ -367,12 +411,15 @@ internal static class GameBossEndpoints
     {
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) { return; }
         var group = app.MapGroup("/app/v1/game/boss").RequireAuthorization().RequireRateLimiting(GameRateLimit.Policy);
+        group.AddEndpointFilter<GameChangedEndpointFilter>();
         group.AddEndpointFilter(async (invocation, next) =>
         {
             var context = invocation.HttpContext;
             try
             {
-                var groupId = await ParticipantGroupAsync(context);
+                var claimRickroll = context.Request.Method == "POST"
+                    && context.Request.Path == "/app/v1/game/boss/rickroll/claim";
+                var groupId = await ParticipantGroupAsync(context, requireWand: !claimRickroll);
                 context.Items["boss-group"] = groupId;
                 context.Response.Headers.CacheControl = "no-store";
                 return await next(invocation);
@@ -380,14 +427,28 @@ internal static class GameBossEndpoints
             catch (GameFault fault) { return ApiProblem.Create(context, fault.Status, fault.Code); }
         });
         group.MapGet("", (HttpContext context, GameStore store) => Results.Ok(store.ReadBoss((string)context.Items["boss-group"]!, User(context))));
-        group.MapPost("/attempts", (GameBossCommand request, HttpContext context, GameStore store) =>
-            Results.Ok(store.StartBoss((string)context.Items["boss-group"]!, User(context), request)));
+        group.MapPost("/rickroll/claim", (HttpContext context, GameStore store, RickrollMedia media) =>
+            Results.Ok(store.ClaimBossRickroll((string)context.Items["boss-group"]!, User(context), media.Available)));
+        group.MapPost("/attempts", async (GameBossCommand request, HttpContext context, GameStore store,
+            AccountDatabase db, CharacterProfileStore profiles, WandGenerationStore wands) =>
+        {
+            var userId = User(context);
+            var frozenProfile = await GameYoloWorker.ReadPublicProfile(userId, userId, profiles, wands, db, context.RequestAborted);
+            return Results.Ok(store.StartBoss((string)context.Items["boss-group"]!, userId, request, frozenProfile));
+        });
         group.MapGet("/attempts/{id}", (string id, HttpContext context, GameStore store) =>
             Results.Ok(store.ReadBossAttempt((string)context.Items["boss-group"]!, User(context), id)));
-        group.MapPost("/attempts/{id}/choose", (string id, GameBossCommand request, HttpContext context, GameStore store) =>
-            Results.Ok(store.ChooseBoss((string)context.Items["boss-group"]!, User(context), id, request)));
+        group.MapPost("/attempts/{id}/choose", async (string id, GameBossCommand request, HttpContext context,
+            GameStore store, AccountDatabase db) =>
+        {
+            var groupId = (string)context.Items["boss-group"]!;
+            var eligible = await EligibleBossPlayersAsync(db, groupId, context.RequestAborted);
+            return Results.Ok(store.ChooseBoss(groupId, User(context), id, request, eligible));
+        });
         group.MapPost("/attempts/{id}/cancel", (string id, GameBossCommand request, HttpContext context, GameStore store) =>
             Results.Ok(store.CancelBoss((string)context.Items["boss-group"]!, User(context), id, request)));
+        group.MapPost("/attempts/{id}/narration", GameBossNarrationEndpoints.NarrateAsync);
+        group.MapPost("/attempts/{id}/audio", GameBossNarrationEndpoints.AudioAsync);
 
         app.MapPost("/app/v1/admin/game/groups/{id}/boss", RevealAsync).RequireAuthorization().RequireRateLimiting("account");
         app.MapGet("/app/v1/admin/game/groups/{id}/boss", async (string id, HttpContext context, AccountDatabase db, GameStore store) =>
@@ -399,6 +460,7 @@ internal static class GameBossEndpoints
             context.Response.Headers.CacheControl = "no-store";
             return Results.Ok(store.PreviewBoss(id, eligible));
         }).RequireAuthorization().RequireRateLimiting("account");
+        app.MapBossRickroll();
     }
     private static string User(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
         ?? throw new GameFault(401, "account_required");
@@ -425,7 +487,7 @@ internal static class GameBossEndpoints
         var bossAttemptAction = context.Request.Method == "POST"
             && (path == "/app/v1/game/boss/attempts"
                 || System.Text.RegularExpressions.Regex.IsMatch(path,
-                    @"^/app/v1/game/boss/attempts/[0-9a-fA-F]{32}/(?:choose|cancel)$",
+                    @"^/app/v1/game/boss/attempts/[0-9a-fA-F]{32}/(?:choose|cancel|narration|audio)$",
                     System.Text.RegularExpressions.RegexOptions.CultureInvariant));
         if (requireWand && context.Request.Method != "GET" && !bossAttemptAction
             && !path.EndsWith("/cancel", StringComparison.Ordinal)

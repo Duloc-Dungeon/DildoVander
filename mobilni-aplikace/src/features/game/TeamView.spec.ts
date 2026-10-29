@@ -6,7 +6,9 @@ const api = vi.hoisted(() => ({
   gameRequest: vi.fn(),
   accountRequest: vi.fn(),
   setAccount: (_value: unknown) => {},
+  changed: () => {},
 }));
+vi.mock('./gameLive', () => ({ connectGameLive: (changed: () => void) => { api.changed = changed; return () => {}; } }));
 
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
@@ -77,7 +79,13 @@ async function render() {
     ],
   });
   await router.push(`/play/team/${matchId}`);
-  wrapper = mount(TeamView, { global: { plugins: [router], stubs: { GameClash: true } } });
+  wrapper = mount(TeamView, { global: { plugins: [router], stubs: {
+    GameClash: true,
+    ChronicleMatchReveal: {
+      props: ['matchId', 'mode', 'status', 'verdictVisible'],
+      template: '<div data-test="chronicle-reveal" :data-match-id="matchId" :data-mode="mode" :data-status="status" :data-verdict-visible="String(verdictVisible)" />',
+    },
+  } } });
   await flushPromises();
   return wrapper;
 }
@@ -99,6 +107,27 @@ afterEach(() => {
 });
 
 describe('team duel halftime', () => {
+  it('shows the chronicle card only for a completed team result', async () => {
+    currentMatch = teamMatch({ status: 'complete', result: 'win', xpAwarded: 12 });
+    const view = await render();
+    const card = view.get('[data-test="chronicle-reveal"]');
+    expect(card.attributes()).toMatchObject({
+      'data-match-id': matchId, 'data-mode': 'team', 'data-status': 'complete', 'data-verdict-visible': 'true',
+    });
+  });
+
+  it('applies live team readiness without reloading the lobby or wand profile', async () => {
+    currentMatch = teamMatch({ status: 'active', allFourLocked: [false, false, false, false] });
+    const view = await render();
+    const metadataReads = api.accountRequest.mock.calls.length;
+    const lobbyReads = api.gameRequest.mock.calls.filter(([path]) => path === '').length;
+    currentMatch = teamMatch({ status: 'active', revision: 6, allFourLocked: [false, true, true, false] });
+    api.changed();
+    await flushPromises();
+    expect(view.get('.team-readiness').text()).toContain('2 ze 4');
+    expect(api.accountRequest.mock.calls).toHaveLength(metadataReads);
+    expect(api.gameRequest.mock.calls.filter(([path]) => path === '')).toHaveLength(lobbyReads);
+  });
   it.each([
     [true, 0, 1, 'strike', 'shield', 'opponent'], [true, 1, 1, 'trick', 'strike', 'opponent'],
     [false, 0, 1, 'shield', 'strike', 'player'], [false, 1, 1, 'strike', 'trick', 'player'],

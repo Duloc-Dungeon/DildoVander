@@ -79,7 +79,7 @@ internal sealed class DuelCommentaryService : IDisposable
             : new { number = integer, leftScore = integer, rightScore = integer, quip = phrase, mishap = phrase };
         var request = JsonSerializer.Serialize(new
         {
-            model = ResponsesTextDialogBudget.Model, store = false, service_tier = "default",
+            model = ResponsesTextDialogBudget.Model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary),
             reasoning = new { effort = "low" }, max_output_tokens = personalized ? 1800 : 1000,
             instructions = (personalized ? """
                 Vytvoř tři původní, propojené české komediální obraty hlasem kouzelného kufru z Wand Night Stand:

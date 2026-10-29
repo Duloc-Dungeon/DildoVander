@@ -319,6 +319,7 @@ internal sealed partial class SealedCaseStore
     internal int EraseAccount(string accountId)
     {
         using var c = Open(); using var tx = c.BeginTransaction(deferred: false);
+        Kufr.Backend.Features.Keepsakes.ChronicleSourceOutbox.EraseAccount(c, tx, accountId);
         using var find = c.CreateCommand(); find.Transaction = tx;
         find.CommandText = """
             SELECT id FROM sealed_cases ca WHERE

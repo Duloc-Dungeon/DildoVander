@@ -10,38 +10,13 @@ internal sealed record SealedPlayerCard(string Id, string Name, string Seat, str
 internal sealed record SealedClueView(string Id, string Chain, string Family, string[] Candidates, string SourceEvent,
     string? Label = null, string? Description = null);
 internal sealed record SealedSource(string Id, string Label);
+internal sealed record SealedActionObservation(string ActionRef, int Chapter, string Kind);
 internal sealed record SealedPublicSourceSchedule(string Family, string Label, string Location, int ReleaseChapter);
-internal static class SealedCaseFeedback
-{
-    internal static string? InvestigationObservation(SealedIntent intent, SealedScenarioState? before,
-        SealedScenarioState? after, string playerId)
-    {
-        if (intent is not (SealedIntent.Investigate or SealedIntent.EchoScene) || after is null) { return null; }
-        string[] Notes(SealedScenarioState? scenario) => scenario?.Notes.GetValueOrDefault(playerId, []) ?? [];
-        var beforeNotes = Notes(before);
-        const string discoveredPrefix = "Prozkoumal jsi doloženou stopu ";
-        const string noClueNote = "Prozkoumal jsi místo. Nová doložená stopa tu zatím dostupná není.";
-        var newNote = Notes(after).Skip(beforeNotes.Length).FirstOrDefault(note =>
-            note.StartsWith(discoveredPrefix, StringComparison.Ordinal)
-            || note == noClueNote
-            || note.Contains("přesměrovanému doručení", StringComparison.Ordinal));
-        if (newNote is null || newNote.Contains("přesměrovanému doručení", StringComparison.Ordinal)) { return null; }
-        if (newNote.StartsWith(discoveredPrefix, StringComparison.Ordinal))
-        {
-            var clueId = newNote[discoveredPrefix.Length..].TrimEnd('.');
-            if (!after.KnownClues.GetValueOrDefault(playerId, []).Contains(clueId, StringComparer.Ordinal)) { return null; }
-            return before?.KnownClues.GetValueOrDefault(playerId, []).Contains(clueId, StringComparer.Ordinal) == true
-                ? "Znovu jsi narazil na již známou stopu."
-                : "Získal jsi novou doloženou stopu.";
-        }
-        return newNote == noClueNote ? "Na tomto místě nebyla nová doložená stopa dostupná." : null;
-    }
-}
 internal sealed record SealedChoice(string Id, string Label, string Benefit, string Cost, string Risk, SealedPlanConfirmation Plan);
 internal sealed record SealedStatement(string Id, string Actor, string Body, string[] Recipients, bool Public, long CreatedAt);
 internal sealed record SealedRecap(int Chapter, string Actor, string? Target, string Intent, string Result, string EventRef,
     string? Reason = null, SealedModifiers? Modifiers = null, SealedRolls? Rolls = null, bool TraceCreated = false,
-    string? Observation = null);
+    string? Observation = null, SealedActionObservation? ActionObservation = null);
 internal sealed record SealedFinaleView(string Phase, int BallotSize, bool OwnSubmitted, string[] OwnBallot,
     string[] RunoffCandidates, int RunoffPlaces, string[]? Selected, string? Winner, string[]? Conspirators, SealedRecap[]? Reconstruction,
     string? Message = null);
@@ -314,8 +289,19 @@ internal sealed partial class SealedCaseStore
         var statements = Statements(connection, transaction, caseId, actor).Where(m => m.Public || m.Actor == actor || m.Recipients.Contains(actor))
             .Select(m => m.Actor == actor ? m : m with { Recipients = [] }).ToArray();
         var outcomes = Recap(connection, transaction, caseId).Where(e => e.Actor == player.Id && ReadConfirmedPlans(connection, transaction, caseId, e.Chapter).ContainsKey(player.Id))
-            .Select(e => e with { Result = "Tah se vyhodnotil", EventRef = "", Reason = null, Modifiers = null, Rolls = null,
-                TraceCreated = false, Observation = OwnResolutionObservation(connection, transaction, caseId, e.Chapter, player.Id) }).ToArray();
+            .Select(e =>
+            {
+                var ownAction = ReadConfirmedPlans(connection, transaction, caseId, e.Chapter)[player.Id];
+                var ownObservation = OwnActionObservation(scene, ownAction);
+                return e with { Result = "Tah se vyhodnotil", EventRef = "", Reason = null, Modifiers = null, Rolls = null,
+                    TraceCreated = false, Observation = ownObservation?.Kind switch
+                    {
+                        "INVESTIGATION_NEW_CLUE" => "Získal jsi novou doloženou stopu.",
+                        "INVESTIGATION_KNOWN_CLUE" => "Znovu jsi narazil na již známou stopu.",
+                        "INVESTIGATION_NO_NEW_CLUE" => "Na tomto místě nebyla nová doložená stopa dostupná.",
+                        _ => null
+                    }, ActionObservation = ownObservation };
+            }).ToArray();
         var finale = timing.Phase is "finale" or "finished" ? ReadFinale(connection, transaction, caseId, members, actor, timing) : null;
         var choices = Choices(player.Id, state, player.Location, timing.Chapter, ownPlan?.Revision ?? 0, clues, scene, timing.Variant);
         transaction.Commit();
@@ -332,26 +318,11 @@ internal sealed partial class SealedCaseStore
             member.Team == SealedSecretTeam.Guardian ? presentation.GuardianObjective : presentation.ConspiratorObjective);
     }
 
-    private static string? OwnResolutionObservation(SqliteConnection connection, SqliteTransaction transaction,
-        string caseId, int chapter, string playerId)
+    private static SealedActionObservation? OwnActionObservation(SealedScenarioState scene, SealedAction action)
     {
-        var ownPlan = ReadConfirmedPlans(connection, transaction, caseId, chapter).GetValueOrDefault(playerId);
-        if (ownPlan?.Intent is not (SealedIntent.Investigate or SealedIntent.EchoScene)) { return null; }
-        using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = chapter == 1
-            ? "SELECT initial_checkpoint_json FROM sealed_case_world WHERE case_id=$case"
-            : "SELECT checkpoint_json FROM sealed_case_resolutions WHERE case_id=$case AND chapter=$previous";
-        command.Parameters.AddWithValue("$case", caseId);
-        command.Parameters.AddWithValue("$previous", chapter - 1);
-        var beforeCheckpoint = command.ExecuteScalar() as string;
-        if (beforeCheckpoint is null) { return null; }
-        command.CommandText = "SELECT checkpoint_json FROM sealed_case_resolutions WHERE case_id=$case AND chapter=$chapter";
-        command.Parameters.AddWithValue("$chapter", chapter);
-        var afterCheckpoint = command.ExecuteScalar() as string;
-        if (afterCheckpoint is null) { return null; }
-        var before = JsonSerializer.Deserialize<SealedGameCheckpoint>(beforeCheckpoint, Json)!.Scenario;
-        var after = JsonSerializer.Deserialize<SealedGameCheckpoint>(afterCheckpoint, Json)!.Scenario;
-        return SealedCaseFeedback.InvestigationObservation(ownPlan.Intent, before, after, playerId);
+        var experience = scene.Experiences?.GetValueOrDefault(action.ActorId, []).SingleOrDefault(item =>
+            item.ActionRef == action.Id && item.ActionChapter == action.Chapter && item.ActionObservation is not null);
+        return experience?.ActionObservation is { } kind ? new(action.Id, action.Chapter, kind) : null;
     }
 
     private static SealedChoice[] Choices(string actor, SealedPlayerState state, string location, int chapter, int actionRevision,
@@ -371,9 +342,26 @@ internal sealed partial class SealedCaseStore
                 Choice("echo-scene", "Prozkoumat ozvěnu scény", "Jedna dostupná doložená stopa", "Bez zásahu do těl a předmětů", SealedIntent.EchoScene, location),
                 Choice("echo-deliver", "Připravit vlastní vzkaz", "Doručení již známé stopy vybranému hráči", "Vyžaduje známou stopu a adresáta", SealedIntent.EchoDeliver, clues.FirstOrDefault()?.Id)];
         }
-        return [Choice("investigate", "Prozkoumat místo", "Nejvýše jedna dostupná stopa", "Místo zatím nemusí mít nový důkaz", SealedIntent.Investigate),
-            Choice("guard", "Chránit sebe", "Ochrana při skutečném střetu", "Nebudeš současně pátrat", SealedIntent.Guard),
-            Choice("prepare", "Připravit příští pátrání", "Bonus pro příští příslušnou akci", "Příprava se neuchová navždy", SealedIntent.Prepare) with
-                { Plan = new(chapter, actionRevision, true, SealedIntent.Prepare, PreparedIntent: SealedIntent.Investigate) }];
+        var awakeChoices = new List<SealedChoice>
+        {
+            Choice("investigate", "Pátrat", "Nejvýše jedna dostupná stopa", "Můžeš získat novou, známou, nebo žádnou dostupnou stopu", SealedIntent.Investigate),
+            Choice("guard", "Chránit sebe", "Tvoje přítomná ochrana blokuje cizí sabotáž ve stejné místnosti", "Jeden hlavní tah; tento tah nepátráš", SealedIntent.Guard)
+        };
+        if (variant == "first")
+        {
+            var lastChapter = SealedCaseRules.Schedule(variant, scene.KnownClues.Count).Chapters;
+            awakeChoices.Add(Choice("sabotage-delay", "Zdržet stopu",
+                chapter == lastChapter
+                    ? "Úspěšné zdržení zabrání novému získání této stopy pátráním až do hlasování"
+                    : "Zdržíš získávání jedné konkrétní stopy do další kapitoly",
+                "Jeden hlavní tah; vyber dostupný zdroj, pokus může selhat. Získané kopie zůstávají.",
+                SealedIntent.Sabotage, method: "DELAY"));
+        }
+        else
+        {
+            awakeChoices.Add(Choice("prepare-steal", "Připravit krádež", "Příprava posílí příští krádež", "Příprava platí jen pro další kapitolu", SealedIntent.Prepare)
+                with { Plan = new(chapter, actionRevision, true, SealedIntent.Prepare, PreparedIntent: SealedIntent.Steal) });
+        }
+        return [.. awakeChoices];
     }
 }

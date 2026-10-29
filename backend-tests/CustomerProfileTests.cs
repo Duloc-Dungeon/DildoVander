@@ -222,6 +222,8 @@ internal static class CustomerProfileTests
         var job = new CharacterJob("private-job", "private-account", "private-profile", 3,
             new("Wizard", "Fiction"), null, "private-lease", 1, OpenAiConsent: true);
         var request = OpenAiCharacterEnrichmentProvider.BuildRequest(job, "server-model", true);
+        using var tierRequest = JsonDocument.Parse(request);
+        Check(tierRequest.RootElement.GetProperty("service_tier").GetString() == "fast", "character research explicitly requests Fast");
         Check(!request.Contains("private-account") && !request.Contains("private-profile"), "provider receives fictional fields only");
         using var requestDocument = JsonDocument.Parse(request);
         Check(requestDocument.RootElement.GetProperty("include")[0].GetString() == "web_search_call.action.sources",

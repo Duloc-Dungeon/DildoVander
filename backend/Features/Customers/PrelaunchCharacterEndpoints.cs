@@ -161,9 +161,9 @@ internal static class PrelaunchCharacterEndpoints
             artwork = portrait is null ? null : new { portrait.Status,
                 loadingMessage = PortraitContentPolicy.ValidLoadingMessage(portrait.LoadingMessage) ? portrait.LoadingMessage : null,
                 portrait.ErrorCode,
-                finalMessage = portrait.FinalMessage ?? (portrait.Status == "ready"
+                finalMessage = PortraitContentPolicy.ValidMessage(portrait.FinalMessage) ? portrait.FinalMessage : (portrait.Status == "ready"
                     ? CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback) : null),
-                welcome = portrait.Welcome is { } welcome
+                welcome = portrait.Welcome is { } welcome && CharacterWelcomePolicy.ValidText(welcome)
                     ? new { joke = welcome.Joke, identity = welcome.Identity, teaser = welcome.Teaser }
                     : null,
                 source = portrait.Status == "ready" ? portrait.Source : null,
@@ -180,7 +180,7 @@ internal static class PrelaunchCharacterEndpoints
         {
             throw new CharacterException("character_revision_conflict", 409);
         }
-        if (profile.Status == "saved")
+        if (profile.Status is "saved" or "failed")
         {
             if (!await store.RequestEnrichmentAsync(owner, token, profile.ProfileId, profile.Revision))
             {

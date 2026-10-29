@@ -35,8 +35,21 @@ ručně nenahrávají ani neodesílají. Přehrávání lze přerušit řečí n
 ztlumení mikrofonu a ukončení rozhovoru jsou samostatné akce. Stop je dostupný
 i při výsledném verdiktu. Odchod, skrytí aplikace, změna účtu/souhlasu nebo režimu
 uvolní audio a mikrofon. Pozdní svolení k mikrofonu neobnoví opuštěnou relaci.
+Hotový verdikt zůstává čitelný; dílna nenabízí jeho samostatné zvukové přehrání.
 Běžné obnovení údajů stejného účtu se stejným souhlasem hovor ani rozepsaný
 text neresetuje. Při skutečné změně vlastníka se odstraní i místní titulky a opravy.
+
+Hlas kufru má při otázce znít zvídavě, nad chlubením pobaveně nevěřícně a při
+zajímavém detailu řemeslně nadšeně. Intonace, důraz, krátké pauzy a tempo nesou
+emoce; model nečte scénické poznámky a každou repliku nemění v představení.
+Při nejistotě hosta zjemní a respektuje přerušení.
+Vlastní hlas lze vědomě vytvořit přes `scripts/provision_dv01_voice.py --state <soukromý-absolutní-json>`.
+Runtime ho vybere pomocí `Backend:GptLive:Voice:ConfigurationPath`; ze souboru
+načte `customVoiceId` i původní `prompt` a přidá popis barvy hlasu k instrukcím
+rozhovoru. Přímé nastavení ID může doplnit `Backend:GptLive:Voice:Description`.
+Vytvoření hlasu samo nemění běžící server; konfigurace se načítá při startu.
+Prompt-to-voice je určený pro GPT-Live, nepřipojuje se k samostatnému TTS endpointu.
+
 Při změně profilu nebo jeho revize na otevřené stránce se starý místní kontext
 odpojí a přijme aktuální stav serveru. Další vědomé spuštění použije operaci
 aktuální revize; rozpracovaná starší operace zůstává uložená u původního kontextu.
@@ -148,11 +161,20 @@ nemění. Nejde pouze o odkaz na souboj s nulovým poškozením.
 ## Transparentní artwork a opravy
 
 `wand_artwork` používá SDK 2.14 `Background=Transparent`, PNG1024×1536 a prompt
-`personal-wand-art-v2-transparent`. Prompt vyžaduje celou izolovanou siluetu,
+`personal-wand-art-v3-visual-only-transparent`. Obrazový požadavek obsahuje jen
+materiál, jádro a vizuální popis uložené hůlky, bez polí jména, příběhu, kouzel,
+identity postavy nebo jejího univerza. Autor hůlky má v těchto třech vizuálních
+polích používat obecné fyzické detaily bez vlastních jmen a názvů světů;
+u starších volných popisů to není deterministické filtrování již uloženého textu.
+Stejný obrazový prompt používá opakování i oprava; moderace zůstává `low`.
+Prompt vyžaduje celou izolovanou siluetu,
 volné okraje, bez podlahy, stěny, podstavce, vržených stínů a nakreslené šachovnice.
 Materiál a magické efekty vycházejí z uložené konkrétní hůlky. Alfa se validuje
 dekódováním skutečných PNG bajtů: prázdné a plně neprůhledné obrázky jsou odmítnuté.
 Portréty toto pravidlo nedostávají. Alfa kanál se při uložení/doručení nemění.
+Worker zachovává bezpečné validační kódy selhání včetně
+`wand_artwork_transparency_required` místo obecného `provider_attempt_unknown`.
+Manifesty existujících syntetických obrázků ponechávají původní verzi promptu.
 
 Ilustrace má nezávislé `queued/running/ready/failed`. Chyba neodstraní hůlku.
 Oprava hotové ilustrace přijímá `{expectedVersion,sourceAssetId,sourceSha256}`;
@@ -248,16 +270,41 @@ Pauza a selhání mají vlastní stav, nikoli nabídku dalšího rozhovoru běhe
 Kufr i sedm segmentů reagují pouze na skutečně přehrávaný výstup z existujícího
 analyzéru. Mimo stav řeči je úroveň vždy nulová, včetně Stop. Žádný nový přístup
 k mikrofonu, zvuk, poskytovatel nebo placená generace se kvůli efektu nespouští.
-Přechody jsou lokální CSS/Vue; výsledek i ovládání fungují bez čekání na animaci.
-Omezený pohyb vypíná posuny, škálování, přechody a pohyb indikátoru výroby.
+`WandRevealField.vue` po načtení skutečné ilustrace přidává jednorázovou
+sekvenci Motion (`motion-v`, 4,2 s): velkou svislou hůlku uprostřed okna,
+podélné světlo, tři vzestupná vlákna a jemné částice. Potom se ilustrace
+plynule usadí do skutečné karty. Karta výsledku se při příchodu neposouvá.
+Vrstva je přes Teleport přímo pod `body`; samostatné neprůhledné pozadí
+zakrývá okno už před prvním vykreslením Canvas. Celý obal zůstává pevný,
+včetně horní hrany. Dotyk nebo kurzor pouze vychýlí probíhající vlákna;
+návrat ukazatele už odhalení nepřehraje. Pasivní sledování zachovává posun
+stránky; posun nebo změna rozměrů efekt ukončí a ukáže statický výsledek.
+Odhalení portrétu v čekárně i při příchodu postavy používá společnou oponu
+Motion přes celé okno. Její švestkové záhyby mají přesah 2 px a obal se nehýbe.
+Pole se zastaví mimo výřez a při skrytí stránky; při opakovaně pomalém
+vykreslování nebo chybějícím Canvas zůstane statická ilustrace. Omezený pohyb
+vypíná částice, posuny, škálování, přechody a pohyb indikátoru výroby.
 
-Na telefonu se scéna při hovoru a psaní zmenší. Stop a ukončení hovoru jsou před
-obsahem rozhovoru a zůstávají dostupné při posunu stránky. Čtečka oznamuje
+Na telefonu má scéna stejný kompaktní rozměr při naslouchání, řeči i psaní;
+neřídí se měnící se výškou okna Safari. Průběžný přepis má vlastní posuvnou
+oblast a nezvětšuje stránku. Stop, mikrofon, ukončení hovoru a stav řeči tvoří
+společnou skupinu se stálým místem pro ovládání. Čtečka oznamuje
 potvrzené textové odpovědi v samostatné živé oblasti, nikoli streamované útržky.
-Chybějící ilustrace zachová výsledek i další krok, bez prázdné scénické plochy.
+Plocha ilustrace zachovává rozměry i při načítání nebo chybě; místo obrázku
+ukáže skutečný stav a dostupné opakování. Dokončení přesune fokus bez posunu stránky.
+Hotová hůlka používá větší svislou scénu 2:3 stejně v dílně i v čekárně.
+Hlavní návrat pod ilustrací může na telefonu vyžadovat posun; sekundární návrat
+v záhlaví zůstává nahoře. Dosažitelnost hlavní akce ověřuje i klávesnicový test.
+
+Jedna skutečná placená reference z produkčního obrazového promptu, její přesný
+prompt a doklad generace jsou v
+[`wand-reveal-reference`](../mobilni-aplikace/tests/fixtures/wand-reveal-reference/README.md).
+`npm run preview:wand-reveal` (případně `-- --waiting-room`) servíruje tuto
+uloženou ilustraci v testovací relaci; nespouští placená volání.
 
 Ověření: `npm test`, `npm run build`, `npm run test:wand:browser`,
 `npm run test:wand-upgrade-voice:browser` a `npm run test:living-trunk:browser`
 z `mobilni-aplikace/`. Poslední scénář posílá syntetické PCM do skutečného
-browserového přehrávače, ověřuje měřenou reakci, Stop, omezený pohyb a všechny
+browserového přehrávače, ověřuje měřenou reakci, Stop, konečné odhalení,
+dotyk/kurzor, omezený pohyb a všechny
 fáze na šířkách 390/768/1280 px. Lokální fixture není důkaz živé AI ani telefonu.

@@ -5,6 +5,7 @@ import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AdminReauthentication from '../identity/AdminReauthentication.vue';
 import { account, accountRequest } from '../identity/session';
+const emit = defineEmits<{ 'edit-production-schedule': [] }>();
 
 interface LaunchGroup {
   id: string;
@@ -15,6 +16,7 @@ interface LaunchGroup {
   forceStartAtEnd?: boolean;
   countdownConfirmedAt?: number | null;
   openedAt?: number | null;
+  chronicleClosedAt?: number | null;
 }
 interface Admission { revision: number; groupId: string | null; groupName?: string | null; recruitmentOpen: boolean; fixedUniverse: string | null }
 interface WaitingMember {
@@ -50,6 +52,7 @@ const membersDisclosure = ref<HTMLDetailsElement>();
 const admissionDisclosure = ref<HTMLDetailsElement>();
 const currentGroup = computed(() => groups.value.find(group => group.id === admission.value?.groupId) ?? null);
 const managedGroup = computed(() => groups.value.find(group => group.id === managementGroupId.value) ?? null);
+const managedDefaultGroup = computed(() => !!managedGroup.value && managedGroup.value.id === admission.value?.groupId);
 const managedWaitingCount = computed(() => members.value.filter(member =>
   member.groupId === managedGroup.value?.id && member.state === 'waiting').length);
 const waitingMemberCount = computed(() => members.value.filter(member => member.state === 'waiting').length);
@@ -62,12 +65,13 @@ const countdownDraftChanged = computed(() => managedGroup.value != null
     || durationMinutes.value * 60 !== managedGroup.value.countdownDurationSeconds
     || forceStartAtEnd.value !== (managedGroup.value.forceStartAtEnd === true)));
 const groupName = computed(() => admission.value?.groupName || currentGroup.value?.name || '');
-const groupLaunchLabel = computed(() => currentGroup.value?.launchAt
+const groupLaunchLabel = computed(() => currentGroup.value?.openedAt ? 'Večer je otevřený' : currentGroup.value?.launchAt
   ? new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' }).format(currentGroup.value.launchAt)
   : 'brzy, termín zatím není potvrzený');
 const countdownStatus = computed(() => {
   if (!managedGroup.value) return 'Vyberte skupinu.';
   if (managedGroup.value.openedAt) return 'Noc už je otevřená.';
+  if (managedDefaultGroup.value && managedGroup.value.launchAt == null) return 'Produkční datum a čas zatím nejsou nastavené.';
   if (managedGroup.value.launchAt == null) return managedGroup.value.countdownDurationSeconds
     ? 'Návrh je uložený. Účastníkům se stále zobrazuje Brzy.' : 'Není nastavený odpočet. Účastníkům se zobrazuje Brzy.';
   const expired = managedGroup.value.launchAt <= currentTime.value;
@@ -257,6 +261,21 @@ async function startNight(): Promise<void> {
   } catch (cause) { await reconcile('Otevření noci se nepodařilo potvrdit.', cause); }
   finally { busy.value = false; }
 }
+async function closeChronicle(): Promise<void> {
+  const group = managedGroup.value;
+  if (!group?.openedAt || group.chronicleClosedAt || busy.value) return;
+  lastActionSection.value = null;
+  busy.value = true; error.value = ''; message.value = '';
+  try {
+    const response = await accountRequest<{ closedAt: number }>(`/app/v1/admin/launch/groups/${encodeURIComponent(group.id)}/chronicle-close`, 'POST', {
+      expectedRevision: group.revision,
+    }, undefined, `Uložit závěr večera pro skupinu ${group.name}? Kronika použije jen už odhalené vzpomínky.`);
+    if (!Number.isSafeInteger(response.closedAt) || response.closedAt <= 0) throw new Error('Server nevrátil platný čas uložení.');
+    message.value = `Závěr večera pro skupinu ${group.name} byl uložen.`;
+    await load();
+  } catch (cause) { await reconcile('Uložení závěru večera se nepodařilo potvrdit.', cause); }
+  finally { busy.value = false; }
+}
 function joinedDate(value: number): string {
   return new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium' }).format(value * 1000);
 }
@@ -277,7 +296,7 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
         <div><dt>Skupina</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading ? 'Načítám stav…' : managedGroup?.name ?? (groups.length ? 'Vyberte skupinu' : 'Skupina není dostupná') }}</dd></div>
         <div><dt>Čekající hosté</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : managedWaitingCount }}</dd></div>
         <div><dt>Přijímání hostů</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !admission ? 'Stav není načtený' : `${invitationStatus}${groupName ? ` · ${groupName}` : ''}` }}</dd></div>
-        <div><dt>Otevření</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : managedGroup.openedAt ? 'Večer je otevřený' : managedGroup.launchAt === null ? 'Odpočet není potvrzený' : countdownStatus }}</dd></div>
+        <div><dt>Otevření</dt><dd>{{ mutationBlocked ? 'Stav není ověřený' : loading || !managedGroup ? 'Stav není načtený' : managedGroup.openedAt ? 'Večer je otevřený' : managedGroup.launchAt === null ? managedDefaultGroup ? 'Produkční termín není nastavený' : 'Odpočet není potvrzený' : countdownStatus }}</dd></div>
       </dl>
     </section>
     <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
@@ -294,8 +313,17 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
           <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
         </select>
         <p v-if="managedGroup" role="status">{{ countdownStatus }}</p>
+        <template v-if="managedGroup?.openedAt">
+          <p>Uloží se závěrečná kronika z už odhalených vzpomínek. Dosud neodhalené záznamy zůstanou soukromé.</p>
+          <p v-if="managedGroup.chronicleClosedAt" role="status">Závěr večera je uložený {{ joinedDate(managedGroup.chronicleClosedAt) }}.</p>
+          <AwButton v-else :disabled="busy || mutationBlocked || loading" @click="closeChronicle">Uložit závěr večera</AwButton>
+        </template>
+        <div v-if="managedDefaultGroup" class="waiting-room__production-schedule">
+          <p>Výchozí skupina používá datum a čas z produkčního plánu. Před termínem hosté čekají, v termínu se večer otevře automaticky.</p>
+          <AwButton :disabled="busy || mutationBlocked" @click="emit('edit-production-schedule')">Nastavit datum a čas otevření</AwButton>
+        </div>
         <GameBossControl v-if="managedGroup?.openedAt" :key="managedGroup.id" :group-id="managedGroup.id" />
-        <template v-if="managedGroup && !managedGroup.openedAt">
+        <template v-if="managedGroup && !managedGroup.openedAt && !managedDefaultGroup">
           <label for="countdown-minutes">Délka odpočtu v minutách</label>
           <input id="countdown-minutes" v-model.number="durationMinutes" class="aw-input" type="number" min="1" max="10080" step="1" :disabled="busy || mutationBlocked || managedGroup.launchAt !== null" />
           <label class="waiting-room__force"><input v-model="forceStartAtEnd" type="checkbox" :disabled="busy || mutationBlocked || managedGroup.launchAt !== null" /> Spustit večer automaticky po skončení odpočtu</label>
@@ -332,7 +360,7 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
       <details ref="admissionDisclosure" class="waiting-room__disclosure" aria-labelledby="beta-admission-settings-title">
         <summary id="beta-admission-settings-title">Nastavení nových přijetí</summary>
       <section class="waiting-room__section" aria-labelledby="beta-admission-config-title">
-        <h4 id="beta-admission-config-title">Výchozí skupina pro pozvánky</h4>
+        <h4 id="beta-admission-config-title">Výchozí skupina pro nové hosty</h4>
         <p v-if="admission.groupId"><strong>{{ groupName }}</strong> · {{ groupLaunchLabel }}</p>
         <p v-else>Výchozí beta skupina zatím není nastavena. Nové přijetí zůstává uzavřené.</p>
         <div class="beta-admission__group-controls">
@@ -346,6 +374,7 @@ onBeforeUnmount(() => { if (clockTimer) clearInterval(clockTimer); });
         <fieldset class="beta-admission__settings" :disabled="busy || mutationBlocked || !admission.groupId">
           <legend>Nové přijetí</legend>
           <label><input v-model="recruitmentOpen" type="checkbox" /> Přijímat nové účastníky</label>
+          <p>Při otevřeném náboru se lze zaregistrovat bez pozvánky. Noví hosté se automaticky zařadí do výchozí skupiny.</p>
           <label for="beta-fixed-universe">Pevné univerzum <span>(prázdné = účastník si zvolí vlastní)</span></label>
           <input id="beta-fixed-universe" v-model="fixedUniverse" class="aw-input" maxlength="160" />
           <AwButton :busy="busy" @click="saveConfiguration">Uložit přístup a univerzum</AwButton>

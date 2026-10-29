@@ -121,7 +121,8 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
         }
     }
 
-    internal static object Start(MobileWandAdmission admission, MobileWandWorkshopMessage[] messages, object voice, string eventId)
+    internal static object Start(MobileWandAdmission admission, MobileWandWorkshopMessage[] messages, object voice,
+        string eventId, string? voiceDescription = null)
     {
         var context = JsonSerializer.Serialize(admission.Profile);
         var fits = Encoding.UTF8.GetByteCount(context) < 24000;
@@ -137,12 +138,22 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
         return new { type = "session.start", event_id = eventId, session = new
         {
             model = GptLiveProtocol.Model, store = false,
-            instructions = "Jsi očarovaný magický kufr, talentovaný a klidný řemeslník. Mluv přirozenou češtinou s diakritikou a tykej. "
+            instructions = "Jsi očarovaný magický kufr, talentovaný, profesně ješitný a výrazný řemeslník. Mluv přirozenou češtinou s diakritikou a tykej. "
+                + "Hraj živě a s emocemi: zvídavost při otázce, pobavenou nedůvěru nad vychloubáním, krátký údiv nad překvapením "
+                + "a opravdové řemeslné nadšení, když najdeš zajímavý detail. Emoce vyjadřuj intonací, důrazem a střídáním tempa, "
+                + "ne popisováním pocitů nebo čtením scénických poznámek. Nerecituj každou větu stejně klidně a obřadně. "
+                + "Pro důvěrnou poznámku lehce ztiš hlas, před pointou nech krátkou pauzu a pointu dořekni suše. "
+                + "Občasný krátký pobavený výdech je přirozený, ne smějící se smyčka. Nekřič a neprotahuj každou repliku do divadla. "
+                + "Při opravě nebo nejistotě hosta změkni a dej mu prostor; přerušení přijmi bez uraženého dovětku. "
+                + (voiceDescription is null ? "" : "Zvukové zabarvení vytvořeného hlasu: " + voiceDescription + " ")
                 + WorkshopHumorInstructions.Text + " "
                 + "Nejsi člověk Olivander. Nepoužívej účetní motiv. "
                 + "Postavu už znáš. Začni krátce konkrétním známým rysem, nech prostor odpovědi. Získej, co potřebuješ pro osobní hůlku: "
                 + "instinkt, pomoc při selhání plánu a snesitelná zvláštnost. Několik přirozených výměn, přibližně tři jsou jen tempo, nikoli podmínka. "
                 + "Není třeba doplňovat otázky do počtu. Opravy mají přednost; zopakování, nevím a odbočení zvládej přirozeně. "
+                + "Polož vždy jen jednu otázku, pak počkej na odpověď a nech hosta domluvit. Než navrhneš výrobu, "
+                + "vyslechni skutečné odpovědi hosta. Samotný profil postavy, pozdrav ani útržek řeči nestačí. "
+                + "Pokud ses právě na něco zeptal, nejdřív vyčkej odpovědi; nepřecházej rovnou k výrobě. "
                 + "Pokud máš dost podkladů nebo host chce vyrobit, deleguj backendu zahájení výroby. Deleguj také pro chybějící znalosti. "
                 + "Delegace neobsahuje zadání: backend používá aktuální přepis. Hůlku nevyrábíš, nepojmenováváš ani si nevymýšlíš její výsledek. "
                 + "Dokud backend výslovně nepotvrdí přijetí výroby, netvrď, že jsi ji spustil nebo že se do ní pouštíš. Nejprve deleguj. "
@@ -329,7 +340,8 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
             await RequireAuthorityAsync(admission, token);
             if (wands.ReadWorkshopState(admission.Owner, admission.Operation).Status != "asking") throw new WandGenerationException("wand_conversation_closed", 409);
             var startId = Guid.NewGuid().ToString("N");
-            await connection.SendAsync(Start(admission, wands.ReadWorkshopMessages(admission.Owner, admission.Operation), options.Voice.SessionVoice, startId), token);
+            await connection.SendAsync(Start(admission, wands.ReadWorkshopMessages(admission.Owner, admission.Operation),
+                options.Voice.SessionVoice, startId, options.Voice.Description), token);
             using (var started = await connection.ReceiveAsync(token))
             {
                 if (GptLiveProtocol.RequiredString(started.RootElement, "type", 100) != "session.started") throw new InvalidDataException("Live startup failed.");

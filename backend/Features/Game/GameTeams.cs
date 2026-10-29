@@ -45,6 +45,7 @@ internal sealed partial class GameStore
         public long Revision { get; set; } = 1;
         public string Status { get; set; } = "incoming";
         public long CreatedAt { get; set; }
+        public long? CompletedAt { get; set; }
         public long? HalftimeEndsAt { get; set; }
         public Dictionary<string,int> HalftimeBaseline { get; set; } = new();
         public Dictionary<string,int> Sparks { get; set; } = new();
@@ -54,6 +55,7 @@ internal sealed partial class GameStore
         public List<GameTeamRound> Rounds { get; set; } = [];
         public string? Result { get; set; }
         public bool XpAwarded { get; set; }
+        public Dictionary<string, GameYoloProfile> FrozenProfiles { get; set; } = new(StringComparer.Ordinal);
     }
     private sealed record TeamLockedChoice(string Choice, int Bid);
     private sealed record TeamOp(string Hash, string TeamId);
@@ -137,7 +139,8 @@ internal sealed partial class GameStore
         }
     }
 
-    internal GameTeamView MutateTeam(string id, string groupId, string actor, string action, GameTeamCommand request, long now)
+    internal GameTeamView MutateTeam(string id, string groupId, string actor, string action, GameTeamCommand request, long now,
+        IReadOnlyDictionary<string, GameYoloProfile>? frozenProfiles = null)
     {
         ValidateTeamOperation(request.OperationId);
         lock (_writeGate)
@@ -159,7 +162,19 @@ internal sealed partial class GameStore
             {
                 if (state.Status != "incoming" || !state.A.Concat(state.B).Contains(actor, StringComparer.Ordinal)) { throw new GameFault(409, "team_action_unavailable"); }
                 if (!state.Accepted.Contains(actor, StringComparer.Ordinal)) { state.Accepted.Add(actor); }
-                if (state.Accepted.Count == 4) { state.Status = "active"; }
+                if (state.Accepted.Count == 4)
+                {
+                    state.Status = "active";
+                    if (frozenProfiles is not null)
+                    {
+                        if (state.A.Concat(state.B).Any(participant => !frozenProfiles.ContainsKey(participant)))
+                        {
+                            throw new InvalidDataException("Team snapshot participants mismatch.");
+                        }
+                        state.FrozenProfiles = frozenProfiles.ToDictionary(pair => pair.Key,
+                            pair => pair.Value with { Decisions = null, Setting = null }, StringComparer.Ordinal);
+                    }
+                }
             }
             else if (action is "decline" or "cancel")
             {
@@ -177,6 +192,7 @@ internal sealed partial class GameStore
             else if (halftimeDue) { state.Revision++; }
             if (state.Status == "complete" && !state.XpAwarded) { AwardTeamXp(c, tx, state); }
             SaveTeam(c, tx, id, state, false);
+            if (state.Status == "complete") { EnqueueTeamChronicleOutbox(c, tx, id, state); }
             tx.Commit(); return TeamView(state, actor, id);
         }
     }
@@ -210,6 +226,7 @@ internal sealed partial class GameStore
             else if (roundIndex == TeamMatchRounds)
             {
                 state.Status = "complete";
+                state.CompletedAt = now;
                 var aScore = state.Rounds.Sum(round => round.TeamAPoints); var bScore = state.Rounds.Sum(round => round.TeamBPoints);
                 state.Result = aScore == bScore ? "draw" : aScore > bScore ? "a" : "b";
             }
@@ -341,6 +358,7 @@ internal static class GameTeamEndpoints
     {
         if (!app.Services.GetRequiredService<AccountConfiguration>().Enabled) { return; }
         var group = app.MapGroup("/app/v1/game/teams").RequireAuthorization().RequireRateLimiting(GameRateLimit.Policy);
+        group.AddEndpointFilter<GameChangedEndpointFilter>();
         group.AddEndpointFilter(async (invocation, next) =>
         {
             var context = invocation.HttpContext;
@@ -400,11 +418,26 @@ internal static class GameTeamEndpoints
         });
         foreach (var action in new[] { "accept", "decline", "cancel", "choose", "transfer" })
         {
-            group.MapPost($"/{{id}}/{action}", async (string id, GameTeamCommand request, HttpContext context, GameStore store) =>
+            group.MapPost($"/{{id}}/{action}", async (string id, GameTeamCommand request, HttpContext context,
+                GameStore store, CharacterProfileStore profiles) =>
             {
                 var prior = store.ReadTeamMatch(id, Group(context), User(context), DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                 await EnsureLiveParticipants(context, prior.TeamMembers.Concat(prior.Opponents));
-                var result = store.MutateTeam(id, Group(context), User(context), action, request, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                IReadOnlyDictionary<string, GameYoloProfile>? frozenProfiles = null;
+                if (action == "accept" && prior.AcceptedBy.Count == 3)
+                {
+                    var accounts = context.RequestServices.GetRequiredService<AccountDatabase>();
+                    var wands = context.RequestServices.GetRequiredService<WandGenerationStore>();
+                    var snapshots = new Dictionary<string, GameYoloProfile>(StringComparer.Ordinal);
+                    foreach (var participant in prior.TeamMembers.Concat(prior.Opponents))
+                    {
+                        snapshots[participant] = await GameYoloWorker.ReadPublicProfile(participant, "Kouzelník",
+                            profiles, wands, accounts, context.RequestAborted);
+                    }
+                    frozenProfiles = snapshots;
+                }
+                var result = store.MutateTeam(id, Group(context), User(context), action, request,
+                    DateTimeOffset.UtcNow.ToUnixTimeSeconds(), frozenProfiles);
                 return Results.Ok(await WithOpponentWandsAsync(result, context));
             });
         }

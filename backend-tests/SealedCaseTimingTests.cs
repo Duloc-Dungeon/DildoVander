@@ -125,10 +125,11 @@ internal static class SealedCaseTimingTests
         internal TimingClock Clock { get; } = new();
         internal SealedCaseStore Store { get; }
         internal string Id { get; }
+        internal string Variant { get; }
         private readonly int players;
         internal Fixture(string variant, int players)
         {
-            this.players = players; Store = Reopen();
+            this.players = players; Variant = variant; Store = Reopen();
             var setup = Store.Create("group", "p1", 900, players, variant); Id = setup.Id;
             for (var i = 1; i <= players; i++)
             {

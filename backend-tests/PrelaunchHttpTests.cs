@@ -5,7 +5,9 @@ using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Identity;
 using Kufr.Backend.Features.Launch;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 internal static partial class AccountIdentityTests
 {
@@ -53,6 +55,7 @@ internal static partial class AccountIdentityTests
     internal static async Task RunPrelaunchHttpAsync(bool delayArtwork = false)
     {
         await RunLegacyConsentBeforeLaunchAsync();
+        await RunFailedPrelaunchEnrichmentRetryAsync();
         await using var fixture = await Fixture.StartAsync(customerFeatures: true, betaRecruitmentOpen: false,
             configureServices: services => services.AddSingleton<ICharacterPortraitProvider>(new PrelaunchTestPortraitProvider(delayArtwork)));
         using var owner = fixture.Client();
@@ -314,6 +317,7 @@ internal static partial class AccountIdentityTests
             "minimal user API contains no enrichment or protected product data");
         Check(saved.GetProperty("artwork").GetProperty("source").ValueKind == JsonValueKind.Null,
             "generated portrait has no internet attribution");
+        await VerifyPortraitTextFieldsAsync(customer, profiles, customerUserId, profileId, revision);
         var image = await customer.GetAsync($"/app/v1/prelaunch/character/portrait?profileId={profileId}&revision={revision}");
         Check(image.IsSuccessStatusCode && image.Content.Headers.ContentType?.MediaType == "image/webp", "owner gets private artwork");
         Check(image.Headers.CacheControl?.NoStore == true, "private artwork cannot be reused from shared cache");
@@ -414,6 +418,88 @@ internal static partial class AccountIdentityTests
                 && member.GetProperty("state").GetString() == "revoked"),
             "started group members leave the waiting roster while independent group waiters and revoked accounts remain visible");
         Console.WriteLine("Prelaunch invitation, audience, immediate save, background artwork, private asset and manual launch HTTPS checks passed.");
+    }
+
+    private static async Task RunFailedPrelaunchEnrichmentRetryAsync()
+    {
+        await using var fixture = await Fixture.StartAsync(customerFeatures: true);
+        foreach (var worker in fixture.App.Services.GetServices<IHostedService>()
+            .Where(service => service is CharacterEnrichmentWorker or CharacterPortraitWorker))
+        {
+            await worker.StopAsync(default);
+        }
+        using var owner = fixture.Client();
+        using var key = new VirtualPasskey();
+        await EnrollAsync(owner, key, Fixture.Bootstrap, "Retry owner");
+        var ownerId = (await CsrfAsync(owner)).GetProperty("account").GetProperty("id").GetString()!;
+        var store = fixture.App.Services.GetRequiredService<CharacterProfileStore>();
+        var profile = await store.SaveAsync(ownerId, new(0, new("Raven", "Original fiction"),
+            OpenAiConsent: true, PortraitConsent: true));
+        var job = await store.ClaimAsync() ?? throw new InvalidOperationException("No enrichment retry fixture job.");
+        Check(await store.CompleteAsync(job, null, "generation_provider_unavailable"), "fixture persists failed enrichment");
+        Check((await owner.PostAsJsonAsync("/app/v1/prelaunch/character/retry",
+            new { expectedProfileId = profile.ProfileId, expectedRevision = profile.Revision + 1 })).StatusCode == HttpStatusCode.Conflict,
+            "failed enrichment retry still enforces the revision precondition");
+        var retry = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/prelaunch/character/retry",
+            new { expectedProfileId = profile.ProfileId, expectedRevision = profile.Revision }));
+        Check(retry.GetProperty("character").GetProperty("status").GetString() == "queued",
+            "prelaunch retry queues failed enrichment without changing the character revision");
+        var retried = await store.ClaimAsync() ?? throw new InvalidOperationException("Failed enrichment was not requeued.");
+        Check(retried.Id != job.Id && retried.ProfileId == profile.ProfileId && retried.Revision == profile.Revision,
+            "retry replaces the failed durable job for the same owner and character");
+        Check(!await store.CompleteAsync(job, null, "late_failure"), "replaced enrichment lease cannot publish late failure");
+    }
+
+    private static async Task VerifyPortraitTextFieldsAsync(HttpClient customer, CharacterProfileStore profiles,
+        string accountId, string profileId, long revision)
+    {
+        var original = profiles.ReadPortrait(accountId, profileId, revision)!;
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = profiles.CustomerDataDatabasePath
+        }.ToString());
+        await connection.OpenAsync();
+        async Task WriteTextAsync(string? loading, string? final, CharacterWelcome? welcome)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE character_portraits SET loading_message=$loading,final_message=$final,welcome_json=$welcome
+                WHERE account_id=$account AND profile_id=$profile AND revision=$revision;
+                """;
+            command.Parameters.AddWithValue("$loading", (object?)loading ?? DBNull.Value);
+            command.Parameters.AddWithValue("$final", (object?)final ?? DBNull.Value);
+            command.Parameters.AddWithValue("$welcome", welcome is null ? DBNull.Value : JsonSerializer.Serialize(welcome));
+            command.Parameters.AddWithValue("$account", accountId);
+            command.Parameters.AddWithValue("$profile", profileId);
+            command.Parameters.AddWithValue("$revision", revision);
+            Check(await command.ExecuteNonQueryAsync() == 1, "text fixture targets only the current portrait revision");
+        }
+        try
+        {
+            var welcome = new CharacterWelcome("joke-field", "identity-field", "teaser-field", [], null);
+            await WriteTextAsync("loading-field", "final-field", welcome);
+            var response = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character"));
+            var artwork = response.GetProperty("artwork");
+            Check(artwork.GetProperty("loadingMessage").GetString() == "loading-field"
+                && artwork.GetProperty("finalMessage").GetString() == "final-field"
+                && artwork.GetProperty("welcome").GetProperty("joke").GetString() == "joke-field"
+                && artwork.GetProperty("welcome").GetProperty("identity").GetString() == "identity-field"
+                && artwork.GetProperty("welcome").GetProperty("teaser").GetString() == "teaser-field",
+                "database columns and structured welcome fields map to distinct HTTP fields without substitution");
+            await WriteTextAsync("null", "final-field", welcome);
+            response = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character"));
+            artwork = response.GetProperty("artwork");
+            Check(artwork.GetProperty("loadingMessage").ValueKind == JsonValueKind.Null
+                && artwork.GetProperty("welcome").GetProperty("joke").GetString() == "joke-field",
+                "invalid loading text never hides or overwrites a valid personal joke");
+            await WriteTextAsync(null, "null", welcome with { Joke = "null" });
+            response = await JsonAsync(await customer.GetAsync("/app/v1/prelaunch/character"));
+            artwork = response.GetProperty("artwork");
+            Check(artwork.GetProperty("welcome").ValueKind == JsonValueKind.Null
+                && artwork.GetProperty("finalMessage").GetString() == CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback),
+                "invalid persisted final and welcome text select the real ready-portrait fallback");
+        }
+        finally { await WriteTextAsync(original.LoadingMessage, original.FinalMessage, original.Welcome); }
     }
 
     private sealed class PrelaunchTestPortraitProvider(bool delayArtwork = false) : ICharacterPortraitProvider

@@ -10,8 +10,10 @@
       import { refreshIdentity } from '../src/features/identity/session';
       import '../src/application/application.css';
       const scenario = new URL(location.href).searchParams.get('scenario');
-      let enabled = false;
+      const context = new URL(location.href).searchParams.get('context') || undefined;
+      let enabled = scenario === 'enabled';
       let permission = scenario === 'denied' ? 'denied' : 'default';
+      window.pushFixture = { permissionRequests: 0, registrations: 0 };
       const key = Uint8Array.from({length: 65}, (_, index) => index === 0 ? 4 : index);
       const publicKey = btoa(String.fromCharCode(...key)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
       let subscribed = false;
@@ -23,18 +25,21 @@
       Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { register: async () => worker, getRegistration: async () => worker } });
       window.PushManager = class {};
       Object.defineProperty(window, 'Notification', { configurable: true, value: {
-        get permission() { return permission; }, requestPermission: async () => permission = scenario === 'denied' ? 'denied' : 'granted',
+        get permission() { return permission; }, requestPermission: async () => {
+          window.pushFixture.permissionRequests++;
+          return permission = scenario === 'denied' || scenario === 'deny-request' ? 'denied' : 'granted';
+        },
       } });
       window.fetch = async (path, init) => {
         if (path === '/app/v1/session') return Response.json({ enabled: true, account: { id: 'fixture', displayName: 'Host', roles: ['Customer'] }, csrfToken: 'fixture' });
         if (path === '/app/v1/push' && (init?.method ?? 'GET') === 'GET') return Response.json({ web: scenario !== 'unavailable', android: false, ios: false, publicKey, enabled });
-        if (path === '/app/v1/push' && init.method === 'PUT') { enabled = true; return new Response(null, { status: 204 }); }
+        if (path === '/app/v1/push' && init.method === 'PUT') { enabled = true; window.pushFixture.registrations++; return new Response(null, { status: 204 }); }
         if (path === '/app/v1/push' && init.method === 'DELETE') { enabled = false; return new Response(null, { status: 204 }); }
         if (path === '/app/v1/push/test' && init.method === 'POST') return new Response(null, { status: 202 });
         throw new Error(`Unexpected fixture request: ${path}`);
       };
       await refreshIdentity();
-      createApp(PushSettings).mount('#app');
+      createApp(PushSettings, { context }).mount('#app');
     </script>
   </body>
 </html>

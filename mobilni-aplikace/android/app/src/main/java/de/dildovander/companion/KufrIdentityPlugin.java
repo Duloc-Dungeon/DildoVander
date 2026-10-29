@@ -2,6 +2,7 @@ package de.dildovander.companion;
 
 import android.content.Context;
 import android.content.Intent;
+import android.app.Activity;
 import android.net.Uri;
 import android.os.Build;
 import android.webkit.CookieManager;
@@ -21,12 +22,14 @@ import androidx.credentials.exceptions.GetCredentialException;
 import androidx.credentials.exceptions.NoCredentialException;
 
 import androidx.annotation.NonNull;
+import androidx.activity.result.ActivityResult;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.ActivityCallback;
 
 import java.io.IOException;
 import java.io.File;
@@ -65,9 +68,15 @@ public final class KufrIdentityPlugin extends Plugin {
         .callTimeout(90, java.util.concurrent.TimeUnit.SECONDS).build();
     private final Map<String, Call> accountCalls = new ConcurrentHashMap<>();
     private final Map<String, AccountRequestCancellation> accountOperations = new ConcurrentHashMap<>();
+    private final Map<String, File> chronicleShareDirectories = new ConcurrentHashMap<>();
     private final ExecutorService ceremonyExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService transportExecutor = Executors.newCachedThreadPool();
     private volatile boolean ceremonyActive;
+
+    @Override public void load() {
+        super.load();
+        cleanupExpiredChronicleShares();
+    }
 
     @PluginMethod
     public void guestCapabilities(PluginCall call) {
@@ -167,6 +176,80 @@ public final class KufrIdentityPlugin extends Plugin {
         String requestId = call.getString("requestId", "");
         if (!validRequestId(requestId)) { call.reject("Invalid export request.", "invalid_request"); return; }
         shareFile(call, "filename", "mediaType", "bodyBase64", 32 * 1024 * 1024);
+    }
+
+    @PluginMethod
+    public void shareChronicleImage(PluginCall call) {
+        String requestId = call.getString("requestId", "");
+        String filename = call.getString("filename", "");
+        String mediaType = call.getString("mediaType", "");
+        String encoded = call.getString("bodyBase64", "");
+        if (!validRequestId(requestId) || !filename.matches("(?i)^vzpominka-[0-9a-f-]{36}\\.(png|jpg|webp)$") ||
+            !("image/png".equals(mediaType) && filename.toLowerCase(Locale.ROOT).endsWith(".png") ||
+              "image/jpeg".equals(mediaType) && filename.toLowerCase(Locale.ROOT).endsWith(".jpg") ||
+              "image/webp".equals(mediaType) && filename.toLowerCase(Locale.ROOT).endsWith(".webp")) ||
+            encoded.length() > ((8 * 1024 * 1024 + 2) / 3) * 4) {
+            call.reject("Invalid chronicle image.", "invalid_request"); return;
+        }
+        byte[] bytes;
+        try { bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT); }
+        catch (IllegalArgumentException exception) { call.reject("Invalid chronicle image.", "invalid_request"); return; }
+        boolean valid = bytes.length > 0 && bytes.length <= 8 * 1024 * 1024;
+        if (valid && "image/png".equals(mediaType)) valid = bytes.length >= 8 &&
+            Arrays.equals(Arrays.copyOf(bytes, 8), new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a});
+        else if (valid && "image/jpeg".equals(mediaType)) valid = bytes.length >= 3 &&
+            bytes[0] == (byte) 0xff && bytes[1] == (byte) 0xd8 && bytes[2] == (byte) 0xff;
+        else if (valid && "image/webp".equals(mediaType)) valid = bytes.length >= 12 &&
+            new String(bytes, 0, 4, StandardCharsets.US_ASCII).equals("RIFF") &&
+            new String(bytes, 8, 4, StandardCharsets.US_ASCII).equals("WEBP");
+        if (!valid) { Arrays.fill(bytes, (byte) 0); call.reject("Invalid chronicle image.", "invalid_request"); return; }
+        shareChronicleImageFile(call, requestId, filename, mediaType, bytes);
+    }
+
+    private void shareChronicleImageFile(PluginCall call, String requestId, String filename, String mediaType, byte[] bytes) {
+        File directory = null;
+        try {
+            cleanupExpiredChronicleShares();
+            File root = new File(getContext().getCacheDir(), "diagnostics");
+            directory = new File(root, "WandChronicleShare-" + requestId);
+            if (!directory.mkdirs()) throw new IOException("share_failed");
+            File file = new File(directory, filename);
+            try (FileOutputStream output = new FileOutputStream(file)) { output.write(bytes); }
+            Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+            Intent send = new Intent(Intent.ACTION_SEND).setType(mediaType).putExtra(Intent.EXTRA_STREAM, uri);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            chronicleShareDirectories.put(requestId, directory);
+            startActivityForResult(call, Intent.createChooser(send, "Sdílet obrázek z kroniky"), "chronicleShareCompleted");
+            directory = null; // The receiving app retains URI access until the chooser returns.
+        } catch (Exception exception) {
+            if (directory != null) deleteTree(directory);
+            chronicleShareDirectories.remove(requestId);
+            call.reject("Obrázek z kroniky se nepodařilo sdílet.", "share_failed");
+        } finally { Arrays.fill(bytes, (byte) 0); }
+    }
+
+    @ActivityCallback
+    private void chronicleShareCompleted(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        String requestId = call.getString("requestId", "");
+        File directory = chronicleShareDirectories.remove(requestId);
+        if (directory != null) deleteTree(directory);
+        JSObject value = new JSObject();
+        value.put("completed", result != null && result.getResultCode() != Activity.RESULT_CANCELED);
+        call.resolve(value);
+    }
+
+    private void cleanupExpiredChronicleShares() {
+        File root = new File(getContext().getCacheDir(), "diagnostics");
+        File[] entries = root.listFiles();
+        if (entries == null) return;
+        long cutoff = System.currentTimeMillis() - java.util.concurrent.TimeUnit.DAYS.toMillis(1);
+        for (File entry : entries) {
+            String name = entry.getName();
+            if (!name.startsWith("WandChronicleShare-")) continue;
+            String requestId = name.substring("WandChronicleShare-".length());
+            if (!chronicleShareDirectories.containsKey(requestId) && entry.lastModified() < cutoff) deleteTree(entry);
+        }
     }
 
     @PluginMethod
@@ -514,6 +597,8 @@ public final class KufrIdentityPlugin extends Plugin {
             org.json.JSONObject options = postJson(optionsPath, csrf, body);
             validateRelyingParty(mode, options);
             getActivity().runOnUiThread(() -> launchCredentialRequest(call, mode, completionPath, csrf, options));
+        } catch (PasskeyOptionsResponse.Rejected rejection) {
+            finishCeremony(call, rejection.code, rejection.status);
         } catch (Exception exception) {
             finishCeremony(call, exception.getMessage() != null && exception.getMessage().contains("rp") ? "passkey_origin_mismatch" : "passkey_unavailable");
         }
@@ -618,11 +703,14 @@ public final class KufrIdentityPlugin extends Plugin {
         addCookies(builder, origin());
         try (Response response = client.newCall(builder.build()).execute()) {
             persistCookies(origin(), response);
-            if (response.code() != 200 || response.body() == null || response.body().contentLength() > 131072) throw new IOException("Passkey options were rejected");
-            String text = response.body().string();
-            if (text.length() > 131072) throw new IOException("Passkey options are too large");
-            return new org.json.JSONObject(text);
-        } catch (org.json.JSONException exception) { throw new IOException("Passkey options are invalid", exception); }
+            String text = null;
+            if (response.body() != null && response.body().contentLength() <= PasskeyOptionsResponse.MAX_BYTES) {
+                okio.BufferedSource source = response.body().source();
+                source.request(PasskeyOptionsResponse.MAX_BYTES + 1L);
+                if (source.getBuffer().size() <= PasskeyOptionsResponse.MAX_BYTES) text = response.body().string();
+            }
+            return PasskeyOptionsResponse.parse(response.code(), text);
+        }
     }
 
     private static void validateRelyingParty(String mode, org.json.JSONObject options) throws Exception {
@@ -636,8 +724,18 @@ public final class KufrIdentityPlugin extends Plugin {
     }
 
     private void finishCeremony(PluginCall call, String code) {
+        finishCeremony(call, code, null);
+    }
+
+    private void finishCeremony(PluginCall call, String code, Integer status) {
         synchronized (this) { ceremonyActive = false; }
-        if (code == null) call.resolve(); else call.reject("Passkey verification failed. Try again or use another sign-in method.", code);
+        if (code == null) {
+            call.resolve();
+        } else {
+            JSObject data = new JSObject();
+            if (status != null) data.put("status", status);
+            call.reject(PasskeyOptionsResponse.FAILURE_MESSAGE, code, data);
+        }
     }
 
     private static void addCookies(Request.Builder builder, String origin) {

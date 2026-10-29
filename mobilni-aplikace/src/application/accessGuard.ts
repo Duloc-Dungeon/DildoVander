@@ -1,6 +1,6 @@
 import type { Router, RouteLocationNormalized } from 'vue-router';
 import { account, accountRequest, offlineSession, offlineSessionExpiresAt, refreshIdentity } from '../features/identity/session';
-import { accessDenial, isCustomerAccount } from './access';
+import { accessDenial, canEnterStaffArea, isCustomerAccount } from './access';
 import { safeReturnPath } from './navigation';
 import { launchAllowed, refreshCustomerMembership } from './launchAccess';
 import { notify } from './notifications';
@@ -11,6 +11,14 @@ export function accessRedirect(route: Pick<RouteLocationNormalized, 'meta' | 'fu
   if (denied === 'staff') return { path: '/me/character', replace: true };
   if (denied) return { path: '/', query: { access: denied }, replace: true };
   return null;
+}
+
+/** Reconcile an already open screen only after the server confirms the evening is closed. */
+export function waitingRoomRedirect(route: Pick<RouteLocationNormalized, 'meta' | 'path'>) {
+  if (launchAllowed.value !== false || !account.value || !route.meta.requiresAccount
+    || canEnterStaffArea(account.value) || account.value.roles.includes('Tester')
+    || ['/launch', '/me/account', '/access-revoked', '/privacy', '/support', '/account-deletion'].includes(route.path)) return null;
+  return { path: '/launch', replace: true };
 }
 
 export function installAccessGuard(router: Router): void {

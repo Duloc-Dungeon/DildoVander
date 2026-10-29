@@ -95,5 +95,9 @@ import InformationBackLink from './InformationBackLink.vue';
       <p>Oznámení jsou dobrovolná a zapínají se zvlášť na každém zařízení. Pro doručení uložíme identifikátor zařízení nebo přihlášení prohlížeče a propojíme ho s aktuálním přihlášením k účtu. Stručné zprávy o výzvách do hry, pozvánkách a večeru doručují služby Apple, Google nebo poskytovatel prohlížeče. Obsah postavy ani rozhovorů do oznámení neposíláme.</p>
       <p>Oznámení vypneš v nastavení účtu nebo před začátkem večera v nabídce „Účet“. Po odhlášení, vypršení přihlášení nebo odebrání přístupu server další zprávy neodesílá; zpráva již předaná doručovací službě může ještě dorazit. Při odstranění účtu smažeme také jeho přihlášení k oznámením a čekající zprávy.</p>
     </section>
+    <section aria-labelledby="privacy-video">
+      <h2 id="privacy-video">Video při otevření večera</h2>
+      <p>Při otevření večera nebo jako překvapení u bosse se může přehrát video uložené na našem serveru. Přehrávání nepoužívá YouTube ani jiný externí přehrávač. U překvapení u bosse si ukládáme, že už jsi ho dostal, aby se ti znovu nepřehrávalo.</p>
+    </section>
   </article>
 </template>

@@ -112,6 +112,24 @@ internal static class CharacterEndpoints
         var conversations = journal is null ? null : services.GetService<ConversationStore>();
         return store.ReplayDeletionsAsync((accountId, profileId) =>
         {
+            var chronicle = services.GetService<Kufr.Backend.Features.Chronicle.ChronicleStore>();
+            if (chronicle is null && services.GetService<AccountConfiguration>() is { } accountConfiguration
+                && File.Exists(Path.Combine(accountConfiguration.DataRoot, "chronicle.sqlite")))
+            { chronicle = new(accountConfiguration.DataRoot); }
+            var games = services.GetService<Kufr.Backend.Features.Game.GameStore>();
+            var launch = services.GetService<Kufr.Backend.Features.Launch.LaunchPolicyStore>();
+            if (profileId is null)
+            {
+                chronicle?.DeleteAccount(accountId);
+                games?.DeleteAccount(accountId);
+                launch?.EraseChronicleAccount(accountId);
+            }
+            else
+            {
+                chronicle?.DeleteProfile(accountId, profileId);
+                games?.DeleteChronicleProfile(accountId, profileId);
+                launch?.EraseChronicleProfile(accountId, profileId);
+            }
             // Case cleanup is mandatory and independent of the optional operation journal.
             // ReplayDeletionsAsync marks the tombstone complete only after this callback returns.
             Kufr.Backend.Features.SealedCase.SealedCaseErasure.EraseAccount(services, accountId);

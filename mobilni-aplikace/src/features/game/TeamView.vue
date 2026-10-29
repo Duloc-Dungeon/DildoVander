@@ -5,11 +5,13 @@ import { account, accountRequest } from '../identity/session';
 import SceneShell from '../../components/scene/SceneShell.vue';
 import PaperSurface from '../../components/scene/PaperSurface.vue';
 import AwButton from '../../components/AwButton.vue';
+import ChronicleMatchReveal from '../customer/ChronicleMatchReveal.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import GameSpellToken from './GameSpellToken.vue';
 import GameRules from './GameRules.vue';
 import GameClash from './GameClash.vue';
 import { useGameWandArtwork } from './useGameWandArtwork';
+import { useGameLiveUpdates } from './useGameLiveUpdates';
 import { useOpponentWandArtwork, type OpponentWandMetadata } from './useOpponentWandArtwork';
 import { actions, actionName, gameRequest, gameErrorText, GameError, operation, practiceRound, type Choice, type Inventory, type Lobby, type Round } from './game';
 import './game.css';
@@ -106,7 +108,9 @@ const halftimeSecondsRemaining = computed(() => {
 });
 const canTransfer = computed(() => halftimeSecondsRemaining.value !== null && halftimeSecondsRemaining.value > 0);
 const controller = new AbortController();
-let alive = true; let refreshing = false; let timer: ReturnType<typeof setInterval> | undefined;
+let alive = true;
+const refreshing = ref(false);
+let timer: ReturnType<typeof setInterval> | undefined;
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 let expiredRefreshKey = '';
 let listenersAttached = false;
@@ -117,8 +121,8 @@ function update(value: TeamMatch) {
   match.value = value;
 }
 async function refresh() {
-  if (refreshing || busy.value) return;
-  refreshing = true;
+  if (refreshing.value || busy.value) return;
+  refreshing.value = true;
   try {
     const [players, result, wandStatus] = await Promise.all([
       gameRequest<Lobby>('', undefined, controller.signal),
@@ -131,13 +135,30 @@ async function refresh() {
     void playerWand.refresh(wandStatus?.wand?.wandId);
     error.value = ''; uncertain.value = false;
   } catch (cause) {
-    if (alive) {
-      error.value = gameErrorText(cause);
-      if (cause instanceof GameError && [401, 403, 404].includes(cause.status)) { match.value = undefined; matches.value = []; lobby.value = undefined; }
-    }
+    handleRefreshError(cause);
   }
-  finally { if (alive) { refreshing = false; loading.value = false; } }
+  finally { if (alive) { refreshing.value = false; loading.value = false; } }
 }
+function handleRefreshError(cause: unknown) {
+  if (alive) {
+    error.value = gameErrorText(cause);
+    if (cause instanceof GameError && [401, 403, 404].includes(cause.status)) { match.value = undefined; matches.value = []; lobby.value = undefined; }
+  }
+}
+async function refreshLive() {
+  if (!id.value) return refresh();
+  if (refreshing.value || busy.value) return;
+  refreshing.value = true;
+  try {
+    const value = await gameRequest<TeamMatch>(`/teams/${id.value}`, undefined, controller.signal);
+    if (alive) {
+      update(value);
+      error.value = ''; uncertain.value = false;
+    }
+  } catch (cause) { handleRefreshError(cause); }
+  finally { if (alive) refreshing.value = false; }
+}
+useGameLiveUpdates(refreshLive, () => busy.value || refreshing.value);
 async function send(action: string, fields: Record<string, unknown> = {}) {
   if (busy.value || uncertain.value) return;
   if (action === 'transfer' && (match.value?.halftimeEndsAt == null || Date.now() >= match.value.halftimeEndsAt * 1000)) {
@@ -165,7 +186,7 @@ function updateHalftimeClock() {
   if (countdownTimer) clearInterval(countdownTimer);
   countdownTimer = undefined;
   const refreshKey = `${match.value.id}:${match.value.halftimeEndsAt}`;
-  if (expiredRefreshKey === refreshKey || refreshing || busy.value) return;
+  if (expiredRefreshKey === refreshKey || refreshing.value || busy.value) return;
   expiredRefreshKey = refreshKey;
   void refresh();
 }
@@ -196,7 +217,7 @@ function stopLiveUpdates() {
 watch(() => account.value?.id, () => {
   alive = false; controller.abort(); stopLiveUpdates(); match.value = undefined; matches.value = []; lobby.value = undefined;
 }, { flush: 'sync' });
-onMounted(() => { void refresh(); timer = setInterval(visible, 3000); document.addEventListener('visibilitychange', visible); window.addEventListener('online', visible); listenersAttached = true; });
+onMounted(() => { void refresh(); timer = setInterval(() => { if (!document.hidden) void refreshLive(); }, 3000); document.addEventListener('visibilitychange', visible); window.addEventListener('online', visible); listenersAttached = true; });
 onBeforeUnmount(() => { alive = false; controller.abort(); stopLiveUpdates(); });
 </script>
 <template>
@@ -262,7 +283,10 @@ onBeforeUnmount(() => { alive = false; controller.abort(); stopLiveUpdates(); })
       <template v-else-if="match.status === 'active'">
         <PaperSurface class="game-paper game-controls"><p v-if="match.ownChoiceLocked" role="status">Tvůj tah je uzamčený. Čekáme na zbývající hráče.</p><template v-else><fieldset class="game-spells"><legend>Vyber své kouzlo</legend><label v-for="action in actions" :key="action.id" :class="{selected: choice === action.id, exhausted: !match.ownInventory[action.id]}"><input v-model="choice" type="radio" name="team-spell" :value="action.id" :disabled="busy || uncertain || !match.ownInventory[action.id]" /><GameSpellToken :action="action.id" /><strong>{{ action.name }}</strong><small>{{ action.beats }}</small><span>{{ match.ownInventory[action.id] }} použití</span></label></fieldset><label class="game-spark"><input v-model="spark" type="checkbox" :disabled="busy || uncertain || !match.ownSparks" /><span>Přisadit jiskru · zbývá {{ match.ownSparks }}<small>Když prohraješ, její bod získají soupeři.</small></span></label><AwButton variant="primary" :busy="busy" :disabled="!choice || uncertain" @click="send('choose', {choice, sparkBid: spark ? 1 : 0})">Potvrdit vlastní tah</AwButton></template></PaperSurface>
       </template>
-      <PaperSurface v-else class="game-paper game-result"><h2>{{ match.status === 'complete' ? match.result === 'win' ? 'Tohle byla souhra.' : match.result === 'draw' ? 'Vyrovnaná magie.' : 'Příště to otočíte.' : 'Zápas nebyl dokončen.' }}</h2><p>+{{ match.xpAwarded }} XP</p><RouterLink class="aw-button aw-button--primary" to="/play/teams">Další společná výzva</RouterLink></PaperSurface>
+      <template v-else>
+        <PaperSurface class="game-paper game-result"><h2>{{ match.status === 'complete' ? match.result === 'win' ? 'Tohle byla souhra.' : match.result === 'draw' ? 'Vyrovnaná magie.' : 'Příště to otočíte.' : 'Zápas nebyl dokončen.' }}</h2><p>+{{ match.xpAwarded }} XP</p><RouterLink class="aw-button aw-button--primary" to="/play/teams">Další společná výzva</RouterLink></PaperSurface>
+        <ChronicleMatchReveal v-if="match.status === 'complete'" :match-id="match.id" mode="team" status="complete" :verdict-visible="true" />
+      </template>
       <AwButton v-if="['incoming','active','halftime'].includes(match.status)" class="game-exit" :busy="busy" :disabled="uncertain" @click="send('cancel')">Ukončit zápas bez výsledku</AwButton>
     </template>
     <template v-else-if="lobby">

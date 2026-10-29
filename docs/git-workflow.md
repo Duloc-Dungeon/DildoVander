@@ -58,11 +58,12 @@ prokáže shodu tohoto dokladu s výsledným merge commitem, na `main` už znovu
 nespouští stejné testovací sady. Znovu sestaví distribuční balíčky, ověří novou
 binárku a zachová kontrolu historie na tajné údaje. Chybějící, neúplný nebo
 zastaralý doklad znamená plné testy. Podrobnosti jsou v
-[ověření vydání](release-validation.md). Před PR platí
-[rychlý lokální preflight](local-preflight.md): backendové regresní skupiny,
+[ověření vydání](release-validation.md). Volitelný
+[rychlý lokální preflight](local-preflight.md) nabízí backendové regresní skupiny,
 npm testy, typecheck a krátké kontroly repozitáře. Nativní buildy, balení
 a dlouhé HTTP/browserové integrace zůstávají v plném PR CI nebo ve volitelném
-lokálním režimu `--profile full`.
+lokálním režimu `--profile full`. Preflight ani jeho report nejsou podmínkou
+založení, aktualizace nebo sloučení PR; povinné CI a review zůstávají zachované.
 
 ## První aktivace
 

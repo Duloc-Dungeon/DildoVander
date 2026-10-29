@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import curtainLeft from '../../assets/brand/midnight/curtain-left.webp';
-import curtainRight from '../../assets/brand/midnight/curtain-right.webp';
-import frame from '../../assets/brand/midnight/frame.webp';
+import PortraitMirror from '../../components/scene/PortraitMirror.vue';
 import placeholder from '../../assets/brand/midnight/placeholder.webp';
 import userIcon from '../../assets/wns-v2/icons/regular/user.svg';
 import { presentationForeground } from './launchPresentation';
 
 const props = defineProps<{ image: string; identity: string; alt: string; preparing: boolean; unavailable?: boolean }>();
-const emit = defineEmits<{ revealed: [value: boolean]; failed: [] }>();
+const emit = defineEmits<{ revealed: [value: boolean]; failed: []; replay: [] }>();
 const stage = ref<HTMLElement>();
 const phase = ref<'closed' | 'opening' | 'open'>('closed');
 const visible = ref(false);
@@ -67,35 +65,19 @@ onBeforeUnmount(() => { cancel(); observer?.disconnect(); media?.removeEventList
 
 <template>
   <div ref="stage" class="portrait-stage" :class="{ 'is-open': open || unavailable, 'is-preparing': preparing, 'reduced-motion': reduced }" :data-curtain="phase">
+    <PortraitMirror :key="identity" :open="open || !!unavailable" :active="presentationForeground" :preparing="preparing && !image && !unavailable" :animate-reveal="phase === 'opening'" :replayable="phase === 'open' && !!image && !unavailable" @replay="emit('replay')">
     <img v-if="image" class="portrait-stage-image" :src="image" :alt="alt" :aria-hidden="phase !== 'open'" fetchpriority="high" @error="emit('failed')" />
     <img v-else-if="unavailable" class="portrait-missing-avatar" :src="userIcon" alt="" aria-hidden="true" />
     <img v-else class="portrait-stage-placeholder" :src="placeholder" alt="" aria-hidden="true" />
-    <div class="curtain-wings" aria-hidden="true">
-      <img class="curtain-wing curtain-wing-left" :src="curtainLeft" alt="" width="400" height="1000" />
-      <img class="curtain-wing curtain-wing-right" :src="curtainRight" alt="" width="400" height="1000" />
-    </div>
-    <img class="curtain-frame" :src="frame" alt="" aria-hidden="true" width="800" height="1000" />
     <p v-if="unavailable && !image" class="portrait-unavailable">Portrét zatím chybí.<br />Postava má místo jisté.</p>
+    </PortraitMirror>
   </div>
 </template>
 
 <style scoped>
-.portrait-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: visible; isolation: isolate; background: var(--wns-violet, #c8b9fc); border-radius: 30px; }
-.portrait-stage-image, .portrait-stage-placeholder { position: absolute; left: 9%; top: 7%; width: 82%; height: 89%; object-fit: cover; object-position: 50% 30%; border-radius: 24px; }
+.portrait-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: visible; isolation: isolate; }
+.portrait-stage-image, .portrait-stage-placeholder { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
 .portrait-stage-placeholder { object-position: center; }
-.curtain-wings { position: absolute; inset: 7% 9% 4%; overflow: hidden; border-radius: 24px; }
-.curtain-wing, .curtain-frame { position: absolute; display: block; }
-.curtain-frame { display: none; }
-.curtain-wing { top: 0; width: 50%; height: 100%; transition: none; will-change: transform; }
-.curtain-wing-left { left: 0; }
-.curtain-wing-right { right: 0; }
-.is-open .curtain-wing { transition: transform 1.1s cubic-bezier(.32, 0, .2, 1); }
-.is-open .curtain-wing-left { transform: translateX(-100%); }
-.is-open .curtain-wing-right { transform: translateX(100%); }
-.is-preparing:not(.is-open) .curtain-wings { filter: brightness(1.08); }
-.reduced-motion .curtain-wing { transition: none; }
-.curtain-wing { filter: saturate(.75); }
 .portrait-unavailable { position: absolute; inset: auto 9% 7%; margin: 0; padding: 16px; border-radius: 12px; background: var(--wns-violet); color: var(--wns-on-violet); text-align: center; font-size: .875rem; line-height: 1.5; }
 .portrait-missing-avatar { position: absolute; width: 40%; height: 40%; inset: 20% 30% auto; }
-@media (prefers-reduced-motion: reduce) { .curtain-wing { transition: none; } }
 </style>

@@ -129,6 +129,7 @@ final class NativeAccountRequestPolicy {
     }
 
     static int responseBodyLimit(String path, String method) {
+        if (chronicleImage(path, method)) return 8 * 1024 * 1024;
         if (("GET".equals(method) && (adminCharacterListPath(path) || adminCharacterProfilePath(path))) ||
             ("PUT".equals(method) && (adminCharacterProfilePath(path) || adminCharacterPortraitPath(path, method, true)))) {
             return 256 * 1024;
@@ -140,11 +141,63 @@ final class NativeAccountRequestPolicy {
         return 32 * 1024 * 1024;
     }
 
+    private static boolean chronicleImage(String path, String method) {
+        return "GET".equals(method) && path.matches("(?i)^/app/v1/chronicle/" +
+            "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/(?:image|share|badges/[A-Za-z0-9][A-Za-z0-9._:-]{0,99}/image)$");
+    }
+
     private static String mediaType(String contentType) {
         return contentType == null ? "" : contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
     }
 
+    private static boolean validChronicleQuery(String raw) {
+        if (raw == null) return true;
+        Set<String> seen = new HashSet<>();
+        for (String pair : raw.split("&", -1)) {
+            String[] fields = pair.split("=", -1);
+            if (fields.length != 2 || fields[1].length() > 2048 || !seen.add(fields[0])) return false;
+            String value = fields[1];
+            if ("kind".equals(fields[0])) {
+                if (!Arrays.asList("yolo", "duel", "team", "boss", "case", "wand", "evening", "conversation").contains(value)) return false;
+            } else if ("participant".equals(fields[0])) {
+                if (!value.matches("^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")) return false;
+            } else if ("badge".equals(fields[0])) {
+                if (!value.matches("^[A-Za-z0-9._:-]{1,120}$")) return false;
+            } else if ("before".equals(fields[0])) {
+                if (!value.matches("^[A-Za-z0-9_-]{1,2048}$")) return false;
+            } else if ("limit".equals(fields[0])) {
+                if (!"50".equals(value)) return false;
+            } else return false;
+        }
+        return true;
+    }
+
     private static boolean allowsAppPath(String path, String method, String query) {
+        if ("/app/v1/chronicle".equals(path)) {
+            return "GET".equals(method) && validChronicleQuery(query);
+        }
+        if (path.matches("(?i)^/app/v1/chronicle/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) {
+            return query == null && "GET".equals(method);
+        }
+        if (path.matches("(?i)^/app/v1/chronicle/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/(reveal|illustration)$")) {
+            return query == null && "POST".equals(method);
+        }
+        if (path.matches("(?i)^/app/v1/chronicle/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/(image|share)$")) {
+            return query == null && "GET".equals(method);
+        }
+        if (path.matches("(?i)^/app/v1/chronicle/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/badges/[A-Za-z0-9][A-Za-z0-9._:-]{0,99}/image$")) {
+            return query == null && "GET".equals(method);
+        }
+        if (path.matches("(?i)^/app/v1/chronicle/source/(yolo|duel|team|boss|case|wand|evening|conversation)/[a-z0-9][a-z0-9._:-]{0,99}$")) {
+            return query == null && "GET".equals(method);
+        }
+        if ("/app/v1/game/live/negotiate".equals(path)) {
+            return "POST".equals(method) && "negotiateVersion=1".equals(query);
+        }
+        if ("/app/v1/game/live".equals(path)) {
+            return Arrays.asList("GET", "POST", "DELETE").contains(method) && query != null
+                && query.matches("^id=[A-Za-z0-9_-]{1,128}" + ("GET".equals(method) ? "(&_=[0-9]{1,20})?" : "") + "$");
+        }
         if (allowsWandWorkshopPath(path, method, query)) return true;
         if (query == null && allowsSealedCasePath(path, method)) return true;
         if (path.matches("^/app/v1/game/matches/[0-9a-f]{32}/opponent/wand-artwork$")) {
@@ -162,9 +215,12 @@ final class NativeAccountRequestPolicy {
         if (query == null && path.matches("^/app/v1/game/teams/[0-9a-f]{32}$")) return "GET".equals(method);
         if (query == null && path.matches("^/app/v1/game/teams/[0-9a-f]{32}/(accept|decline|cancel|choose|transfer)$")) return "POST".equals(method);
         if (query == null && "/app/v1/game/boss".equals(path)) return "GET".equals(method);
+        if (query == null && "/app/v1/game/boss/rickroll/claim".equals(path)) return "POST".equals(method);
+        if (query == null && path.matches("^/app/v1/admin/game/groups/[0-9a-f]{32}/boss/rickroll$")) return "POST".equals(method);
         if (query == null && "/app/v1/game/boss/attempts".equals(path)) return "POST".equals(method);
         if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}$")) return "GET".equals(method);
         if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}/(choose|cancel)$")) return "POST".equals(method);
+        if (query == null && path.matches("^/app/v1/game/boss/attempts/[0-9a-f]{32}/(narration|audio)$")) return "POST".equals(method);
         if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}$")) return "GET".equals(method);
         if (query == null && path.matches("^/app/v1/game/matches/[0-9a-f]{32}/(accept|decline|cancel|choose|loadout|task|retry)$")) return "POST".equals(method);
         if (query != null && !query.isEmpty()) {
@@ -180,6 +236,7 @@ final class NativeAccountRequestPolicy {
             return false;
         }
         if ("/app/v1/launch".equals(path)) return "GET".equals(method);
+        if ("/app/v1/launch/rickroll".equals(path)) return "GET".equals(method);
         if ("/app/v1/push".equals(path)) return "GET".equals(method) || "PUT".equals(method) || "DELETE".equals(method);
         if ("/app/v1/push/test".equals(path)) return "POST".equals(method);
         if ("/app/v1/application-version".equals(path)) return "GET".equals(method);
@@ -191,6 +248,7 @@ final class NativeAccountRequestPolicy {
         if ("/app/v1/admin/launch/beta-admission".equals(path)) return "GET".equals(method) || "PUT".equals(method);
         if ("/app/v1/admin/launch/beta-admission/group".equals(path)) return "POST".equals(method);
         if ("/app/v1/admin/launch/groups".equals(path)) return "GET".equals(method) || "POST".equals(method);
+        if (path.matches("^/app/v1/admin/launch/groups/[A-Za-z0-9_-]{1,100}/chronicle-close$")) return "POST".equals(method);
         if ("/app/v1/admin/launch/waiting-room".equals(path)) return "GET".equals(method);
         if (path.matches("^/app/v1/admin/launch/waiting-room/[0-9a-f]{32}/group$")) return "PUT".equals(method);
         if (path.matches("^/app/v1/admin/launch/groups/[0-9a-f]{32}/countdown$")) return "PUT".equals(method);
@@ -277,7 +335,7 @@ final class NativeAccountRequestPolicy {
             return "GET".equals(method);
         }
         if (path.matches(session + "/messages/[A-Za-z0-9_-]{1,160}")) return "PUT".equals(method);
-        if (path.matches(session + "/(messages|finish|ticket|artwork/repair)")) return "POST".equals(method);
+        if (path.matches(session + "/(messages|finish|ticket|artwork/repair|moments)")) return "POST".equals(method);
         if (path.matches(session + "/(answers|skip|audio|transcribe|artwork/retry)")) return "POST".equals(method);
         return path.matches(session + "/answers/[0-9a-f]{32}") && "PUT".equals(method);
     }

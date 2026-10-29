@@ -20,22 +20,24 @@ class NoRedirect(HTTPRedirectHandler):
 
 urlopen = build_opener(NoRedirect).open
 
-NAME = "DildoVander — The Wandmaster"
+NAME = "DildoVander — Magický kufr, plynulá čeština"
 PROMPT = (
-    "An original, highly expressive masculine voice belonging to an eccentric, arrogant magical wandmaker. "
-    "A rich, medium-low baritone with a lightly gravelly, textured quality, precise articulation, and strong theatrical presence. "
-    "He sounds like an aging master craftsman who has spent centuries dealing with incompetent customers. "
-    "Naturally sarcastic, dry, impatient, mischievous, and subtly amused by his own superiority. "
-    "He speaks with dynamic pacing, deliberate pauses, occasional restrained chuckles, and an effortless ability to move "
-    "between quiet disdain, playful mockery, excitement, and ceremonial grandeur. The performance should be charismatic, "
-    "believable, conversational, and emotionally expressive rather than synthetic, exaggerated, or constantly shouting. "
-    "Prioritize intelligibility and natural delivery of Czech speech, including complex consonants and Czech names. "
-    "This must be an original fictional voice, not an imitation of an existing actor, celebrity, or recognizable media character."
+    "Dospělý mužský hlas rodilého českého mluvčího. Zralý, středně hluboký baryton s hřejivou barvou "
+    "a jen lehce zastřeným, zrnitým zabarvením. Zní jako svérázný zkušený řemeslník, který má svou práci rád "
+    "a zákazníka si se zájmem dobírá. Mluví přirozenou současnou češtinou v plynulých, souvislých větách. "
+    "Slova na sebe měkce navazují, dech nese celou myšlenku a přízvuk přirozeně patří na první slabiku. "
+    "Tempo je středně svižné a konverzační, souhlásky i délky samohlásek jsou jasné a nenucené. "
+    "Krátce se nadechne mezi významovými celky; uvnitř věty nezadrhává, neseká slova a nedělá dlouhé pomlky. "
+    "Má slyšitelné emoce: zvídavost, pobavenou jízlivost, překvapení a radost z dobrého nápadu. "
+    "Přechází mezi nimi hladce změnou melodie a důrazu, přitom stále přirozeně vypráví. "
+    "Suchou pointu podá lehce a pohotově, bez okázalé deklamace a přehnaného protahování slabik. "
+    "Hlas působí živě, osobitě a blízce, s uměřenou hlasitostí a přirozenou českou výslovností ř, ů, ě i shluků souhlásek. "
+    "Jde o původní fiktivní hlas, nikoli napodobení konkrétního herce, známé osoby nebo filmové postavy."
 )
 SCRIPT_HINT = (
     "Tak pojď blíž. Dílna změří dřevo; tvoje ego se mi do šuplery nevejde. "
     "Řehoři, přestaň žmoulat ten třpytivý plášť. Příliš příčetný zákazník by mě stejně znepokojoval. "
-    "Dobrá… teď chvíli poslouchej. Tohle je vzácný okamžik: mistr přemýšlí. "
+    "Dobrá, teď chvíli poslouchej, protože tohle je vzácný okamžik: mistr přemýšlí. "
     "Tři stříbrné přezky, čtyři křivé křivule a pořád ani špetka trpělivosti. "
     "Výborně! Konečně zajímavá odpověď. Takovou si moje panty budou pamatovat."
 )

@@ -15,8 +15,8 @@ const welcome = { joke: 'Tvoje ego už dorazilo. Zabralo dvě židle.', identity
 const browser = await chromium.launch();
 const errors = [];
 try {
-  for (const [width, reducedMotion] of [[320, 'reduce'], [390, 'reduce'], [1280, 'reduce'], [390, 'no-preference']]) {
-    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion });
+  for (const [width, reducedMotion] of [[320, 'reduce'], [390, 'reduce'], [1280, 'reduce'], [390, 'no-preference'], [1280, 'no-preference']]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: width === 1280 ? 1.25 : 1, reducedMotion });
     const page = await context.newPage();
     await page.clock.install({ time: new Date('2026-10-28T12:00:00Z') });
     await page.clock.pauseAt(new Date('2026-10-28T12:00:01Z'));
@@ -47,7 +47,7 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${label}: horizontal overflow`);
       const next = page.getByRole('button', { name: 'Pokračovat', exact: true });
       if (await next.count()) {
-        assert.equal(await next.isEnabled(), true, `${label}: continue is independent of readiness once shown`);
+        assert.equal(await next.isEnabled(), true, `${label}: continue is available after readiness or completed recovery`);
         assert(await next.evaluate(button => button.getBoundingClientRect().height >= 44));
       }
       await page.screenshot({ path: path.join(output, `${label}-${width}-${reducedMotion}.png`), fullPage: true });
@@ -69,8 +69,10 @@ try {
     await page.locator('.entrance-portrait').waitFor({ state: 'attached' });
     await page.clock.fastForward(2000);
     await page.locator('[data-entrance="portrait"]').waitFor();
+    assert.equal(await page.locator('.viewport-curtain').count(), 0, 'the portrait uses its mirror without a curtain overlay');
     await page.getByRole('heading', { name: `${character.name} · ${character.label}`, exact: true }).waitFor();
     assert.equal(await page.locator('.entrance-portrait').getAttribute('aria-hidden'), 'false');
+    assert.equal(await page.getByRole('button', { name: 'Pokračovat', exact: true }).isEnabled(), true);
     await inspect('portrait');
     await page.clock.fastForward(10000);
     if (reducedMotion === 'reduce') assert.equal(await page.locator('.entrance-portrait').evaluate(image => getComputedStyle(image).transitionDuration), '0s');
@@ -99,7 +101,29 @@ try {
     assert.deepEqual(writes, [], 'the entrance never starts or retries paid generation');
     await context.close();
   }
-  // A guest can leave after ten visible seconds even if the character is still absent.
+  // One explicitly requested retry can fail without imposing the loading delay.
+  const recoveryContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const recoveryPage = await recoveryContext.newPage();
+  let recoveryReads = 0;
+  await recoveryContext.route('**/app/v1/prelaunch/character', route => {
+    recoveryReads++;
+    return route.fulfill({ status: 503, contentType: 'application/json', body: '{"code":"unavailable"}' });
+  });
+  await recoveryPage.goto(`${origin}/__fixture/F`);
+  await recoveryPage.getByRole('button', { name: 'Vstoupit', exact: true }).click();
+  const recoveryRetry = recoveryPage.getByRole('button', { name: 'Zkusit načíst znovu', exact: true });
+  await recoveryRetry.waitFor();
+  assert.equal(await recoveryPage.locator('.entrance-continue').count(), 0);
+  const readsBeforeRetry = recoveryReads;
+  await recoveryRetry.click();
+  await recoveryPage.locator('.entrance-continue').waitFor();
+  assert.equal(recoveryReads, readsBeforeRetry + 1);
+  assert.equal(await recoveryRetry.count(), 0);
+  await recoveryPage.locator('.entrance-continue').click();
+  await recoveryPage.waitForURL('**/me/character');
+  await recoveryContext.close();
+
+  // A guest can leave after five visible minutes if preparation never finishes.
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await page.clock.install({ time: new Date('2026-10-28T12:00:00Z') });
@@ -108,14 +132,14 @@ try {
   await page.goto(`${origin}/__fixture/F`);
   await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.locator('[data-entrance="waiting"]').waitFor();
-  await page.clock.fastForward(9900);
+  await page.clock.fastForward(299900);
   assert.equal(await page.getByRole('button', { name: 'Pokračovat', exact: true }).count(), 0);
   await page.clock.fastForward(100);
   await page.getByRole('button', { name: 'Pokračovat', exact: true }).click();
   await page.waitForURL('**/me/character');
   await context.close();
   assert.deepEqual(errors, []);
-  console.log(`Character entrance passed: 320/390/1280px, progressive data and portrait, missing portrait/retry, continuation after ten visible seconds, 200% text, keyboard focus and reduced motion; no mutations. Screenshots: ${output}`);
+  console.log(`Character entrance passed: 320/390/1280px, progressive data and portrait, missing portrait/retry, continuation after readiness or five visible minutes, 200% text, keyboard focus and reduced motion; no mutations. Screenshots: ${output}`);
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));

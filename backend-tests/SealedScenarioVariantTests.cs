@@ -91,11 +91,40 @@ internal static class SealedScenarioVariantTests
             var world = store.InitializeWorld(created.Id, "group", created.Revision, 2, game);
             using var version = JsonDocument.Parse(world.ContentVersionJson);
             Check(version.RootElement.GetProperty("scenarioId").GetString() == id
-                && version.RootElement.GetProperty("scenarioVersion").GetString() == pack.Version, "world content version identifies selected snapshot");
+                && version.RootElement.GetProperty("scenarioVersion").GetString() == pack.Version
+                && version.RootElement.GetProperty("rulesVersion").GetString() == "1.1.0"
+                && version.RootElement.GetProperty("scenarioSchemaVersion").GetString() == "1.1"
+                && version.RootElement.GetProperty("contracts").GetProperty("action").GetString() == "1.1"
+                && version.RootElement.GetProperty("contracts").GetProperty("context").GetString() == "1.1",
+                "new world content version matches current rules, checkpoint schema and action/context contracts");
             var reopened = new SealedCaseStore(path);
             var restored = reopened.ReadWorld(created.Id, "group");
             Check(JsonSerializer.Serialize(restored.Checkpoint.Scenario!.Presentation, Json) == JsonSerializer.Serialize(pack, Json),
                 "world keeps selected presentation after reopening");
+            Check(restored.ContentVersionJson == world.ContentVersionJson,
+                "restored checkpoint retains the exact current manifest version");
+            var unsupportedVersion = world.ContentVersionJson.Replace("\"rulesVersion\":\"1.1.0\"", "\"rulesVersion\":\"0.0.0\"", StringComparison.Ordinal);
+            using (var versionConnection = new SqliteConnection("Data Source=" + path))
+            {
+                versionConnection.Open(); using var update = versionConnection.CreateCommand();
+                update.CommandText = "DROP TRIGGER sealed_case_world_no_update"; update.ExecuteNonQuery();
+                update.CommandText = "UPDATE sealed_case_world SET content_version_json=$version WHERE case_id=$case";
+                update.Parameters.AddWithValue("$case", created.Id); update.Parameters.AddWithValue("$version", unsupportedVersion);
+                update.ExecuteNonQuery(); update.Parameters.Clear();
+                update.CommandText = "CREATE TRIGGER sealed_case_world_no_update BEFORE UPDATE ON sealed_case_world BEGIN SELECT RAISE(ABORT,'sealed case history is append-only'); END";
+                update.ExecuteNonQuery();
+            }
+            Reject(() => new SealedCaseStore(path).ReadWorld(created.Id, "group"), "unsupported_content_version");
+            using (var restoreConnection = new SqliteConnection("Data Source=" + path))
+            {
+                restoreConnection.Open(); using var update = restoreConnection.CreateCommand();
+                update.CommandText = "DROP TRIGGER sealed_case_world_no_update"; update.ExecuteNonQuery();
+                update.CommandText = "UPDATE sealed_case_world SET content_version_json=$version WHERE case_id=$case";
+                update.Parameters.AddWithValue("$case", created.Id); update.Parameters.AddWithValue("$version", world.ContentVersionJson);
+                update.ExecuteNonQuery(); update.Parameters.Clear();
+                update.CommandText = "CREATE TRIGGER sealed_case_world_no_update BEFORE UPDATE ON sealed_case_world BEGIN SELECT RAISE(ABORT,'sealed case history is append-only'); END";
+                update.ExecuteNonQuery();
+            }
             var orders = game.Players.Keys.Select(player => new SealedAction("hold-" + player, player, 1, SealedIntent.Hold)).ToArray();
             reopened.ResolveWorldChapter(created.Id, "group", 1, world.Revision, 3, orders);
             Check(new SealedCaseStore(path).ReadWorld(created.Id, "group").LastChapter == 1, "nondefault content version resolves after restart");

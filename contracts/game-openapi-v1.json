@@ -1783,6 +1783,134 @@
           }
         }
       }
+    },
+    "/app/v1/game/boss/rickroll/claim": {
+      "post": {
+        "summary": "Claim the enabled boss Rickroll once per player account",
+        "x-source": "Features/Game/GameBoss.cs",
+        "description": "Active same-group Customer session. The durable claim is global to the player account and is consumed before the response is returned.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossRickrollClaim"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Ineligible account, group or consent"
+          },
+          "409": {
+            "description": "Eligibility conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/app/v1/admin/game/groups/{id}/boss/rickroll": {
+      "post": {
+        "summary": "Set the group boss Rickroll toggle",
+        "x-source": "Features/Game/GameBossRickroll.cs",
+        "description": "Owner/Administrator session; requires a recent passkey and the active group. The independent Rickroll revision protects concurrent configuration updates.",
+        "security": [
+          {
+            "AccountSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameBossRickrollCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameBossProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command, origin or CSRF"
+          },
+          "401": {
+            "description": "Session unavailable"
+          },
+          "403": {
+            "description": "Administrator or recent passkey required"
+          },
+          "409": {
+            "description": "Revision or operation conflict"
+          },
+          "429": {
+            "description": "Account rate limit reached"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1853,7 +1981,16 @@
                 "enum": [
                   "strike",
                   "trick",
-                  "shield"
+                  "shield",
+                  "levitate",
+                  "tray",
+                  "cup",
+                  "protect",
+                  "sabotage",
+                  "shortcut",
+                  "finish",
+                  "adapt",
+                  "risk"
                 ]
               },
               {
@@ -2146,18 +2283,44 @@
       "GameLobbyOpponent": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "maxLength": 128 },
-          "displayName": { "type": "string", "maxLength": 240 },
-          "xp": { "type": "integer", "minimum": 0 },
-          "matchesPlayed": { "type": "integer", "minimum": 0 },
-          "hasWand": { "type": "boolean" },
-          "wandTier": { "type": "integer", "minimum": 0, "maximum": 2 },
+          "id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "xp": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matchesPlayed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hasWand": {
+            "type": "boolean"
+          },
+          "wandTier": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2
+          },
           "tacticalUnlocked": {
             "type": "boolean",
             "description": "True only when both the 30 XP and tier-two wand requirements are met."
           }
         },
-        "required": ["id", "displayName", "xp", "matchesPlayed", "hasWand", "wandTier", "tacticalUnlocked"],
+        "required": [
+          "id",
+          "displayName",
+          "xp",
+          "matchesPlayed",
+          "hasWand",
+          "wandTier",
+          "tacticalUnlocked"
+        ],
         "additionalProperties": false
       },
       "GameRound": {
@@ -2288,7 +2451,9 @@
               "generating",
               "complete",
               "failed",
-              "cancelled"
+              "cancelled",
+              "choosing",
+              "preparing"
             ]
           },
           "beats": {
@@ -2350,6 +2515,31 @@
                 "type": "null"
               }
             ]
+          },
+          "scenario": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameYoloScenario"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "winner",
+                  "draw",
+                  "fiasco"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2385,7 +2575,8 @@
               "complete",
               "failed",
               "declined",
-              "cancelled"
+              "cancelled",
+              "preparing"
             ]
           },
           "revision": {
@@ -2557,7 +2748,8 @@
                 "enum": [
                   "win",
                   "loss",
-                  "draw"
+                  "draw",
+                  "fiasco"
                 ]
               },
               {
@@ -2602,6 +2794,43 @@
           },
           "loadoutsAvailable": {
             "type": "boolean"
+          },
+          "combatNarration": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "generating",
+                      "complete",
+                      "failed"
+                    ]
+                  },
+                  "text": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 420
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2671,6 +2900,16 @@
                 "type": "null"
               }
             ]
+          },
+          "rickrollEnabled": {
+            "type": "boolean"
+          },
+          "rickrollRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rickrollSeen": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2772,12 +3011,26 @@
           "player": {
             "type": "object",
             "properties": {
-              "id": {"type": "string"},
-              "displayName": {"type": "string"},
-              "xp": {"type": "integer", "minimum": 0},
-              "matchesPlayed": {"type": "integer", "minimum": 0},
-              "tacticalUnlocked": {"type": "boolean"},
-              "yoloUnlocked": {"type": "boolean"}
+              "id": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "xp": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "matchesPlayed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tacticalUnlocked": {
+                "type": "boolean"
+              },
+              "yoloUnlocked": {
+                "type": "boolean"
+              }
             },
             "required": [
               "id",
@@ -3087,6 +3340,225 @@
             "type": "boolean"
           }
         },
+        "additionalProperties": false
+      },
+      "GameYoloOption": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 192
+          },
+          "benefit": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "cost": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "guard": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "attack": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "benefit",
+          "cost"
+        ],
+        "additionalProperties": false
+      },
+      "GameYoloDecision": {
+        "type": "object",
+        "properties": {
+          "act": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "choice": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 192
+          },
+          "benefit": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "cost": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "consequence": {
+            "type": "string",
+            "maxLength": 640
+          },
+          "guard": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "attack": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "act",
+          "choice",
+          "title",
+          "benefit",
+          "cost",
+          "consequence"
+        ],
+        "additionalProperties": false
+      },
+      "GameYoloAct": {
+        "type": "object",
+        "properties": {
+          "act": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "player": {
+            "$ref": "#/components/schemas/GameYoloDecision"
+          },
+          "opponent": {
+            "$ref": "#/components/schemas/GameYoloDecision"
+          }
+        },
+        "required": [
+          "act",
+          "player",
+          "opponent"
+        ],
+        "additionalProperties": false
+      },
+      "GameYoloScenario": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "tea-inspector-v1",
+              "ai-scenario-v1"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "objective": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "situation": {
+            "type": "string",
+            "maxLength": 650
+          },
+          "act": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "ownChoiceLocked": {
+            "type": "boolean"
+          },
+          "opponentChoiceLocked": {
+            "type": "boolean"
+          },
+          "options": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/GameYoloOption"
+            }
+          },
+          "revealed": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/GameYoloAct"
+            }
+          },
+          "selectionReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "objective",
+          "situation",
+          "act",
+          "ownChoiceLocked",
+          "opponentChoiceLocked",
+          "options",
+          "revealed"
+        ],
+        "additionalProperties": false
+      },
+      "GameBossRickrollCommand": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedRevision",
+          "enabled"
+        ],
+        "additionalProperties": false
+      },
+      "GameBossRickrollClaim": {
+        "type": "object",
+        "properties": {
+          "play": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "play"
+        ],
         "additionalProperties": false
       }
     }

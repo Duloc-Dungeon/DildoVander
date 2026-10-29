@@ -65,6 +65,7 @@ onBeforeUnmount(() => {
 .application-update-gate { min-height: 100svh; display: grid; place-items: center; padding: max(2rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left)); }
 .application-update-card { width: min(100%, 32rem); padding: clamp(1.25rem, 5vw, 2.5rem); border: 1px solid var(--aw-border-subtle); border-radius: var(--aw-radius-card); background: var(--aw-surface); overflow-wrap: anywhere; }
 h1 { font-size: clamp(1.75rem, 6vw, 2.5rem); line-height: 1.15; }
+.application-update-gate h1:focus { outline: none; }
 p { line-height: 1.6; }
 .application-update-version { color: var(--aw-muted); font-size: .875rem; }
 .application-update-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem; }

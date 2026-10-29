@@ -14,7 +14,11 @@ export interface Opponent { id: string; displayName: string; xp: number; matches
 export interface Inventory { strike: number; trick: number; shield: number }
 export interface Round { index: number; playerChoice: string; opponentChoice: string; winner: string; playerSparkBid?: number; opponentSparkBid?: number; playerPoints?: number; opponentPoints?: number; points?: number; reason?: string }
 export interface PartyTask { title: string; text: string; category: string; status: string; exchangeCount?: number }
+export interface YoloOption { id: string; title: string; benefit: string; cost: string; guard?: string | null; attack?: string | null }
+export interface YoloDecision extends Omit<YoloOption, 'id'> { act: number; choice: string; consequence: string }
+export interface YoloScenario { selectionReason?: string | null; id: string; title: string; objective: string; situation: string; act: number; ownChoiceLocked: boolean; opponentChoiceLocked: boolean; options: YoloOption[]; revealed: { act: number; player: YoloDecision; opponent: YoloDecision }[] }
 export interface Match {
+  combatNarration?: { status: string; text?: string | null };
   id: string; mode: GameMode; status: string; revision: number; opponent: Opponent;
   rounds: Round[]; completedRounds: number; totalRounds: number; block: number;
   playerScore: number; opponentScore: number; playerSparks: number; opponentSparks: number;
@@ -22,14 +26,14 @@ export interface Match {
   playerInventory?: Inventory; opponentInventory?: Inventory; canAccept?: boolean; canCancel?: boolean;
   tasksEnabled: boolean; adultConsent: boolean; flirtConsent: boolean;
   createdAt: number; completedAt?: number; result?: string; xpAwarded: number;
-  partyTask?: PartyTask; yolo?: { status: string; beats: { text: string; detailRefs: string[] }[]; verdict: string; winnerId?: string };
+  partyTask?: PartyTask; yolo?: { status: string; beats: { text: string; detailRefs: string[] }[]; verdict: string; winnerId?: string | null; scenario?: YoloScenario; outcome?: string | null };
   sparksEnabled?: boolean; playerEnergy?: number; opponentEnergy?: number;
   strength?: number; phase?: number; hint?: string; bossSpark?: boolean; exhibition?: boolean;
   seedCommitment?: string; seedReveal?: string;
   ownLoadoutLocked?: boolean; opponentLoadoutLocked?: boolean; rulesVersion?: string;
   needsLoadout?: boolean; loadoutsAvailable?: boolean;
 }
-export interface BossProfile { revealed: boolean; rescued: boolean; referenceXp: number; revision: number; activeAttemptId?: string }
+export interface BossProfile { revealed: boolean; rescued: boolean; referenceXp: number; revision: number; activeAttemptId?: string; rickrollEnabled?: boolean; rickrollRevision?: number; rickrollSeen?: boolean }
 export interface Milestone { id: string; title: string; text: string; action: string; destination: string }
 export interface Ranking { id: string; displayName: string; xp: number; wins: number; rank: number }
 export interface Progress {

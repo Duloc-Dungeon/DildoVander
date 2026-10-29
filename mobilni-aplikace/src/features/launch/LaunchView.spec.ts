@@ -6,18 +6,19 @@ import { getInvitationRegistration, invitationRegistration, setInvitationDraft }
 import { beginInvitationPresentation, presentationForeground, selectInvitationPresentation } from './launchPresentation';
 import { customerFixedUniverse, customerMembershipState } from '../../application/launchAccess';
 
-const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: vi.fn(), portrait: vi.fn() }));
+const api = vi.hoisted(() => ({ request: vi.fn(), replace: vi.fn(), setAccount: vi.fn(), portrait: vi.fn(), signOut: vi.fn() }));
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: api.replace }) }));
 vi.mock('../identity/AccountDeletion.vue', () => ({ default: { template: '<span />' } }));
 vi.mock('./PortraitCurtain.vue', () => ({ default: { name: 'PortraitCurtain', props: ['image'], template: '<div class="portrait-stage" />' } }));
-vi.mock('./PrelaunchWand.vue', () => ({ default: { name: 'PrelaunchWand', emits: ['open-change'], template: '<section><button @click="$emit(\'open-change\', true)">Vytvořit hůlku</button><button @click="$emit(\'open-change\', false)">Zpět k odpočtu</button></section>' } }));
-vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', template: '<div class="push-notifications-stub" />' } }));
+vi.mock('./PrelaunchWand.vue', () => ({ default: { name: 'PrelaunchWand', emits: ['open-change', 'complete-change'], template: '<section><button @click="$emit(\'open-change\', true)">Vytvořit hůlku</button><button @click="$emit(\'open-change\', false)">Zpět k odpočtu</button></section>' } }));
+vi.mock('../media/RickrollVideo.vue', () => ({ default: { name: 'RickrollVideo', props: ['src', 'active'], template: '<section v-if="active" class="rickroll-video" />' } }));
+vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div class="push-notifications-stub" />' } }));
 vi.mock('../customer/privateCharacterPortrait', () => ({ usePrivateCharacterPortrait: () => api.portrait() }));
 vi.mock('../identity/session', async () => {
   const { ref } = await import('vue');
   const account = ref({ id: 'guest', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
   api.setAccount.mockImplementation(value => { account.value = value; });
-  return { account, accountDeletionRequested: ref(false), accountRequest: api.request, accountTransport: vi.fn() };
+  return { account, accountDeletionRequested: ref(false), accountRequest: api.request, accountTransport: vi.fn(), signOut: api.signOut, signingOut: ref(false) };
 });
 let image: ReturnType<typeof ref<string>>;
 let failed: ReturnType<typeof ref<boolean>>;
@@ -39,12 +40,15 @@ beforeEach(() => {
   vi.useFakeTimers(); localStorage.clear(); sessionStorage.clear(); invitationRegistration.value = null;
   selectInvitationPresentation(); presentationForeground.value = true;
   api.request.mockReset(); api.replace.mockReset(); api.setAccount({ id: 'guest', displayName: 'Guest', roles: ['Customer'], openAiConsent: true });
+  api.signOut.mockReset();
+  api.signOut.mockImplementation(async () => { api.setAccount(null); });
   image = ref(''); failed = ref(false);
   api.portrait.mockReturnValue({ url: image, failed, pending: ref(false), clear: vi.fn(() => { image.value = ''; }), retry: vi.fn(), fail: vi.fn() });
   persisted = false; allowed = false; revokedAudience = false; artworkStatus = 'queued'; artworkSource = null;
   character.status = 'queued';
   memberState = 'active'; memberUniverse = null; customerMembershipState.value = null; customerFixedUniverse.value = null;
   api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/launch/rickroll') return { available: true, url: '/app/v1/launch/rickroll.mp4' };
     if (path === '/app/v1/launch') return { allowed, audience: revokedAudience ? 'revoked' : 'beta', launchAt: Date.now() + 86400000, serverNow: Date.now() };
     if (path === '/app/v1/customer/access') return { state: memberState, accessRevision: 1, fixedUniverse: memberUniverse };
     if (path === '/app/v1/enrollment/default') return { available: true };
@@ -70,6 +74,22 @@ it('offers wand creation only after revealing the saved character', async () => 
     await view.findComponent({ name: 'PrelaunchWand' }).get('button').trigger('click');
     expect(view.get('.launch-card').attributes('style')).toContain('display: none');
     expect(api.request.mock.calls.some(call => call[1] === 'POST')).toBe(false);
+  } finally { view.unmount(); }
+});
+it('offers notifications on arrival with a saved wand and hides the offer inside the workshop', async () => {
+  persisted = true; artworkStatus = 'ready';
+  const view = entry();
+  try {
+    await flushPromises(); image.value = 'blob:portrait'; await flushPromises();
+    expect(view.findAllComponents({ name: 'PushNotifications' }).some(component => component.props('context') === 'waiting')).toBe(false);
+    view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
+    const workshop = view.findComponent({ name: 'PrelaunchWand' });
+    workshop.vm.$emit('complete-change', true); await flushPromises();
+    expect(view.findAllComponents({ name: 'PushNotifications' }).some(component => component.props('context') === 'waiting')).toBe(true);
+    workshop.vm.$emit('open-change', true); await flushPromises();
+    expect(view.findAllComponents({ name: 'PushNotifications' }).some(component => component.props('context') === 'waiting')).toBe(false);
+    workshop.vm.$emit('open-change', false); await flushPromises();
+    expect(view.findAllComponents({ name: 'PushNotifications' }).some(component => component.props('context') === 'waiting')).toBe(true);
   } finally { view.unmount(); }
 });
 it('keeps optional character labels collapsed without changing the saved character', async () => {
@@ -227,7 +247,7 @@ it('lets an existing unassigned customer explicitly request beta admission befor
     expect(view.text()).toContain('Požádat o přístup do bety');
     expect(api.request).not.toHaveBeenCalledWith('/app/v1/enrollment/default/admit', 'POST', {});
     expect(api.request).not.toHaveBeenCalledWith('/app/v1/prelaunch/character', 'GET', undefined, expect.anything());
-    await view.get('button').trigger('click');
+    await view.get('.beta-admission-request button').trigger('click');
     await flushPromises();
     expect(api.request).toHaveBeenCalledWith('/app/v1/enrollment/default/admit', 'POST', {});
     expect(api.request).toHaveBeenCalledWith('/app/v1/customer/access');
@@ -250,7 +270,7 @@ it('replaces a recovered draft universe with the persisted group universe after 
   const view = entry();
   try {
     await flushPromises();
-    await view.get('button').trigger('click');
+    await view.get('.beta-admission-request button').trigger('click');
     await flushPromises();
     expect(customerFixedUniverse.value).toBe('Astronomy');
     expect(getInvitationRegistration('guest')?.universe).toBe('Astronomy');
@@ -309,6 +329,23 @@ it('shows the loading joke before the portrait and preserves the welcome in the 
     expect(view.get('[aria-current="step"]').text()).not.toBe('Čekárna');
   } finally { view.unmount(); }
 });
+it('reads the personal joke from welcome when only the loading field is invalid', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    const result = await original(path, method);
+    return path === '/app/v1/prelaunch/character' ? { ...result, artwork: {
+      status: 'running', loadingMessage: 'null', finalMessage: 'FINAL FIELD',
+      welcome: { joke: 'WELCOME JOKE FIELD', identity: 'IDENTITY FIELD', teaser: 'TEASER FIELD' },
+    } } : result;
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('WELCOME JOKE FIELD');
+    expect(view.get('[aria-current="step"]').text()).toBe('Portrét');
+  } finally { view.unmount(); }
+});
 it('preserves an unfinished same-account draft and clears it from another account’s view', async () => {
   const view = entry();
   try {
@@ -335,8 +372,100 @@ it('announces offline immediately during the presentation and reconnects with re
   } finally { view.unmount(); }
 });
 
-it('K: entering starts the character presentation and only continuing completes entry', async () => {
-  const deadline=Date.now()+4000;
+it('keeps the countdown and logout accessible when the first character read fails and recovers automatically', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  let failRead = true;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/prelaunch/character' && failRead) throw new Error('Temporary outage');
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('[role="alert"]').text()).toContain('Tvoji postavu');
+    expect(view.find('.countdown').exists()).toBe(true);
+    expect(view.find('.portrait-stage').exists()).toBe(false);
+    expect(view.get('.launch-signout').text()).toBe('Odhlásit se');
+    failRead = false;
+    await vi.advanceTimersByTimeAsync(15_000);
+    await flushPromises();
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    expect(view.find('.portrait-stage').exists()).toBe(true);
+    expect(api.request.mock.calls.every(([, method]) => !method || method === 'GET')).toBe(true);
+  } finally { view.unmount(); }
+});
+
+it('rechecks membership when retrying an initially unavailable account status', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  let failMembership = true;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/customer/access' && failMembership) throw new Error('Unavailable');
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.find('[role="alert"]').exists()).toBe(true);
+    expect(api.request.mock.calls.some(([path]) => path === '/app/v1/prelaunch/character')).toBe(false);
+    failMembership = false;
+    await view.get('.launch-retry').trigger('click');
+    await flushPromises();
+    expect(customerMembershipState.value).toBe('active');
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    expect(view.find('.portrait-stage').exists()).toBe(true);
+  } finally { view.unmount(); }
+});
+
+it('clears a failed preparation poll after a successful read without another write', async () => {
+  persisted = true;
+  const original = api.request.getMockImplementation()!;
+  let failRead = false;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/prelaunch/character' && failRead) throw new Error('Unavailable');
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    failRead = true;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(view.find('[role="alert"]').exists()).toBe(true);
+    failRead = false;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(view.find('[role="alert"]').exists()).toBe(false);
+    expect(api.request.mock.calls.every(([, method]) => !method || method === 'GET')).toBe(true);
+  } finally { view.unmount(); }
+});
+
+it.each([false, true])('offers shared logout in the waiting and opening scenes (allowed=%s)', async opening => {
+  allowed = opening;
+  const view = entry();
+  try {
+    await flushPromises();
+    const logout = view.findAll('button').find(button => button.text() === 'Odhlásit se')!;
+    await logout.trigger('click');
+    await flushPromises();
+    expect(api.signOut).toHaveBeenCalledOnce();
+    expect(api.replace).toHaveBeenCalledWith('/signin');
+  } finally { view.unmount(); }
+});
+
+it('routes an unconfirmed logout to a public recovery screen even after local identity is cleared', async () => {
+  api.signOut.mockImplementation(async () => { api.setAccount(null); throw new Error('Network unavailable'); });
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.launch-signout').trigger('click');
+    await flushPromises();
+    expect(api.replace).toHaveBeenCalledWith({ path: '/signin', query: { logout: 'unconfirmed' } });
+  } finally { view.unmount(); }
+});
+
+it('K: arriving after opening starts the character presentation and only continuing completes entry', async () => {
+  const deadline=Date.now()-1000;
+  allowed=true;
   persisted=true; savedCreation();
   const original=api.request.getMockImplementation()!;
   api.request.mockImplementation(async(path:string,method?:string)=>path==='/app/v1/launch'
@@ -347,13 +476,14 @@ it('K: entering starts the character presentation and only continuing completes 
     allowed=true; await vi.advanceTimersByTimeAsync(1000); await flushPromises();
     expect(api.replace).not.toHaveBeenCalled();
     expect(view.text()).toContain('Večer začíná.');
+    expect(view.find('.rickroll-video').exists()).toBe(false);
     await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
     expect(view.find('[data-entrance]').exists()).toBe(true);
     expect(api.replace).not.toHaveBeenCalled();
     expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBeNull();
     expect(view.text()).not.toContain('Přeskočit animaci');
     expect(view.find('.entrance-continue').exists()).toBe(false);
-    await vi.advanceTimersByTimeAsync(10000); await flushPromises();
+    await vi.advanceTimersByTimeAsync(300000); await flushPromises();
     await view.get('.entrance-continue').trigger('click'); await flushPromises();
     expect(api.replace).toHaveBeenCalledWith('/me/character');
     expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBe('seen');
@@ -365,9 +495,10 @@ it('polls for a not-yet-available character during the entrance without generati
   try {
     await flushPromises();
     await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
-    expect(view.text()).toContain('Slavná osoba se ještě hledá');
+    expect(view.text()).toContain('Zrcadlo si zatím vyjednává');
     persisted = true;
     await vi.advanceTimersByTimeAsync(5000); await flushPromises();
+    image.value = 'blob:portrait';
     expect(view.findComponent({ name: 'CharacterEntrance' }).props('character')?.name).toBe('Raven');
     expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/prelaunch/character').length).toBeGreaterThanOrEqual(2);
     expect(api.request.mock.calls.some(([, method]) => method && method !== 'GET')).toBe(false);
@@ -383,6 +514,7 @@ it('does not mark a cancelled entry as seen and removes the presentation immedia
     await flushPromises();
     await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
     api.replace.mockResolvedValueOnce({ type: 4 });
+    image.value = 'blob:portrait';
     await vi.advanceTimersByTimeAsync(10000); await flushPromises();
     await view.get('.entrance-continue').trigger('click'); await flushPromises();
     expect(sessionStorage.getItem('wand.group-opening-seen.v1.guest')).toBeNull();
@@ -390,6 +522,62 @@ it('does not mark a cancelled entry as seen and removes the presentation immedia
     expect(view.find('[data-entrance]').exists()).toBe(false);
     expect(view.text()).not.toContain('Raven');
   } finally { view.unmount(); }
+});
+it('allows one requested entrance retry and then continuation without waiting five minutes', async () => {
+  allowed = true;
+  persisted = true;
+  artworkStatus = 'failed';
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.group-opening-copy button').trigger('click');
+    await flushPromises();
+    expect(view.find('.entrance-continue').exists()).toBe(false);
+    await view.get('.entrance-retry').trigger('click');
+    await flushPromises();
+    expect(api.request.mock.calls.filter(([path, method]) => path === '/app/v1/prelaunch/character/retry' && method === 'POST')).toHaveLength(1);
+    expect(view.find('.entrance-retry').exists()).toBe(false);
+    expect(view.find('.entrance-continue').exists()).toBe(true);
+    view.findComponent({ name: 'CharacterEntrance' }).vm.$emit('retry');
+    await flushPromises();
+    expect(api.request.mock.calls.filter(([path, method]) => path === '/app/v1/prelaunch/character/retry' && method === 'POST')).toHaveLength(1);
+    await view.get('.entrance-continue').trigger('click');
+    await flushPromises();
+    expect(api.replace).toHaveBeenCalledWith('/me/character');
+  } finally { view.unmount(); }
+});
+it('does not let a stalled preparation retry block entry after five minutes and still verifies authorization', async () => {
+  allowed = true;
+  const original = api.request.getMockImplementation()!;
+  let retrying = false;
+  let finishRead!: (value: unknown) => void;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/prelaunch/character') {
+      if (retrying) return new Promise(resolve => { finishRead = resolve; });
+      throw new Error('Unavailable');
+    }
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    await view.get('.group-opening-copy button').trigger('click');
+    await flushPromises();
+    retrying = true;
+    await view.get('.entrance-retry').trigger('click');
+    await flushPromises();
+    expect(view.find('.entrance-continue').exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(300000);
+    const policyReads = api.request.mock.calls.filter(([path]) => path === '/app/v1/launch').length;
+    await view.get('.entrance-continue').trigger('click');
+    await flushPromises();
+    expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/launch').length).toBeGreaterThan(policyReads);
+    expect(api.replace).toHaveBeenCalledWith('/me/character');
+  } finally {
+    view.unmount();
+    finishRead?.({ character, artwork: { status: 'ready' } });
+    await flushPromises();
+  }
 });
 it('rechecks server authorization when entering and closes the scene if access was revoked', async () => {
   allowed = true;
@@ -452,5 +640,68 @@ it('shows Soon after a non-force countdown expires until the server opens the ni
     expect(view.get('.character-countdown-wait').text()).toBe('Brzy');
     expect(view.find('.character-countdown-grid').exists()).toBe(false);
     expect(api.replace).not.toHaveBeenCalled();
+  } finally { view.unmount(); }
+});
+
+it.each(['production', 'beta'])('automatically Rickrolls a waiting %s guest at zero, then allows normal entry after restart', async audience => {
+  persisted = true;
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: Date.now() >= deadline, audience, launchAt: deadline, serverNow: Date.now() } : original(path, method));
+  let view = entry();
+  try {
+    await flushPromises();
+    expect(view.find('.character-countdown-grid').exists()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(view.find('.rickroll-video').exists()).toBe(true);
+    expect(api.replace).not.toHaveBeenCalled();
+    view.unmount();
+    view = entry();
+    await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(true);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+  } finally { view.unmount(); }
+});
+
+it('skips the Rickroll when a guest returns after zero', async () => {
+  persisted = true;
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: Date.now() >= deadline, audience: 'production', launchAt: deadline, serverNow: Date.now() } : original(path, method));
+  const view = entry();
+  try {
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    presentationForeground.value = false;
+    await vi.advanceTimersByTimeAsync(3_000);
+    presentationForeground.value = true;
+    await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(true);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+  } finally { view.unmount(); }
+});
+
+it('stops the surprise on backgrounding and enters normally on return', async () => {
+  persisted = true;
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: Date.now() >= deadline, audience: 'production', launchAt: deadline, serverNow: Date.now() } : original(path, method));
+  const view = entry();
+  try {
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(view.find('.rickroll-video').exists()).toBe(true);
+    presentationForeground.value = false;
+    await flushPromises();
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+    presentationForeground.value = true;
+    await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(true);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
   } finally { view.unmount(); }
 });

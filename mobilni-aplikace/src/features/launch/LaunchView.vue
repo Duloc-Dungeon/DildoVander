@@ -8,12 +8,14 @@ import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from '../identity/AccountDeletion.vue';
 import CharacterLabelEditor from '../customer/CharacterLabelEditor.vue';
 import { characterDisplayName } from '../customer/characterLabel';
-import { account, accountDeletionRequested, accountRequest } from '../identity/session';
+import { account, accountDeletionRequested, accountRequest, signOut, signingOut } from '../identity/session';
 import { clearInvitationRegistration, getInvitationRegistration, invitationRegistration, reconcileInvitationCharacter, saveInvitationCharacter, setInvitationDraft } from '../identity/invitationRegistration';
 import { defaultSignedInDestination } from '../customer/customerJourney';
 import { usePrivateCharacterPortrait } from '../customer/privateCharacterPortrait';
 import { launchCopy as copy } from './launchCopy';
+import { characterIntroductionFallback, characterIntroductionText, characterWelcomeText } from './characterWelcomeText';
 import PortraitCurtain from './PortraitCurtain.vue';
+import CharacterIntroduction from './CharacterIntroduction.vue';
 import CharacterEntrance from './CharacterEntrance.vue';
 import PrelaunchWand from './PrelaunchWand.vue';
 import SceneShell from '../../components/scene/SceneShell.vue';
@@ -25,6 +27,9 @@ import type { PrelaunchCharacterResponse as PrelaunchState } from './generatedPr
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { customerFixedUniverse, customerMembershipState, refreshCustomerMembership } from '../../application/launchAccess';
 import { isCustomerAccount } from '../../application/access';
+import { CountdownRickroll } from './countdownRickroll';
+import RickrollVideo from '../media/RickrollVideo.vue';
+import { readRickrollVideo } from '../media/rickrollMedia';
 
 interface LaunchPolicy { allowed: boolean; audience: string; launchAt: number | null; serverNow: number }
 const router = useRouter();
@@ -40,8 +45,11 @@ const membershipRequestMessage = ref('');
 const draftProvided = ref(false);
 const busy = ref(false);
 const error = ref('');
+const readError = ref('');
+const displayedError = computed(() => error.value || readError.value);
 const remaining = ref(0);
 const revealed = ref(false);
+const portraitReplay = ref(0);
 const workshopOpen = ref(false);
 const wandComplete = ref(false);
 const receptionSteps = ['Postava', 'Portrét', 'Hůlka', 'Čekárna'];
@@ -50,10 +58,18 @@ const canPrepareWand = computed(() => isCustomerAccount(account.value)
   && customerMembershipState.value === 'active' && !!state.value?.character
   && (revealed.value && hasPortrait.value || phase.value === 'failed'));
 const groupOpening = ref(false);
+const rickrollActive = ref(false);
+const rickrollSource = ref<string>();
+const countdownRickroll = new CountdownRickroll(() => { rickrollActive.value = true; });
+const countdownVisible = computed(() => !rickrollActive.value && !groupOpening.value && !requiresBetaAdmission.value && !workshopOpen.value
+  && (!!state.value?.character || !!account.value && !!policy.value && !policy.value.allowed && !characterVerified.value));
 const groupPresenting = ref(false);
 const groupBusy = ref(false);
+const entranceRetryAttempted = ref(false);
+const entranceRetrying = ref(false);
 const formFocused = ref(false);
 let characterRead = 0;
+let policyRead = 0;
 let accountEpoch = 0;
 let controller: AbortController | undefined;
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -83,7 +99,7 @@ const phase = computed(() => {
 });
 const actualPreparation = computed(() => writing.value || ['queued', 'pending', 'running'].includes(state.value?.artwork?.status ?? ''));
 const statusMessage = computed(() => {
-  if (error.value || phase.value === 'failed') return '';
+  if (displayedError.value || phase.value === 'failed') return '';
   if (registration.value?.status === 'error') return registration.value.error === 'existing_character' ? copy.value.conflict : copy.value.saveFailed;
   if (uncertain.value) return copy.value.verifying;
   if (writing.value) return copy.value.saving;
@@ -93,15 +109,12 @@ const statusMessage = computed(() => {
   if (registration.value?.status === 'confirmed' && registration.value.writeStarted && invitationVisibleMs.value < invitationIntroDuration) return copy.value.waiting;
   return copy.value.saved;
 });
-const finalMessage = computed(() => state.value?.artwork?.finalMessage || copy.value.finalFallback);
 const receptionJoke = computed(() => {
-  const artwork = state.value?.artwork;
-  if (canPrepareWand.value) return artwork?.welcome?.joke?.trim() || artwork?.loadingMessage?.trim() || finalMessage.value;
-  return artwork?.loadingMessage?.trim() || artwork?.welcome?.joke?.trim()
-    || 'Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.';
+  const personal = characterIntroductionText(state.value?.artwork ?? null, canPrepareWand.value);
+  return personal || characterIntroductionFallback;
 });
 const receptionStatus = computed(() => {
-  if (error.value || phase.value === 'failed') return '';
+  if (displayedError.value || phase.value === 'failed') return '';
   if (writing.value || uncertain.value || !state.value?.character) return statusMessage.value;
   if (statusMessage.value === copy.value.waiting) return statusMessage.value;
   if (wandComplete.value) return 'Postava i hůlka jsou připravené. Tady počkáš na otevření večera.';
@@ -139,9 +152,20 @@ const launchTimeLabel = computed(() => {
 });
 watch(() => account.value?.id, id => {
   accountEpoch++;
+  policyRead++;
+  policy.value = null;
+  remaining.value = 0;
+  countdownRickroll.reset();
+  rickrollActive.value = false;
+  rickrollSource.value = undefined;
+  lastLaunchCheck = Number.NEGATIVE_INFINITY;
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = undefined;
   groupOpening.value = false;
   groupPresenting.value = false;
   groupBusy.value = false;
+  entranceRetryAttempted.value = false;
+  entranceRetrying.value = false;
   characterRead++;
   portrait.clear();
   state.value = null;
@@ -155,7 +179,8 @@ watch(() => account.value?.id, id => {
   universe.value = draft?.universe ?? '';
   draftProvided.value = !!draft?.name && !!draft?.universe;
   selectInvitationPresentation(id, draft?.writeStarted ? draft.creationId : undefined);
-  if (controller && id) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
+  readError.value = '';
+  if (controller && id) { refreshRickrollSource(); void retryRead(); }
 }, { immediate: true, flush: 'sync' });
 watch(customerFixedUniverse, fixed => {
   if (!fixed || state.value?.character) return;
@@ -168,7 +193,7 @@ watch(() => registration.value?.status, status => {
   if (status === 'confirmed' && controller) void refreshCharacter(controller.signal).then(beginPolling).catch(() => {});
 });
 watch(hasPortrait, ready => { if (ready) finishInvitationPresentation(); });
-watch(characterIdentity, () => { revealed.value = false; workshopOpen.value = false; wandComplete.value = false; }, { flush: 'sync' });
+watch(characterIdentity, () => { revealed.value = false; portraitReplay.value = 0; workshopOpen.value = false; wandComplete.value = false; }, { flush: 'sync' });
 watch(canPrepareWand, available => { if (!available) workshopOpen.value = false; }, { flush: 'sync' });
 function onWorkshopOpen(open: boolean): void {
   workshopOpen.value = open;
@@ -184,9 +209,11 @@ function formFocusOut(event: FocusEvent): void {
 }
 async function refreshPolicy(): Promise<void> {
   const owner = account.value?.id;
+  const currentRead = ++policyRead;
   const value = await accountRequest<LaunchPolicy>('/app/v1/launch');
-  if (owner !== account.value?.id || controller?.signal.aborted) return;
-  if (typeof value.serverNow !== 'number' || typeof value.allowed !== 'boolean') throw new Error(copy.value.readFailed);
+  if (owner !== account.value?.id || currentRead !== policyRead || controller?.signal.aborted) return;
+  if (!Number.isFinite(value.serverNow) || typeof value.allowed !== 'boolean'
+    || value.launchAt != null && !Number.isFinite(value.launchAt)) throw new Error(copy.value.readFailed);
   serverTimeAnchor = value.serverNow;
   monotonicAnchor = performance.now();
   policy.value = value;
@@ -204,10 +231,11 @@ async function refreshPolicy(): Promise<void> {
     // Reconcile the waiting scene with reads, never a second enrollment/save.
     if (wasOpening && account.value && customerMembershipState.value === 'active') {
       try { await refreshCharacter(controller?.signal); beginPolling(); }
-      catch { error.value = copy.value.readFailed; }
+      catch { if (owner === account.value?.id) readError.value = copy.value.readFailed; }
     }
   }
   updateCountdown();
+  if (rickrollActive.value) return;
   // Server permission always wins over local presentation, including staff/testers.
   if (value.allowed && account.value && !isCustomerAccount(account.value)) {
     // Operational accounts keep their established destination. The consumer
@@ -233,9 +261,10 @@ async function enterGroup(continueToApp = false): Promise<void> {
     await refreshPolicy();
     if (epoch !== accountEpoch || !policy.value?.allowed || account.value?.id !== owner.id || customerMembershipState.value !== 'active') return;
     if (!continueToApp) {
+      entranceRetryAttempted.value = false;
       groupPresenting.value = true;
       void refreshCharacter(controller?.signal)
-        .catch(() => { if (epoch === accountEpoch) error.value = copy.value.readFailed; })
+        .catch(() => { if (epoch === accountEpoch) readError.value = copy.value.readFailed; })
         .then(() => { if (epoch === accountEpoch) beginPolling(); });
       return;
     }
@@ -250,9 +279,18 @@ async function enterGroup(continueToApp = false): Promise<void> {
   finally { if (epoch === accountEpoch) groupBusy.value = false; }
 }
 async function retryEntrance(): Promise<void> {
+  if (entranceRetryAttempted.value || entranceRetrying.value) return;
   const epoch = accountEpoch;
-  await retryRead();
-  if (epoch === accountEpoch && state.value?.artwork?.status === 'ready' && portrait.failed.value) await portrait.retry();
+  entranceRetryAttempted.value = true;
+  entranceRetrying.value = true;
+  try {
+    await retryRead();
+    if (epoch !== accountEpoch || controller?.signal.aborted || readError.value) return;
+    if (state.value?.artwork?.status === 'failed' && consent.value) await retryPortrait();
+    else if (state.value?.artwork?.status === 'ready' && portrait.failed.value) await portrait.retry();
+  } catch {
+    if (epoch === accountEpoch) readError.value = copy.value.readFailed;
+  } finally { if (epoch === accountEpoch) entranceRetrying.value = false; }
 }
 async function refreshBetaEnrollment(): Promise<void> {
   try {
@@ -269,6 +307,7 @@ async function refreshCharacter(signal?: AbortSignal): Promise<void> {
   const previous = state.value?.character;
   state.value = value;
   characterVerified.value = true;
+  readError.value = '';
   if (!value.character) {
     if (previous || registration.value?.status === 'confirmed') {
       clearInvitationRegistration(owner);
@@ -284,6 +323,14 @@ async function refreshCharacter(signal?: AbortSignal): Promise<void> {
 function updateCountdown(): void {
   const now = performance.now();
   remaining.value = policy.value?.launchAt == null ? 0 : Math.max(0, policy.value.launchAt - (serverTimeAnchor + now - monotonicAnchor));
+  countdownRickroll.observe({
+    launchAt: policy.value?.launchAt ?? null,
+    remaining: remaining.value,
+    now,
+    watching: !!rickrollSource.value && countdownVisible.value && presentationForeground.value && !document.hidden,
+    waiting: !!account.value && policy.value?.allowed === false && policy.value.audience !== 'revoked',
+  });
+  if (rickrollActive.value) return;
   if (remaining.value === 0 && policy.value?.launchAt != null && now - lastLaunchCheck > 15_000) {
     lastLaunchCheck = now; void refreshPolicy().catch(() => {});
   }
@@ -333,10 +380,31 @@ async function retryPortrait(): Promise<void> {
 async function retryRead(): Promise<void> {
   if (busy.value) return;
   const epoch = accountEpoch;
-  busy.value = true; error.value = '';
-  try { await refreshPolicy(); await refreshCharacter(controller?.signal); beginPolling(); }
-  catch { if (epoch === accountEpoch) error.value = copy.value.readFailed; }
+  busy.value = true; error.value = ''; readError.value = '';
+  try {
+    if (isCustomerAccount(account.value)) await refreshCustomerMembership();
+    if (epoch !== accountEpoch || controller?.signal.aborted) return;
+    await refreshPolicy();
+    if (epoch !== accountEpoch || controller?.signal.aborted) return;
+    if (isCustomerAccount(account.value) && customerMembershipState.value !== 'active') {
+      if (customerMembershipState.value === 'unassigned') await refreshBetaEnrollment();
+      else if (customerMembershipState.value === null) readError.value = copy.value.readFailed;
+      return;
+    }
+    if (!policy.value?.allowed || groupPresenting.value) await refreshCharacter(controller?.signal);
+    beginPolling();
+  }
+  catch { if (epoch === accountEpoch && !controller?.signal.aborted) readError.value = copy.value.readFailed; }
   finally { if (epoch === accountEpoch) busy.value = false; }
+}
+async function leaveAccount(): Promise<void> {
+  if (signingOut.value) return;
+  try {
+    await signOut();
+    await router.replace('/signin');
+  } catch {
+    await router.replace({ path: '/signin', query: { logout: 'unconfirmed' } });
+  }
 }
 async function requestBetaAdmission(): Promise<void> {
   if (busy.value || !requiresBetaAdmission.value || betaEnrollmentAvailable.value !== true) return;
@@ -384,59 +452,52 @@ function beginPolling(): void {
   if (!actualPreparation.value && !uncertain.value && !entranceWaiting) return;
   pollTimer = setTimeout(async () => {
     pollTimer = undefined;
+    const epoch = accountEpoch;
     try { await refreshCharacter(controller?.signal); }
-    catch { error.value = copy.value.readFailed; }
+    catch { if (epoch === accountEpoch && !controller?.signal.aborted) readError.value = copy.value.readFailed; }
     beginPolling();
   }, 5000);
 }
 function onOffline(): void {
-  error.value = copy.value.readFailed;
+  readError.value = copy.value.readFailed;
   if (pollTimer) clearTimeout(pollTimer);
   pollTimer = undefined;
 }
 function onOnline(): void { void retryRead(); }
+function refreshRickrollSource(): void {
+  const owner = account.value?.id;
+  void readRickrollVideo(controller?.signal).then(source => { if (owner === account.value?.id) rickrollSource.value = source; });
+}
+function dismissRickroll(): void {
+  rickrollActive.value = false;
+  void refreshPolicy().catch(() => {});
+}
 function onVisibility(): void {
+  countdownRickroll.reset();
   if (presentationForeground.value) {
-    void refreshPolicy().catch(() => {});
-    if (isCustomerAccount(account.value)) {
-      void refreshCustomerMembership().then(async membership => {
-        if (membership === 'active') await refreshCharacter(controller?.signal).then(beginPolling);
-        else if (membership === 'unassigned') await refreshBetaEnrollment();
-      }).catch(() => {});
-    } else {
-      void refreshCharacter(controller?.signal).then(beginPolling).catch(() => {});
-    }
+    void retryRead();
     startPolicyPolling();
   } else {
+    rickrollActive.value = false;
     if (pollTimer) clearTimeout(pollTimer); pollTimer = undefined;
     if (policyTimer) clearInterval(policyTimer); policyTimer = undefined;
   }
 }
 function startPolicyPolling(): void {
-  if (!policyTimer && presentationForeground.value) policyTimer = setInterval(() => { void refreshPolicy().catch(() => {}); }, 15_000);
+  if (!policyTimer && presentationForeground.value) policyTimer = setInterval(() => {
+    if (readError.value) void retryRead();
+    else void refreshPolicy().catch(() => {});
+  }, 15_000);
 }
-watch(presentationForeground, onVisibility);
+watch(presentationForeground, onVisibility, { flush: 'sync' });
+watch(countdownVisible, visible => { if (!visible) countdownRickroll.reset(); }, { flush: 'sync' });
 onMounted(async () => {
   controller = new AbortController();
+  refreshRickrollSource();
   window.addEventListener('offline', onOffline);
   window.addEventListener('online', onOnline);
-  try {
-    if (isCustomerAccount(account.value) && customerMembershipState.value === null) {
-      await refreshCustomerMembership();
-    }
-    await refreshPolicy();
-    if (controller.signal.aborted) return;
-    if (isCustomerAccount(account.value) && customerMembershipState.value !== 'active') {
-      if (customerMembershipState.value === 'unassigned') await refreshBetaEnrollment();
-      else if (customerMembershipState.value === null) error.value = copy.value.readFailed;
-    } else if (policy.value?.allowed) {
-      startPolicyPolling();
-    } else {
-      await refreshCharacter(controller.signal);
-      beginPolling();
-    }
-  }
-  catch { error.value = copy.value.readFailed; }
+  await retryRead();
+  if (controller.signal.aborted) return;
   timer = setInterval(updateCountdown, 1000);
   startPolicyPolling();
 });
@@ -453,25 +514,26 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SceneShell v-if="groupOpening" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
-    <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!error" :active="presentationForeground" :busy="groupBusy" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
-      <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
+  <RickrollVideo v-if="rickrollSource" :src="rickrollSource" :active="rickrollActive" @dismiss="dismissRickroll" />
+  <SceneShell v-if="!rickrollActive && groupOpening" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
+    <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!displayedError" :active="presentationForeground" :busy="groupBusy" :retrying="entranceRetrying" :retry-attempted="entranceRetryAttempted" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
+      <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }}</AwNotice>
       <p v-if="portraitSource && hasPortrait" class="launch-attribution">Obrázek z internetu: <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> · {{ portraitSource.author }} · <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
     </CharacterEntrance>
     <template v-else>
       <div class="group-opening-art" data-scene-enter aria-hidden="true"><span>W</span></div>
       <section class="group-opening-copy">
       <h1 id="group-opening-title">{{ language === 'en' ? 'The evening begins.' : 'Večer začíná.' }}</h1>
-      <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup(false)">{{ copy.retry }}</button></AwNotice>
+      <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup(false)">{{ copy.retry }}</button></AwNotice>
       <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup(false)">Vstoupit</AwButton>
     </section>
     </template>
-    <footer class="launch-footer"><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
+    <footer class="launch-footer"><AwButton v-if="account" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
-  <SceneShell v-else class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
+  <SceneShell v-else-if="!rickrollActive" class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
     <header class="launch-masthead">
       <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><span>Wand<br />Night Stand</span></RouterLink>
-      <span class="launch-language" aria-label="Jazyk rozhraní">Čeština</span>
+      <AwButton v-if="account" class="launch-signout" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton>
     </header>
     <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">
       <PaperSurface class="launch-copy">
@@ -479,7 +541,7 @@ onBeforeUnmount(() => {
         <p>{{ language === 'en' ? 'Your account is ready. You can join the current beta group while it is accepting participants.' : 'Tvůj účet je připravený. Do současné beta skupiny můžeš vstoupit, dokud přijímá účastníky.' }}</p>
         <AwNotice v-if="betaEnrollmentAvailable === false" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
         <p v-else-if="betaEnrollmentAvailable === null" role="status">{{ language === 'en' ? 'We could not check the current beta access rules.' : 'Aktuální pravidla vstupu do bety se nepodařilo ověřit.' }}</p>
-        <AwNotice v-if="error" tone="danger" role="alert">{{ error }}</AwNotice>
+        <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <p v-if="membershipRequestMessage" role="status">{{ membershipRequestMessage }}</p>
         <AwButton v-if="betaEnrollmentAvailable === true" variant="primary" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>
       </PaperSurface>
@@ -491,11 +553,12 @@ onBeforeUnmount(() => {
         <span>{{ step }}<small v-if="index === 1 && phase === 'failed'">Bez portrétu</small><span v-if="index < receptionStep" class="sr-only">{{ index === 1 && phase === 'failed' ? ' — přeskočeno' : ' — hotovo' }}</span></span>
       </li>
     </ol>
+    <PushNotifications v-if="wandComplete && !workshopOpen" context="waiting" class="launch-push-offer" />
     <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" @complete-change="wandComplete = $event" />
     <section v-show="!workshopOpen" class="launch-card" :class="{ 'launch-card--reception': writing || state?.character }">
       <PaperSurface class="launch-copy">
-        <h1 v-if="!state?.character" id="launch-title">{{ writing ? 'Tvoje postava se připravuje.' : draftProvided ? name : copy.title }}</h1>
-        <AwNotice v-if="error" tone="danger" role="alert">{{ error }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
+        <h1 v-if="!state?.character" id="launch-title">{{ readError && account ? copy.waitingTitle : writing ? 'Tvoje postava se připravuje.' : draftProvided ? name : copy.title }}</h1>
+        <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <AwNotice v-if="phase === 'failed'" tone="warning" role="alert">{{ copy.failed }} <button class="launch-retry" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
         <template v-if="!account"><RouterLink class="aw-button aw-button--primary" to="/signin">{{ copy.invitation }}</RouterLink></template>
         <form v-else-if="characterVerified && !state?.character && !writing" class="launch-form" @submit.prevent="saveCharacter" @focusin="formFocused = true" @focusout="formFocusOut">
@@ -517,24 +580,24 @@ onBeforeUnmount(() => {
         </header>
         <div v-if="writing || state?.character" class="reception-introduction" :class="{ 'launch-final': canPrepareWand }">
           <p class="launch-status" role="status" aria-atomic="true">{{ receptionStatus }}</p>
-          <p class="launch-joke">{{ receptionJoke }}</p>
+          <CharacterIntroduction class="launch-joke" :active="presentationForeground" :replay-key="portraitReplay" :text="receptionJoke" />
           <template v-if="canPrepareWand && state?.artwork?.welcome">
-            <p v-if="state.artwork.welcome.identity" class="launch-identity">{{ state.artwork.welcome.identity }}</p>
-            <p v-if="state.artwork.welcome.teaser" class="launch-teaser">{{ state.artwork.welcome.teaser }}</p>
+            <p v-if="characterWelcomeText(state.artwork.welcome.identity)" class="launch-identity">{{ characterWelcomeText(state.artwork.welcome.identity) }}</p>
+            <p v-if="characterWelcomeText(state.artwork.welcome.teaser)" class="launch-teaser">{{ characterWelcomeText(state.artwork.welcome.teaser) }}</p>
           </template>
           <p v-if="portraitSource && revealed && hasPortrait" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
         </div>
       </PaperSurface>
-      <PortraitCurtain class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation" :unavailable="phase === 'failed'" @revealed="revealed = $event" @failed="portrait.fail()" />
+      <PortraitCurtain v-if="!readError || state?.character || writing" class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation || portrait.pending.value" :unavailable="phase === 'failed'" @revealed="revealed = $event" @replay="portraitReplay++" @failed="portrait.fail()" />
       <p v-if="!writing && !state?.character" class="launch-text launch-status" role="status">{{ statusMessage }}</p>
     </section>
-    <section v-if="state?.character" v-show="!workshopOpen" class="reception-waiting" aria-label="Čekání na večer">
+    <section v-if="state?.character || account && policy && !policy.allowed && !characterVerified" v-show="!workshopOpen" class="reception-waiting" aria-label="Čekání na večer">
       <CharacterCountdown class="countdown" heading-as="h2" :name="wandComplete ? 'Vítej v čekárně.' : 'Večer se chystá.'" :universe="''" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
       <div class="reception-options">
         <p v-if="launchTimeLabel" class="launch-time">Večer se otevře {{ launchTimeLabel }}.</p>
         <p v-if="wandComplete" class="reception-seat">Čekárna uznává tvoji pověst. Na pořadí to vliv nemá.</p>
         <details v-if="account && !accountDeletionRequested" class="launch-notifications"><summary>Nastavit oznámení pro toto zařízení</summary><PushNotifications /></details>
-        <details class="launch-label-options"><summary>Rozlišovací označení (nepovinné)</summary><CharacterLabelEditor :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" /></details>
+        <details v-if="state?.character" class="launch-label-options"><summary>Rozlišovací označení (nepovinné)</summary><CharacterLabelEditor :profile-id="state.character.profileId" :label="state.character.label" @saved="state.character.label = $event" /></details>
       </div>
     </section>
     </template>
@@ -552,6 +615,7 @@ onBeforeUnmount(() => {
 .launch-card { width: min(100%, 42rem); margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
 .launch-art { order: 2; width: 100%; }
 .launch-copy { order: 1; min-width: 0; }
+.launch-copy > .aw-notice { margin-block-start: 1rem; }
 .launch-copy :deep(h1) { font-family: var(--aw-font-display); font-size: clamp(2rem, 8vw, 3.5rem); font-weight: 500; line-height: 1.05; letter-spacing: -.025em; margin: 0; overflow-wrap: anywhere; color: var(--aw-game-ink, #2a2019); }
 .launch-status { color: var(--aw-game-muted-ink, #625340); line-height: 1.5; min-height: 1.5em; margin-block: .5rem; font-size: .875rem; }
 .launch-text { order: 3; min-width: 0; padding-top: .25rem; align-self: stretch; text-align: center; }
@@ -577,7 +641,7 @@ onBeforeUnmount(() => {
 .launch-data-details summary { min-height: 44px; padding-block: .6rem; cursor: pointer; }
 .launch-data-details a { display: inline-flex; min-height: 44px; align-items: center; }
 .countdown { margin-block: 0; color: var(--wns-text, #f5f5f0); }
-.launch-retry { color: inherit; text-decoration: underline; text-underline-offset: .2em; background: none; border: 0; cursor: pointer; min-height: 44px; padding: .5rem; font: inherit; }
+.launch-retry { display: block; margin-block-start: .5rem; color: inherit; text-decoration: underline; text-underline-offset: .2em; background: none; border: 0; cursor: pointer; min-height: 44px; padding: .5rem; font: inherit; }
 .aw-button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: .85rem 1.25rem; border-radius: 8px; text-decoration: none; }
 .aw-button--primary { color: var(--aw-on-accent); background: var(--aw-accent); }
 .launch-footer { margin-top: 1.5rem; display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 1rem; color: var(--aw-muted); font-size: .875rem; }
@@ -624,7 +688,7 @@ onBeforeUnmount(() => {
 .launch-joke { color: var(--wns-text, #f5f5f0); font: 700 clamp(1.5rem, 6vw, 2.5rem)/1.35 var(--wns-display); letter-spacing: -.035em; }
 .launch-identity { color: var(--wns-muted, #b2b9b6); font: 500 1rem/1.55 var(--wns-display); }
 .launch-teaser, .launch-generic { color: var(--wns-muted, #b2b9b6); }
-.launch-art { overflow: visible; border-radius: 30px; background: var(--wns-violet, #c8b9fc); }
+.launch-art { overflow: visible; background: transparent; }
 .launch-form { gap: 1.25rem; }
 .launch-form .aw-input { border-radius: 14px; color: var(--wns-text, #f5f5f0); background: var(--wns-surface-raised, #222626); border-color: var(--wns-line, #343939); }
 .fixed-universe, .launch-consent, .launch-data-details { color: var(--wns-text, #f5f5f0); }
@@ -637,6 +701,7 @@ onBeforeUnmount(() => {
 .group-opening-art span { font: 800 clamp(14rem, 60vw, 28rem)/.8 var(--wns-display); letter-spacing: -.1em; }
 .group-opening-copy h1 { color: var(--wns-text, #f5f5f0); text-shadow: none; font-family: var(--wns-display); font-weight: 800; letter-spacing: -.06em; }
 .launch-page :deep(:focus-visible) { outline: 2px solid var(--wns-mint, #b8f3d4); outline-offset: 4px; }
+.launch-page h1[tabindex='-1']:focus { outline: none; }
 @media (min-width: 760px) { .launch-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, .85fr); align-items: center; gap: 2rem; } .launch-copy { order: 1; } .launch-art { order: 2; } .launch-text { grid-column: 1 / -1; } }
 @media (max-width: 759px) { .launch-copy { border-radius: 24px; } .launch-art { max-width: min(100%, 44.8vh); margin-inline: auto; } }
 .reception-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(100%, 62rem); margin: 0 auto 24px; padding: 0; list-style: none; }
@@ -657,6 +722,7 @@ onBeforeUnmount(() => {
 .reception-introduction .launch-joke { max-width: 28ch; font-size: clamp(1.4rem, 5vw, 2.1rem); line-height: 1.4; font-weight: 650; letter-spacing: -.02em; }
 .reception-introduction .launch-identity { color: var(--wns-muted); font-size: 1rem; }
 .reception-waiting { display: grid; gap: 28px; width: min(100%, 62rem); margin: 40px auto 0; padding-top: 28px; border-top: 1px solid var(--wns-line); }
+.launch-push-offer { width: min(100%, 62rem); margin: 24px auto; }
 .reception-waiting .countdown { text-align: left; }
 .reception-waiting :deep(.character-countdown-identity p) { display: none; }
 .reception-waiting :deep(.character-countdown-title) { margin-top: 16px; color: var(--wns-muted); }

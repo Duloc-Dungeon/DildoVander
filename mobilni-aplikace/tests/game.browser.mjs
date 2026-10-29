@@ -50,13 +50,9 @@ try {
       }
       if (state === 'adult' || state === 'task-without-wand') {
         await page.screenshot({ path: path.join(output, `${state}-pending-${width}.png`), fullPage: true }); captures++;
-        const confirm = page.getByRole('button', { name: 'Potvrdit výsledek úkolu' });
-        assert.equal(await confirm.isDisabled(), true);
-        assert.equal(await page.getByRole('link', { name: 'Odveta', exact: true }).count(), 0);
-        const count = requests.length;
         const outcome = width < 390 ? 'done' : 'skip';
-        await page.getByRole('radio', { name: outcome === 'done' ? 'Splněno' : 'Nesplněno', exact: true }).check();
-        assert.equal(requests.length, count, 'task selection must remain local until confirmed');
+        const confirm = page.getByRole('button', { name: outcome === 'done' ? 'Splněno' : 'Přeskočit úkol', exact: true });
+        assert.equal(await page.getByRole('link', { name: 'Odveta', exact: true }).count(), 0);
         await confirm.click();
         const saved = outcome === 'done' ? 'Uloženo: úkol splněn.' : 'Uloženo: úkol nesplněn.';
         await page.getByText(saved, { exact: true }).waitFor();
@@ -121,8 +117,8 @@ try {
     }
     await page.goto(`${origin}/play/practice`);
     await page.getByRole('button', { name: 'Potvrdit tah' }).waitFor();
-    for (let round = 0; round < 7 && await page.getByRole('button', { name: 'Potvrdit tah' }).count(); round++) {
-      await page.getByRole('radio', { name: /Úder/ }).check();
+    for (let round = 0; round < 3 && await page.getByRole('button', { name: 'Potvrdit tah' }).count(); round++) {
+      await page.getByRole('radio', { name: round === 0 ? /^Štít / : round === 1 ? /^Lest / : /^Úder / }).check();
       await page.getByRole('button', { name: 'Potvrdit tah' }).click();
       await page.waitForFunction(count => document.querySelectorAll('.game-round-dots > .done').length === count, round + 1);
     }

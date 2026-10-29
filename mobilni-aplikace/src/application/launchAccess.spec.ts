@@ -6,7 +6,7 @@ vi.mock('../features/identity/session', async () => {
   return { account: ref(null), accountRequest: state.request };
 });
 import { account } from '../features/identity/session';
-import { customerMembershipState, refreshCustomerMembership } from './launchAccess';
+import { customerMembershipState, launchAllowed, refreshCustomerMembership, refreshLaunchAccess } from './launchAccess';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -18,6 +18,35 @@ beforeEach(() => {
   state.request.mockReset();
   customerMembershipState.value = null;
   account.value = { id: 'customer-a', displayName: 'A', roles: ['Customer'] } as never;
+});
+
+describe('launch access refresh ordering', () => {
+  it.each([null, {}, { allowed: 'false' }, { allowed: 0 }])('treats an invalid successful policy as unknown', async response => {
+    state.request.mockResolvedValueOnce(response);
+    launchAllowed.value = true;
+    await refreshLaunchAccess();
+    expect(launchAllowed.value).toBeNull();
+  });
+  it('ignores an open response superseded by a newly closed evening', async () => {
+    const old = deferred<{ allowed: boolean }>();
+    state.request.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ allowed: false });
+    const pending = refreshLaunchAccess();
+    await refreshLaunchAccess();
+    old.resolve({ allowed: true });
+    await pending;
+    expect(launchAllowed.value).toBe(false);
+  });
+
+  it('ignores the previous account response after a new account is verified', async () => {
+    const old = deferred<{ allowed: boolean }>();
+    state.request.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ allowed: true });
+    const pending = refreshLaunchAccess();
+    account.value = { id: 'customer-b', displayName: 'B', roles: ['Customer'] } as never;
+    await refreshLaunchAccess();
+    old.resolve({ allowed: false });
+    await pending;
+    expect(launchAllowed.value).toBe(true);
+  });
 });
 
 describe('customer membership refresh ordering', () => {

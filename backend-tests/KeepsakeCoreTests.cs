@@ -510,9 +510,12 @@ internal static class KeepsakeCoreTests
             object body;
             if (path.EndsWith("/responses"))
             {
+                using var payload = JsonDocument.Parse(Requests[^1].Body);
+                Check(payload.RootElement.GetProperty("service_tier").GetString() == "default",
+                    "keepsake story explicitly pins Standard regardless of the project tier");
                 var story = new KeepsakeStory("Smyšlený příběh", string.Join(" ", Enumerable.Repeat("kouzlo", 210)),
                     new("shape", "handle", "ornament", "material", "theme"));
-                body = new { id = "resp_fixture", status = "completed", model = "gpt-6-sol", output = new[]
+                body = new { id = "resp_fixture", status = "completed", service_tier = "default", model = "gpt-6-sol", output = new[]
                 {
                     new { type = "message", id = "msg_fixture", role = "assistant", status = "completed",
                         content = new[] { new { type = "output_text", text = JsonSerializer.Serialize(story, new JsonSerializerOptions(JsonSerializerDefaults.Web)), annotations = Array.Empty<object>() } } }

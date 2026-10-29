@@ -21,6 +21,7 @@ const cs = {
   finalFallback: 'Tvá pověst dorazila před tebou. Už jsme se jí omluvili.',
   displayLoading: 'Načítáme tvůj obraz…', accountLoading: 'Ověřujeme tvůj účet a postavu…',
   readFailed: 'Tvoji postavu se nepodařilo načíst. Zkontroluj připojení a zkus to znovu.',
+  waitingTitle: 'Čekání na večer', signOut: 'Odhlásit se',
 };
 const en: typeof cs = {
   title: 'Enter at your own reputation.', introduction: 'A character name and the universe you come from are all we need.',
@@ -41,5 +42,6 @@ const en: typeof cs = {
   readyTitle: 'Your character', finalFallback: 'Your reputation arrived before you. We have already apologised to it.',
   displayLoading: 'Loading your picture…', accountLoading: 'Checking your account and character…',
   readFailed: 'We could not load your character. Check your connection and try again.',
+  waitingTitle: 'Waiting for the evening', signOut: 'Sign out',
 };
 export const launchCopy = computed(() => customerCopy.language.value === 'en' ? en : cs);

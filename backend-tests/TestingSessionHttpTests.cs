@@ -32,6 +32,10 @@ internal static partial class AccountIdentityTests
                 new TestingSessionsTests.WandDouble(), null, null,
                 new WandDecisionService((_, _) => Task.FromException<WandDecisionResult>(providerFailure))));
             services.AddSingleton<ILoggerProvider>(warnings);
+        }, configureConfiguration: configuration =>
+        {
+            // Exercise exhaustion without issuing the production read allowance.
+            configuration["ApplicationIdentity:ReadRequestsPerMinute"] = "240";
         });
         _ = fixture.App.Services.GetRequiredService<TestingSessionService>();
         using var anonymous = fixture.Client();

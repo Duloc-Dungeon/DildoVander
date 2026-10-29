@@ -16,7 +16,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Kufr.Backend.Features.Wands;
 
 internal sealed record MobileWandAdmission(string Owner, string Operation, string AccountSession,
-    string Stamp, string Origin, DateTimeOffset ExpiresAt, CharacterConversationSnapshot Profile);
+    string Stamp, string Origin, DateTimeOffset ExpiresAt, CharacterConversationSnapshot Profile,
+    (string GroupId, long AccessRevision)? LaunchSnapshot = null);
 
 // The phone owns its microphone; the account socket never impersonates a device
 // and cannot issue a physical presentation or create a fabricated keepsake.
@@ -29,7 +30,11 @@ internal sealed class MobileWandRuntime(IServiceScopeFactory scopes, WandGenerat
         foreach (var item in tickets.Where(t => t.Value.ExpiresAt < DateTimeOffset.UtcNow)) tickets.TryRemove(item.Key, out _);
         if (tickets.Count >= 1000) throw new WandGenerationException("wand_capacity", 429);
         var token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
-        tickets[Hash(token)] = admission;
+        tickets[Hash(token)] = admission with
+        {
+            LaunchSnapshot = wands.ReadWorkshopLaunchSnapshot(admission.Owner, admission.Operation)
+                ?? throw new WandGenerationException("wand_session_unavailable", 404)
+        };
         return token;
     }
     internal MobileWandAdmission Take(string token, string operation, string origin)
@@ -52,6 +57,11 @@ internal sealed class MobileWandRuntime(IServiceScopeFactory scopes, WandGenerat
             || !await db.Sessions.AsNoTracking().AnyAsync(s => s.Id == a.AccountSession && s.UserId == a.Owner && s.ExpiresAt > now, token)) return false;
         var tier = wands.MobileOperationTier(a.Owner, a.Operation);
         if (tier is not (1 or 2)) return false;
+        if (a.LaunchSnapshot is { } snapshot
+            && !wands.WorkshopMatchesLaunchSnapshot(a.Owner, a.Operation, snapshot.GroupId, snapshot.AccessRevision))
+        {
+            return false;
+        }
         if (!await MobileWandWorkshopAccess.IsAllowedForWorkshopAsync(user, a.Operation, wands, scope.ServiceProvider, token)) return false;
         if (tier == 2)
         {

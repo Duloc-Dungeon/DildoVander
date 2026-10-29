@@ -334,8 +334,8 @@ internal static class WandArtworkTests
             && OpenAiKeepsakeProvider.SupportsTransparentWandArtwork("gpt-image-2.5-flare")
             && !OpenAiKeepsakeProvider.SupportsTransparentWandArtwork("dall-e-3"),
             "only configured models with documented alpha output enter the wand-artwork branch");
-        var wand = new GeneratedWandPublicSnapshot("canonical-wand", 1, "Astra", "Meteorite wood", "Tidal thread", "Cautiously sarcastic",
-            "A fictional relic of a drowned observatory.", "Forked tip, carved lunar handle, silver inlaid rings", "Tides", "Static air",
+        var wand = new GeneratedWandPublicSnapshot("canonical-wand", 1, "CHARACTER_NAME_SENTINEL", "Meteorite wood", "Tidal thread", "Cautiously sarcastic",
+            "CHARACTER_WORLD_SENTINEL: a fictional relic of a drowned observatory.", "Forked tip, carved lunar handle, silver inlaid rings", "Tides", "Static air",
             [new("strike", "Tidal lash", "A wave of light"), new("trick", "Moon lie", "A decoy"), new("shield", "Quiet harbor", "A barrier")]);
         var handler = new Handler(DifferentPng());
         using var provider = new OpenAiKeepsakeProvider(new HttpClient(handler), "synthetic-key-never-sent-to-network", "synthetic-story-model", "gpt-image-2.5-flare");
@@ -364,6 +364,7 @@ internal static class WandArtworkTests
         {
             var payload = parsed.RootElement;
             var prompt = payload.GetProperty("prompt").GetString()!;
+            var outbound = handler.Requests[0].Body;
             Check(payload.GetProperty("model").GetString() == "gpt-image-2.5-flare" && !payload.TryGetProperty("image", out _),
                 "image uses configured SDK generation model without another image pipeline");
             Check(payload.GetProperty("background").GetString() == "transparent" && payload.GetProperty("output_format").GetString() == "png",
@@ -375,17 +376,35 @@ internal static class WandArtworkTests
                 "the actual SDK image request and saved provenance both use low moderation");
             Check(image.GenerationParameters?.Contains("\"background\":\"transparent\"", StringComparison.Ordinal) == true,
                 "saved generation provenance records actual image parameters");
-            Check(new[] { wand.Name, wand.Material, wand.Core, wand.Temperament, wand.DesignDescription, wand.Affinity, wand.Weakness, wand.Lore }.All(prompt.Contains),
-                "image prompt describes exact selected silhouette, craftsmanship, personality, lore and affinity");
-            Check(!prompt.Contains("private-outcome") && !prompt.Contains("private-device"), "image prompt excludes private authorization and physical outcome IDs");
+            Check(prompt.Contains(wand.Material) && prompt.Contains(wand.Core) && prompt.Contains(wand.DesignDescription),
+                "image prompt retains the saved wand's material, core and visual construction");
+            Check(!outbound.Contains(wand.Name) && !outbound.Contains(wand.Lore)
+                && !outbound.Contains(wand.Affinity) && !outbound.Contains(wand.Weakness)
+                && !outbound.Contains("Tidal lash") && !outbound.Contains("canonical-wand")
+                && !outbound.Contains("CHARACTER_NAME_SENTINEL") && !outbound.Contains("CHARACTER_WORLD_SENTINEL"),
+                "actual outbound image payload omits character identity, fictional-world details, story, spells and IDs");
+            Check(!outbound.Contains("private-outcome") && !outbound.Contains("private-device"),
+                "image prompt excludes private authorization and physical outcome IDs");
+        }
+        _ = await provider.GenerateAsync(request with { CanonicalArtworkAssetId = Guid.NewGuid().ToString("D") }, default);
+        using (var repair = JsonDocument.Parse(handler.Requests[1].Body))
+        {
+            var payload = repair.RootElement;
+            var prompt = payload.GetProperty("prompt").GetString()!;
+            Check(payload.GetProperty("background").GetString() == "transparent"
+                && !payload.TryGetProperty("image", out _)
+                && prompt.Contains(wand.Material) && prompt.Contains(wand.Core) && prompt.Contains(wand.DesignDescription)
+                && !handler.Requests[1].Body.Contains("CHARACTER_NAME_SENTINEL")
+                && !handler.Requests[1].Body.Contains("CHARACTER_WORLD_SENTINEL"),
+                "actual image-only repair request carries visual wand details without character identity or world");
         }
         var story = await provider.GenerateAsync(request with { GenerationKind = "base", EditionId = Guid.NewGuid().ToString("D"), CanonicalArtworkAssetId = Guid.NewGuid().ToString("D") }, default);
-        Check(handler.Requests.Count == 2 && handler.Requests[1].Path.EndsWith("/responses") && story.ImageBytes.Length == 0,
+        Check(handler.Requests.Count == 3 && handler.Requests[2].Path.EndsWith("/responses") && story.ImageBytes.Length == 0,
             "later personalized keepsake performs story-only SDK request and reuses canonical image reference");
         handler.Fail = true;
         try { await provider.GenerateAsync(request, default); throw new InvalidOperationException("Synthetic provider failure unexpectedly succeeded"); }
         catch (Exception exception) when (exception is not InvalidOperationException) { }
-        Check(handler.Requests.Count == 3, "SDK performs no uncontrolled retry on ambiguous image failure");
+        Check(handler.Requests.Count == 4, "SDK performs no uncontrolled retry on ambiguous image failure");
         handler.FailStatus = HttpStatusCode.BadRequest;
         try
         {
@@ -398,7 +417,11 @@ internal static class WandArtworkTests
                 && !error.Message.Contains("synthetic failure", StringComparison.Ordinal),
                 "image rejection retains its HTTP classification without exposing provider bodies");
         }
-        Check(handler.Requests.Count == 4, "a rejected image request is not silently retried or regenerated");
+        Check(handler.Requests.Count == 5, "a rejected image request is not silently retried or regenerated");
+        Check(KeepsakeWorker.ProviderFailureCode(new KeepsakeException("wand_artwork_transparency_required", 422))
+                == "wand_artwork_transparency_required"
+            && KeepsakeWorker.ProviderFailureCode(new KeepsakeException("bad code with data")) == "provider_attempt_unknown",
+            "artwork validation failures retain safe stable codes without logging arbitrary exception text");
     }
 
     private static byte[] DifferentPng()
@@ -449,7 +472,7 @@ internal static class WandArtworkTests
             if (Fail) return new(FailStatus) { Content = new StringContent("{\"error\":{\"message\":\"synthetic failure\"}}") };
             object body = path.EndsWith("/responses") ? new
             {
-                id = "resp_synthetic", status = "completed", model = "synthetic-story-model", output = new[] { new
+                id = "resp_synthetic", status = "completed", service_tier = "default", model = "synthetic-story-model", output = new[] { new
                 {
                     type = "message", id = "msg_synthetic", role = "assistant", status = "completed", content = new[] { new
                     {

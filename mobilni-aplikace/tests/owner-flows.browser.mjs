@@ -97,7 +97,8 @@ try {
             adultContentEnabled: request.postDataJSON().adultContentEnabled, flirtEnabled: request.postDataJSON().flirtEnabled };
           return json({ group });
         }
-        return json({ groups: group ? [group] : [] });
+        const defaultGroup = { id: 'default-group', name: 'Výchozí skupina', revision: 1, launchAt: null };
+        return json({ groups: group ? [defaultGroup, group] : [defaultGroup] });
       }
       if (url.pathname === '/app/v1/admin/invitations') {
         assert.equal(request.postDataJSON().launchGroupId, group.id);
@@ -108,7 +109,7 @@ try {
       if (url.pathname === '/app/v1/admin/launch') return json({ revision: 1, betaEnabled: false, betaLaunchAt: null, betaUnlocked: false, productionEnabled: false, productionLaunchAt: null, productionUnlocked: false, timeZone: 'Europe/Prague', teaser: '', initialLoadingMessage: '', personalizedLoadingEnabled: false, personalizedLoadingPrompt: '' });
       if (url.pathname === '/app/v1/admin/launch/artwork') return json({}, 503);
       if (url.pathname === '/app/v1/admin/launch/audit') return json({ entries: [] });
-      if (url.pathname === '/app/v1/admin/launch/beta-admission') return json({ revision: 1, groupId: group?.id ?? null, groupName: group?.name ?? null, recruitmentOpen: false, fixedUniverse: null });
+      if (url.pathname === '/app/v1/admin/launch/beta-admission') return json({ revision: 1, groupId: 'default-group', groupName: 'Výchozí skupina', recruitmentOpen: false, fixedUniverse: null });
       if (url.pathname === '/app/v1/admin/launch/waiting-room') return json({ members: [] });
       if (url.pathname === '/app/v1/admin/launch/groups/fixture-group/countdown') {
         countdownAttempts++;
@@ -160,6 +161,10 @@ try {
     await page.getByRole('region', { name: 'Připravenost večera', exact: true }).waitFor();
     assert.equal(await page.getByLabel('Časové pásmo', { exact: true }).isVisible(), false, 'global launch settings are secondary to group preparation');
     await page.getByText('Nastavení přístupu můžete dál upravovat.', { exact: false }).waitFor();
+    await page.getByRole('button', { name: 'Nastavit datum a čas otevření', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Potvrdit a spustit odpočet' }).count(), 0,
+      'the default group uses the production schedule');
+    await page.getByLabel('Spravovaná skupina', { exact: true }).selectOption('fixture-group');
     assert.equal(await page.getByRole('button', { name: 'Potvrdit a spustit odpočet' }).isDisabled(), true);
     recent = false;
     await page.getByLabel('Délka odpočtu v minutách').fill('1');
@@ -193,6 +198,19 @@ try {
     await capture(page, `owner-sound-enabled-${width}`);
     await sound.click();
     assert.equal(await sound.getAttribute('aria-pressed'), 'false');
+    const groupSelect = page.getByRole('combobox', { name: /Skupina hráčů/ });
+    await groupSelect.focus();
+    assert.equal(await groupSelect.evaluate(element => {
+      const style = getComputedStyle(element);
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--wns-text)';
+      element.parentElement.append(probe);
+      const expected = getComputedStyle(probe).color;
+      probe.remove();
+      const rect = element.getBoundingClientRect();
+      return style.color === expected && rect.height >= 44 && rect.right <= innerWidth;
+    }), true, 'group select uses the theme and fits the mobile viewport');
+    await capture(page, `owner-group-select-${width}`);
     await Promise.all([
       page.waitForResponse(response => response.url().endsWith('/app/v1/customer/groups/active') && response.request().method() === 'PUT'),
       page.getByRole('combobox', { name: /Skupina hráčů/ }).selectOption('owner-saturday'),

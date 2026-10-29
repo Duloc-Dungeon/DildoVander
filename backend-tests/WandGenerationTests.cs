@@ -201,9 +201,16 @@ internal static class WandGenerationTests
             ["Answer 1: leaves quietly", "Answer 2: asks for a map", "Answer 3: wand sneezes at lies"]);
         var body = OpenAiWandGenerationProvider.BuildRequest(request, "fake-model");
         using var document = JsonDocument.Parse(body);
+        Check(document.RootElement.GetProperty("service_tier").GetString() == "fast", "wand generation explicitly requests Fast");
         var root = document.RootElement;
         Check(!root.GetProperty("store").GetBoolean() && root.GetProperty("text").GetProperty("format").GetProperty("strict").GetBoolean(),
             "strict structured outputs and store=false");
+        var instructions = root.GetProperty("instructions").GetString()!;
+        Check(instructions.Contains("separate illustrator without the character profile", StringComparison.Ordinal)
+            && instructions.Contains("purely visual construction details", StringComparison.Ordinal)
+            && instructions.Contains("Never put the character name, fictional universe or world name", StringComparison.Ordinal)
+            && instructions.Contains("Keep source-specific personalization in the wand name, temperament, lore and spells", StringComparison.Ordinal),
+            "only saved visual construction fields sent to illustration are required to exclude character and universe names");
         Check(!body.Contains("private-account") && !body.Contains("private-operation") && !body.Contains(profile.ProfileId),
             "provider receives fictional context without authorization or ownership ids");
         Check(body.Contains(laterFact) && body.Contains("leaves quietly") && body.Contains("asks for a map")
@@ -221,6 +228,8 @@ internal static class WandGenerationTests
             new MobileWandWorkshopMessage("message-3", 2, "user", "The brass compass points toward the bridge.", "voice", 3)
         };
         var dialogueRequest = OpenAiMobileWandQuestionProvider.BuildReplyRequest(completeProfile with { Enrichment = completeProfile.Enrichment! with { NeedsClarification = false } }, messages, "fake-model");
+        using var dialogueTier = JsonDocument.Parse(dialogueRequest);
+        Check(dialogueTier.RootElement.GetProperty("service_tier").GetString() == "fast", "workshop replies explicitly request Fast");
         Check(dialogueRequest.Contains(laterFact) && dialogueRequest.Contains("I ask the stars")
             && dialogueRequest.Contains("brass compass") && dialogueRequest.Contains("uncertain canon")
             && dialogueRequest.Contains("readyToFinish")

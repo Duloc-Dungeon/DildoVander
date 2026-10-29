@@ -19,7 +19,25 @@ describe('workshop presentation boundaries', () => {
     const view = mount(TrunkStage, { props: { stage: 'revealed', artworkStatus: 'running', wandName: 'Uložená hůlka' } });
     expect(view.find('.trunk-stage__trunk').exists()).toBe(false);
     expect(view.find('.trunk-stage__wand').exists()).toBe(false);
+    expect(view.find('.wand-reveal-field').exists()).toBe(false);
     expect(view.text()).toContain('Hůlka je uložená. Její ilustrace se připravuje.');
+    view.unmount();
+  });
+  it('waits for the owned illustration and removes its field on artwork replacement or failure', async () => {
+    const view = mount(TrunkStage, {
+      props: { stage: 'revealed', artworkStatus: 'ready', wandArtworkUrl: '/first.png' },
+      global: { stubs: { WandRevealField: true } },
+    });
+    expect(view.findComponent({ name: 'WandRevealField' }).exists()).toBe(false);
+    await view.get('.trunk-stage__wand').trigger('load');
+    expect(view.findComponent({ name: 'WandRevealField' }).exists()).toBe(true);
+    await view.setProps({ wandArtworkUrl: '/second.png' });
+    expect(view.findComponent({ name: 'WandRevealField' }).exists()).toBe(false);
+    await view.get('.trunk-stage__wand').trigger('load');
+    expect(view.findComponent({ name: 'WandRevealField' }).exists()).toBe(true);
+    await view.get('.trunk-stage__wand').trigger('error');
+    expect(view.findComponent({ name: 'WandRevealField' }).exists()).toBe(false);
+    expect(view.text()).toContain('Tvoje hůlka zůstává uložená.');
     view.unmount();
   });
 });

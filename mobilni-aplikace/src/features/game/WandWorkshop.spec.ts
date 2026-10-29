@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
-const api = vi.hoisted(() => ({ request: vi.fn(), transport: vi.fn(), connect: vi.fn(), dispose: vi.fn(), interrupt: vi.fn(), play: vi.fn(), observer: null as any }));
+const api = vi.hoisted(() => ({ request: vi.fn(), transport: vi.fn(), connect: vi.fn(), dispose: vi.fn(), interrupt: vi.fn(), observer: null as any }));
 vi.mock('../identity/session', async () => { const { ref } = await import('vue'); return { account: ref({ id: 'alice', openAiConsent: true }), accountOrigin: ref('https://example.test'), accountRequest: api.request, accountTransport: api.transport }; });
 vi.mock('../persona-lab/voice', () => ({ LabVoice: class { constructor(observer: unknown) { api.observer = observer; } connect = api.connect; dispose = api.dispose; interrupt = api.interrupt; setMuted = vi.fn(); end() { api.observer.phase('ended'); } } }));
-vi.mock('./workshopVoice', () => ({ WorkshopVoice: class { constructor(private observer: { phase(value: string): void }) {} unlock = vi.fn(); async play() { api.play(); this.observer.phase('speaking'); } stop() { this.observer.phase('off'); } } }));
+vi.mock('../identity/PushNotifications.vue', () => ({ default: { name: 'PushNotifications', props: ['context'], template: '<div />' } }));
 import WandWorkshop from './WandWorkshop.vue';
 import { account } from '../identity/session';
 const base = '/app/v1/customer/wand/workshop'; const id = 'b'.repeat(32);
@@ -21,6 +21,7 @@ beforeEach(() => {
   api.request.mockImplementation(async (path: string, method = 'GET', body?: any) => {
     if (path === base) return { eligible: !reason, reason, tier: 0, profile: { profileId: 'profile', revision: profileRevision, name: 'Sever', world: 'Přístav', status: reason ? 'running' : 'ready' }, session: structuredClone(session) };
     if (path === `${base}/sessions`) { session ??= { ...saved(), id: body.operationId }; return { session: structuredClone(session) }; }
+    if (path.endsWith('/moments')) return { sourceId: 'c'.repeat(64) };
     if (path.endsWith('/ticket')) return { url: 'wss://example.test/live', path: '/live', expiresAt: '' };
     if (path.endsWith('/messages')) { session.messages.push({ messageId: body.messageId, revision: 1, role: 'user', text: body.text }); session.messages.push({ messageId: `reply${session.messages.length}`, revision: 1, role: 'assistant', text: 'Co má hůlka zachránit?' }); }
     if (path.endsWith('/finish')) session.status = 'generating';
@@ -30,6 +31,66 @@ beforeEach(() => {
 });
 afterEach(() => { view?.unmount(); view = undefined; vi.useRealTimers(); });
 describe('customer Live workshop', () => {
+  it('saves only the selected completed assistant reply as a private chronicle moment', async () => {
+    session = { ...completed(), messages: [{ messageId: 'reply-a', revision: 3, role: 'assistant', text: 'Tahle věta zůstane uložená.', sourceMode: 'text', createdAt: 1790000000 }] };
+    await render();
+    await click('Uložit vzpomínku');
+    expect(api.request).toHaveBeenCalledWith(`${base}/sessions/${id}/moments`, 'POST', { messageId: 'reply-a', expectedRevision: 3 }, undefined,
+      'Uložit vybranou odpověď do osobní kroniky? Uloží se jen tato replika, celý rozhovor zůstane soukromý.');
+    expect(view!.text()).toContain('Otevřít v osobní kronice');
+    expect(view!.text()).toContain('tato vzpomínka nepůjde sdílet');
+  });
+
+  it('explicitly retries failed character preparation before allowing a workshop', async () => {
+    reason = 'wand_character_preparation_failed';
+    const original = api.request.getMockImplementation()!;
+    api.request.mockImplementation(async (path: string, method = 'GET', body?: any) => {
+      if (path === '/app/v1/prelaunch/character/retry') { reason = null; return {}; }
+      return original(path, method, body);
+    });
+    await render(true);
+    expect(api.request.mock.calls.some(call => call[1] === 'POST')).toBe(false);
+    await click('Zopakovat přípravu postavy');
+    expect(api.request).toHaveBeenCalledWith('/app/v1/prelaunch/character/retry', 'POST',
+      { expectedProfileId: 'profile', expectedRevision: 1 }, expect.any(AbortSignal));
+    expect(view!.text()).toContain('Raději psát');
+    expect(api.request.mock.calls.some(call => call[0] === `${base}/sessions`)).toBe(false);
+  });
+
+  it.each([false, true])('preserves an uncertain message and safely retries edited=%s content', async edited => {
+    session = saved();
+    session.messages.push({ messageId: 'welcome', revision: 1, role: 'assistant', text: 'Co má hůlka zachránit?' });
+    const original = api.request.getMockImplementation()!;
+    const accepted = new Set<string>();
+    const attempts: { messageId: string; text: string }[] = [];
+    api.request.mockImplementation(async (path: string, method = 'GET', body?: any) => {
+      if (!path.endsWith('/messages') || method !== 'POST') return original(path, method, body);
+      attempts.push({ ...body });
+      if (accepted.has(body.messageId)) return { session: structuredClone(session) };
+      const response = await original(path, method, body);
+      accepted.add(body.messageId);
+      if (attempts.length === 1) throw new Error('Response lost after persistence');
+      return response;
+    });
+    await render();
+    await click('Raději psát');
+    await view!.get('#trunk-answer').setValue('Najdi cestu v mlze.');
+    await view!.get('form').trigger('submit');
+    await flushPromises();
+    expect(view!.text()).toContain('Stav byl ověřen.');
+    expect((view!.get('#trunk-answer').element as HTMLTextAreaElement).value).toBe('Najdi cestu v mlze.');
+
+    const retryText = edited ? 'Doveď mě domů.' : 'Najdi cestu v mlze.';
+    await view!.get('#trunk-answer').setValue(retryText);
+    await view!.get('form').trigger('submit');
+    await flushPromises();
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0].messageId === attempts[1].messageId).toBe(!edited);
+    expect(session.messages.filter((message: any) => message.role === 'user').map((message: any) => message.text))
+      .toEqual(edited ? ['Najdi cestu v mlze.', 'Doveď mě domů.'] : ['Najdi cestu v mlze.']);
+    expect((view!.get('#trunk-answer').element as HTMLTextAreaElement).value).toBe('');
+  });
+
   it('acknowledges completion observed in this workshop and keeps a restored result quiet', async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
     session = { ...saved(), status: 'generating' };
@@ -97,6 +158,27 @@ describe('customer Live workshop', () => {
     api.observer.transcript('assistant', 'Nedokončená věta'); await flushPromises();
     expect(view!.get('.trunk-workshop__question').text()).toBe('Nedokončená věta');
     expect(announcement.text()).toBe('Co má hůlka zachránit?');
+  });
+  it('keeps the same speech control and caption region across listening and speaking', async () => {
+    session = saved(); await render(); await click('Pokračovat hlasem');
+    const stop = view!.findAll('button').find(button => button.text() === 'Stop řeč')!;
+    const caption = view!.get('[aria-label="Průběžný přepis"]');
+    expect(stop.attributes('disabled')).toBeDefined();
+    api.observer.phase('speaking');
+    api.observer.transcript('assistant', 'Dlouhá věta. '.repeat(100)); await flushPromises();
+    expect(view!.get('[aria-label="Průběžný přepis"]').element).toBe(caption.element);
+    expect(stop.attributes('disabled')).toBeUndefined();
+    expect(view!.get('.trunk-workshop__media-controls').text()).toContain('Kufr mluví');
+    api.observer.phase('listening'); await flushPromises();
+    expect(view!.findAll('button').find(button => button.text() === 'Stop řeč')!.element).toBe(stop.element);
+    expect(stop.attributes('disabled')).toBeDefined();
+  });
+  it('starts a fresh caption after a completed turn from the same speaker', async () => {
+    session = saved(); await render(); await click('Pokračovat hlasem');
+    api.observer.transcript('assistant', 'První věta.');
+    api.observer.turn({ role: 'assistant', text: 'První věta.' });
+    api.observer.transcript('assistant', 'Další věta.'); await flushPromises();
+    expect(view!.get('.trunk-workshop__question').text()).toBe('Další věta.');
   });
   it('prioritizes confirmed manufacture over speech and keeps failed work recoverable', async () => {
     session = saved(); await render(); await click('Pokračovat hlasem');
@@ -245,14 +327,13 @@ describe('customer Live workshop', () => {
     expect(session.id).not.toBe(previousId); expect(session.profileRevision).toBe(2);
     expect(api.connect).toHaveBeenCalledOnce();
   });
-  it('cancels a pending final verdict and cannot replay its late audio response', async () => {
+  it('keeps the saved verdict readable without offering recorded playback or requesting audio', async () => {
     session = completed();
-    let deliver!: (response: Response) => void;
-    api.transport.mockImplementation(() => new Promise<Response>(resolve => { deliver = resolve; }));
-    await render(); await click('Přehrát verdikt kufru');
+    await render();
     expect(view!.emitted('saved')).toEqual([[]]);
-    expect(view!.findAll('button').find(button => button.text() === 'Přehrát verdikt kufru')!.attributes('disabled')).toBeDefined();
-    await click('Stop řeč'); deliver(new Response(new Blob(['late audio'], { type: 'audio/wav' }))); await flushPromises();
-    expect(api.play).not.toHaveBeenCalled(); expect(view!.text()).toContain('Hůlka je uložená');
+    expect(view!.text()).toContain(session.verdict);
+    expect(view!.text()).not.toContain('Přehrát verdikt kufru');
+    expect(view!.find('.trunk-workshop__media-controls').exists()).toBe(false);
+    expect(api.transport).not.toHaveBeenCalled();
   });
 });
