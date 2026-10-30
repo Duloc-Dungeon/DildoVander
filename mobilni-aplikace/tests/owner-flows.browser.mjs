@@ -176,7 +176,50 @@ try {
     const openingDate = page.getByLabel('Kdy se spustí aplikace pro tuto skupinu', { exact: true });
     const saveConfiguration = page.getByRole('button', { name: 'Uložit skupinu, spuštění a nábor', exact: true });
     assert.equal(await openingDate.inputValue(), '', 'a new group needs an explicit opening term');
-    await page.getByRole('checkbox', { name: 'Přijímat nové účastníky', exact: true }).check();
+    const recruitment = page.getByRole('checkbox', { name: 'Přijímat nové účastníky', exact: true });
+    // Use the full associated touch target rather than the native input's small center.
+    const recruitmentLabel = page.locator('label').filter({ has: recruitment });
+    if (width <= 720) {
+      if (width === 390) await page.evaluate(() => document.documentElement.style.setProperty('--safe-area-inset-bottom', '34px'));
+      await recruitmentLabel.evaluate(label => label.scrollIntoView({ block: 'end', behavior: 'instant' }));
+      const clearance = await recruitmentLabel.evaluate(label => ({
+        label: label.getBoundingClientRect().toJSON(),
+        navigation: document.querySelector('.primary-navigation').getBoundingClientRect().toJSON(),
+        safeAreaBottom: getComputedStyle(document.documentElement).getPropertyValue('--safe-area-inset-bottom'),
+      }));
+      assert(clearance.label.bottom <= clearance.navigation.top,
+        `bottom-aligned operator labels remain above fixed navigation: ${JSON.stringify({ width, ...clearance })}`);
+    }
+    try { await recruitmentLabel.click(); }
+    catch (error) {
+      console.error(JSON.stringify({ width, recruitmentTarget: await recruitmentLabel.evaluate(label => {
+        const input = label.querySelector('input');
+        const rect = label.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return { label: rect.toJSON(), input: input.getBoundingClientRect().toJSON(),
+          inputPosition: getComputedStyle(input).position, inputClipPath: getComputedStyle(input).clipPath,
+          hit: hit ? { tag: hit.tagName, class: hit.className } : null, scrollY };
+      }) }));
+      await page.screenshot({ path: path.join(output, `owner-recruitment-failure-${width}.png`), fullPage: true });
+      throw error;
+    }
+    assert.equal(await recruitment.isChecked(), true, 'the visible label enables recruitment');
+    const recruitmentHit = await recruitment.evaluate(input => {
+      const label = input.closest('label');
+      const rect = input.getBoundingClientRect();
+      const labelRect = label.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return { input: rect.toJSON(), label: labelRect.toJSON(),
+        inputWithinLabel: rect.left >= labelRect.left && rect.right <= labelRect.right && rect.top >= labelRect.top && rect.bottom <= labelRect.bottom,
+        centerWithinLabel: hit === input || label.contains(hit), hit: hit ? { tag: hit.tagName, class: hit.className } : null };
+    });
+    assert.equal(recruitmentHit.inputWithinLabel, true, `native checkbox stays inside its visible label: ${JSON.stringify({ width, ...recruitmentHit })}`);
+    assert.equal(recruitmentHit.centerWithinLabel, true, `native checkbox center remains uncovered: ${JSON.stringify({ width, ...recruitmentHit })}`);
+    await recruitment.focus();
+    await recruitment.press('Space');
+    assert.equal(await recruitment.isChecked(), false, 'recruitment remains keyboard-operable');
+    await recruitment.press('Space');
+    assert.equal(await recruitment.isChecked(), true);
     await saveConfiguration.click();
     assert.equal(configurationAttempts, 0, 'a missing required opening term must not submit a mutation');
     scheduledLaunchAt = await page.evaluate(() => Math.ceil(Date.now() / 60000) * 60000 + 60000);
