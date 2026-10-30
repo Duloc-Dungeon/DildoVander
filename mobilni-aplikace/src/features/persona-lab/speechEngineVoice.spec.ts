@@ -73,6 +73,21 @@ describe('Speech Engine control and WebRTC ownership', () => {
     expect(rtc.endSession).toHaveBeenCalledOnce();
   });
 
+  it('ignores queued SDK interruptions after completion while keeping explicit Stop available', async () => {
+    await connect();
+    event({ type: 'ready', playbackMode: 'stream' });
+    event({ type: 'state', session: { id: 'state', status: 'complete' } });
+    rtc.setVolume.mockClear();
+    callbacks.onInterruption?.({ event_id: 1 });
+    event({ type: 'interrupted' });
+    expect(rtc.setVolume).not.toHaveBeenCalledWith({ volume: 0 });
+    expect(observer.interrupted).not.toHaveBeenCalled();
+
+    voice.interrupt();
+    expect(rtc.setVolume).toHaveBeenLastCalledWith({ volume: 0 });
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'cancel' }));
+  });
+
   it('bounds the drain if the SDK never reports completion', async () => {
     await connect();
     event({ type: 'ready', playbackMode: 'stream' });

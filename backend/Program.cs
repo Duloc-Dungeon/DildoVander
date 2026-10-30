@@ -233,6 +233,7 @@ app.MapGameLive();
 app.MapSealedCase();
 app.MapMobileGameBoss();
 app.MapMobileGameProgress();
+app.MapMobileGameArcade();
 app.MapMobileGameTeams();
 app.MapCustomerCharacters();
 app.MapActorVoiceSettings();

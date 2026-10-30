@@ -17,6 +17,7 @@ export const router = createRouter({
     { path: '/account-deletion', name: 'account-deletion', component: () => import('../features/identity/AccountDeletionStatusView.vue'), meta: { title: 'Stav smazání účtu', private: true } },
     { path: '/access-revoked', name: 'access-revoked', component: () => import('../features/identity/RevokedAccessView.vue'), meta: { title: 'Přístup odebrán', private: true, requiresAccount: true } },
     { path: '/me', redirect: '/me/character' },
+    { path: '/play/kouzlo-bez-dozoru', name: 'spark-game', component: () => import('../features/arcade/SparkGameView.vue'), meta: { title: 'Kouzlo bez dozoru', private: true, requiresAccount: true } },
     { path: '/play/pod-peceti', name: 'sealed-case-lobby', component: () => import('../features/sealed-case/SealedCaseView.vue'), meta: { title: 'Pod pečetí', private: true, requiresAccount: true } },
     { path: '/play/pod-peceti/:id', name: 'sealed-case', component: () => import('../features/sealed-case/SealedCaseView.vue'), meta: { title: 'Pod pečetí', private: true, requiresAccount: true } },
     { path: '/play/wand', name: 'wand-workshop', component: () => import('../features/game/WandWorkshopView.vue'), meta: { title: 'Kufrova dílna', private: true, requiresAccount: true } },

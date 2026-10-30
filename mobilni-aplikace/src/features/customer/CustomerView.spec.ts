@@ -35,18 +35,40 @@ const router = async (path = '/me/character') => {
 afterEach(() => { vi.clearAllMocks(); api.disconnect.mockResolvedValue(undefined); api.supported = true; api.setAccount({ id: 'customer-1', displayName: 'Guest', roles: ['Customer'], openAiConsent: true }); interfaceLanguagePreference.setLanguage('cs'); vi.useRealTimers(); });
 
 describe('customer character and digital workshop', () => {
-  it('does not load the character on account settings, but loads it when moving to the character pane', async () => {
-    api.request.mockImplementation(async (path: string) => path.endsWith('/character') ? { profile } : { items: [] });
+  it('loads the account joke without the launch-gated profile and loads the full profile on the character pane', async () => {
+    api.request.mockImplementation(async (path: string) => path === '/app/v1/prelaunch/character'
+      ? { character: { profileId: profile.profileId, revision: profile.revision, name: profile.userInput.name } }
+      : path === '/app/v1/customer/character' ? { profile } : { items: [] });
     const navigation = await router('/me/account');
     const wrapper = mount(CustomerView, { global: { plugins: [navigation] } });
     try {
       await flushPromises();
-      expect(api.request.mock.calls.some(([path]) => path === '/app/v1/customer/character')).toBe(false);
+      expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/customer/character')).toHaveLength(0);
+      expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/prelaunch/character')).toHaveLength(1);
+      expect(wrapper.get('[data-test="character-portrait"]').attributes('text-only')).toBeDefined();
       expect(wrapper.text()).not.toContain('Stav rozhovoru se nepodařilo načíst');
       await navigation.push('/me/character');
       await flushPromises();
-      expect(api.request.mock.calls.some(([path]) => path === '/app/v1/customer/character')).toBe(true);
+      expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/customer/character')).toHaveLength(1);
       expect(wrapper.text()).toContain(profile.userInput.name);
+    } finally { wrapper.unmount(); }
+  });
+  it('discards a pending account caption when the signed-in account changes', async () => {
+    const oldCharacter = deferred<{ character: { profileId: string; revision: number; name: string } }>();
+    let prelaunchReads = 0;
+    api.request.mockImplementation(async (path: string) => path === '/app/v1/prelaunch/character'
+      ? ++prelaunchReads === 1 ? oldCharacter.promise : { character: null }
+      : { items: [] });
+    const wrapper = mount(CustomerView, { global: { plugins: [await router('/me/account')] } });
+    try {
+      await flushPromises();
+      api.setAccount({ id: 'customer-2', displayName: 'New guest', roles: ['Customer'], openAiConsent: true });
+      await flushPromises();
+      oldCharacter.resolve({ character: { profileId: 'previous-private-character', revision: 1, name: 'Previous guest' } });
+      await flushPromises();
+      expect(prelaunchReads).toBe(2);
+      expect(wrapper.find('[data-test="character-portrait"]').exists()).toBe(false);
+      expect(api.request.mock.calls.some(([path]) => path === '/app/v1/customer/character')).toBe(false);
     } finally { wrapper.unmount(); }
   });
   it('shows only the current server-assigned wand on the profile and clears it when the account changes', async () => {

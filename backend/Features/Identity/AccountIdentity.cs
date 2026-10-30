@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Routing;
 using System.Threading.RateLimiting;
 using Kufr.Backend.Features.Access;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -220,7 +221,11 @@ internal static class AccountIdentity
                 context.Response.Headers["X-Content-Type-Options"] = "nosniff";
                 if (accountApi && context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } bodySize)
                 {
-                    bodySize.MaxRequestBodySize = HttpMethods.IsPut(context.Request.Method)
+                    var isArcadeFinish = HttpMethods.IsPost(context.Request.Method)
+                        && (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText
+                            == "/app/v1/game/arcade/runs/{runId}/finish";
+                    bodySize.MaxRequestBodySize = isArcadeFinish ? 512 * 1024
+                        : HttpMethods.IsPut(context.Request.Method)
                         && context.GetEndpoint()?.Metadata.GetMetadata<Kufr.Backend.Features.Customers.CharacterAdminEndpoints.PortraitUploadMetadata>() is not null
                         ? Kufr.Backend.Features.Customers.CharacterAdminEndpoints.MaximumUploadBytes + 1L
                         : HttpMethods.IsPut(context.Request.Method) && context.Request.Path == "/app/v1/admin/workshop-settings"

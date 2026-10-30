@@ -21,7 +21,6 @@ const loading = ref(true); const busy = ref(false); const error = ref(''); const
 const syncError = ref('');
 const mode = ref<'voice' | 'text'>('voice'); const livePhase = ref<VoicePhase>('idle');
 const muted = ref(false); const outputLevel = ref(0);
-const volume = ref(100);
 const partial = ref(''); let partialRole = ''; let partialComplete = false;
 const streamedTranscript = ref(emptyWorkshopTranscript());
 const userPartial = ref('');
@@ -48,7 +47,11 @@ const live = new LabVoice({
     if (value.role === partialRole) { partial.value = value.text; partialComplete = true; }
   },
   session() {},
-  workshopSession(value) { applySession(normalizeSession(value as Parameters<typeof normalizeSession>[0])); },
+  workshopSession(value) {
+    const current = normalizeSession(value as Parameters<typeof normalizeSession>[0]);
+    if (current.status === 'complete') { muted.value = true; live.setMuted(true); }
+    applySession(current);
+  },
   workshopTranscript(value) { streamedTranscript.value = updateWorkshopTranscript(streamedTranscript.value, value); },
   userPartial(value) { userPartial.value = value; },
   outputLevel(value) { outputLevel.value = value; },
@@ -398,10 +401,6 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
           </div>
         </template>
         <div v-if="active" class="trunk-workshop__media-controls">
-          <label class="trunk-workshop__volume" for="workshop-volume">
-            <span>Hlasitost {{ volume }} %</span>
-            <input id="workshop-volume" v-model.number="volume" type="range" min="0" max="100" step="5" @input="live.setOutputVolume(volume / 100)" />
-          </label>
           <AwButton :disabled="!speaking" @click="stopSpeech">Stop řeč</AwButton>
           <AwButton v-if="!wand" @click="muted = !muted; live.setMuted(muted)">{{ muted ? 'Zapnout mikrofon' : 'Ztlumit mikrofon' }}</AwButton>
           <button type="button" class="trunk-workshop__text-action" @click="stopMedia">Ukončit rozhovor</button>
@@ -502,8 +501,6 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
   .trunk-workshop[data-voice-active='true'] .trunk-workshop__media-controls { order: -1; }
 }
 .trunk-workshop__media-controls .trunk-workshop__status { grid-column: 1 / -1; min-block-size: 4.5em; }
-.trunk-workshop__volume { display: grid; grid-column: 1 / -1; gap: .25rem; }
-.trunk-workshop__volume input { width: 100%; min-height: 2.75rem; accent-color: var(--wns-mint); }
 .trunk-workshop__transcript { scrollbar-color: var(--wns-line) var(--wns-bg); }
 .trunk-workshop__transcript summary, .trunk-workshop__properties summary { display: list-item; align-content: center; }
 .trunk-workshop__transcript ol { list-style: none; padding: 0; }

@@ -8,12 +8,13 @@ export function characterWelcomeText(value: unknown): string {
   return /^(null|undefined)$/i.test(text) ? '' : text;
 }
 
-export function characterIntroductionText(artwork: PrelaunchCharacterResponse['artwork'], ready: boolean, roll = 0): string {
+export function characterIntroductionText(artwork: Partial<NonNullable<PrelaunchCharacterResponse['artwork']>> | null | undefined, ready: boolean, roll = 0): string {
   const variants = artwork?.welcome?.jokes;
   const validVariants = Array.isArray(variants) && variants.length >= 3 && variants.length <= 6
     && variants[0] === artwork?.welcome?.joke && new Set(variants).size === variants.length
     && variants.every(value => typeof value === 'string' && value.length <= 120 && characterWelcomeText(value));
   const welcome = characterWelcomeText(validVariants ? pickVariant(variants, roll) : artwork?.welcome?.joke);
   const loading = characterWelcomeText(artwork?.loadingMessage);
-  return ready ? welcome || loading || characterWelcomeText(artwork?.finalMessage) : loading || welcome;
+  const finalMessage = characterWelcomeText(artwork?.finalMessage);
+  return ready ? welcome || finalMessage || loading : loading || welcome;
 }

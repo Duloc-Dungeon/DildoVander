@@ -106,14 +106,14 @@ describe('mobile game interaction', () => {
       ? { pending: [], tacticalMatches }
       : { player, opponents: [], incoming: [], active: [], history: [] }));
     const view = await render('/play');
-    expect(view.find('.game-mode-links a').exists()).toBe(false);
+    expect(view.findAll('.game-mode-links a').map(link => link.attributes('href'))).toEqual(['/play/kouzlo-bez-dozoru']);
     player.tacticalUnlocked = true;
     player.yoloUnlocked = true;
     tacticalMatches = 3;
     window.dispatchEvent(new Event('online'));
     await flushPromises();
     const destinations = view.findAll('.game-mode-links a').map(link => link.attributes('href'));
-    expect(destinations).toEqual(['/play/challenge?mode=tactical', '/play/teams', '/play/challenge?mode=yolo']);
+    expect(destinations).toEqual(['/play/kouzlo-bez-dozoru', '/play/challenge?mode=tactical', '/play/teams', '/play/challenge?mode=yolo']);
     expect(view.get('.game-start a').attributes('href')).toBe('/play/challenge');
   });
 

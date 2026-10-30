@@ -33,6 +33,7 @@
     "test:default-group-launch:browser": "node tests/default-group-launch.browser.mjs",
     "preview:game": "node tests/game.preview.mjs",
     "test:game:browser": "node tests/game.browser.mjs",
+    "test:spark:browser": "node tests/spark.browser.mjs",
     "test:game-live:browser": "node tests/game-live.browser.mjs",
     "preview:sealed-case": "node tests/sealed-case.preview.mjs",
     "preview:chronicle": "node tests/chronicle.preview.mjs",
@@ -69,6 +70,7 @@
     "@microsoft/signalr": "10.0.11",
     "motion-v": "2.9.0",
     "pinia": "4.1.0",
+    "pixi.js": "8.22.0",
     "vue": "3.5.44",
     "vue-router": "5.4.0"
   },

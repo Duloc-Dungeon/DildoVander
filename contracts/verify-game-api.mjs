@@ -46,6 +46,31 @@ assert.ok(teamArtwork.parameters.some(parameter => parameter.in === 'query' && p
 assert.ok(teamArtwork.responses['200'].content['image/png']);
 assert.equal(teamArtwork.responses['200'].headers['Cache-Control'].schema.const, 'no-store');
 assert.equal(teamArtwork.responses['200'].headers['X-Content-Type-Options'].schema.const, 'nosniff');
+const arcadeRanking = document.paths['/app/v1/game/arcade'].get;
+const arcadeRankingSchema = ajv.compile(arcadeRanking.responses['200'].content['application/json'].schema);
+assert.ok(arcadeRankingSchema({ rulesVersion: 'spark-v1', playerId: 'alice', groupId: 'group-a', best: 3,
+  ranking: [{ id: 'alice', displayName: 'Alice', score: 3, rank: 1 }] }));
+assert.equal(arcadeRankingSchema({ rulesVersion: 'spark-v2', playerId: 'alice', groupId: 'group-a', best: 3, ranking: [] }), false);
+const arcadeIssue = document.paths['/app/v1/game/arcade/runs'].post;
+const arcadeFinish = document.paths['/app/v1/game/arcade/runs/{runId}/finish'].post;
+for (const operation of [arcadeIssue, arcadeFinish]) {
+  assert.ok(operation.parameters.some(parameter => parameter.name === 'X-DV-CSRF' && parameter.in === 'header' && parameter.required));
+}
+const arcadeIssueRequestSchema = ajv.compile(arcadeIssue.requestBody.content['application/json'].schema);
+assert.ok(arcadeIssueRequestSchema({ operationId: uuid }));
+assert.equal(arcadeIssueRequestSchema({ operationId: 'short' }), false);
+const arcadeTicketSchema = ajv.compile(arcadeIssue.responses['200'].content['application/json'].schema);
+assert.ok(arcadeTicketSchema({ runId: 'a'.repeat(32), seed: 4294967295, rulesVersion: 'spark-v1', expiresAt: 7200000 }));
+assert.equal(arcadeTicketSchema({ runId: 'a'.repeat(32), seed: 4294967296, rulesVersion: 'spark-v1', expiresAt: 7200000 }), false);
+const arcadeReplaySchema = ajv.compile(arcadeFinish.requestBody.content['application/json'].schema);
+assert.ok(arcadeReplaySchema({ endTick: 108000, taps: [0, 5, 10] }));
+assert.equal(arcadeReplaySchema({ endTick: 108001, taps: [] }), false);
+assert.equal(arcadeReplaySchema({ endTick: 10, taps: Array(24001).fill(0) }), false);
+const arcadeReceiptSchema = ajv.compile(arcadeFinish.responses['200'].content['application/json'].schema);
+assert.ok(arcadeReceiptSchema({ score: 3, best: 4, newBest: true }));
+assert.equal(arcadeReceiptSchema({ score: 3, best: 4, newBest: 'yes' }), false);
+assert.equal(arcadeFinish['x-max-request-bytes'], 512 * 1024);
+assert.ok(arcadeFinish.responses['413']);
 const boss = ajv.getSchema('urn:game:GameBossCommand');
 assert.ok(boss({ operationId: uuid, expectedRevision: 1, choice: 'shield', sparkBid: 1 }));
 assert.equal(boss({ operationId: 'not-a-guid', expectedRevision: 1 }), false);

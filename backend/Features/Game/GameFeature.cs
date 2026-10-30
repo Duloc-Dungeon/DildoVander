@@ -190,6 +190,7 @@ internal sealed partial class GameStore
             DeleteProgressAccount(connection, transaction, accountId);
             DeleteBossAccount(connection, transaction, accountId);
             DeleteTeamAccount(connection, transaction, accountId);
+            DeleteArcadeAccount(connection, transaction, accountId);
             transaction.Commit();
         }
     }

@@ -18,6 +18,8 @@ internal static class ElevenLabsWorkshopTests
         await SpeechTransportAsync();
         await FullDuplexStreamingAsync();
         await VerdictSnapshotAsync();
+        await LateRecognitionAfterCompletionAsync();
+        await CompletionWhileRecognitionAwaitsAuthorityAsync();
         await ClauseContextAsync();
         await DurableDecisionAsync(revoke: false, changeEvidence: false);
         await DurableDecisionAsync(revoke: true, changeEvidence: false);
@@ -293,6 +295,95 @@ internal static class ElevenLabsWorkshopTests
         await run;
     }
 
+    private static async Task LateRecognitionAfterCompletionAsync()
+    {
+        using var fixture = new Fixture();
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = fixture.Runtime.RunAsync(fixture.Admission, fixture.Socket, _ => Task.CompletedTask, lifetime.Token);
+        await fixture.Speech.Started.Task.WaitAsync(lifetime.Token);
+        fixture.Socket.Control("cancel");
+        await fixture.Speech.Canceled.Task.WaitAsync(lifetime.Token);
+        var profile = fixture.Admission.Profile;
+        fixture.Wands.AppendWorkshopMessage("owner", "operation", Guid.NewGuid().ToString("N"), "user", "Protect the bridge.", "voice");
+        fixture.Wands.FinishWorkshopConversation("owner", "operation", profile.ProfileId, profile.Revision);
+        fixture.Wands.Begin("owner", "operation", profile, 1, true);
+        var job = fixture.Wands.Claim("owner", "operation", false) ?? throw new InvalidOperationException("Missing synthetic job");
+        fixture.Wands.Complete(job, MobileWandTests.Candidates().Take(1).ToArray());
+        fixture.Wands.Select("owner", "operation", profile.ProfileId, profile.Revision, 1);
+        await WaitAsync(() =>
+        {
+            var snapshots = Snapshots(fixture.Socket, "assistant");
+            return fixture.Speech.Calls == 2 && snapshots.Length > 0
+                && snapshots[^1].GetProperty("final").GetBoolean();
+        });
+        var interruptedCalls = fixture.Speech.CanceledCalls;
+        fixture.Speech.Recognition.Events.Writer.TryWrite(new("", false, SpeechStarted: true));
+        fixture.Speech.Recognition.Events.Writer.TryWrite(new("Late partial.", false));
+        fixture.Speech.Recognition.Events.Writer.TryWrite(new("Late committed words.", true, "late-event"));
+        await Task.Delay(100, lifetime.Token);
+        Check(fixture.Speech.Calls == 2 && fixture.Speech.CanceledCalls == interruptedCalls
+            && fixture.Wands.ReadWorkshopMessages("owner", "operation").Count(message => message.Role == "user") == 1
+            && !Snapshots(fixture.Socket, "user").Any(snapshot => snapshot.GetProperty("text").GetString()!.StartsWith("Late", StringComparison.Ordinal)),
+            "late start, partial and committed recognition after completion neither cancel verdict audio nor enter history");
+        lifetime.Cancel();
+        await run;
+
+        async Task WaitAsync(Func<bool> condition)
+        {
+            while (!condition()) { await Task.Delay(10, lifetime.Token); }
+        }
+    }
+
+    private static async Task CompletionWhileRecognitionAwaitsAuthorityAsync()
+    {
+        using var fixture = new Fixture();
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var releaseAuthority = new ManualResetEventSlim();
+        var blockAuthority = 0;
+        var blockedAuthorities = 0;
+        var authorityBlocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task RequireAuthority(CancellationToken token)
+        {
+            if (Volatile.Read(ref blockAuthority) == 0) { return; }
+            Interlocked.Increment(ref blockedAuthorities);
+            authorityBlocked.TrySetResult();
+            await Task.Run(() => releaseAuthority.Wait(token), token);
+        }
+        var run = fixture.Runtime.RunAsync(fixture.Admission, fixture.Socket, RequireAuthority, lifetime.Token);
+        await fixture.Speech.Started.Task.WaitAsync(lifetime.Token);
+        fixture.Socket.Control("cancel");
+        await fixture.Speech.Canceled.Task.WaitAsync(lifetime.Token);
+        var profile = fixture.Admission.Profile;
+        fixture.Wands.AppendWorkshopMessage("owner", "operation", Guid.NewGuid().ToString("N"), "user", "Protect the bridge.", "voice");
+        Volatile.Write(ref blockAuthority, 1);
+        var interruptedBefore = fixture.Socket.Events.Count(item => item.Contains("interrupted", StringComparison.Ordinal));
+        fixture.Speech.Recognition.Events.Writer.TryWrite(new("Late committed words.", true, "late-authority-event"));
+        await authorityBlocked.Task.WaitAsync(lifetime.Token);
+        await WaitAsync(() => fixture.Socket.Events.Count(item => item.Contains("interrupted", StringComparison.Ordinal)) > interruptedBefore
+            && Volatile.Read(ref blockedAuthorities) >= 2);
+        fixture.Wands.FinishWorkshopConversation("owner", "operation", profile.ProfileId, profile.Revision);
+        fixture.Wands.Begin("owner", "operation", profile, 1, true);
+        var job = fixture.Wands.Claim("owner", "operation", false) ?? throw new InvalidOperationException("Missing synthetic job");
+        fixture.Wands.Complete(job, MobileWandTests.Candidates().Take(1).ToArray());
+        var wand = fixture.Wands.Select("owner", "operation", profile.ProfileId, profile.Revision, 1);
+        releaseAuthority.Set();
+        await WaitAsync(() => fixture.Speech.Calls == 2 && Snapshots(fixture.Socket, "assistant").Any(snapshot =>
+            snapshot.GetProperty("final").GetBoolean() && snapshot.GetProperty("text").GetString()!.Contains(wand.Name, StringComparison.Ordinal)));
+        var interruptedCalls = fixture.Speech.CanceledCalls;
+        await Task.Delay(100, lifetime.Token);
+        Check(fixture.Wands.ReadWorkshopMessages("owner", "operation").Count(message => message.Role == "user") == 1
+            && !Snapshots(fixture.Socket, "user").Any(snapshot => snapshot.GetProperty("text").GetString()!.StartsWith("Late", StringComparison.Ordinal))
+            && fixture.Speech.CanceledCalls == interruptedCalls,
+            "recognition released from authority after completion cannot append late evidence, replace accepted input, or cancel verdict speech");
+        lifetime.Cancel();
+        await run;
+
+        async Task WaitAsync(Func<bool> condition)
+        {
+            while (!condition()) { await Task.Delay(10, lifetime.Token); }
+        }
+    }
+
     private static JsonElement[] Snapshots(TestSocket socket, string? role = null) => socket.Events.Select(item =>
     {
         using var document = JsonDocument.Parse(item);
@@ -413,6 +504,7 @@ internal static class ElevenLabsWorkshopTests
         internal int Connections;
         internal int Captures;
         internal int Calls;
+        internal int CanceledCalls;
         internal bool Block = true;
         internal ConcurrentQueue<string> Contexts { get; } = new();
         public IWorkshopSpeechProvider Capture() { Captures++; return this; }
@@ -428,7 +520,11 @@ internal static class ElevenLabsWorkshopTests
             await audio([1, 2], token);
             Started.TrySetResult();
             try { if (Block) { await Task.Delay(Timeout.InfiniteTimeSpan, token); } }
-            finally { Canceled.TrySetResult(); }
+            finally
+            {
+                if (token.IsCancellationRequested) Interlocked.Increment(ref CanceledCalls);
+                Canceled.TrySetResult();
+            }
         }
     }
 

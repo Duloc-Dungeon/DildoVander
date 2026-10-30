@@ -375,6 +375,23 @@ describe('bounded audio playback', () => {
     expect(controls('cancel')[0]).toEqual({ type: 'cancel', playedAudioMs: 80 });
     event({ type: 'interrupted' }); expect(observer.phase).toHaveBeenLastCalledWith('listening');
   });
+  it('plays final Live audio that arrives after saved state and an earlier audio pause', async () => {
+    await voice.connect(async () => ({ url: 'wss://lab.example/app/v1/customer/wand/workshop/sessions/test/live?ticket=one', path: '', expiresAt: '', speechEngine: null }), 'test', 'https://lab.example', { purpose: 'workshop' });
+    observer.workshopSession = vi.fn();
+    ready('stream');
+    message(new Int16Array(2400).fill(9).buffer);
+    event({ type: 'state', session: { id: 'test', status: 'complete' } });
+    event({ type: 'audio_pause' });
+    advance(.1);
+    expect(observer.workshopSession).toHaveBeenCalledWith({ id: 'test', status: 'complete' });
+    const earlierAudio = scheduled.reduce((total, sample) => total + sample, 0);
+    message(new Int16Array(2400).fill(12).buffer);
+    event({ type: 'audio_pause' });
+    advance(.1);
+    expect(scheduled.reduce((total, sample) => total + sample, 0)).toBeGreaterThan(earlierAudio);
+    expect(observer.error).not.toHaveBeenCalled();
+    expect(controls('playback_done')).toEqual([]);
+  });
   it('retains the existing Live technical capacity with a fixed ring and fails cleanly above it', () => {
     ready('stream');
     for (let index = 0; index < 9; index++) message(new Int16Array(480000).buffer);

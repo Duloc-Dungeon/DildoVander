@@ -16,6 +16,10 @@ const notices = [
   ['../node_modules/vue/LICENSE', 'vue/LICENSE.txt'],
   ['../node_modules/vue-router/LICENSE', 'vue-router/LICENSE.txt'],
   ['../node_modules/pinia/LICENSE', 'pinia/LICENSE.txt'],
+  ['../node_modules/pixi.js/LICENSE', 'pixi/LICENSE.txt'],
+  ['../third-party-notices/colord-LICENSE.txt', 'pixi/colord-LICENSE.txt'],
+  ...['@xmldom/xmldom', 'earcut', 'eventemitter3', 'gifuct-js', 'ismobilejs', 'parse-svg-path', 'tiny-lru', 'js-binary-schema-parser']
+    .map(name => [`../node_modules/${name}/LICENSE`, `pixi/${name.replace('/', '-')}-LICENSE.txt`]),
   ['../third-party-notices/signalr-LICENSE.txt', 'signalr/LICENSE.txt'],
   ['../../contracts/node_modules/ajv/LICENSE', 'ajv/LICENSE.txt'],
   ['../../contracts/node_modules/jsonc-parser/LICENSE.md', 'jsonc-parser/LICENSE.txt'],

@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
 import PortraitMirror from '../../components/scene/PortraitMirror.vue';
+import { humorVariants } from '../humor/visitHumor';
 
 const api = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('../identity/session', async () => {
@@ -25,8 +26,34 @@ it('hides serialized missing welcome fields in an existing portrait', async () =
   api.request.mockResolvedValue({ ...state(), artwork: { status: 'ready', welcome: { joke: 'null', identity: ' NULL ', teaser: 'undefined' } } });
   const view = render();
   await flushPromises();
-  expect(view.find('.private-character-avatar__joke').exists()).toBe(false);
+  expect(humorVariants.portrait).toContain(view.get('.private-character-avatar__joke').text());
   expect(view.text()).not.toMatch(/null|undefined/i);
+});
+
+it('shows the saved personal loading joke while the portrait is still running', async () => {
+  api.request.mockResolvedValue({ ...state(), artwork: { status: 'running', loadingMessage: 'Tvůj talent pro útěk dorazil první. Ty se ještě hledáš.' } });
+  const view = render();
+  await flushPromises();
+  expect(view.get('.private-character-avatar__joke').text()).toBe('Tvůj talent pro útěk dorazil první. Ty se ještě hledáš.');
+  expect(view.getComponent(PortraitMirror).props('open')).toBe(false);
+});
+
+it('shows the saved final text even with an empty legacy welcome object', async () => {
+  api.request.mockResolvedValue({ ...state(), artwork: { status: 'ready', finalMessage: 'Tolik temné moci. A dovolenou ti stejně musí podepsat císař.', welcome: { joke: '', identity: '', teaser: '' } } });
+  const view = render();
+  await flushPromises();
+  expect(view.get('.private-character-avatar__joke').text()).toContain('dovolenou ti stejně');
+});
+
+it('shows the saved joke on the account without loading or displaying the portrait', async () => {
+  api.request.mockResolvedValue(state());
+  const view = mount(PrivateCharacterAvatar, { props: { profileId: 'profile-a', revision: 1, name: 'Alžběta', textOnly: true } });
+  mounted.push(view);
+  await flushPromises();
+  expect(view.get('.private-character-avatar__joke').text()).toBe('Hotovo pro profile-a.');
+  expect(view.findComponent(PortraitMirror).exists()).toBe(false);
+  expect(view.find('img').exists()).toBe(false);
+  expect(view.text()).not.toContain('podoba se ještě připravuje');
 });
 
 it('reuses the existing private portrait with reads only and keeps it separate from wand artwork', async () => {

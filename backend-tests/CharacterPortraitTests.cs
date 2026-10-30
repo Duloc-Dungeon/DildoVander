@@ -393,6 +393,8 @@ internal static class CharacterPortraitTests
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
             var payload = body.RootElement;
             Check(payload.GetProperty("service_tier").GetString() == "fast", "welcome preparation explicitly requests Fast");
+            Check(payload.GetProperty("max_output_tokens").GetInt32() >= 900,
+                "structured Czech welcome reserves room for loading copy, evidence IDs and the JSON envelope");
             var instructions = payload.GetProperty("instructions").GetString()!;
             Check(instructions.Contains("Piš původní české věty, ne překlad anglického vtipu.", StringComparison.Ordinal)
                 && instructions.Contains("Na závěr použij nejvýše jeden nepřímý náznak z allowedTeaser.", StringComparison.Ordinal)
