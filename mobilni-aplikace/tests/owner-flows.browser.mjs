@@ -179,6 +179,17 @@ try {
     const recruitment = page.getByRole('checkbox', { name: 'Přijímat nové účastníky', exact: true });
     // Use the full associated touch target rather than the native input's small center.
     const recruitmentLabel = page.locator('label').filter({ has: recruitment });
+    if (width <= 720) {
+      if (width === 390) await page.evaluate(() => document.documentElement.style.setProperty('--safe-area-inset-bottom', '34px'));
+      await recruitmentLabel.evaluate(label => label.scrollIntoView({ block: 'end', behavior: 'instant' }));
+      const clearance = await recruitmentLabel.evaluate(label => ({
+        label: label.getBoundingClientRect().toJSON(),
+        navigation: document.querySelector('.primary-navigation').getBoundingClientRect().toJSON(),
+        safeAreaBottom: getComputedStyle(document.documentElement).getPropertyValue('--safe-area-inset-bottom'),
+      }));
+      assert(clearance.label.bottom <= clearance.navigation.top,
+        `bottom-aligned operator labels remain above fixed navigation: ${JSON.stringify({ width, ...clearance })}`);
+    }
     try { await recruitmentLabel.click(); }
     catch (error) {
       console.error(JSON.stringify({ width, recruitmentTarget: await recruitmentLabel.evaluate(label => {

@@ -38,6 +38,12 @@ body { background: var(--wns-bg); color: var(--wns-text); }
 .application-frame :is([tabindex='-1'], input, select, textarea, button, a, summary) {
   scroll-margin-top: calc(var(--application-header-height) + var(--wns-space-16));
 }
+/* Keep browser-scrolled operator controls clear of both fixed mobile bars. */
+@media (max-width: 720px) {
+  .application-shell:not(.launch-mode):not(.game-mode):not(.customer-mode):not(.has-customer-navigation) .application-main :is(label, input, select, textarea, button, a, summary) {
+    scroll-margin-block: calc(var(--application-header-height) + var(--wns-space-16)) calc(var(--application-navigation-height) + max(8px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) + var(--wns-space-16));
+  }
+}
 /* Browser-owned surfaces belong to the same stage as the application controls. */
 ::selection { background: var(--wns-mint); color: var(--wns-on-mint); }
 html { scrollbar-color: var(--wns-line) var(--wns-bg); }
