@@ -53,6 +53,7 @@ test('development runs affected product checks and a distinct fail-closed gate',
   const workflow = read('.github/workflows/development-ci.yml');
   assert.match(workflow, /pull_request:\n    branches: \[development\]/);
   assert.match(workflow, /name: Development required/);
+  assert.match(workflow, /github\.event\.action == 'edited' && !github\.event\.changes\.base && format\('metadata-\{0\}', github\.run_id\)/);
   assert.match(workflow, /needs: \[candidate, secret-scan, repository, changes, backend, firmware, web, ios, android, ai-eval, site\]/);
   assert.match(workflow, /if: always\(\)/);
   assert.match(workflow, /uses: \.\/\.github\/workflows\/kufr-backend.yml/);

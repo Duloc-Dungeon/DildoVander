@@ -28,7 +28,9 @@ permissions:
   actions: read
 
 concurrency:
-  group: development-ci-${{ github.event.pull_request.number || inputs.pr_number || github.ref }}
+  # A title/body edit must never cancel an in-flight source validation.
+  # Metadata runs still execute the same fail-closed checks; no green shortcut.
+  group: development-ci-${{ github.event.action == 'edited' && !github.event.changes.base && format('metadata-{0}', github.run_id) || github.event.pull_request.number || inputs.pr_number || github.ref }}
   cancel-in-progress: true
 
 jobs:
