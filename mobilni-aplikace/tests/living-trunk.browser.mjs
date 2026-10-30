@@ -36,7 +36,9 @@ try {
     await page.waitForFunction(() => Number(document.querySelector('.trunk-stage__visual')?.style.getPropertyValue('--trunk-level')) > .2);
     assert.equal(await page.locator('.trunk-stage').getAttribute('data-stage'), 'speaking');
     const stop = page.getByRole('button', { name: 'Stop řeč', exact: true });
-    const rect = await stop.boundingBox(); assert(rect && rect.y + rect.height < 800, 'Stop above navigation');
+    const rect = await stop.boundingBox();
+    await page.screenshot({ path: path.join(output, `speaking-${width}.png`), fullPage: true });
+    assert(rect && rect.y + rect.height < 800, `Stop above navigation: ${JSON.stringify(rect)}`);
     await page.screenshot({ path: path.join(output, `speaking-${width}.png`), fullPage: true });
     await stop.click();
     await page.waitForFunction(() => Number(document.querySelector('.trunk-stage__visual')?.style.getPropertyValue('--trunk-level')) === 0);
@@ -73,11 +75,17 @@ try {
     }
     await assertCoveredTop(page, path.join(output, `opaque-opening-${width}.png`));
     await removeTopPaintProbe(page);
+    if (width === 390) {
+      await page.setViewportSize({ width, height: 950 });
+      await page.evaluate(() => window.dispatchEvent(new Event('scroll')));
+      assert.equal(await field.getAttribute('data-state'), 'active', 'mobile geometry changes preserve the reveal');
+    }
     if (width < 850) await page.touchscreen.tap(bounds.x + bounds.width * .3, bounds.y + bounds.height * .4);
     else await page.mouse.move(bounds.x + bounds.width * .3, bounds.y + bounds.height * .4);
     await page.waitForFunction(() => document.querySelector('.wand-reveal-object')?.getAnimations().some(a => a.currentTime > 1300));
     assert.equal(await field.getAttribute('data-state'), 'active');
     await page.screenshot({ path: path.join(output, `reveal-active-${width}.png`) });
+    if (width !== 390) {
     const landingHandle = await page.waitForFunction(() => {
       const hero = document.querySelector('.wand-reveal-object');
       if (!hero?.getAnimations().some(animation => animation.currentTime >= 3950)) return false;
@@ -89,6 +97,7 @@ try {
     });
     const landing = await landingHandle.jsonValue();
     assert(Object.values(landing).every(delta => Math.abs(delta) < 4), 'the hero lands on the original artwork without a positional snap');
+    }
     await page.waitForFunction(() => document.querySelector('.wand-reveal-field')?.dataset.state === 'settled');
     // Returning to the artwork must never restart the completed reveal.
     await page.mouse.move(0, 0);

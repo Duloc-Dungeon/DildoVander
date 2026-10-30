@@ -18,7 +18,7 @@ internal sealed record LaunchConfiguration(long Revision, string TimeZone, bool 
 internal sealed record LaunchConfigurationUpdate(long ExpectedRevision, string TimeZone,
     bool PersonalizedLoadingEnabled, string PersonalizedLoadingPrompt);
 internal sealed record EffectiveLaunchAccess(bool Allowed, string Audience, long? LaunchAt, long ServerNow,
-    bool PersonalizedLoadingEnabled);
+    bool PersonalizedLoadingEnabled, long? OpenedAt = null);
 internal sealed record LaunchAuditEntry(string ActorId, long ChangedAt, long Revision, string ChangeSummary);
 internal sealed record LaunchGroup(string Id, string Name, long? LaunchAt, long Revision, long? OpenedAt,
     bool AdultContentEnabled = true, bool FlirtEnabled = true, long? ChronicleClosedAt = null);
@@ -687,7 +687,7 @@ internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider 
         var baseline = EvaluateGroupAware(principal, null, null);
         var audience = current?.RevokedAt is not null ? "revoked"
             : principal.IsInRole(AccountRoles.Beta) ? "beta" : "production";
-        return baseline with { Allowed = false, Audience = audience, LaunchAt = null };
+        return baseline with { Allowed = false, Audience = audience, LaunchAt = null, OpenedAt = null };
     }
 
     private EffectiveLaunchAccess EvaluateGroupAware(ClaimsPrincipal principal, string? groupId, LaunchGroup? group)
@@ -700,6 +700,6 @@ internal sealed class LaunchAccessService(LaunchPolicyStore store, TimeProvider 
         }
         var current = groupId is not null && group?.Id == groupId ? store.OpenDueGroup(groupId, now) : null;
         return new(current?.OpenedAt is not null, principal.IsInRole(AccountRoles.Beta) ? "beta" : "production",
-            current?.LaunchAt, now, config.PersonalizedLoadingEnabled);
+            current?.LaunchAt, now, config.PersonalizedLoadingEnabled, current?.OpenedAt);
     }
 }

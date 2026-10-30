@@ -4,6 +4,7 @@ import { isCustomerAccount } from './access';
 
 /** Null is deliberately treated as prelaunch while the server policy is unknown. */
 export const launchAllowed = ref<boolean | null>(null);
+export const launchPolicySnapshot = ref<{ allowed: boolean; audience?: string; launchAt: number | null; openedAt?: number | null; serverNow: number; observedAt?: number } | null>(null);
 export type CustomerMembershipState = 'active' | 'revoked' | 'unassigned' | null;
 export const customerMembershipState = ref<CustomerMembershipState>(null);
 export const customerFixedUniverse = ref<string | null>(null);
@@ -26,6 +27,7 @@ watch(() => account.value ? `${account.value.id}:${account.value.roles.join(',')
     customerFixedUniverse.value = null;
   }
   launchAllowed.value = null;
+  launchPolicySnapshot.value = null;
   launchRequest++;
 }, { flush: 'sync' });
 
@@ -33,9 +35,10 @@ export async function refreshLaunchAccess(): Promise<boolean> {
   const request = ++launchRequest;
   const owner = account.value?.id;
   try {
-    const result = await accountRequest<{ allowed: boolean }>('/app/v1/launch');
+    const result = await accountRequest<{ allowed: boolean; audience?: string; launchAt: number | null; openedAt?: number | null; serverNow: number }>('/app/v1/launch');
     if (request === launchRequest && owner === account.value?.id) {
       launchAllowed.value = typeof result?.allowed === 'boolean' ? result.allowed : null;
+      launchPolicySnapshot.value = { ...result, observedAt: performance.now() };
     }
   } catch {
     if (request === launchRequest && owner === account.value?.id) launchAllowed.value = null;

@@ -1,48 +1,26 @@
 import { expect, it, vi } from 'vitest';
 import { CountdownRickroll } from './countdownRickroll';
+import { withinRickrollWindow } from './rickrollWindow';
 
-const waiting = { launchAt: 5_000, remaining: 1_000, now: 4_000, watching: true, waiting: true };
-const zero = { ...waiting, remaining: 0, now: 5_000 };
-
-it('opens automatically once when an observed countdown reaches zero', () => {
+it.each([0, 1, 60_000, 899_999])('opens once for an arrival %s ms after opening', delay => {
   const open = vi.fn();
   const countdown = new CountdownRickroll(open);
-  countdown.observe(waiting);
-  expect(open).not.toHaveBeenCalled();
-  countdown.observe(zero);
-  countdown.observe({ ...zero, now: 6_000 });
+  const observation = { launchAt: 5000, now: 5000 + delay, remaining: 0, watching: true, waiting: false };
+  countdown.observe(observation);
+  countdown.reset();
+  countdown.observe(observation);
   expect(open).toHaveBeenCalledOnce();
 });
-
-it.each([
-  ['late arrival', undefined, zero],
-  ['unscheduled countdown', waiting, { ...zero, launchAt: null }],
-  ['rescheduled countdown', waiting, { ...zero, launchAt: 4_500 }],
-  ['background page', waiting, { ...zero, watching: false }],
-  ['suspended page', waiting, { ...zero, now: 60_000 }],
-  ['already admitted visitor', { ...waiting, waiting: false }, zero],
-] as const)('skips the surprise for a %s', (_name, previous, current) => {
-  const open = vi.fn();
-  const countdown = new CountdownRickroll(open);
-  if (previous) countdown.observe(previous);
-  countdown.observe(current);
-  expect(open).not.toHaveBeenCalled();
+it.each([-1, 900_000, 900_001])('does not open outside the window (%s ms)', delay => {
+  expect(withinRickrollWindow(5000, 5000 + delay)).toBe(false);
 });
-
-it('does not replay after returning from the background or restarting', () => {
+it('waits until foreground, and ignores missing or invalid deadlines', () => {
   const open = vi.fn();
   const countdown = new CountdownRickroll(open);
-  countdown.observe(waiting);
-  countdown.reset();
-  countdown.observe(zero);
-  new CountdownRickroll(open).observe(zero);
+  countdown.observe({ launchAt: 5000, now: 6000, remaining: 0, watching: false, waiting: false });
   expect(open).not.toHaveBeenCalled();
-});
-
-it('still detects zero when a policy refresh confirms that access has opened', () => {
-  const open = vi.fn();
-  const countdown = new CountdownRickroll(open);
-  countdown.observe(waiting);
-  countdown.observe({ ...zero, waiting: false });
+  expect(withinRickrollWindow(null, 6000)).toBe(false);
+  expect(withinRickrollWindow(NaN, 6000)).toBe(false);
+  countdown.observe({ launchAt: 5000, now: 6000, remaining: 0, watching: true, waiting: false });
   expect(open).toHaveBeenCalledOnce();
 });

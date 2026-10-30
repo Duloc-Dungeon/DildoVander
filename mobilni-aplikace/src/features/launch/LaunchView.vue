@@ -31,10 +31,11 @@ import { interfaceLanguagePreference } from '../../application/interfaceLanguage
 import { customerFixedUniverse, customerMembershipState, refreshCustomerMembership } from '../../application/launchAccess';
 import { isCustomerAccount, requiresCustomerMembership } from '../../application/access';
 import { CountdownRickroll } from './countdownRickroll';
+import { markRickrollSeen, rickrollSeen } from './rickrollWindow';
 import RickrollVideo from '../media/RickrollVideo.vue';
 import { readRickrollVideo } from '../media/rickrollMedia';
 
-interface LaunchPolicy { allowed: boolean; audience: string; launchAt: number | null; serverNow: number }
+interface LaunchPolicy { allowed: boolean; audience: string; launchAt: number | null; openedAt?: number | null; serverNow: number }
 const router = useRouter();
 const language = computed(() => interfaceLanguagePreference.language.value);
 const policy = ref<LaunchPolicy | null>(null);
@@ -337,17 +338,20 @@ async function refreshCharacter(signal?: AbortSignal): Promise<void> {
 }
 function updateCountdown(currentPolicy: LaunchPolicy | null = policy.value): void {
   const now = performance.now();
+  const previouslyRemaining = remaining.value;
+  const openedAt = currentPolicy?.openedAt ?? currentPolicy?.launchAt ?? null;
   remaining.value = currentPolicy?.launchAt == null ? 0 : Math.max(0, currentPolicy.launchAt - (serverTimeAnchor + now - monotonicAnchor));
   countdownRickroll.observe({
-    launchAt: currentPolicy?.launchAt ?? null,
+    launchAt: openedAt,
     remaining: remaining.value,
-    now,
-    watching: !!rickrollSource.value && countdownVisible.value && presentationForeground.value && !document.hidden
-      && currentPolicy?.audience !== 'revoked',
+    now: serverTimeAnchor + now - monotonicAnchor,
+    watching: currentPolicy?.allowed === true && !!rickrollSource.value && !!account.value && customerMembershipState.value === 'active'
+      && presentationForeground.value && !document.hidden && currentPolicy?.audience !== 'revoked'
+      && openedAt != null && !rickrollSeen(account.value.id, openedAt),
     waiting: !!account.value && currentPolicy?.allowed === false && currentPolicy.audience !== 'revoked',
   });
   if (rickrollActive.value) return;
-  if (remaining.value === 0 && currentPolicy?.launchAt != null && now - lastLaunchCheck > 15_000) {
+  if (remaining.value === 0 && currentPolicy?.launchAt != null && (previouslyRemaining > 0 || now - lastLaunchCheck > 15_000)) {
     lastLaunchCheck = now; void refreshPolicy().catch(() => {});
   }
 }
@@ -482,9 +486,13 @@ function onOffline(): void {
 function onOnline(): void { void retryRead(); }
 function refreshRickrollSource(): void {
   const owner = account.value?.id;
-  void readRickrollVideo(controller?.signal).then(source => { if (owner === account.value?.id) rickrollSource.value = source; });
+  void readRickrollVideo(controller?.signal).then(source => {
+    if (owner === account.value?.id) { rickrollSource.value = source; updateCountdown(); }
+  });
 }
 function dismissRickroll(): void {
+  const openedAt = policy.value?.openedAt ?? policy.value?.launchAt;
+  if (account.value && openedAt != null) markRickrollSeen(account.value.id, openedAt);
   rickrollActive.value = false;
   void refreshPolicy().catch(() => {});
 }
@@ -494,7 +502,6 @@ function onVisibility(): void {
     void retryRead();
     startPolicyPolling();
   } else {
-    rickrollActive.value = false;
     if (pollTimer) clearTimeout(pollTimer); pollTimer = undefined;
     if (policyTimer) clearInterval(policyTimer); policyTimer = undefined;
   }

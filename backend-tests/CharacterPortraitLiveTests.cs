@@ -8,20 +8,19 @@ internal static class CharacterPortraitLiveTests
     {
         var configuration = new ConfigurationBuilder().AddEnvironmentVariables().AddInMemoryCollection(
             new Dictionary<string, string?> { ["Chronicle:ProviderMode"] = "openai", ["Chronicle:ImageProvider"] = "gemini" }).Build();
-        using var reference = SkiaSharp.SKBitmap.Decode(await File.ReadAllBytesAsync(referencePath));
-        using var image = SkiaSharp.SKImage.FromBitmap(reference);
-        using var png = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        var reference = Kufr.Backend.Features.Keepsakes.ChronicleReferenceImage.CopyBounded(await File.ReadAllBytesAsync(referencePath))
+            ?? throw new InvalidDataException("chronicle_reference_invalid");
         var visual = System.Text.Json.JsonSerializer.Serialize(new
         {
             character = new { name = "Harry Potter", world = "Harry Potter" },
-            portraitReferenceBase64 = Convert.ToBase64String(png.ToArray())
+            portraitReferenceBase64 = Convert.ToBase64String(reference)
         });
         var scene = new Kufr.Backend.Features.Chronicle.ChronicleEventInput("duel", "synthetic", "synthetic", 1,
             "Slavnostní portrét", "Harry se slavnostně postavil vedle Hedviky. Hedvika měla stejné kulaté brýle a tvářila se ještě vážněji.",
             [new("synthetic", "Harry", "participant", "Harry Potter", VisualSnapshotJson: visual)],
             Result: "Slavnostní portrét dokončen.", IllustrationRequested: true);
         using var illustrator = new Kufr.Backend.Features.Keepsakes.ChronicleIllustrator(configuration);
-        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(4));
         var result = await illustrator.GenerateAsync(scene, deadline.Token);
         await File.WriteAllBytesAsync(output, result.Bytes, deadline.Token);
         Console.WriteLine("Gemini chronicle with frozen reference saved: " + Path.GetFullPath(output));
@@ -37,7 +36,7 @@ internal static class CharacterPortraitLiveTests
         using var provider = new GeminiCharacterPortraitProvider(configuration,
             new HttpClient(new LiveFailureHandler(output + ".error.txt", configuration["GEMINI_API_KEY"] ?? ""))
             { Timeout = Timeout.InfiniteTimeSpan });
-        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(4));
         try
         {
             var image = await provider.GeneratePortraitAsync(job, deadline.Token);
@@ -89,7 +88,7 @@ internal static class CharacterPortraitLiveTests
             [], [], [], false, [], "fixture", "fixture", 1, 1, "synthetic");
         var job = new CharacterPortraitJob("synthetic", "portrait-live", 1, "synthetic", 1, input, enrichment);
         using var provider = new OpenAiCharacterPortraitProvider(configuration);
-        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(4));
         try
         {
             var image = await provider.GeneratePortraitAsync(job, deadline.Token);

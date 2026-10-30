@@ -308,9 +308,31 @@ try {
     const frame = await page.locator('.rickroll-video video').boundingBox();
     assert(frame && frame.width >= 200 && frame.height >= 200 && frame.x + frame.width <= width);
     await page.screenshot({ path: path.join(screenshots, `rickroll-${audience}.png`), fullPage: true });
+    await page.locator('.rickroll-countdown').waitFor();
+    assert.equal(await page.locator('.rickroll-video button').isDisabled(), true);
+    await page.getByRole('button', { name: 'Pokračovat', exact: true }).click({ timeout: 20_000 });
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('.group-opening').waitFor();
     assert.equal(await page.locator('.rickroll-video').isVisible(), false, 'restart after zero must enter normally');
+  }
+  if (rickrollVideo) {
+    countdownDeadline = Date.now() - 2 * 60_000;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${origin}/me/account`, { waitUntil: 'networkidle' });
+    const overlay = page.getByRole('dialog', { name: 'Hudební přivítání' });
+    await overlay.waitFor();
+    const play = overlay.getByRole('button', { name: 'Přehrát video', exact: true });
+    if (await play.isVisible()) await play.click();
+    await page.waitForFunction(() => document.querySelector('.group-rickroll video')?.currentTime > 1);
+    assert.equal(await overlay.locator('.rickroll-countdown').isVisible(), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await overlay.isVisible(), true, 'Escape cannot skip the playback countdown');
+    await page.screenshot({ path: path.join(screenshots, 'rickroll-late-arrival-390.png') });
+    await overlay.getByRole('button', { name: 'Pokračovat', exact: true }).click({ timeout: 20_000 });
+    await overlay.waitFor({ state: 'hidden' });
+    countdownDeadline = Date.now() - 16 * 60_000;
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.equal(await overlay.isVisible(), false, 'the opening window expires after fifteen minutes');
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ mobile: '390x844', tablet: '820x1180', desktop: '1440x1000', realMp4Playback: !!rickrollVideo, states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'personalization save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
