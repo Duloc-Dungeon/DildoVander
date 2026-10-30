@@ -8,9 +8,11 @@ import curtain from '../../assets/brand/invitation-curtain-small.webp';
 import AwButton from '../../components/AwButton.vue';
 import PortraitMirror from '../../components/scene/PortraitMirror.vue';
 import type { PrelaunchWelcome } from '../launch/generatedPrelaunchCharacter';
-import { characterWelcomeText } from '../launch/characterWelcomeText';
+import { characterIntroductionText, characterWelcomeText } from '../launch/characterWelcomeText';
+import { useVisitHumor } from '../humor/visitHumor';
 
-const props = defineProps<{ profileId: string; revision: number; name: string }>();
+const props = defineProps<{ profileId: string; revision: number; name: string; textOnly?: boolean }>();
+const { copy: humor, roll: humorRoll } = useVisitHumor();
 interface PortraitState {
   character: { profileId: string; revision: number } | null;
   artwork: { status: string; loadingMessage?: string | null; finalMessage?: string | null; welcome?: PrelaunchWelcome | null } | null;
@@ -24,11 +26,15 @@ let epoch = 0;
 let request: AbortController | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 const identity = () => account.value ? `${account.value.id}:${props.profileId}:${props.revision}` : '';
-const portrait = usePrivateCharacterPortrait(() => stateKey.value === identity() && state.value?.artwork?.status === 'ready' && account.value
+const portrait = usePrivateCharacterPortrait(() => !props.textOnly && stateKey.value === identity() && state.value?.artwork?.status === 'ready' && account.value
   && state.value.character?.profileId === props.profileId && state.value.character.revision === props.revision
   ? { accountId: account.value.id, profileId: props.profileId, revision: props.revision } : null);
 const english = computed(() => customerCopy.language.value === 'en');
 const welcome = computed(() => stateKey.value === identity() ? state.value?.artwork?.welcome : null);
+const introduction = computed(() => {
+  if (stateKey.value !== identity() || !state.value?.artwork) return '';
+  return characterIntroductionText(state.value.artwork, state.value.artwork.status === 'ready', humorRoll.value) || humor.value.portrait;
+});
 const failed = computed(() => portrait.failed.value || state.value?.artwork?.status === 'failed');
 const pageHidden = ref(document.hidden);
 // The private portrait loader publishes a URL only after decoding the image.
@@ -96,26 +102,27 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <figure v-if="state?.character || readFailed" class="private-character-avatar">
-    <PortraitMirror class="private-character-avatar__mirror" :open="portraitReady" :animate-reveal="false" :replayable="portraitReady" :active="!pageHidden">
-      <img v-if="portrait.url.value" :src="portrait.url.value" :alt="`${launchCopy.portraitAlt}: ${name}`" width="480" height="640" @error="portrait.fail()" />
-      <img v-else-if="state?.artwork" :src="curtain" alt="" width="480" height="640" />
-    </PortraitMirror>
+  <figure v-if="state?.character || readFailed" class="private-character-avatar" :class="{ 'private-character-avatar--text': textOnly }">
     <figcaption>
-      <h2>{{ english ? 'Your portrait' : 'Tvůj portrét' }}</h2>
-      <div v-if="welcome" class="private-character-avatar__welcome">
-        <p v-if="characterWelcomeText(welcome.joke)" class="private-character-avatar__joke">{{ characterWelcomeText(welcome.joke) }}</p>
-        <p v-if="characterWelcomeText(welcome.identity)">{{ characterWelcomeText(welcome.identity) }}</p>
-        <p v-if="characterWelcomeText(welcome.teaser)" class="private-character-avatar__privacy">{{ characterWelcomeText(welcome.teaser) }}</p>
+      <h2>{{ textOnly ? name : english ? 'Your portrait' : 'Tvůj portrét' }}</h2>
+      <div v-if="introduction" class="private-character-avatar__welcome">
+        <p class="private-character-avatar__joke">{{ introduction }}</p>
+        <p v-if="characterWelcomeText(welcome?.identity)">{{ characterWelcomeText(welcome?.identity) }}</p>
+        <p v-if="characterWelcomeText(welcome?.teaser)" class="private-character-avatar__privacy">{{ characterWelcomeText(welcome?.teaser) }}</p>
       </div>
-      <p v-else-if="portrait.url.value && characterWelcomeText(state?.artwork?.finalMessage)">{{ characterWelcomeText(state?.artwork?.finalMessage) }}</p>
+      <template v-if="!textOnly">
       <p v-if="readFailed" role="status">Stav portrétu se nepodařilo načíst. Zkus ho obnovit.</p>
       <p v-else-if="failed" role="status">Portrét se nepodařilo připravit. Postava zůstává uložená. Zkus to znovu.</p>
       <p v-else-if="!state?.artwork" role="status">Postava je uložená. Ještě potřebuje svůj portrét.</p>
       <p v-else-if="!portrait.url.value" role="status">{{ customerCopy.text('customer.avatar-loading-night', { name }) }}</p>
       <p class="private-character-avatar__privacy">{{ english ? 'This portrait belongs to this character. It is not published automatically.' : 'Tahle podoba patří této postavě. Portrét se nikam nezveřejňuje automaticky.' }}</p>
       <AwButton v-if="readFailed || failed || !state?.artwork" :busy="reading || retrying || portrait.pending.value" :disabled="reading || retrying || portrait.pending.value || account?.openAiConsent !== true" @click="retry">{{ !state?.artwork && !readFailed ? 'Připravit portrét' : 'Zkusit znovu' }}</AwButton>
+      </template>
     </figcaption>
+    <PortraitMirror v-if="!textOnly" class="private-character-avatar__mirror" :open="portraitReady" :animate-reveal="false" :replayable="portraitReady" :active="!pageHidden">
+      <img v-if="portrait.url.value" :src="portrait.url.value" :alt="`${launchCopy.portraitAlt}: ${name}`" width="480" height="640" @error="portrait.fail()" />
+      <img v-else-if="state?.artwork" :src="curtain" alt="" width="480" height="640" />
+    </PortraitMirror>
   </figure>
 </template>
 
@@ -129,7 +136,7 @@ onBeforeUnmount(() => {
 .private-character-avatar__welcome .private-character-avatar__joke { max-width: 28ch; margin-bottom: var(--wns-space-24); font-size: clamp(1.4rem, 4vw, 2.1rem); font-weight: 650; line-height: 1.4; letter-spacing: -.02em; text-wrap: pretty; }
 .private-character-avatar__privacy { color: var(--wns-muted); font-size: .875rem; }
 @media (min-width: 760px) {
-  .private-character-avatar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(32px, 5vw, 64px); }
+  .private-character-avatar:not(.private-character-avatar--text) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(32px, 5vw, 64px); }
   .private-character-avatar__mirror { width: calc(100% - 16px); max-width: 380px; }
 }
 </style>

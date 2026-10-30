@@ -83,15 +83,18 @@ describe('customer Live workshop', () => {
     expect(api.connect).toHaveBeenCalledOnce();
     expect(api.request.mock.calls.find(call => call[0].endsWith('/ticket'))?.[2]).not.toHaveProperty('elevenLabsConsent');
   });
-  it('keeps duplex input active through manufacture and exposes normal output volume', async () => {
+  it('keeps duplex input active through manufacture, protects the final phrase, and preserves explicit Stop', async () => {
     await render(); await click('Promluvit s kufrem');
-    expect((view!.get('#workshop-volume').element as HTMLInputElement).value).toBe('100');
-    await view!.get('#workshop-volume').setValue('60');
-    expect(api.setVolume).toHaveBeenLastCalledWith(.6);
+    expect(view!.find('#workshop-volume').exists()).toBe(false);
     api.observer.workshopSession({ ...saved(), status: 'generating' }); await flushPromises();
     expect(api.setMuted).not.toHaveBeenCalled();
     api.observer.workshopSession(completed()); await flushPromises();
-    expect(api.setMuted).not.toHaveBeenCalled();
+    expect(api.setMuted).toHaveBeenCalledWith(true);
+    api.observer.phase('speaking'); await flushPromises();
+    const stop = view!.findAll('button').find(button => button.text() === 'Stop řeč')!;
+    expect(stop.attributes('disabled')).toBeUndefined();
+    await stop.trigger('click');
+    expect(api.interrupt).toHaveBeenCalledOnce();
   });
   it('uses saved unified AI consent without another checkbox on each connection', async () => {
     await render();

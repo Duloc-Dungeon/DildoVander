@@ -485,7 +485,8 @@ internal sealed class OpenAiCharacterPortraitProvider : ICharacterPortraitProvid
         });
         var request = JsonSerializer.Serialize(new
         {
-            model = WandDecisionBudget.Luna, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.CharacterWelcome), max_output_tokens = 700,
+            // Czech copy plus the evidence IDs and JSON envelope need more room than the visible text alone.
+            model = WandDecisionBudget.Luna, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.CharacterWelcome), max_output_tokens = 900,
             reasoning = new { effort = "none" },
             instructions = Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text + PortraitContentPolicy.SafetyInstructions + "\n"
                 + PortraitContentPolicy.LoadingMessageInstructions

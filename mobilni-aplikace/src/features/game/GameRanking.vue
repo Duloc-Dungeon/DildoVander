@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { useVisitHumor } from "../humor/visitHumor";
 const { copy: humor } = useVisitHumor();
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { Ranking } from './game';
+import SparkRanking from '../arcade/SparkRanking.vue';
 
-const props = defineProps<{ combat: Ranking[]; yolo: Ranking[]; playerId?: string }>();
-const discipline = ref<'combat' | 'yolo'>('combat');
+const props = defineProps<{ combat: Ranking[]; yolo: Ranking[]; playerId?: string; initialDiscipline?: 'combat' | 'spark' }>();
+const discipline = ref<'combat' | 'yolo' | 'spark'>(props.initialDiscipline ?? 'combat');
+watch(() => props.initialDiscipline, value => { if (value) discipline.value = value; });
 const search = ref('');
 const rows = computed(() => discipline.value === 'combat' ? props.combat : props.yolo);
 const own = computed(() => rows.value.find(row => row.id === props.playerId));
@@ -25,7 +27,10 @@ const shared = computed(() => own.value && rows.value.some(row => row.id !== own
       <legend class="game-sr">Disciplína</legend>
       <label :class="{ selected: discipline === 'combat' }"><input v-model="discipline" type="radio" name="ranking-discipline" value="combat" /> Bojová XP</label>
       <label :class="{ selected: discipline === 'yolo' }"><input v-model="discipline" type="radio" name="ranking-discipline" value="yolo" /> YOLO výhry</label>
+      <label :class="{ selected: discipline === 'spark' }"><input v-model="discipline" type="radio" name="ranking-discipline" value="spark" /> Kouzlo bez dozoru</label>
     </fieldset>
+    <SparkRanking v-if="discipline === 'spark'" />
+    <template v-else>
     <p class="game-ranking-explanation">{{ discipline === 'combat' ? 'Pořadí podle získaných bojových XP. Při shodě se místo dělí.' : 'Pořadí podle vítězství v YOLO lóži. Tyto výhry nepřidávají bojovou sílu.' }}</p>
     <div v-if="own" class="game-ranking-position" role="status">
       <p><strong>{{ shared ? 'Dělíš se o' : 'Držíš' }} {{ own.rank }}. místo</strong><span>{{ points(own) }}</span></p>
@@ -47,6 +52,7 @@ const shared = computed(() => own.value && rows.value.some(row => row.id !== own
       <p v-else role="status">Tomuto jménu žádný hráč neodpovídá. Zkus kratší jméno.</p>
     </template>
     <p v-else role="status">V této disciplíně zatím nejsou žádní hráči. {{ humor.emptyRanking }}</p>
+    </template>
   </section>
 </template>
 

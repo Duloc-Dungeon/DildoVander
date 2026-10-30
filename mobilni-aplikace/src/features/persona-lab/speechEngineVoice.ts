@@ -16,6 +16,8 @@ export class SpeechEngineVoice {
   private volume = 1;
   private outputEnabled = true;
   private cancelled = false;
+  private workshopComplete = false;
+  private completionStopped = false;
   private muted = false;
   private mode: 'speaking' | 'listening' = 'listening';
   private lastSpeakingSequence = 0;
@@ -71,11 +73,11 @@ export class SpeechEngineVoice {
           this.publishPhase();
         },
         onInterruption: () => {
-          if (!current()) return;
+          if (!current() || this.workshopComplete) return;
           this.cancelled = true; this.applyVolume();
         },
         onIncomingEvent: (event: unknown) => {
-          if (!current() || !event || typeof event !== 'object' || !('type' in event)) return;
+          if (!current() || this.workshopComplete || !event || typeof event !== 'object' || !('type' in event)) return;
           if (!['user_transcript', 'tentative_user_transcript'].includes(String(event.type))) return;
           const partial = (event as Record<string, { user_transcript?: unknown; event_id?: unknown }>)[
             event.type === 'user_transcript' ? 'user_transcription_event' : 'tentative_user_transcription_event'
@@ -129,6 +131,7 @@ export class SpeechEngineVoice {
         this.ready = true; this.flushActivity(); this.publishPhase(); break;
       case 'state':
         if (!value.session || typeof value.session !== 'object') throw new Error('Invalid state.');
+        if ('status' in value.session && value.session.status === 'complete') this.workshopComplete = true;
         this.observer.workshopSession?.(value.session); break;
       case 'workshop_transcript':
         if (!this.ready || !['user', 'assistant'].includes(String(value.role)) || !Number.isSafeInteger(value.sequence)
@@ -140,12 +143,14 @@ export class SpeechEngineVoice {
         if (!Number.isSafeInteger(value.eventId) || Number(value.eventId) < 1) throw new Error('Invalid committed user event.');
         this.retireUserEvent(Number(value.eventId)); break;
       case 'speech_engine_speaking':
+        if (this.workshopComplete && this.completionStopped) break;
         if (!this.ready || !Number.isSafeInteger(value.eventId) || Number(value.eventId) < 0
           || !Number.isSafeInteger(value.sequence) || Number(value.sequence) < 1) throw new Error('Invalid speaking.');
         if (Number(value.sequence) <= this.lastSpeakingSequence) break;
         this.lastSpeakingSequence = Number(value.sequence);
         this.cancelled = false; this.applyVolume(); break;
       case 'interrupted':
+        if (this.workshopComplete) break;
         this.cancelled = true; this.applyVolume(); this.observer.phase('listening'); this.observer.interrupted?.(); break;
       case 'provider_ready':
         this.observer.providerReady?.(typeof value.providerSessionId === 'string' ? value.providerSessionId : null); break;
@@ -196,6 +201,7 @@ export class SpeechEngineVoice {
   setMuted(value: boolean): void { this.muted = value; this.conversation?.setMicMuted(value); }
   interrupt(): void {
     if (!this.ready) return;
+    if (this.workshopComplete) this.completionStopped = true;
     this.cancelled = true; this.applyVolume(); this.send({ type: 'cancel' }); this.observer.phase('waiting');
   }
   sendText(text: string): boolean { return this.ready && this.send({ type: 'text', text }); }
@@ -213,6 +219,8 @@ export class SpeechEngineVoice {
     const conversation = this.conversation; this.conversation = null;
     if (conversation) void conversation.endSession().catch(() => {});
     this.ready = this.connected = this.cancelled = false; this.pendingActivityId = null;
+    this.workshopComplete = false;
+    this.completionStopped = false;
     this.lastSpeakingSequence = this.latestUserEvent = this.retiredUserEvent = 0;
     this.observer.userPartial?.(''); this.observer.outputLevel?.(0);
   }

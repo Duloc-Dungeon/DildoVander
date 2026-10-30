@@ -30,7 +30,7 @@ describe('finite wand reveal field', () => {
     timeline.clock = 0;
     nextFrame = undefined;
     vi.spyOn(performance, 'now').mockImplementation(() => clock);
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(paint as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => paint) as unknown as typeof HTMLCanvasElement.prototype.getContext);
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       width: 224, height: 224, top: 0, left: 0, bottom: 224, right: 224, x: 0, y: 0, toJSON: () => ({}),
     });

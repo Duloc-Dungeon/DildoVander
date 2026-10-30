@@ -357,6 +357,8 @@ internal static class WandArtworkTests
         KeepsakeStore.ValidateWandArtwork(image);
         ExpectCode(() => KeepsakeStore.ValidateWandArtwork(image with { ImageBytes = KeepsakeCoreTests.Png() }), "wand_artwork_transparency_required");
         ExpectCode(() => KeepsakeStore.ValidateWandArtwork(image with { ImageBytes = TransparentPng() }), "wand_artwork_transparency_required");
+        ExpectCode(() => KeepsakeStore.ValidateWandArtwork(image with { ImageBytes = FoggedBackgroundPng() }), "wand_artwork_transparency_required");
+        ExpectCode(() => KeepsakeStore.ValidateWandArtwork(image with { ImageBytes = SingleTransparentPixelPng() }), "wand_artwork_transparency_required");
         ExpectCode(() => KeepsakeStore.ValidateWandArtwork(image with { ImageBytes = Array.Empty<byte>() }), "wand_artwork_invalid");
         using (var alphaBitmap = SKBitmap.Decode(image.ImageBytes))
             Check(alphaBitmap is not null && Enumerable.Range(0, alphaBitmap.Height).Any(y =>
@@ -373,6 +375,9 @@ internal static class WandArtworkTests
                 "image uses configured SDK generation model without another image pipeline");
             Check(payload.GetProperty("background").GetString() == "transparent" && payload.GetProperty("output_format").GetString() == "png",
                 "serialized SDK request asks for a true transparent PNG background");
+            Check(prompt.Contains("no fog, mist, smoke, glow, aura", StringComparison.Ordinal)
+                && prompt.Contains("every pixel outside its silhouette transparent", StringComparison.Ordinal),
+                "wand image prompt excludes atmospheric halos and requires transparent pixels beyond the silhouette");
             Check(!payload.TryGetProperty("response_format", out _),
                 "GPT Image requests omit the unsupported legacy response_format parameter");
             Check(payload.GetProperty("moderation").GetString() == "low"
@@ -440,6 +445,22 @@ internal static class WandArtworkTests
     private static byte[] TransparentPng()
     {
         using var bitmap = new SKBitmap(24, 32); bitmap.Erase(SKColors.Transparent);
+        using var image = SKImage.FromBitmap(bitmap); using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded.ToArray();
+    }
+    private static byte[] FoggedBackgroundPng()
+    {
+        using var bitmap = new SKBitmap(32, 48); bitmap.Erase(new SKColor(110, 120, 140, 32));
+        using (var canvas = new SKCanvas(bitmap))
+        using (var paint = new SKPaint { Color = SKColors.OrangeRed, IsAntialias = true })
+            canvas.DrawCircle(16, 24, 8, paint);
+        using var image = SKImage.FromBitmap(bitmap); using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded.ToArray();
+    }
+    private static byte[] SingleTransparentPixelPng()
+    {
+        using var bitmap = new SKBitmap(32, 48); bitmap.Erase(SKColors.OrangeRed);
+        bitmap.SetPixel(0, 0, SKColors.Transparent);
         using var image = SKImage.FromBitmap(bitmap); using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
         return encoded.ToArray();
     }

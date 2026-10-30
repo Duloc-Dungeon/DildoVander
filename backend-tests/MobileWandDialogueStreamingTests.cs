@@ -124,7 +124,7 @@ internal static class MobileWandDialogueStreamingTests
 
     private static OpenAiMobileWandQuestionProvider Provider(SseHandler handler) => new(
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        { ["OPENAI_API_KEY"] = "synthetic-offline-key", ["Wands:Model"] = "gpt-6.1-terra" }).Build(), new HttpClient(handler));
+        { ["OPENAI_API_KEY"] = "synthetic-offline-key", ["Wands:DialogueModel"] = "gpt-6.1-terra" }).Build(), new HttpClient(handler));
 
     private static CharacterConversationSnapshot Profile() => new("profile", 1, new("Raven", "Synthetic"),
         new("Raven", "Synthetic", "Prepared fixture", [new("Finds maps", ["https://example.test"])],

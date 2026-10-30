@@ -80,8 +80,8 @@ internal sealed class OpenAiMobileWandQuestionProvider : IMobileWandQuestionProv
     {
         this.http = http;
         key = configuration["OPENAI_API_KEY"];
-        model = configuration["Wands:Model"] ?? ResponsesTextDialogBudget.Model;
-        if (!WandGenerationValidation.Text(model, 100)) throw new InvalidOperationException("Invalid Wands:Model.");
+        model = configuration["Wands:DialogueModel"] ?? "gpt-6-luna";
+        if (!WandGenerationValidation.Text(model, 100)) throw new InvalidOperationException("Invalid Wands:DialogueModel.");
     }
 
     public Task<MobileWandDialogueDraft> ReplyStreamingAsync(CharacterConversationSnapshot profile,

@@ -77,7 +77,7 @@ internal static class WorkshopSettingsTests
         var settings = fixture.Store();
         using var handler = new DialogueHandler();
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        { ["OPENAI_API_KEY"] = "offline-key", ["Wands:Model"] = "gpt-6.1-terra" }).Build();
+        { ["OPENAI_API_KEY"] = "offline-key", ["Wands:DialogueModel"] = "gpt-6.1-terra" }).Build();
         using var provider = new OpenAiMobileWandQuestionProvider(configuration, new HttpClient(handler));
         foreach (var effort in new[] { "none", "high" })
         {
@@ -103,6 +103,23 @@ internal static class WorkshopSettingsTests
                     && request.GetProperty("service_tier").GetString() == "fast",
                     "actual nonstream and typed streaming SDK requests preserve all 12000 Czech characters, reasoning caps and Terra Fast policy");
             }
+        }
+        var appSettingsPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "runtime-appsettings.json");
+        var runtimeConfiguration = new ConfigurationBuilder().AddJsonFile(appSettingsPath)
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["OPENAI_API_KEY"] = "offline-key" }).Build();
+        using (var defaultHandler = new DialogueHandler())
+        using (var defaultProvider = new OpenAiMobileWandQuestionProvider(runtimeConfiguration, new HttpClient(defaultHandler)))
+        {
+            _ = await defaultProvider.ReplyAsync(Profile(), [], default, instructions: null,
+                reasoningEffort: runtimeConfiguration["Wands:ReasoningEffort"] ?? "none");
+            var request = defaultHandler.Requests.Single();
+            Check(runtimeConfiguration["Wands:Model"] == "gpt-6.1-terra"
+                && request.GetProperty("model").GetString() == runtimeConfiguration["Wands:DialogueModel"]
+                && request.GetProperty("reasoning").GetProperty("effort").GetString() == runtimeConfiguration["Wands:ReasoningEffort"]
+                && request.GetProperty("model").GetString() == "gpt-6-luna"
+                && request.GetProperty("reasoning").GetProperty("effort").GetString() == "none"
+                && request.GetProperty("service_tier").GetString() == "fast",
+                "loaded runtime config separates generation Terra from workshop dialogue Luna, no reasoning and Fast service tier");
         }
         var oversizedHistory = Enumerable.Range(0, 64).Select(index => new MobileWandWorkshopMessage(
             "message-" + index, 1, index % 2 == 0 ? "user" : "assistant", new string('ř', 600), "voice", index)).ToArray();
@@ -179,7 +196,8 @@ internal static class WorkshopSettingsTests
             const string reply = "{\"readyToFinish\":false,\"reply\":\"Co chrání tvůj most?\"}";
             var response = new
             {
-                id = "resp_settings", @object = "response", created_at = 1, status = "completed", model = "gpt-6.1-terra", service_tier = "fast",
+                id = "resp_settings", @object = "response", created_at = 1, status = "completed",
+                model = document.RootElement.GetProperty("model").GetString(), service_tier = document.RootElement.GetProperty("service_tier").GetString(),
                 output = new[] { new { type = "message", id = "msg_settings", role = "assistant", status = "completed",
                     content = new[] { new { type = "output_text", text = reply, annotations = Array.Empty<object>() } } } }
             };

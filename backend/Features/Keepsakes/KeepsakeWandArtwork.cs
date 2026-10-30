@@ -5,7 +5,7 @@ namespace Kufr.Backend.Features.Keepsakes;
 
 internal sealed partial class KeepsakeStore
 {
-    internal const string WandArtworkPromptVersion = "personal-wand-art-v4-visual-prose-transparent";
+    internal const string WandArtworkPromptVersion = "personal-wand-art-v5-transparent-cutout";
 
     // One-time deterministic adoption during startup, never during GET. Preserve
     // the currently published illustration; retain contradictory older artwork

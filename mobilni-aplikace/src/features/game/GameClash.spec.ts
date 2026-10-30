@@ -30,7 +30,7 @@ beforeEach(() => {
     addEventListener: (_event: string, callback: () => void) => { mediaChanged = callback; },
     removeEventListener: removeMediaListener,
   }) as unknown as MediaQueryList);
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => context) as unknown as typeof HTMLCanvasElement.prototype.getContext);
   vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 350, height: 156 } as DOMRect);
 });
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks(); vi.unstubAllGlobals(); });

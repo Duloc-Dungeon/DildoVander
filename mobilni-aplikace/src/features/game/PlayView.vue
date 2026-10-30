@@ -544,7 +544,7 @@ onBeforeUnmount(() => {
           <PaperSurface class="game-paper">
             <AwNotice v-if="progressError" tone="warning">{{ progressError }} {{ progress ? 'Zobrazuje se poslední načtené pořadí.' : '' }}</AwNotice>
             <AwButton v-if="progressError" :busy="loading" @click="refresh">Obnovit pořadí</AwButton>
-            <GameRanking v-if="progress" :combat="progress.combatRanking ?? []" :yolo="progress.yoloRanking ?? []" :player-id="account?.id" />
+            <GameRanking v-if="progress" :combat="progress.combatRanking ?? []" :yolo="progress.yoloRanking ?? []" :player-id="account?.id" :initial-discipline="route.hash === '#spark' ? 'spark' : 'combat'" />
           </PaperSurface>
         </template>
         <template v-else-if="messages">
@@ -601,6 +601,7 @@ onBeforeUnmount(() => {
             <RouterLink class="game-secondary-link" to="/play/practice">Krátký trénink bez XP</RouterLink>
           </div>
           <nav class="game-mode-links" aria-label="Herní režimy">
+            <RouterLink to="/play/kouzlo-bez-dozoru"><span><strong>Kouzlo bez dozoru</strong><small>Jiskra letí sama. Klepnutím obrať směr, proleť sklad a překonej rekord skupiny.</small></span><span aria-hidden="true">↗</span></RouterLink>
             <RouterLink v-if="lobby.player.tacticalUnlocked" :to="{ path: '/play/challenge', query: { mode: 'tactical' } }"><span><strong>Taktický duel</strong><small>Nejvýše osm výměn. Kouzla na příděl, odvaha z vlastních zásob.</small></span><span aria-hidden="true">→</span></RouterLink>
             <RouterLink v-if="(progress?.tacticalMatches ?? 0) >= 3" to="/play/teams"><span><strong>Najít spojence</strong><small>Dva proti dvěma. Každý volí vlastní tah; vina se pak rozděluje společně.</small></span><span aria-hidden="true">→</span></RouterLink>
             <RouterLink v-if="lobby.player.yoloUnlocked" :to="{ path: '/play/challenge', query: { mode: 'yolo' } }"><span><strong>YOLO lóže</strong><small>AI vymyslí scénář i možnosti podle vašich postav a hůlek. Tři rozhodnutí na každého, bez bojových XP.</small></span><span aria-hidden="true">→</span></RouterLink>

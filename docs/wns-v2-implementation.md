@@ -5,6 +5,13 @@
 Aktuální změny pravidel, API, krátkého tréninku a stavového YOLO scénáře včetně
 reprodukce a dosud neprovedeného playtestu popisuje [herní prototyp](game-design-prototype.md).
 
+## Kouzlo bez dozoru — 30. října 2026
+
+Samostatná arkáda na `/play/kouzlo-bez-dozoru` má původní generovanou grafiku,
+lokální simulaci, skupinový žebříček ověřovaný serverovým replayem a offline
+trénink. Implementaci, rešerši, testy a dosud neprovedený telefonní/lidský
+playtest popisuje [Kouzlo bez dozoru](arcade-kouzlo-bez-dozoru.md).
+
 ## Týmová hra a trénink — 29. října 2026
 
 - `TeamView` a `team.css` přebírají dvoubarevné jeviště, ukazují všechny čtyři

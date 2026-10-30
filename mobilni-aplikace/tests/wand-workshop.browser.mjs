@@ -16,6 +16,7 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: 'reduce', isMobile: width < 500, hasTouch: width < 500 });
     const page = await context.newPage(); lastPage = page; page.on('pageerror', error => errors.push(error.message));
     await page.goto(`${origin}/__workshop/ready`);
+    assert.equal(await page.locator('#trunk-output-volume').count(), 0, 'workshop has no output volume slider');
     const voiceStart = page.getByRole('button', { name: 'Promluvit s kufrem', exact: true });
     assert.equal(await page.locator('#workshop-elevenlabs-consent').count(), 0, `${width}: saved unified consent needs no repeated voice checkbox`);
     assert.equal(await voiceStart.isEnabled(), true);

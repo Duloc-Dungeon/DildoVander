@@ -21,6 +21,7 @@ import PrivateCharacterAvatar from './PrivateCharacterAvatar.vue';
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { customerCopy, type CustomerCopyKey } from '../../application/customerCopy';
 import { projectCustomerSessionError, type CustomerSessionFeedback } from './customerSessionFeedback';
+import type { PrelaunchCharacterResponse } from '../launch/generatedPrelaunchCharacter';
 
 interface CharacterProfile {
   profileId: string; revision: number; label?: string | null;
@@ -31,6 +32,7 @@ const route = useRoute();
 watch(() => account.value?.id, id => interfaceLanguagePreference.setScope(id), { immediate: true, flush: 'sync' });
 const pane = computed(() => route.path.split('/').at(-1) ?? 'character');
 const profile = ref<CharacterProfile | null>(null);
+const accountCharacter = ref<PrelaunchCharacterResponse['character']>(null);
 const selectedWand = ref<Omit<GeneratedWandSnapshot, 'physicalSlot'> | null>(null);
 const profileArtworkClient = new AccountArchiveClient(() => account.value?.id ?? '');
 const profileArtwork = useArchiveMedia(profileArtworkClient);
@@ -125,6 +127,7 @@ function resetPrivateState(): void {
   if (enrichmentTimer) clearTimeout(enrichmentTimer);
   enrichmentTimer = undefined;
   profile.value = null;
+  accountCharacter.value = null;
   selectedWand.value = null;
   profileLoading.value = Boolean(account.value);
   busy.value = false;
@@ -142,7 +145,7 @@ async function loadProfile(epoch = generation): Promise<void> {
     if (epoch !== generation) return;
     profile.value = result.profile;
     selectedWand.value = result.profile ? projectMobileGeneratedWand(result.generatedWand) : null;
-    bindProfileArtwork(result.artwork);
+    if (pane.value === 'character') bindProfileArtwork(result.artwork);
     form.value = {
       name: result.profile?.userInput.name ?? '', world: result.profile?.userInput.world ?? '',
       version: result.profile?.userInput.version ?? '', description: result.profile?.userInput.description ?? '',
@@ -151,6 +154,17 @@ async function loadProfile(epoch = generation): Promise<void> {
     scheduleEnrichmentRefresh(epoch);
   } catch (cause) { if (epoch === generation) showProjectedError(cause); }
   finally { if (epoch === generation) profileLoading.value = false; }
+}
+
+async function loadAccountCharacter(epoch = generation): Promise<void> {
+  try {
+    // Account settings remain accessible before launch; use the same bounded
+    // character identity endpoint as the waiting room and personal caption.
+    const result = await accountRequest<PrelaunchCharacterResponse>('/app/v1/prelaunch/character', 'GET', undefined, accountWorkController.signal);
+    if (epoch === generation) accountCharacter.value = result.character;
+  } catch {
+    // Optional personal copy must never block account settings.
+  } finally { if (epoch === generation) profileLoading.value = false; }
 }
 
 async function saveCharacter(): Promise<void> {
@@ -198,6 +212,7 @@ async function deleteCharacter(): Promise<void> {
 
 function scheduleEnrichmentRefresh(epoch: number): void {
   if (enrichmentTimer) clearTimeout(enrichmentTimer);
+  if (pane.value !== 'character') return;
   if (profile.value && (['queued', 'running'].includes(profile.value.status) || (['queued', 'running'].includes(artworkState.value?.status ?? '') || artworkState.value?.status === 'missing' && artworkState.value.canRetry))) {
     enrichmentTimer = setTimeout(() => { void refreshEnrichment(epoch); }, 3000);
   }
@@ -221,6 +236,7 @@ function showProjectedError(cause: unknown): void {
 watch([() => account.value?.id, pane], () => {
   resetPrivateState();
   if (account.value && pane.value === 'character') void loadProfile(generation);
+  if (account.value && pane.value === 'account') void loadAccountCharacter(generation);
 }, { immediate: true, flush: 'sync' });
 onBeforeUnmount(resetPrivateState);
 </script>
@@ -290,6 +306,7 @@ onBeforeUnmount(resetPrivateState);
 
     <CustomerKeepsakes v-else-if="pane === 'keepsakes'" />
     <section v-else-if="pane === 'account'" class="page-stack">
+      <PrivateCharacterAvatar v-if="accountCharacter" text-only :profile-id="accountCharacter.profileId" :revision="accountCharacter.revision" :name="accountCharacter.name" />
       <SettingsView customer-surface />
     </section>
   </section>

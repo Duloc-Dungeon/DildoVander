@@ -1,0 +1,17 @@
+{
+  "generator": "OpenAI image_gen (built-in)",
+  "created": "2026-10-30",
+  "assets": [
+    {
+      "file": "storeroom.webp",
+      "source": "exec-bedad92e-292f-4023-8a18-fc74c74200cc.png",
+      "prompt": "Create a production game background asset, portrait 2:3. Original premium painterly 3D illustration for Czech mobile arcade 'Kouzlo bez dozoru' in Wand Night Stand. Interior of a slightly absurd wizard storage room, viewed straight-on as a tall vertical shaft, polished dark walnut shelving confined to the far left 18% and far right 18%, theatrical midnight green-black background #080909, muted warm amber practical candle lighting, restrained mint reflected light. Shelves contain worn spell books trying to keep themselves shut with leather belts, a dignified small brass cauldron with a lid and one teapot, curious ceramic vessels. Art direction: tactile beautifully rendered materials, sophisticated adult fantasy, charming dry situational humor, high craft, neither horror nor children's cartoon. IMPORTANT gameplay composition: central 64% completely open dark quiet space with only subtle plaster/wood texture, no obstacles crossing middle, no horizontal shelf spanning entire image. Strong atmospheric depth yet readable, dark center suitable behind bright mint spark and moving amber obstacles. Details at side edges only. No text, letters, logo, interface, numbers, frame, border, UI or characters. Background must work cropped at 360x640 and as mobile game hero."
+    },
+    {
+      "file": "spark.webp",
+      "source": "exec-4f1708b9-60c8-4033-898c-fef6c9b01bc0.png",
+      "prompt": "Production sprite asset for premium Czech mobile arcade 'Kouzlo bez dozoru', Wand Night Stand. A single floating rogue magic spark, a bright ivory almond-shaped core enclosed by graceful mint-green flame ribbons, small delicate gold flecks, tactile luminous miniature sculpture, elegant and slightly mischievous without a face. Vertically upward flowing flame, its brightest core centered, nearly circular solid core silhouette and tapering short upward lick. Isolated on genuinely transparent background. Full object within frame with generous transparent padding; luminous but bounded soft glow, strong readable silhouette at just 32 pixels. Sophisticated cinematic painterly 3D fantasy materials. Mint #b8f3d4, warm ivory #f5f5f0, restrained amber #ffc662 highlights. No text, no letters, no logo, no UI, no ground shadow, no other objects. Square composition."
+    }
+  ],
+  "pipeline": "Source PNGs retained alongside WebP delivery assets. scripts/prepare-spark-assets.mjs encodes resized WebP from originals using sharp (provided by tool runtime)."
+}
