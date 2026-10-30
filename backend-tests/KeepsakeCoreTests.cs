@@ -211,6 +211,7 @@ internal static class KeepsakeCoreTests
         var portraitJob = store.EnqueuePortrait(first.Id, owner.Token, upload.Id, edition.Id, "portrait_only", true, "portrait");
         var leasedPortrait = store.LeaseNext()!;
         var portraitRequest = store.Dispatch(leasedPortrait)!;
+        Check(!portraitRequest.GoogleImageConsent, "legacy photo consent never authorizes Google processing");
         Check(portraitRequest.NormalizedPhoto!.SequenceEqual(normal), "exact same guest normalized photo reaches edit");
         store.Complete(leasedPortrait, await provider.GenerateAsync(portraitRequest, default));
         var withPortrait = store.Read(first.Id, owner.Token);
@@ -233,6 +234,12 @@ internal static class KeepsakeCoreTests
         store.SetPortraitConsent(first.Id, owner.Token, true, "dv10-portrait-v1", "new-consent");
         Check(!store.Complete(supersededLease, await provider.GenerateAsync(supersededRequest, default)), "new consent prevents old portrait publication");
         Check(store.Read(first.Id, owner.Token).Assets.Any(item => item.Kind == "portrait_history_image"), "superseded accepted portrait remains private until manual deletion");
+        store.SetPortraitConsent(first.Id, owner.Token, true, "dv10-portrait-v2", "google-consent");
+        var googleJob = store.EnqueuePortrait(first.Id, owner.Token, upload.Id, edition.Id, "portrait_only", true, "google-portrait");
+        var googleLease = store.LeaseNext()!;
+        var googleRequest = store.Dispatch(googleLease)!;
+        Check(googleRequest.GoogleImageConsent, "explicit new photo policy authorizes Google processing");
+        store.Cancel(first.Id, owner.Token, googleJob.Id, "google-cancel");
         var lateJob = store.EnqueueBase(first.Id, owner.Token, new(), "late");
         var lateLease = store.LeaseNext()!;
         var lateRequest = store.Dispatch(lateLease)!;

@@ -111,3 +111,57 @@ rozhodnutí shrnuje `PRODUCT.md`. Běžící backend Markdown sám nenačítá:
 při práci na generátoru promítni pravidla do jeho skutečných instrukcí
 a ověř jeho vlastní kontrakt. Úprava dokumentace sama není důkaz změny
 živého generování ani důvod k placenému testovacímu volání.
+
+
+## Pestrost mechanismů a výběr variant
+
+Hlas vypravěče zůstává soudržný, mechanismus pointy se mění. Pro každou
+situaci rozlišuj svět (co je možné), hlas (kdo mluví) a obrat (co čtenář
+čeká a co místo toho zjistí). Suché podání není totéž co zlehčení rozsahu:
+deadpan zachovává klid, understatement úmyslně zmenšuje popisovaný následek.
+
+- Krátký titulek nebo replika: antiklimax, doslovné rčení, změna registru,
+  falešná definice nebo srozumitelná česká slovotvorba. Jedna pointa stačí.
+- Dialog: sociální trapnost, přesně poslušné nepochopení, střet různých
+  zájmů. Postavy nesmějí mít všechny stejný hlas vševědoucího vypravěče.
+- Vyprávění: gradace, přehnané přirovnání s konkrétním druhým obratem,
+  parodie žánru nebo krátká dokončená odbočka. Neprodlužuj text kvůli kvótě.
+- Navazující rozhovor: callback pouze na detail skutečně přítomný v předaném
+  kontextu. Návrat má změnit význam detailu, ne jen opakovat starou pointu.
+- Učenec či fiktivní instituce: pseudověda s rozpoznatelně chybným důkazem
+  nebo pravidlo dotažené do absurdního důsledku. Nesmí působit jako skutečná
+  zdravotní rada, bezpečnostní informace nebo pravidlo herního výpočtu.
+
+Při redakci významnější hlášky napiš alespoň tři krátké kandidáty s různým
+mechanismem. Porovnej konkrétnost, srozumitelnost, překvapení, rytmus a
+pravdivost vůči stavu. Vyřaď kandidáta, který potřebuje vysvětlení nebo nové
+nepodložené dění. Vítěze ještě zkrať a porovnej s okolními hláškami: opakovaná
+rekvizita či totožný obrat snižují účinek i jinak dobré věty.
+
+U generátorů je toto redakční kritérium součástí skutečného systémového zadání.
+Výstupem zůstává hotová odpověď v požadovaném kontraktu, nikoli pracovní
+kandidáti, názvy komických technik ani popis rozhodování. Uvítání postavy
+výslovně obsahuje 3–6 dokončených alternativ v poli `jokes`; první odpovídá
+staršímu poli `joke`. Každá musí splnit stejné faktické a délkové podmínky. Pestrost nepřidává
+síťová volání, novou náhodnost při pollingu ani další osobní údaje. Pevné
+fallbacky musí obstát samostatně; bez historie nesmějí předstírat callback.
+
+Rozhraní smí zůstat věcné. Humor se rozprostírá napříč zážitkem, nikoli do
+každého tlačítka. Výsledky, body, ceny, souhlas a skutečně provedené akce
+zůstávají doslovné a nadřazené vypravěčově nadsázce.
+
+## Varianty při návštěvě a obrazový humor
+
+`visitHumor.ts` obsahuje patnáct sad po třech hotových hláškách. Výběr se mění
+při změně cesty, nikoli při pollingu, změně query nebo překreslení. Náhodný
+výběr může zopakovat předchozí variantu. Uvítání a vstupní animace sdílejí
+stejný výběr. Osobní varianty se připravují společně, ukládají k postavě a
+při návštěvě nevyvolávají další generování. Starší záznamy bez `jokes`
+zobrazují původní hlášku. Historické události se při návštěvě nepřepisují.
+
+Portrét může mít jednu čitelnou vizuální pointu vycházející z doloženého
+fikčního rysu. Ilustrace kroniky může využít kontrast pózy a skutečného
+následku, měřítka nebo reakce, ale nesmí přidat neodehranou událost.
+Bez popisků, zesměšnění těla a vymyšlené biografie. **Hůlka není karikatura**:
+její tvar, materiál, proporce a poznávací detaily zůstávají věrné. Existující
+obrázky se automaticky neregenerují.

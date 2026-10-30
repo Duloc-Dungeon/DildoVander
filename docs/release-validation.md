@@ -68,3 +68,25 @@ authorize test reuse or deployment; the complete PR CI receipt remains required.
 
 The optimization becomes available when this source change is later promoted to
 main. Delivering it into development does not trigger a release or deployment.
+
+## Catch failures before promotion
+
+Development PRs now run the existing affected-product workflows (including full
+backend and site/browser suites when selected), not only repository and secret
+checks. `Development required` requires success for selected jobs and skips only
+unselected ones. The release PR still runs the complete release matrix and
+current-main artifact provenance checks; development runs cannot replace them.
+
+Development allows squash for feature PRs and merge commits for main-to-development
+synchronization. After a release, open a `main` → `development` PR, wait for its
+required checks and merge it with **merge**, never squash. This preserves release
+ancestry without temporarily editing protections. Do this before the next release
+PR. Required status checks, PR review resolution and force-push restrictions remain.
+Apply the reviewed ruleset through the existing repository-settings procedure.
+
+Explicit portrait acceptance (paid, never normal CI): set `OPENAI_API_KEY` in the
+process environment, then run `dotnet run --project backend-tests --
+--character-portrait-live <output.webp>`. This generates one synthetic Harry Potter
+portrait using the actual application provider. Inspect the saved image for round
+glasses, black hair and forehead scar; a passing HTTP call alone does not establish
+recognizability. No customer records are read or rewritten.

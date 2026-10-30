@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useVisitHumor } from "../humor/visitHumor";
+const { copy: humor } = useVisitHumor();
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import SceneShell from '../../components/scene/SceneShell.vue';
@@ -22,6 +24,8 @@ import './sealedDossier.css';
 const route = useRoute(); const router = useRouter();
 let mutationFailure: SealedError | undefined;
 const view = ref<Play>(); const loading = ref(false); const busy = ref(false); const error = ref('');
+const hasLoaded = ref(false);
+const initialLoading = computed(() => loading.value && !hasLoaded.value);
 const disconnectId = ref(''); const disconnectConfirmed = ref(false);
 const count = ref(8); const variant = ref('first'); const consent = ref(false);
 const catalog = ref<ScenarioCatalog>(); const scenarioId = ref(defaultScenarioId); const catalogError = ref('');
@@ -198,6 +202,7 @@ async function refresh() {
     }
   } finally {
     if (current === generation && !disposed) {
+      hasLoaded.value = true;
       loading.value = false;
       clearTimeout(timer); timer = setTimeout(refresh, 5000);
     }
@@ -348,11 +353,11 @@ const ballotCandidates = computed(() => view.value?.players.filter(p => p.id !==
   && (view.value!.finale?.phase !== 'runoff' || view.value!.finale.runoffCandidates.includes(p.id))) ?? []);
 watch(draft, saveDraft, { deep: true }); watch(personalText, saveDraft);
 watch(() => [route.params.id, account.value?.id], () => { message.value = ''; recipient.value = 'PUBLIC'; shareStatus.value = ''; });
-watch(() => [route.params.id, route.query.new], () => { generation++; controller?.abort(); clearTimeout(timer); view.value = undefined; draft.value = undefined; lastDraftIntent.value = null; pending.value = undefined; aiPending.value = undefined; loading.value = false; busy.value = false; error.value = ''; void refresh(); });
-watch(() => account.value?.id, () => { generation++; controller?.abort(); clearTimeout(timer); if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; lastDraftIntent.value = null; pending.value = undefined; aiPending.value = undefined; catalog.value = undefined; catalogError.value = ''; scenarioId.value = defaultScenarioId; restoreCreateRequest(); loading.value = false; busy.value = false; error.value = ''; void refresh(); });
+watch(() => [route.params.id, route.query.new], () => { generation++; controller?.abort(); clearTimeout(timer); hasLoaded.value = false; view.value = undefined; draft.value = undefined; lastDraftIntent.value = null; pending.value = undefined; aiPending.value = undefined; loading.value = false; busy.value = false; error.value = ''; void refresh(); });
+watch(() => account.value?.id, () => { generation++; controller?.abort(); clearTimeout(timer); hasLoaded.value = false; if (key()) localStorage.removeItem(key()); view.value = undefined; draft.value = undefined; lastDraftIntent.value = null; pending.value = undefined; aiPending.value = undefined; catalog.value = undefined; catalogError.value = ''; scenarioId.value = defaultScenarioId; restoreCreateRequest(); loading.value = false; busy.value = false; error.value = ''; void refresh(); });
 function resume() { if (document.visibilityState === 'visible') void refresh(); }
 onMounted(() => { restoreCreateRequest(); void refresh(); window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume); });
-onBeforeUnmount(() => { disposed = true; generation++; controller?.abort(); clearTimeout(timer); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); });
+onBeforeUnmount(() => { disposed = true; generation++; controller?.abort(); clearTimeout(timer); hasLoaded.value = false; window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); });
 
 const journalPanes = [
   { id: 'experienced', label: 'Zažil jsem' },
@@ -423,9 +428,9 @@ async function openAction() {
       <AwNotice v-if="error" tone="danger" role="alert">
         {{ error }} <AwButton @click="refresh">Obnovit stav</AwButton>
       </AwNotice>
-      <p v-if="loading && !view" role="status">Načítám případ a dostupné scénáře.</p>
+      <p v-if="initialLoading && !view" role="status">Načítám případ a dostupné scénáře.</p>
 
-      <PaperSurface v-if="!view && !loading" class="sealed-setup">
+      <PaperSurface v-if="!view && !initialLoading" class="sealed-setup">
         <h2>Připravit případ</h2>
         <AwNotice v-if="catalogError" tone="danger" role="alert">{{ catalogError }} <AwButton @click="refresh">Obnovit nabídku scénářů</AwButton></AwNotice>
         <label for="sealed-scenario">Scénář</label>
@@ -743,7 +748,7 @@ async function openAction() {
                   <p>{{ statement.body }}</p>
                 </li>
               </ol>
-              <p v-else class="sealed-empty">Zatím tu nikdo nic netvrdil. Podezřelé ticho, ale samo o sobě nic nedokazuje.</p>
+              <p v-else class="sealed-empty">Zatím tu nikdo nic netvrdil. {{ humor.silence }}</p>
               <form v-if="view.ownState !== 'Operator'" class="sealed-message-form" @submit.prevent="sendMessage">
                 <p v-if="shareStatus" role="status">{{ shareStatus }}</p>
                 <label>Komu

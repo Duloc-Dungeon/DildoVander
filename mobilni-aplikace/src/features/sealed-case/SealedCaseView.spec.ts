@@ -84,6 +84,25 @@ beforeEach(() => { api.transport.mockReset(); api.setAccount({ id: 'one' }); vi.
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; localStorage.clear(); vi.useRealTimers(); });
 
 describe('sealed case discovery lifecycle', () => {
+  it('keeps the setup form mounted while background discovery is pending or fails', async () => {
+    api.transport.mockImplementation(async (url: string) => Response.json(url.endsWith('/scenarios') ? scenarioCatalog : { id: null }));
+    const { view } = await render();
+    const selector = view.get('#sealed-scenario');
+    await selector.setValue(neighbours.id);
+    let reject!: (reason: Error) => void;
+    api.transport.mockImplementationOnce(() => new Promise<Response>((_resolve, fail) => { reject = fail; }));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(view.get('#sealed-scenario').element).toBe(selector.element);
+    expect(view.text()).not.toContain('Načítám případ a dostupné scénáře.');
+    reject(new Error('Temporary offline connection'));
+    await flushPromises();
+    expect(view.get('#sealed-scenario').element).toBe(selector.element);
+    expect((selector.element as HTMLSelectElement).value).toBe(neighbours.id);
+    await vi.advanceTimersByTimeAsync(5000);
+    await flushPromises();
+    expect(view.get('#sealed-scenario').element).toBe(selector.element);
+  });
+
   it('ignores a previous account response when discovering the current case', async () => {
     let finish!: (response: Response) => void;
     api.transport.mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve; }))

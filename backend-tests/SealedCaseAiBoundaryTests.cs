@@ -10,6 +10,10 @@ internal static partial class SealedCaseHttpTests
         foreach (var role in Enum.GetValues<SealedAiRole>())
         {
             Check(SealedCaseAi.Prompt(role).Length > 100, "all six original role prompts are embedded server resources");
+            var narrative = role is SealedAiRole.PrivateNarrator or SealedAiRole.PublicNarrator or SealedAiRole.Epilogue;
+            Check(SealedCaseAi.Prompt(role).Contains(
+                Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text, StringComparison.Ordinal) == narrative,
+                "creative humor direction belongs only to prose roles, never adjudication or action choices");
         }
         var publicContext = SealedCaseAi.ForPlayer(SealedAiRole.PublicNarrator, play);
         var publicJson = publicContext.Projection.GetRawText();

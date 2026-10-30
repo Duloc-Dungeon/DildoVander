@@ -446,6 +446,10 @@ internal static class SpeechEngineTests
                 "server returns a bounded random capability, opaque browser token and exact saved opening");
             using var created = JsonDocument.Parse(handler.Created.Single());
             var body = created.RootElement;
+            Check(body.GetProperty("conversation").GetProperty("max_duration_seconds").GetInt32() == WorkshopVoiceLimits.ProviderSeconds
+                && WorkshopVoiceLimits.ProviderSeconds >= WorkshopVoiceLimits.ConversationSeconds + 120
+                && WorkshopVoiceLimits.LeaseSeconds > WorkshopVoiceLimits.ProviderSeconds,
+                "provider playback tail remains inside the exclusive owner lease");
             Check(body.GetProperty("overrides").GetProperty("first_message").GetBoolean(),
                 "resource explicitly permits the browser's first-message override");
             Check(body.GetProperty("language").GetString() == "cs"

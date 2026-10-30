@@ -26,7 +26,7 @@ async function confirm(): Promise<void> {
     <p>Postavu, portrét, hůlku a hlasový rozhovor připravuje AI. Než budeš pokračovat, potřebujeme tvůj souhlas.</p>
     <AwNotice v-if="error" tone="danger" role="alert">Souhlas se nepodařilo uložit. Zkontroluj připojení a zkus to znovu.</AwNotice>
     <form @submit.prevent="confirm">
-      <label><input v-model="accepted" type="checkbox" required :disabled="busy" /> Souhlasím se zpracováním zadání postavy, potřebného kontextu, přepisu a zvuku rozhovoru službami OpenAI a ElevenLabs pro přípravu osobního vtipu, portrétu, hůlky, rozpoznávání řeči a hlasových odpovědí.</label>
+      <label><input v-model="accepted" type="checkbox" required :disabled="busy" /> Souhlasím se zpracováním zadání postavy, potřebného kontextu, přepisu a zvuku rozhovoru službami OpenAI a ElevenLabs pro texty a hlas a službou Google Gemini pro portréty a ilustrace. Google dostává zadání postavy a případné potvrzené obrazové podklady, nikoli zvuk rozhovoru.</label>
       <p><RouterLink to="/privacy">Informace o zpracování údajů</RouterLink></p>
       <AwButton type="submit" variant="primary" :disabled="!accepted" :busy="busy">Potvrdit a pokračovat</AwButton>
       <AwButton :disabled="busy" @click="signOut">Odhlásit se</AwButton>

@@ -16,13 +16,13 @@ větve ani produkční oprávnění nemění.
 Development CI běží pro všechny PR do `development`, včetně dokumentace.
 Ověřuje úniky tajných údajů přes Gitleaks, syntaxi workflow přes actionlint,
 testy CI skriptů, kontrakty modelových workflow, whitespace a integritu design
-systému. Nespouští kompilaci backendu, webu, firmware, Androidu ani iOS;
-nevytváří distribuční artefakty a nepodepisuje aplikace. Neověřuje proto
-kompilovatelnost aplikace; za lokální cílené ověření odpovídá autor změny.
-Chyba nebo přeskočení kterékoli rychlé kontroly blokuje agregovanou kontrolu.
+systému. Podle změněných souborů navíc volá stejné backendové, webové,
+site/browserové a nativní buildy jako release. Vybraný projekt musí projít;
+přeskočit lze jen nevybraný. Dokumentační PR ponechává jen kontroly repozitáře.
+Vývojové běhy nepodepisují aplikace ani nevytvářejí produkční release artefakty.
 
-Ochrana `development` vyžaduje PR, vyřešené review diskuse a tuto rychlou
-kontrolu. Zakazuje force push a smazání větve. Nevyžaduje aktualizaci větve
+Ochrana `development` vyžaduje PR, vyřešené review diskuse a agregovanou
+kontrolu `Development required`. Zakazuje force push a smazání větve. Nevyžaduje aktualizaci větve
 po každém souběžném merge, aby zbytečně neopakovala CI. Konflikty musí autor
 vyřešit před sloučením. Dependabot otevírá PR do `development`; generování
 locků a nativních závislostí zachovává stávající oddělené bezpečnostní hranice.
@@ -31,7 +31,9 @@ locků a nativních závislostí zachovává stávající oddělené bezpečnost
 
 1. Vydání zahaj samostatným zadáním. Otevři PR z `development` do `main`.
 2. Při konfliktu nebo zastaralém základu sluč aktuální `main` do
-   `development`, vyřeš konflikty a nech kontroly doběhnout znovu.
+   `development` přes PR `main → development`, vyřeš konflikty a nech kontroly
+   doběhnout. Synchronizační PR sluč přes **merge commit**, nikdy squash.
+   Pravidla development povolují oba způsoby; ochrany kvůli synchronizaci neměň.
 3. `CI required` pro tento PR vyžaduje všechny existující běžné projekty:
    repository, backend, web, iOS, Android, offline AI evaluace a site.
    Platí to i pro samotnou dokumentaci. Placené evaluace a CAD generování
@@ -43,7 +45,8 @@ locků a nativních závislostí zachovává stávající oddělené bezpečnost
    nekompiluje ani nepřibaluje; ruční režim popisuje lokální preflight.
 4. Po úspěšném CI a review použij **Create a merge commit**. Squash tohoto PR
    by ztratil společnou historii a komplikoval další vydání.
-5. `development` zachovej. Následující pracovní větev znovu založ z něj.
+5. `development` zachovej. Přenes nový merge commit z `main` zpět pomocí
+   synchronizačního PR s merge commitem. Poté z development zakládej další práci.
 
 Push na `main` nadále vytváří release artefakty a podpisy. Stávající oddělená
 soukromá orchestrace může úspěšný aktuální release automaticky nasadit včetně

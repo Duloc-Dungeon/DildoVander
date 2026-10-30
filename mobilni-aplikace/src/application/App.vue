@@ -25,6 +25,7 @@ import { customerMembershipState, launchAllowed, refreshCustomerMembership, refr
 import ApplicationUpdateGate from './ApplicationUpdateGate.vue';
 import { applicationUpdates } from './nativeApplicationUpdates';
 import OwnerPlayerControls from './OwnerPlayerControls.vue';
+import GroupOpeningRickroll from '../features/launch/GroupOpeningRickroll.vue';
 import { isOwnerPlayer, setOwnerPlayer } from './ownerMode';
 
 const route = useRoute();
@@ -251,6 +252,7 @@ onBeforeUnmount(() => {
       <footer v-if="!launchExperience && !gameExperience" class="application-footer"><span>Wand Night Stand</span><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink><a v-if="browserMode" class="application-install-link" href="/ios/">{{ customerCopy.text('shell.iphone') }}</a><span>{{ customerCopy.text('shell.verification') }}</span></footer>
     </div>
   </div>
+  <GroupOpeningRickroll />
   </ApplicationUpdateGate>
   </div>
 </template>

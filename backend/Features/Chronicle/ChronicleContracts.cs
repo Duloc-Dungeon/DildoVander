@@ -25,6 +25,7 @@ internal sealed record ChronicleIllustration(byte[] Bytes, string MediaType, boo
 
 internal interface IChronicleIllustrator
 {
+    bool RequiresCurrentAiConsent => false;
     Task<ChronicleIllustration> GenerateAsync(ChronicleEventInput snapshot, CancellationToken cancellationToken);
 }
 

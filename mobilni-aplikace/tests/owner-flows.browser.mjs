@@ -284,7 +284,7 @@ try {
       page.getByRole('combobox', { name: /Skupina hráčů/ }).selectOption('owner-saturday'),
     ]);
     assert.equal(ownerGroupId, 'owner-saturday');
-    await page.getByRole('link', { name: 'Moje postava', exact: false }).click();
+    await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: 'Já', exact: true }).click();
     await page.waitForURL(`${origin}/me/character`);
     await page.locator('.customer-form').waitFor();
     assert.equal(await page.locator('details.character-extra').evaluate(element => element.open), false);
@@ -293,6 +293,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await capture(page, `owner-player-${width}`);
     await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: 'Já', exact: true }).click();
+    await page.getByRole('link', { name: 'Můj účet', exact: true }).click();
     await page.getByRole('link', { name: 'Účty a oprávnění', exact: true }).click();
     await page.waitForURL(`${origin}/settings/admin`);
     await context.close();

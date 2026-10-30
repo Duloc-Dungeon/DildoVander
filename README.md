@@ -75,8 +75,8 @@ Pro zahájení další práce stačí: **„Začni implementovat aplikaci podle 
 
 ## CI a standardy repozitáře
 
-Pracovní PR směřují do `development`, kde běží rychlé kontroly repozitáře
-a tajných údajů bez kompilace aplikací. Samostatný PR `development → main`
+Pracovní PR směřují do `development`, kde běží kontroly repozitáře,
+tajných údajů a testy i sestavení dotčených částí aplikace. Samostatný PR `development → main`
 spouští všechny běžné buildy. Každý push na `main` spouští ověřené release buildy
 a podpis IPA; oddělená soukromá orchestrace nasazuje úspěšný aktuální `main`
 včetně TestFlight. Živé placené testy vyžadují samostatné zadání. Konfiguraci popisuje

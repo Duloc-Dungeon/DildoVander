@@ -9,12 +9,14 @@ namespace Kufr.Backend.Features.OpenAi;
 // test seam; production clients disable redirects. No hidden paid retries.
 internal static class BoundedSdkTransport
 {
-    internal static HttpClient Create(HttpClient upstream, int maximumBytes, string[]? contentTypes = null) =>
-        new(new Handler(upstream, maximumBytes, contentTypes));
+    internal static HttpClient Create(HttpClient upstream, int maximumBytes, string[]? contentTypes = null,
+        Func<HttpContent, CancellationToken, Task>? inspectFailure = null) =>
+        new(new Handler(upstream, maximumBytes, contentTypes, inspectFailure));
 
     internal static HttpClientPipelineTransport Pipeline(HttpClient client) => new(client);
 
-    private sealed class Handler(HttpClient upstream, int maximumBytes, string[]? contentTypes) : HttpMessageHandler
+    private sealed class Handler(HttpClient upstream, int maximumBytes, string[]? contentTypes,
+        Func<HttpContent, CancellationToken, Task>? inspectFailure) : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
@@ -38,7 +40,9 @@ internal static class BoundedSdkTransport
                         throw new InvalidDataException("Provider redirect is not allowed.");
                     }
                     // Let the SDK retain the HTTP status for retry/diagnostics,
-                    // without buffering or exposing an upstream error body.
+                    // without exposing upstream messages. Optional feature diagnostics
+                    // must bound their reads and expose only known technical codes.
+                    if (inspectFailure is not null) { await inspectFailure(response.Content, token); }
                     response.Content.Dispose();
                     response.Content = new StringContent(
                         "{\"error\":{\"message\":\"Provider request failed.\",\"type\":\"provider_http_error\"}}",

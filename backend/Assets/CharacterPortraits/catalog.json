@@ -1,0 +1,372 @@
+[
+  {
+    "Id": "dementor-gardener",
+    "Name": "Dementor",
+    "Aliases": [
+      "Mozkomor"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Dementor from the Harry Potter stories. A tall floating figure in a ragged black hooded cloak with long skeletal hands and a cold aura. It earnestly waters a small flowering houseplant; the water has frozen into a solid arc between the watering can and the pot. The creature waits patiently for the impossible pouring to finish. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "991eb2cf800752df6832c21f004fa79632da6ddcedc2071f453be7b3450b07ae",
+    "reviewed": true
+  },
+  {
+    "Id": "dementor-santa",
+    "Name": "Dementor",
+    "Aliases": [
+      "Mozkomor"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Dementor from the Harry Potter stories. A tall floating figure in a ragged black hooded cloak with long skeletal hands and a cold aura. A small red Santa hat rests on the black hood. It carefully wraps a Christmas present, but its own cold aura has frozen the ribbon into a rigid bow; it holds the bow like an unexpectedly complicated problem. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "7e4151685b2f0f55b32d8e0cbc203a880fb21a8d13de2c6f8778c2f427c141e2",
+    "reviewed": true
+  },
+  {
+    "Id": "dementor-tea",
+    "Name": "Dementor",
+    "Aliases": [
+      "Mozkomor"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Dementor from the Harry Potter stories. A tall floating figure in a ragged black hooded cloak with long skeletal hands and a cold aura. It sits politely at afternoon tea. Its teapot and cup are covered in icicles, and the teaspoon stands rigidly upright in frozen tea. It still holds the milk jug ready with impeccable manners. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "dcadd6c4c032da8f73ebc8b7a4933ea6de8a737d105a7d09fd46917991a45115",
+    "reviewed": true
+  },
+  {
+    "Id": "dobby",
+    "Name": "Dobby",
+    "Aliases": [
+      "Dobby "
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Dobby from the Harry Potter stories. A small house-elf with enormous green eyes, long pointed ears and a simple loose cloth tunic. He proudly presents a magnificent pair of socks on a velvet cushion while a royal crown has been politely pushed to the far corner of the same table as the less interesting object. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "686109e22861a5750b78b1e4cb4846b994f4b4b8bd1c710d76afdda152c671cc",
+    "reviewed": true
+  },
+  {
+    "Id": "draco",
+    "Name": "Draco Malfoy",
+    "Aliases": [
+      "Malfoy",
+      "Draco"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Draco Malfoy from the Harry Potter stories. Slick pale blond hair, a pointed face and immaculate Slytherin robes. He looks down imperiously at a tiny silver shoehorn presented on a large velvet cushion, as though putting on his polished shoes requires an entire royal ceremony. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "62757a04467c65e553d565c0b1e10aad64163eeafa572ceceebeabeab29707ba",
+    "reviewed": true
+  },
+  {
+    "Id": "fleur",
+    "Name": "Fleur Delacour",
+    "Aliases": [
+      "Fleur"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Fleur Delacour from the Harry Potter stories. A young adult witch with long silvery blonde hair and elegant pale blue Beauxbatons clothes. She maintains flawless poise while a tiny household feather duster has become entangled in the dramatic feather ornament of her elegant blue hat. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "61c2b8fc44580029761fd9af1bd1b1d5dd078d5f3f2f17550f74ff74b123c647",
+    "reviewed": true
+  },
+  {
+    "Id": "fred",
+    "Name": "Fred Weasley",
+    "Aliases": [
+      "Fred"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Fred Weasley from the Harry Potter stories. A red-haired adult Weasley twin with a mischievous expression and an orange waistcoat. He gravely demonstrates a trick box; a tiny white flag on a plain pole has popped out, as if the prank itself has given up. The flag has no markings. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "6080938f7df91564ef3de7bcbea8793e08c9149dfdedfc6a5207bcfd1a9b1e40",
+    "reviewed": true
+  },
+  {
+    "Id": "george",
+    "Name": "George Weasley",
+    "Aliases": [
+      "George"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of George Weasley from the Harry Potter stories. A red-haired adult Weasley twin with a mischievous face and a colorful waistcoat. He presents a single perfectly ordinary biscuit on a grand velvet cushion while a transparent glass cover beside it is crowded with escape-proof padlocks. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "a54e20dd71c00515396e89d1643a6eb12d15460d7d810da5fa611f71dcb9dbd4",
+    "reviewed": true
+  },
+  {
+    "Id": "ginny",
+    "Name": "Ginny Weasley",
+    "Aliases": [
+      "Ginny"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Ginny Weasley from the Harry Potter stories. Long red hair, freckles and Gryffindor robes, a confident expression. She calmly holds a polished broom upright while a tiny dustpan rests at its feet, as though her impressive sporting equipment has been reassigned to sweeping the corridor. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "4169b3426fb031b90dd571a5d0a043b4c775b3c63ca2a0f6a57fbe27504ebe77",
+    "reviewed": true
+  },
+  {
+    "Id": "hagrid",
+    "Name": "Rubeus Hagrid",
+    "Aliases": [
+      "Hagrid"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Rubeus Hagrid from the Harry Potter stories. An enormous broad half-giant with long shaggy dark hair, a huge beard and a rough brown coat. He handles a tiny floral porcelain teacup with enormous careful fingers while sitting on a comically small wooden chair, entirely sincere about his good manners. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "ad47507ecd197f3650a922117d096dbe8c39653b6fa2dcaf5e713c50f655fe01",
+    "reviewed": true
+  },
+  {
+    "Id": "harry",
+    "Name": "Harry Potter",
+    "Aliases": [
+      "Harry"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Harry Potter from the Harry Potter stories. Messy black hair, round glasses, lightning-shaped forehead scar and Gryffindor robes. Harry poses very seriously for his school portrait while his snowy owl Hedwig perches beside him wearing an identical pair of tiny round glasses and looking even more solemn. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "4d1997a35863cf49215aaa84b568442212a84e7775d691b3b17750a194073aca",
+    "reviewed": true
+  },
+  {
+    "Id": "krum",
+    "Name": "Viktor Krum",
+    "Aliases": [
+      "Viktor"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Viktor Krum from the Harry Potter stories. A young adult athletic wizard with short dark hair, heavy eyebrows and dark red Durmstrang robes. He poses with intimidating sporting seriousness while a tiny fan-made knitted scarf has been wrapped around his imposing broom handle, tied in an excessively neat little bow. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "3f92818f7fc05c41f4f84dc7dc4b2cdf05fb6fd2f68abfb3f307d8a5ffcaa77e",
+    "reviewed": true
+  },
+  {
+    "name": "Gilderoy Lockhart",
+    "sha256": "aa309e9da743c74daa6bdd9d54569e7228e84614599a18f39f88e7be648dd146",
+    "id": "lockhart",
+    "reviewed": true,
+    "model": "builtin-imagegen",
+    "aliases": [
+      "Zlatoslav Lockhart",
+      "Lockhart"
+    ],
+    "prompt": "Create one vertical 2:3 richly detailed oil painting of Gilderoy Lockhart from Harry Potter: handsome flamboyant blond wizard with perfectly waved hair, brilliant smile, elaborate lilac and gold robes. He poses for a grand formal portrait while holding a little hand mirror; the mirror reflects only his immaculate blond hair, because he has angled it toward the hair instead of his face. Gentle absurd vanity joke, solemn museum portrait treatment. Enchanted Hogwarts portrait atmosphere, layered luminous oil pigments, fine brush detail and warm chiaroscuro. Clear recognizable character, no lettering, signatures, logos or wand.",
+    "world": "Harry Potter"
+  },
+  {
+    "Id": "luna",
+    "Name": "Luna Lovegood",
+    "Aliases": [
+      "Lenka Láskorádová",
+      "Lenka Laskoradova",
+      "Luna"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Luna Lovegood from the Harry Potter stories. Long pale blonde hair, dreamy eyes, radish earrings and Ravenclaw robes. She serenely listens with a teacup held to her ear while a seashell waits on a saucer with a teaspoon, perfectly convinced she has arranged tea correctly. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "48341c834a51fa5941fce2a2f63ea5406b2343aef7d25c691677226deba96ca6",
+    "reviewed": true
+  },
+  {
+    "Id": "lupin",
+    "Name": "Remus Lupin",
+    "Aliases": [
+      "Remus",
+      "Lupin"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Remus Lupin from the Harry Potter stories. An adult wizard with light brown graying hair, a short mustache, a tired kind face and a worn tweed jacket. He carefully grades a neat stack of papers while his own frayed jacket elbow is patched with an immaculate round full-moon-shaped piece of pale fabric, which he regards with weary amusement. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "c9d6876ca45bcfda91398271e572e361256e2fbd1bbc988cf8cce11de2d5f472",
+    "reviewed": true
+  },
+  {
+    "Id": "moody",
+    "Name": "Alastor Moody",
+    "Aliases": [
+      "Moody",
+      "Pošuk Moody",
+      "Posuk Moody"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Alastor Moody from the Harry Potter stories. A weathered adult wizard with wild graying hair, a distinctive oversized magical blue eye and a heavy battered coat. His normal eye watches a teacup suspiciously while the magical blue eye turns toward a tiny biscuit perched on the opposite shoulder, making vigilance at teatime visibly exhausting. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "b67effbfd1c9b1b8afeffba5c07a25e87929316496b4e7f5feda13ff68fc6794",
+    "reviewed": true
+  },
+  {
+    "Id": "myrtle",
+    "Name": "Moaning Myrtle",
+    "Aliases": [
+      "Ufňukaná Uršula",
+      "Ufnukana Ursula",
+      "Myrtle"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Moaning Myrtle from the Harry Potter stories. A fully clothed translucent schoolgirl ghost with round glasses, lank dark hair and old-fashioned school robes. She solemnly attempts to dry her own transparent glasses with a solid handkerchief, which keeps falling through her ghostly fingers onto a neat stack of identical failed handkerchiefs. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "9c5cede5e2482b120657ce222eb14324f6f040e9d366b736a9629d7deae40880",
+    "reviewed": true
+  },
+  {
+    "Id": "narcissa",
+    "Name": "Narcissa Malfoy",
+    "Aliases": [
+      "Narcissa Malfoyová",
+      "Narcissa Malfoyova",
+      "Narcissa"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. A richly detailed oil painting of Narcissa Malfoy from the Harry Potter stories. A book-inspired portrait of an aristocratic adult witch with long pale blond hair, blue eyes and elegant dark green robes. She raises one pristine white glove to inspect a single fluffy cat hair, treating the tiny imperfection like an event of great state importance. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "ad2f305aefb39bedcdbfca6dfe36f2c307b2cd17aa3da42471f4d0f2a5e676ee",
+    "reviewed": true
+  },
+  {
+    "Id": "neville",
+    "Name": "Neville Longbottom",
+    "Aliases": [
+      "Neville"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Neville Longbottom from the Harry Potter stories. Brown hair, a round earnest face and Gryffindor robes. He proudly holds a beautifully tended small plant whose curling vine has gently stolen the ribbon intended for his gardening medal and tied itself a perfect bow. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "c836b6020d157ac2721313c34626a34a30c8527a5618bba9a14031d517f6fd5a",
+    "reviewed": true
+  },
+  {
+    "Id": "ollivander",
+    "Name": "Garrick Ollivander",
+    "Aliases": [
+      "Olivander",
+      "Ollivander"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Garrick Ollivander from the Harry Potter stories. An elderly craftsman with wispy white hair, pale observant eyes and a worn formal coat. He solemnly measures an ordinary teaspoon with a long enchanted measuring tape; the tape has curled into a respectful little bow at the spoon tip. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "98d6caab08ef52f1f01e18f1314de20e99d5c3917236fa7723326b2a86c9911a",
+    "reviewed": true
+  },
+  {
+    "Id": "pettigrew",
+    "Name": "Peter Pettigrew",
+    "Aliases": [
+      "Petr Pettigrew",
+      "Červíček",
+      "Cervicek"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Peter Pettigrew from the Harry Potter stories. A small nervous-looking middle-aged wizard with thinning hair and a shabby brown coat. He sits very formally at a grand dining table but has set a tiny mouse-sized dinner plate beside his own, with the larger portion of cheese on the tiny plate. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "7dfb08813abd2d79f10dfc5b3eb8f4b756e710f28f3ee465b9832b9e06290237",
+    "reviewed": true
+  },
+  {
+    "Id": "rita",
+    "Name": "Rita Skeeter",
+    "Aliases": [
+      "Rita Holoubková",
+      "Rita Holoubkova"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Rita Skeeter from the Harry Potter stories. An adult blonde witch with elaborate curls, jeweled glasses and bright green robes. Her long green quill is busily writing while she lounges with a teacup; the quill has exhausted its ink and now stands demanding attention beside a bottle vastly smaller than itself. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "7c3b21a610974ba94dafd955611c422773a1de5614a736fd9d1eb66c43ad29e1",
+    "reviewed": true
+  },
+  {
+    "Id": "ron",
+    "Name": "Ron Weasley",
+    "Aliases": [
+      "Ron"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. A richly detailed oil painting of Ron Weasley from the Harry Potter stories. A book-inspired portrait of a lanky teenage wizard with bright red hair, freckles and a long nose, wearing Gryffindor school robes. He has set a tiny chess knight on a large cushion beside his sandwich; the knight has planted one foot on the bread as if claiming a castle. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "5888a9d8774178971dacf34a609f39c572d4684710899a29d519b03fff9a937a",
+    "reviewed": true
+  },
+  {
+    "Id": "sirius",
+    "Name": "Sirius Black",
+    "Aliases": [
+      "Sirius"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. A richly detailed oil painting of Sirius Black from the Harry Potter stories. A book-inspired portrait of an adult wizard with long dark hair, gray eyes, a short beard and an elegant slightly worn waistcoat. He sits gravely on a grand armchair while a small black dog-shaped cushion occupies an even more luxurious miniature armchair at his feet. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "63a07e59e4e1abb684cf3ae5596dbb6701dd26cbf03e4a32f7dd3fd8808eb12d",
+    "reviewed": true
+  },
+  {
+    "Id": "snape",
+    "Name": "Severus Snape",
+    "Aliases": [
+      "Snape"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. A richly detailed oil painting of Severus Snape from the Harry Potter stories. A book-inspired portrait of a stern adult potions professor with straight black shoulder-length hair, pale skin, a hooked nose and a high-collared black robe. He regards a tiny pink kitchen timer beside a magnificent brass cauldron with icy academic disappointment, as though the timer has failed an examination. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "486cbee9d5f500cf1cf35da22e890a525ae2e8be480f095cfa34cb790aed9a7a",
+    "reviewed": true
+  },
+  {
+    "Id": "trelawney",
+    "Name": "Sybill Trelawney",
+    "Aliases": [
+      "Patricia Trelawney",
+      "Sibyla Trelawneyová",
+      "Sybila Trelawneyová",
+      "Trelawney",
+      "Trelawneyová"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Sybill Trelawney from the Harry Potter stories. An adult divination professor with enormous round magnifying glasses, wild hair, layered shawls and bead necklaces. She gazes solemnly into a crystal ball, but the ball is completely fogged from a steaming teacup placed directly beneath it; she polishes a tiny viewing hole with great prophetic concentration. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "eb686e24289bc02600efe1709dada085d2486cfd7a2b45a1fb5cb69cd475b644",
+    "reviewed": true
+  },
+  {
+    "Id": "umbridge",
+    "Name": "Dolores Umbridge",
+    "Aliases": [
+      "Dolores",
+      "Umbridgeová"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. A richly detailed oil painting of Dolores Umbridge from the Harry Potter stories. A book-inspired portrait of a short middle-aged witch with a round face, short brown curls and a spotless pink cardigan with a matching bow. She sits in a spotless pink cardigan with a matching bow; a tiny kitten on the cushion beside her wears an identical pink bow and looks even more judgmental than she does. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "5a023c68ebc3acf39c3f1f1a5db8d68636a025560edacd455e97fec39dac3f7a",
+    "reviewed": true
+  },
+  {
+    "Id": "voldemort",
+    "Name": "Lord Voldemort",
+    "Aliases": [
+      "Voldemort",
+      "Tom Riddle"
+    ],
+    "world": "Harry Potter",
+    "model": "gemini-nano-banana-2.1",
+    "prompt": "A richly detailed oil painting of Lord Voldemort from the Harry Potter stories. A pale bald adult dark wizard with a flat snake-like nose and long elegant black robes. He sits with immense dignity before a tiny porcelain egg cup containing a boiled egg whose smooth pale shape closely matches his head; he looks deeply unimpressed by the resemblance. One gentle absurd visual punchline played with a solemn face. Rich pigments, layered brushwork, finely painted details and warm sculptural chiaroscuro, like an enchanted portrait in an old wizarding castle. Clear recognizable face or silhouette, vertical 2:3 composition, fully clothed and age-appropriate. No lettering or logos. Hands hold only the described everyday props.",
+    "sha256": "d82db7f57da00e7e71382c7eb6928965d794bd22a581bfa6f61cd6bbc03195cc",
+    "reviewed": true
+  },
+  {
+    "id": "bellatrix",
+    "sha256": "df3f766becfcc2448fb39271e84c0e414db599557529e4d6941279fed708c9ef",
+    "reviewed": true,
+    "prompt": null,
+    "name": "Bellatrix Lestrange",
+    "world": "Harry Potter",
+    "model": "builtin-imagegen",
+    "aliases": [
+      "Bellatrix",
+      "Bellatrix Lestrangeová"
+    ]
+  }
+]

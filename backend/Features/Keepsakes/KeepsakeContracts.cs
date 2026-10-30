@@ -45,6 +45,7 @@ internal sealed record KeepsakeProviderRequest(string KeepsakeId, KeepsakeIssueS
 {
     public Func<string, string, string, bool>? RecordStage { get; init; }
     public string GenerationKind { get; init; } = "base";
+    public bool GoogleImageConsent { get; init; }
     public string? CanonicalArtworkAssetId { get; init; }
 }
 internal sealed record KeepsakeProviderOutput(KeepsakeStory? Story, byte[] ImageBytes, string MediaType,

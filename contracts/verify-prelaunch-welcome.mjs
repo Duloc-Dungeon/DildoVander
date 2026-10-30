@@ -31,3 +31,8 @@ for (const welcome of [
   assert.equal(validatePrelaunchWelcome(welcome), false);
 }
 console.log('Generated prelaunch welcome contract checks passed.');
+
+const variantWelcome = { joke: 'První.', jokes: ['První.', 'Druhý.', 'Třetí.'], identity: '', teaser: '' };
+assert.ok(validatePrelaunchWelcome(variantWelcome));
+assert.equal(validatePrelaunchWelcome({ ...variantWelcome, jokes: ['První.', 'První.', 'Třetí.'] }), false);
+assert.equal(validatePrelaunchWelcome({ ...variantWelcome, jokes: ['Jiný.', 'Druhý.', 'Třetí.'] }), false);

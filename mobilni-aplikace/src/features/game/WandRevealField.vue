@@ -26,6 +26,7 @@ onMounted(() => {
   let previous = 0;
   let slowFrames = 0;
   let exhausted = false;
+  let landingMoved = false;
   let playback: { time: number; cancel: () => void } | undefined;
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let pointerX = 0;
@@ -73,11 +74,14 @@ onMounted(() => {
   function draw(now: number) {
     frame = 0;
     if (motion.matches || document.hidden || exhausted) { stop(); return; }
-    if (previous && now - previous > 48) slowFrames++;
+    if (previous && now - previous > 100) slowFrames++;
     else slowFrames = 0;
     previous = now;
-    if (slowFrames >= 5) { exhausted = true; stop(); return; }
+    if (slowFrames >= 10) { exhausted = true; stop(); return; }
     const time = playback?.time ?? 0;
+    // Mobile keyboards and browser bars change the viewport during completion.
+    // Keep the reveal visible; omit only the flight to a now-stale landing spot.
+    if (landingMoved && time >= 2.85) { stop(); return; }
     if (time >= duration) { stop(); return; }
     const energy = Math.max(0, Math.min(1, time / .55, (2.65 - time) / .75));
     influenceX += (pointerX - influenceX) * .08;
@@ -128,11 +132,10 @@ onMounted(() => {
   }
   function visibilityChanged() { if (document.hidden) stop(); }
   function geometryChanged() {
-    // Cancel instead of clearing a live viewport texture or flying toward stale geometry.
-    if (state.value === 'active') stop();
+    landingMoved = true;
   }
   const intersection = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(entries => {
-    if (!entries.some(entry => entry.isIntersecting)) stop();
+    if (!entries.some(entry => entry.isIntersecting)) landingMoved = true;
   });
   intersection?.observe(host);
   window.addEventListener('pointermove', interact, { passive: true });
@@ -151,8 +154,8 @@ onMounted(() => {
     document.removeEventListener('visibilitychange', visibilityChanged);
     motion.removeEventListener('change', preferenceChanged);
   };
-  if (motion.matches || document.hidden || target.bottom <= 0 || target.top >= innerHeight
-    || target.right <= 0 || target.left >= innerWidth || width <= 0 || height <= 0) { stop(); return; }
+  if (motion.matches || document.hidden || width <= 0 || height <= 0) { stop(); return; }
+  if (target.bottom <= 0 || target.top >= innerHeight || target.right <= 0 || target.left >= innerWidth) landingMoved = true;
   const landingX = target.left + target.width / 2 - (image.left + image.width / 2);
   const landingY = target.top + target.height / 2 - (image.top + image.height / 2);
   const landingScale = Math.min(target.width / Math.max(1, image.width), target.height / Math.max(1, image.height));

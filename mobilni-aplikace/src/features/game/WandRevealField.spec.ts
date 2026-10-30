@@ -95,7 +95,7 @@ describe('finite wand reveal field', () => {
     expect(surface?.getAttribute('width')).toBe(String(Math.round(1004 * Math.min(devicePixelRatio || 1, 1.5))));
     expect(surface?.getAttribute('height')).toBe(String(Math.round(804 * Math.min(devicePixelRatio || 1, 1.5))));
     window.dispatchEvent(new Event('scroll'));
-    await view.vm.$nextTick();
+    await advance(2900);
     expect(view.attributes('data-state')).toBe('settled');
     expect(nextFrame).toBeUndefined();
     view.unmount();
@@ -117,11 +117,13 @@ describe('finite wand reveal field', () => {
     expect(view.attributes('data-state')).toBe('disabled');
     expect(nextFrame).toBeUndefined();
   });
-  it('stops offscreen without replaying when the scene returns', async () => {
+  it('keeps the fullscreen reveal when mobile layout moves its landing offscreen', async () => {
     view = mount(WandRevealField);
     intersect([{ isIntersecting: false }]);
     await view.vm.$nextTick();
-    expect(nextFrame).toBeUndefined();
+    expect(nextFrame).toBeDefined();
+    await advance(2900);
+    expect(view.attributes('data-state')).toBe('settled');
     intersect([{ isIntersecting: true }]);
     expect(nextFrame).toBeUndefined();
   });
@@ -156,9 +158,18 @@ describe('finite wand reveal field', () => {
   });
   it('falls back to the static artwork if rendering is consistently too slow', async () => {
     view = mount(WandRevealField);
-    for (let time = 100; time <= 600; time += 100) await advance(time);
+    for (let time = 150; time <= 1800; time += 150) await advance(time);
     expect(view.attributes('data-state')).toBe('disabled');
     expect(nextFrame).toBeUndefined();
+  });
+  it('does not lose the mobile reveal when the keyboard closes or the page scrolls', async () => {
+    view = mount(WandRevealField);
+    window.dispatchEvent(new Event('resize'));
+    window.dispatchEvent(new Event('scroll'));
+    await advance(1000);
+    expect(view.attributes('data-state')).toBe('active');
+    await advance(2900);
+    expect(view.attributes('data-state')).toBe('settled');
   });
   it('keeps a missing Canvas implementation harmless', async () => {
     vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(null);

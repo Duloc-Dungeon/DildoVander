@@ -13,8 +13,7 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
         Func<LabSocketSender, IWorkshopSpeechProvider>? speechFactory = null)
     {
         using var life = CancellationTokenSource.CreateLinkedTokenSource(requestToken);
-        // The cross-process owner lease lasts 210 seconds; audio ends before it.
-        life.CancelAfter(TimeSpan.FromSeconds(180));
+        life.CancelAfter(TimeSpan.FromSeconds(WorkshopVoiceLimits.ConversationSeconds));
         var token = life.Token;
         var sender = new LabSocketSender(socket);
         var decisions = Channel.CreateBounded<byte>(new BoundedChannelOptions(8)
@@ -99,7 +98,7 @@ internal sealed class ElevenLabsWorkshopRuntime(WandGenerationStore wands, IWork
                 if (message.Value.Type == WebSocketMessageType.Binary)
                 {
                     total += message.Value.Payload.Length;
-                    if (message.Value.Payload.Length % 2 != 0 || total > 24000L * 2 * 180)
+                    if (message.Value.Payload.Length % 2 != 0 || total > 24000L * 2 * WorkshopVoiceLimits.ConversationSeconds)
                     {
                         throw new InvalidDataException("Audio exceeded its bound.");
                     }

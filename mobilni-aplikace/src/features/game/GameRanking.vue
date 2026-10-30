@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useVisitHumor } from "../humor/visitHumor";
+const { copy: humor } = useVisitHumor();
 import { computed, ref } from 'vue';
 import type { Ranking } from './game';
 
@@ -28,7 +30,7 @@ const shared = computed(() => own.value && rows.value.some(row => row.id !== own
     <div v-if="own" class="game-ranking-position" role="status">
       <p><strong>{{ shared ? 'Dělíš se o' : 'Držíš' }} {{ own.rank }}. místo</strong><span>{{ points(own) }}</span></p>
       <p v-if="ahead">Odstup od další vyšší příčky: {{ pointsLabel(score(ahead) - score(own)) }}.</p>
-      <p v-else-if="score(own) > 0">{{ shared ? 'Na čele je těsno. Opona unese všechny.' : 'Jsi v čele. Zatím.' }}</p>
+      <p v-else-if="score(own) > 0">{{ shared ? humor.sharedLead : humor.soloLead }}</p>
       <p v-else>První výsledek teprve rozdá místa.</p>
     </div>
     <p v-else-if="rows.length" role="status">Tvoje jméno se v pořadí objeví, jakmile tě skupina zařadí mezi hráče.</p>
@@ -44,7 +46,7 @@ const shared = computed(() => own.value && rows.value.some(row => row.id !== own
       </ol>
       <p v-else role="status">Tomuto jménu žádný hráč neodpovídá. Zkus kratší jméno.</p>
     </template>
-    <p v-else role="status">V této disciplíně zatím nejsou žádní hráči. První výsledek teprve čeká u stolu.</p>
+    <p v-else role="status">V této disciplíně zatím nejsou žádní hráči. {{ humor.emptyRanking }}</p>
   </section>
 </template>
 

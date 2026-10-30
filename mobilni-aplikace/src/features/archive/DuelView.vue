@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useVisitHumor } from "../humor/visitHumor";
+const { copy: humor } = useVisitHumor();
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { account, accountTransport, accountDeletionRequested, offlineSession } from '../identity/session';
@@ -205,7 +207,7 @@ function points(participant: 'left' | 'right') { return current.value?.rounds.re
         <label><input v-model="consent" type="checkbox" :disabled="pending"> Souhlasím s účastí v tomto souboji.</label><button class="aw-button" :disabled="!consent || pending || refreshing" @click="join">Potvrdit účast</button>
       </section>
       <section v-if="current.result" class="archive-duel-result" :data-result="resultTone" aria-labelledby="duel-result-title">
-        <p class="archive-wand-kicker">{{ resultTone === 'victory' ? 'Sláva má nového majitele' : resultTone === 'defeat' ? 'I prohra potřebuje publikum' : 'Dva mágové. Jedna nerozhodnost.' }}</p>
+        <p class="archive-wand-kicker">{{ resultTone === 'victory' ? humor.victory : resultTone === 'defeat' ? humor.defeat : humor.draw }}</p>
         <h2 id="duel-result-title">Výsledek</h2><p class="archive-duel-verdict">{{ resultTitle }}</p><p class="archive-duel-final-score">{{ current.result.leftPoints }} <span>:</span> {{ current.result.rightPoints }}</p>
         <p v-if="current.result.exhibition">Fiktivní exhibice se nezapočítává jako výhra hosta.</p><p class="archive-wand-lore">{{ current.result.ending }}</p>
         <p class="archive-caption">Uložený souboj · tři kola a jejich kouzla najdeš níže.</p>

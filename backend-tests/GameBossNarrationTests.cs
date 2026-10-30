@@ -55,6 +55,9 @@ internal static class GameBossNarrationTests
             "old cache schema upgrades in place and refreshes only audio without a known rendering identity");
         var input = await fixture.InputAsync(default);
         using var request = JsonDocument.Parse(OpenAiGameYoloProvider.BuildBossRequest(input));
+        Check(request.RootElement.GetProperty("instructions").GetString()!.Contains(
+            Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text, StringComparison.Ordinal),
+            "boss request carries shared Czech editorial direction in instructions, not player data");
         var payload = request.RootElement.GetProperty("input").GetString()!;
         using var profilePayload = JsonDocument.Parse(payload);
         var player = profilePayload.RootElement.GetProperty("player");

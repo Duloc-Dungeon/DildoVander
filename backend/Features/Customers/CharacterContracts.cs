@@ -5,7 +5,7 @@ internal sealed record CharacterUserInput(string Name, string World, string? Ver
 internal sealed record CharacterSource(string Title, string Url);
 internal sealed record CharacterFact(string Text, string[] SourceUrls);
 internal sealed record CharacterWelcome(string Joke, string Identity, string Teaser, string[] UsedFactIds,
-    string? TeaserId);
+    string? TeaserId, string[]? Jokes = null);
 internal sealed record CharacterEnrichment(string RecognizedName, string World, string Summary,
     CharacterFact[] Facts, string[] ConversationIdeas, string[] Ambiguities, bool NeedsClarification,
     CharacterSource[] Sources, string Model, string PromptVersion, long ProcessedAt, long InputRevision,

@@ -22,6 +22,8 @@ export class SpeechEngineVoice {
   private pendingActivityId: number | null = null;
   private latestUserEvent = 0;
   private retiredUserEvent = 0;
+  private finishing = false;
+  private finishTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private observer: VoiceObserver) {}
 
@@ -51,7 +53,7 @@ export class SpeechEngineVoice {
       };
       socket.onerror = () => { if (current()) this.fail('connection_failed'); };
       socket.onclose = event => {
-        if (current()) this.fail(event.code === 1008 ? 'connection_policy_rejected' : 'connection_closed');
+        if (current() && !this.finishing) this.fail(event.code === 1008 ? 'connection_policy_rejected' : 'connection_closed');
       };
       // Both transports must start together: server readiness waits for the RTC client.
       const { Conversation } = await import('@elevenlabs/client');
@@ -61,10 +63,11 @@ export class SpeechEngineVoice {
         workletPaths: { rawAudioProcessor: rawAudioProcessorUrl },
         overrides: { agent: { firstMessage } },
         onError: () => { if (current()) this.fail('elevenlabs_connection_failed'); },
-        onDisconnect: () => { if (current()) this.fail('connection_closed'); },
+        onDisconnect: () => { if (current()) { if (this.finishing) this.finish(); else this.fail('connection_closed'); } },
         onModeChange: ({ mode }) => {
           if (!current()) return;
           this.mode = mode;
+          if (this.finishing && mode === 'listening') { this.finish(); return; }
           this.publishPhase();
         },
         onInterruption: () => {
@@ -148,13 +151,24 @@ export class SpeechEngineVoice {
         this.observer.providerReady?.(typeof value.providerSessionId === 'string' ? value.providerSessionId : null); break;
       case 'error': this.fail(typeof value.code === 'string' ? value.code : 'lab_provider_error'); break;
       case 'busy': this.observer.error('lab_session_busy', false); break;
-      case 'ended': this.dispose(); this.observer.phase('ended'); this.observer.closed(); break;
+      case 'ended':
+        if (this.mode === 'speaking' && this.conversation) {
+          // The control socket can finish before WebRTC has played its tail.
+          // Keep output alive until the SDK reports actual playback completion.
+          this.finishing = true;
+          this.conversation.setMicMuted(true);
+          if (!this.finishTimeout) this.finishTimeout = setTimeout(() => this.finish(), 120000);
+        } else this.finish();
+        break;
     }
   }
 
   private fail(code: string): void {
     this.dispose(); this.observer.phase('error');
     this.observer.error(code, classifyLabFailure(code).recoverable); this.observer.closed();
+  }
+  private finish(): void {
+    this.dispose(); this.observer.phase('ended'); this.observer.closed();
   }
   private send(value: object): boolean {
     if (this.socket?.readyState !== WebSocket.OPEN) return false;
@@ -188,6 +202,9 @@ export class SpeechEngineVoice {
   end(): void { this.send({ type: 'end' }); this.dispose(); this.observer.phase('ended'); }
   dispose(): void {
     ++this.generation;
+    if (this.finishTimeout) clearTimeout(this.finishTimeout);
+    this.finishTimeout = null; this.finishing = false;
+    this.mode = 'listening';
     if (this.timeout) clearTimeout(this.timeout);
     if (this.meter) clearInterval(this.meter);
     this.timeout = null; this.meter = null;

@@ -47,7 +47,7 @@ internal static class CharacterPortraitFallbackTests
         using var provider = new WikimediaCharacterPortraitFallbackProvider(http);
         var result = await provider.FindAsync(Job("Voldemort", version: "Brussels"), CancellationToken.None);
         Check(result is not null && calls.Count == 3, "fallback query finds a relevant cosplay after unqualified hits are rejected");
-        Check(result!.Source.Title == "File:Voldemort cosplay at Brussels.jpg"
+        Check(result!.Source!.Title == "File:Voldemort cosplay at Brussels.jpg"
             && result.Source.Author == "Artist & Friend" && result.Source.License == "CC BY-SA 2.0"
             && result.Source.LicenseUrl.StartsWith("https://creativecommons.org/licenses/", StringComparison.Ordinal), "attribution metadata is plain text and source has usable license link");
         using var decoded = SKBitmap.Decode(result.Image);

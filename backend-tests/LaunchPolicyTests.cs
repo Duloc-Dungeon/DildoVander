@@ -63,7 +63,7 @@ internal static class LaunchPolicyTests
         }
         Check(!policy.Evaluate(customer, first.Id, selected).Allowed, "group waits before its absolute term");
         clock.Set(DateTimeOffset.FromUnixTimeMilliseconds(2000));
-        Check(policy.Evaluate(customer, first.Id, selected).Allowed, "server evaluation opens the due group");
+        Check(policy.Evaluate(customer, first.Id, selected) is { Allowed: true, OpenedAt: 2000 }, "server evaluation exposes the actual group opening for the Rickroll window");
         first = store.ReadGroup(first.Id)!;
         var second = store.CreateGroup("owner", new("Second evening"), 2001);
         var oldFirst = first;
