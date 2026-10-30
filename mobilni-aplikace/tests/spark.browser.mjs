@@ -26,6 +26,7 @@ try {
     await ready(page);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}: no horizontal overflow`);
     assert.equal(await page.locator('.spark-renderer canvas').count(), 1, 'one Pixi canvas');
+    assert.equal(await page.locator('.spark-primary').first().evaluate(element => getComputedStyle(element).fontWeight), '800', 'arcade controls retain shared WNS button emphasis');
     assert.equal(await page.locator('.wns-navigation').count(), 0, 'game surface is not covered by navigation');
     await capture(page, `ready-${width}`);
     await page.getByRole('button', { name: 'Hrát o rekord', exact: true }).click(); await phase(page, 'playing');

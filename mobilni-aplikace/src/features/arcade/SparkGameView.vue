@@ -171,20 +171,19 @@ onBeforeUnmount(() => {
 <template>
   <section class="spark-page" aria-labelledby="spark-title">
     <header class="spark-topbar">
-      <RouterLink to="/play" class="spark-back" aria-label="Zpět ke hrám">← <span>Hry</span></RouterLink>
+      <RouterLink to="/play" class="spark-back" aria-label="Zpět ke hrám"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M12.5 4.5 7 10l5.5 5.5M7.5 10H17" /></svg><span>Hry</span></RouterLink>
       <h1 id="spark-title">Kouzlo bez dozoru</h1>
       <SoundToggle />
     </header>
     <div class="spark-layout">
       <div class="spark-cabinet" :style="{ '--spark-art': `url(${storeroomUrl})` }" :data-phase="phase">
         <div ref="host" class="spark-renderer" />
-        <div class="spark-hud" aria-hidden="true"><span>{{ phase === 'ready' ? 'KOUZELNICKÝ SKLAD' : runIsRanked ? 'SOUTĚŽNÍ POKUS' : 'TRÉNINK' }}</span><strong>{{ score }}</strong><small>{{ target }}</small></div>
+        <div class="spark-hud" aria-hidden="true"><span>{{ phase === 'ready' ? 'Kouzelnický sklad' : runIsRanked ? 'Soutěžní pokus' : 'Trénink' }}</span><strong>{{ score }}</strong><small>{{ target }}</small></div>
         <div ref="surface" class="spark-touch" role="button" tabindex="0" aria-label="Obrátit směr jiskry. Mezerník nebo Enter obrací směr, Escape pozastaví hru." :aria-disabled="phase !== 'playing'"
           @pointerdown="pointerDown" @pointerup="pointerUp" @pointercancel="pointerCancel" @keydown="keyDown" />
-        <button v-if="phase === 'playing'" class="spark-pause" aria-label="Pozastavit hru" @click.stop="pause()">Ⅱ</button>
+        <button v-if="phase === 'playing'" class="spark-pause" aria-label="Pozastavit hru" @click.stop="pause()"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M6.5 4.5v11M13.5 4.5v11" /></svg></button>
         <div v-if="phase === 'ready'" class="spark-panel spark-intro">
           <img :src="sparkUrl" alt="" width="76" height="76" />
-          <p class="spark-eyebrow">Jedno klepnutí. Jiný směr.</p>
           <h2>První kouzlo se povedlo.<br /><span>Bohužel pokračuje.</span></h2>
           <p>Klepnutím obrať směr jiskry. Proleť otvory a ničeho se nedotkni.</p>
           <button class="spark-primary" :disabled="!ticket || !graphicsReady" @click="start(true)">{{ preparing ? 'Připravuji soutěžní pokus…' : ticket ? 'Hrát o rekord' : 'Soutěžní pokus není připravený' }}</button>
@@ -192,13 +191,14 @@ onBeforeUnmount(() => {
           <small>Jeden prst · jedna brána = jeden bod</small>
         </div>
         <div v-else-if="phase === 'paused'" class="spark-panel spark-paused">
-          <p class="spark-eyebrow">Magie má přestávku</p><h2>Pokus počká.</h2><p>{{ pauseReason }}</p>
+          <h2>Pokus počká.</h2><p>{{ pauseReason }}</p>
           <button class="spark-primary" :disabled="!graphicsReady" @click="fly">Pokračovat</button>
           <RouterLink class="spark-secondary" to="/play">Zpět ke hrám</RouterLink>
         </div>
         <div v-else-if="phase === 'result' && restartReady" class="spark-panel spark-result">
-          <p class="spark-eyebrow">{{ runIsRanked ? 'Soutěžní výsledek' : 'Tréninkový výsledek' }}</p>
-          <h2 ref="resultHeading" tabindex="-1">{{ gatesLabel(score) }}</h2><p class="spark-result-title">{{ result.title }}</p>
+          <h2 ref="resultHeading" tabindex="-1">{{ gatesLabel(score) }}</h2>
+          <small>{{ runIsRanked ? 'Soutěžní výsledek' : 'Tréninkový výsledek' }}</small>
+          <p class="spark-result-title">{{ result.title }}</p>
           <p class="spark-joke">{{ result.joke }}</p>
           <p class="spark-tip">{{ result.tip }}</p>
           <button class="spark-primary" :disabled="!graphicsReady || (runIsRanked && !ticket)" @click="start(runIsRanked)">{{ runIsRanked && !ticket ? 'Připravuji další pokus…' : 'Ještě jeden pokus' }}</button>
@@ -209,7 +209,7 @@ onBeforeUnmount(() => {
       </div>
       <aside class="spark-companion" aria-label="Výsledky a nastavení">
         <p class="spark-score-sr" role="status">{{ phase === 'paused' ? 'Hra pozastavena.' : phase === 'result' ? `${gatesLabel(score)}. ${resultSaved}` : phase === 'playing' ? 'Hra běží.' : 'Hra připravena.' }}</p>
-        <div class="spark-records"><span>Tvůj rekord ve skupině<strong>{{ best }}</strong></span><RouterLink to="/play/ranking#spark">Žebříček <span aria-hidden="true">↗</span></RouterLink></div>
+        <div class="spark-records"><span>Tvůj rekord ve skupině<strong>{{ best }}</strong></span><RouterLink to="/play/ranking#spark">Žebříček <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M4 12 12 4M5 4h7v7" /></svg></RouterLink></div>
         <p v-if="next" class="spark-next">Další cíl: {{ next.displayName }} · {{ gatesLabel(next.score) }}</p>
         <p v-if="phase === 'result'" class="spark-delivery" role="status">{{ resultSaved }}</p>
         <div v-if="graphicsError" class="spark-message" role="alert"><p>{{ graphicsError }}</p><button class="spark-secondary" @click="setupGraphics">Obnovit grafiku</button></div>

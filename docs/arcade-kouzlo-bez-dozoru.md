@@ -6,6 +6,15 @@ Jiskra letí sama; dotyk obrátí boční směr. Jedna celá překonaná brána 
 jeden bod, náraz pokus ukončí. Skupinový rekord je maximum jednoho ověřeného
 pokusu. Hra nepřidává bojová XP ani YOLO výhry.
 
+V přehledu `/play` jsou tři samostatné ilustrované vstupy: nejprve Souboj hůlek,
+pak Kouzlo bez dozoru a Pod pečetí. Souboj hůlek na `/play/souboj-hulek` sdružuje
+1v1, odemčené taktické a YOLO režimy, týmovou hru, trénink a odhaleného Barona.
+Podmínky odemykání se nemění. Arkáda je označená jako hra pro jednoho,
+Pod pečetí jako příběhová hra pro skupinu. Před vytvořením hůlky je arkáda skrytá
+a vstup do Souboje hůlek vede na přípravu hůlky; Pod pečetí zůstává dostupné.
+Úvod, pauza a výsledek arkády používají společné tmavé povrchy, Manrope
+a mintová tlačítka WNS; původní herní ilustrace a pravidla zůstávají zachované.
+
 ## Rešerše a rozhodnutí
 
 Zdroje ověřené 30. října 2026. Uživatelská rešerše motivace je návrhový podklad,

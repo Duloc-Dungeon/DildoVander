@@ -4,7 +4,8 @@
 .spark-topbar .sound-toggle span { display: none; }
 .spark-topbar .sound-toggle svg { width: 20px; height: 20px; }
 .application-main .spark-page .spark-topbar h1 { margin: 0; font-size: clamp(1rem, 4vw, 1.4rem); font-weight: 760; letter-spacing: -.04em; }
-.spark-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--wns-muted); text-decoration: none; }
+.spark-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--wns-muted); text-decoration: none; font-weight: 700; }
+.spark-back svg, .spark-pause svg, .spark-records svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .spark-layout { max-width: 920px; margin: auto; }
 .spark-cabinet { position: relative; isolation: isolate; overflow: hidden; width: min(100%, 420px, calc((100svh - 90px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * .5625)); aspect-ratio: 9 / 16; margin: auto; border: 1px solid #706047; border-radius: 22px; background: linear-gradient(#08090922, #08090966), var(--spark-art) center / cover; box-shadow: 0 14px 60px #0008; }
 .spark-renderer, .spark-touch { position: absolute; inset: 0; }
@@ -13,25 +14,26 @@
 .spark-touch { z-index: 2; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 .spark-touch:focus-visible { outline: 2px solid var(--wns-mint); outline-offset: -4px; border-radius: 20px; }
 .spark-hud { position: absolute; z-index: 1; top: 22px; left: 30px; right: 30px; display: flex; flex-direction: column; align-items: center; pointer-events: none; text-align: center; text-shadow: 0 2px 12px #000; }
-.spark-hud > span, .spark-eyebrow { font-size: .62rem; font-weight: 800; letter-spacing: .13em; color: var(--wns-amber); text-transform: uppercase; }
-.spark-hud strong { font-size: clamp(2.8rem, 11vw, 4.1rem); line-height: 1.1; letter-spacing: -.06em; font-variant-numeric: tabular-nums; }
+.spark-hud > span { font-size: .8rem; font-weight: 700; color: var(--wns-text); }
+.spark-hud strong { font-size: clamp(2.8rem, 11vw, 4.1rem); line-height: 1.1; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
 .spark-hud small { color: var(--wns-muted); font-size: .75rem; }
-.spark-panel { position: absolute; z-index: 4; left: 20px; right: 20px; top: 23%; display: grid; gap: 12px; padding: 22px 18px; max-height: 76%; overflow-y: auto; text-align: center; background: #101a17ed; border: 1px solid #45554b; border-radius: 20px; box-shadow: 0 12px 50px #0008; }
+.spark-panel { position: absolute; z-index: 4; left: 20px; right: 20px; top: 23%; display: grid; gap: 12px; padding: 20px 18px; max-height: 76%; overflow-y: auto; text-align: center; background: var(--wns-surface); border: 1px solid var(--wns-line); border-radius: 16px; scrollbar-color: var(--wns-muted) var(--wns-surface); }
 .spark-panel p, .spark-panel h2 { margin: 0; }
 .application-main .spark-page .spark-panel h2 { font-size: clamp(1.25rem, 5vw, 1.8rem); font-weight: 760; line-height: 1.18; letter-spacing: -.04em; }
 .spark-panel h2 span { color: var(--wns-mint); }
-.spark-panel p:not(.spark-eyebrow) { font-size: .86rem; line-height: 1.5; }
+.spark-panel p { font-size: .9rem; line-height: 1.5; }
 .spark-panel small { color: var(--wns-muted); font-size: .68rem; line-height: 1.5; }
 .spark-intro { top: 21%; }
-.spark-intro img { width: 44px; height: 44px; object-fit: contain; margin: -12px auto -8px; filter: drop-shadow(0 0 24px #b8f3d455); }
-.spark-primary, .spark-secondary { display: flex; align-items: center; justify-content: center; min-height: 46px; width: 100%; padding: 10px 14px; border-radius: 13px; font: inherit; font-size: .86rem; font-weight: 760; line-height: 1.3; text-decoration: none; cursor: pointer; }
+.spark-intro img { width: 44px; height: 44px; object-fit: contain; margin: -12px auto -8px; }
+.spark-page :is(.spark-primary, .spark-secondary) { display: flex; align-items: center; justify-content: center; min-height: 52px; width: 100%; padding: 10px 14px; border-radius: var(--wns-radius-button); font: inherit; font-size: .95rem; font-weight: 800; line-height: 1.45; text-decoration: none; cursor: pointer; transition: background-color 140ms ease, transform 140ms ease; }
 .spark-primary { border: 1px solid var(--wns-mint); color: var(--wns-on-mint); background: var(--wns-mint); }
-.spark-secondary { border: 1px solid #57665e; color: var(--wns-text); background: #121b17; }
+.spark-secondary { border: 1px solid var(--wns-line); color: var(--wns-text); background: var(--wns-surface-raised); }
 .spark-primary:hover:not(:disabled) { background: #d1ffe7; }
 .spark-secondary:hover:not(:disabled) { background: #29362e; }
-.spark-primary:disabled, .spark-secondary:disabled { opacity: .5; cursor: default; }
+.spark-primary:active:not(:disabled), .spark-secondary:active:not(:disabled) { transform: scale(.985); }
+.spark-primary:disabled, .spark-secondary:disabled { color: var(--wns-muted); background: var(--wns-surface-raised); border-color: var(--wns-line); cursor: default; }
 .spark-page button:focus-visible, .spark-page a:focus-visible, .spark-page summary:focus-visible { outline: 2px solid var(--wns-mint); outline-offset: 4px; }
-.spark-pause { position: absolute; z-index: 5; top: 12px; right: 18px; width: 44px; height: 44px; background: #101a17ed; color: var(--wns-text); border: 1px solid #5a675f; border-radius: 12px; font-size: 1.1rem; cursor: pointer; }
+.spark-pause { position: absolute; z-index: 5; top: 12px; right: 18px; display: grid; place-items: center; width: 44px; height: 44px; background: #191b1bf2; color: var(--wns-text); border: 1px solid var(--wns-line); border-radius: 14px; cursor: pointer; }
 .spark-touch-hint { position: absolute; z-index: 1; bottom: 22px; left: 18px; right: 18px; margin: 0; text-align: center; pointer-events: none; font-size: .7rem; color: var(--wns-muted); }
 .spark-result { top: 18%; gap: 10px; }
 .application-main .spark-page .spark-result h2 { font-size: clamp(2rem, 9vw, 3rem); color: var(--wns-mint); }
@@ -42,7 +44,7 @@
 .spark-records { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .spark-records > span { display: grid; gap: 3px; color: var(--wns-muted); font-size: .75rem; }
 .spark-records strong { color: var(--wns-text); font-size: 1.7rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.spark-records a { color: var(--wns-mint); padding-block: 12px; text-decoration: none; font-weight: 760; }
+.spark-records a { display: inline-flex; align-items: center; gap: 5px; color: var(--wns-mint); padding-block: 12px; text-decoration: none; font-weight: 800; }
 .spark-next, .spark-delivery { font-size: .8rem; color: var(--wns-muted); line-height: 1.6; }
 .spark-message { padding: 12px; border: 1px solid #5c5140; border-radius: 12px; margin-top: 12px; }
 .spark-message p { font-size: .8rem; margin: 0 0 10px; line-height: 1.5; }
@@ -54,5 +56,5 @@
 .spark-score-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (min-width: 760px) { .spark-page { padding-top: 24px; } .spark-layout { display: grid; grid-template-columns: minmax(0, 420px) minmax(220px, 1fr); gap: 48px; align-items: center; } .spark-companion { margin: 0; } }
 @media (max-height: 680px) { .spark-panel { top: 15%; max-height: 82%; padding-block: 14px; gap: 8px; } .spark-intro img { display: none; } .spark-hud { top: 12px; } .spark-hud strong { font-size: 2.5rem; } .spark-hud small { display: none; } }
-@media (max-width: 360px) { .spark-page { padding-inline: 8px; } .spark-panel { left: 16px; right: 16px; padding: 18px 12px; gap: 8px; } .spark-panel p:not(.spark-eyebrow) { font-size: .78rem; } .spark-result { top: 16%; } }
+@media (max-width: 360px) { .spark-page { padding-inline: 8px; } .spark-panel { left: 16px; right: 16px; padding: 16px 12px; gap: 8px; } .spark-panel p { font-size: .82rem; } .spark-result { top: 16%; } }
 @media (prefers-reduced-motion: reduce) { .spark-page *, .spark-page *::before, .spark-page *::after { animation: none !important; transition: none !important; } }

@@ -223,7 +223,7 @@ onBeforeUnmount(() => { alive = false; controller.abort(); stopLiveUpdates(); })
 <template>
   <SceneShell class="game-scene game-experience" :class="{ 'responsive-table': Boolean(match), 'game-duel-scene': Boolean(match), 'game-team-scene': Boolean(match) }"
     :data-duel-result="match?.status === 'complete' ? match.result : undefined" labelled-by="game-title"><div class="game-content">
-    <header class="game-header"><RouterLink :to="id ? '/play/teams' : {path: '/play', query: {browse: '1'}}">← Ke {{ id ? 'spojencům' : 'hře' }}</RouterLink><span class="game-eyebrow">Dva proti dvěma</span><GameRules :team="true" /></header>
+    <header class="game-header"><RouterLink :to="id ? '/play/teams' : '/play/souboj-hulek'">{{ id ? '← Ke spojencům' : '← Souboj hůlek' }}</RouterLink><span class="game-eyebrow">Dva proti dvěma</span><GameRules :team="true" /></header>
     <AwNotice v-if="error" tone="danger">{{ error }} <AwButton @click="refresh">Obnovit stav</AwButton></AwNotice>
     <p v-if="loading" role="status">Připravujeme společný stůl…</p>
     <template v-if="match">

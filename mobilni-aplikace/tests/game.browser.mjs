@@ -30,8 +30,19 @@ try {
       if (state === 'lobby') {
         assert.equal(await page.getByRole('link', { name: '← Moje postava', exact: true }).count(), 0);
         await page.locator('#application-header-actions .sound-toggle').waitFor();
-        const teamLink = await page.getByRole('link', { name: /Najít spojence/ }).boundingBox();
-        assert.ok(teamLink && teamLink.y + teamLink.height < 760, `${width}: earned team mode is visible before the fixed navigation`);
+        const games = page.getByRole('navigation', { name: 'Samostatné hry' });
+        assert.equal(await games.getByRole('link').count(), 3, `${width}: all three games have a distinct entry`);
+        assert.equal(await games.getByRole('link').first().getAttribute('href'), '/play/souboj-hulek');
+        assert.equal(await games.getByRole('link', { name: 'Kouzlo bez dozoru', exact: true }).getAttribute('href'), '/play/kouzlo-bez-dozoru');
+        assert.equal(await games.getByRole('link', { name: 'Pod pečetí', exact: true }).getAttribute('href'), '/play/pod-peceti');
+        assert.equal(await page.locator('.game-mode-links').count(), 0, `${width}: duel modes live on their own page`);
+        await games.getByRole('link', { name: 'Souboj hůlek', exact: true }).click();
+        await page.getByRole('heading', { name: 'Souboj hůlek', exact: true }).waitFor();
+        const teamMode = page.getByRole('link', { name: /Najít spojence/ });
+        await teamMode.waitFor();
+        assert.equal(await teamMode.count(), 1, `${width}: earned team mode remains available`);
+        await page.getByRole('link', { name: '← Všechny hry', exact: true }).click();
+        await games.waitFor();
       }
       if (state === 'choice' || state === 'team-choice') {
         assert.equal(await page.locator('.game-spell-token').count(), 3, `${state}: shared spell tokens`);
