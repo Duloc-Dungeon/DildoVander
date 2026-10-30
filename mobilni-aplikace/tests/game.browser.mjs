@@ -38,7 +38,9 @@ try {
         assert.equal(await page.locator('.game-mode-links').count(), 0, `${width}: duel modes live on their own page`);
         await games.getByRole('link', { name: 'Souboj hůlek', exact: true }).click();
         await page.getByRole('heading', { name: 'Souboj hůlek', exact: true }).waitFor();
-        assert.equal(await page.getByRole('link', { name: /Najít spojence/ }).count(), 1, `${width}: earned team mode remains available`);
+        const teamMode = page.getByRole('link', { name: /Najít spojence/ });
+        await teamMode.waitFor();
+        assert.equal(await teamMode.count(), 1, `${width}: earned team mode remains available`);
         await page.getByRole('link', { name: '← Všechny hry', exact: true }).click();
         await games.waitFor();
       }
