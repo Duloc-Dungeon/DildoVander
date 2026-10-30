@@ -243,7 +243,9 @@ try {
   const readsBeforeAccount = characterReads;
   await page.goto(`${origin}/me/account`, { waitUntil: 'networkidle' });
   await page.getByRole('heading', { name: 'Můj účet', exact: true }).waitFor();
+  await page.getByText(artwork.finalMessage, { exact: true }).waitFor();
   assert.equal(characterReads, readsBeforeAccount, 'account settings do not request a prelaunch-blocked character');
+  assert.equal(await page.getByAltText('Portrét tvé postavy').count(), 0, 'the account joke does not load a portrait');
   assert.equal(await page.getByText('Stav rozhovoru se nepodařilo načíst.', { exact: false }).count(), 0);
   await page.evaluate(() => document.documentElement.style.setProperty('--safe-area-inset-top', '50px'));
   assert(await page.getByRole('heading', { name: 'Můj účet', exact: true }).evaluate(element => element.getBoundingClientRect().top >= 50));
