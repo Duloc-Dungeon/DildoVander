@@ -21,6 +21,7 @@ export const router = createRouter({
     { path: '/play/pod-peceti', name: 'sealed-case-lobby', component: () => import('../features/sealed-case/SealedCaseView.vue'), meta: { title: 'Pod pečetí', private: true, requiresAccount: true } },
     { path: '/play/pod-peceti/:id', name: 'sealed-case', component: () => import('../features/sealed-case/SealedCaseView.vue'), meta: { title: 'Pod pečetí', private: true, requiresAccount: true } },
     { path: '/play/wand', name: 'wand-workshop', component: () => import('../features/game/WandWorkshopView.vue'), meta: { title: 'Kufrova dílna', private: true, requiresAccount: true } },
+    { path: '/play/souboj-hulek', name: 'wand-duels', component: () => import('../features/game/PlayView.vue'), meta: { title: 'Souboj hůlek', private: true, requiresAccount: true } },
     { path: '/play/teams', name: 'game-teams', component: () => import('../features/game/TeamView.vue'), meta: { title: 'Spojenci', private: true, requiresAccount: true } },
     { path: '/play/team/:id', name: 'game-team', component: () => import('../features/game/TeamView.vue'), meta: { title: 'Týmový souboj', private: true, requiresAccount: true } },
     { path: '/play/chronicle', name: 'game-chronicle-redirect', redirect: '/me/keepsakes' },

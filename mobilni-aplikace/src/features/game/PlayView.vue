@@ -11,6 +11,7 @@ import PushNotifications from '../identity/PushNotifications.vue';
 
 import amberWand from '../../assets/wns-v2/art/wand-amber.png';
 import GameCharacter from './GameCharacter.vue';
+import GameDestinations from './GameDestinations.vue';
 import GameBossStage from './GameBossStage.vue';
 import GameBossNarration from './GameBossNarration.vue';
 import GameBossEnergy from './GameBossEnergy.vue';
@@ -68,6 +69,7 @@ const yoloRevealed = ref(false);
 const practice = computed(() => route.path === '/play/practice');
 const chronicle = computed(() => route.path === '/play/chronicle');
 const challenge = computed(() => route.path === '/play/challenge');
+const duels = computed(() => route.path === '/play/souboj-hulek');
 const bossSetup = computed(() => route.path === '/play/boss');
 const bossAttempt = computed(() => route.path.startsWith('/play/boss/'));
 const keeper = computed(() => route.path === '/play/keeper');
@@ -374,7 +376,7 @@ onBeforeUnmount(() => {
     <div class="game-content">
       <ApplicationHeaderActions><SoundToggle /></ApplicationHeaderActions>
       <header v-if="route.path !== '/play' || tableDuel" class="game-header">
-        <RouterLink v-if="route.path !== '/play'" :to="{ path: '/play', query: { browse: '1' } }">← Ke hře</RouterLink>
+        <RouterLink v-if="route.path !== '/play'" :to="duels || readOnly ? { path: '/play', query: { browse: '1' } } : '/play/souboj-hulek'">{{ duels || readOnly ? '← Všechny hry' : '← Souboj hůlek' }}</RouterLink>
         <span v-if="tableDuel" class="game-eyebrow">{{ practice ? 'Trénink · bez XP' : modeName(match!.mode) }}</span>
         <GameRules v-if="tableDuel" :practice="practice" :tactical="match?.mode === 'tactical'" />
       </header>
@@ -406,7 +408,8 @@ onBeforeUnmount(() => {
           </div>
         </section>
         <section v-if="pendingTasks.length" class="game-open-matches"><h2>Úkoly k potvrzení</h2><RouterLink v-for="item in pendingTasks" :key="item.id" class="game-match-link" :to="`/play/match/${item.id}`"><span>{{ item.partyTask!.title }}<small>Po duelu s {{ item.opponent.displayName }}</small></span><span>Potvrdit výsledek →</span></RouterLink></section>
-        <nav class="game-side-links" aria-label="Další hry a výsledky"><RouterLink to="/play/pod-peceti">Pod pečetí</RouterLink><RouterLink to="/play/ranking">Žebříček</RouterLink><RouterLink to="/play/chronicle">Moje kronika</RouterLink></nav>
+        <GameDestinations v-if="route.path === '/play'" :include-arcade="false" />
+        <nav class="game-side-links" aria-label="Výsledky"><RouterLink to="/play/ranking">Žebříček</RouterLink><RouterLink to="/play/chronicle">Moje kronika</RouterLink></nav>
       </template>
       <template v-else-if="practice || match">
         <div class="game-match-heading" :class="{ 'game-sr': tableDuel }">
@@ -591,20 +594,23 @@ onBeforeUnmount(() => {
           <PaperSurface class="game-paper"><p v-if="!lobby.history.length">Zatím nemáš odehraný zápas. {{ humor.chronicle }}</p><ol class="game-match-list"><li v-for="item in lobby.history" :key="item.id"><RouterLink :to="`/play/match/${item.id}`"><span>{{ modeName(item.mode) }}<strong>{{ item.opponent.displayName }}</strong></span><span>{{ item.playerScore }} : {{ item.opponentScore }}<small>+{{ item.xpAwarded }} XP</small></span></RouterLink><p v-if="item.mode === 'tactical' && item.combatNarration?.status === 'complete' && item.combatNarration.text" class="duel-chronicle-narration">{{ item.combatNarration.text }}</p></li></ol></PaperSurface>
         </template>
         <template v-else>
-          <h1 id="game-title">Tvůj tah,<br /><em>{{ lobby.player.displayName }}.</em></h1>
-          <PushNotifications v-if="wandStatus?.wand" context="game" />
+          <h1 v-if="duels" id="game-title">Souboj hůlek</h1>
+          <h1 v-else id="game-title">Tvůj tah,<br /><em>{{ lobby.player.displayName }}.</em></h1>
+          <p v-if="duels" class="game-duels-intro">Vyber si, jak dnes změříte síly.</p>
+          <PushNotifications v-if="!duels && wandStatus?.wand" context="game" />
           <PaperSurface v-if="!milestoneDismissed && progress?.pending?.length" class="game-paper game-milestone"><p class="game-eyebrow">Nová kapitola</p><h2>{{ progress.pending[0].title }}</h2><p>{{ progress.pending[0].text }}</p><AwButton variant="primary" :busy="busy" @click="acknowledge(progress.pending[0], true)">{{ progress.pending[0].action }}</AwButton><AwButton @click="milestoneDismissed = true">Pokračovat později</AwButton></PaperSurface>
           <section v-if="lobby.active.length || lobby.incoming.length" class="game-open-matches"><h2>U tvého stolu</h2><RouterLink v-for="item in [...lobby.active, ...lobby.incoming]" :key="item.id" class="game-match-link" :to="`/play/match/${item.id}`"><span>{{ item.opponent.displayName }}<small>{{ modeName(item.mode) }}</small></span><span>{{ item.status === 'active' ? 'Pokračovat →' : 'Výzva →' }}</span></RouterLink></section>
           <section v-if="pendingTasks.length" class="game-open-matches"><h2>Úkoly k potvrzení</h2><RouterLink v-for="item in pendingTasks" :key="item.id" class="game-match-link" :to="`/play/match/${item.id}`"><span>{{ item.partyTask!.title }}<small>Po duelu s {{ item.opponent.displayName }}</small></span><span>Potvrdit výsledek →</span></RouterLink></section>
+          <GameDestinations v-if="!duels" />
+          <template v-if="duels">
           <div class="game-start">
-            <RouterLink class="aw-button aw-button--primary" to="/play/challenge">{{ lobby.opponents.length ? 'Vybrat soupeře' : 'Zatím není koho vyzvat' }}</RouterLink>
+            <RouterLink class="aw-button aw-button--primary" to="/play/challenge">1v1 · Vybrat soupeře</RouterLink>
             <RouterLink class="game-secondary-link" to="/play/practice">Krátký trénink bez XP</RouterLink>
           </div>
           <nav class="game-mode-links" aria-label="Herní režimy">
-            <RouterLink to="/play/kouzlo-bez-dozoru"><span><strong>Kouzlo bez dozoru</strong><small>Jiskra letí sama. Klepnutím obrať směr, proleť sklad a překonej rekord skupiny.</small></span><span aria-hidden="true">↗</span></RouterLink>
             <RouterLink v-if="lobby.player.tacticalUnlocked" :to="{ path: '/play/challenge', query: { mode: 'tactical' } }"><span><strong>Taktický duel</strong><small>Nejvýše osm výměn. Kouzla na příděl, odvaha z vlastních zásob.</small></span><span aria-hidden="true">→</span></RouterLink>
-            <RouterLink v-if="(progress?.tacticalMatches ?? 0) >= 3" to="/play/teams"><span><strong>Najít spojence</strong><small>Dva proti dvěma. Každý volí vlastní tah; vina se pak rozděluje společně.</small></span><span aria-hidden="true">→</span></RouterLink>
             <RouterLink v-if="lobby.player.yoloUnlocked" :to="{ path: '/play/challenge', query: { mode: 'yolo' } }"><span><strong>YOLO lóže</strong><small>AI vymyslí scénář i možnosti podle vašich postav a hůlek. Tři rozhodnutí na každého, bez bojových XP.</small></span><span aria-hidden="true">→</span></RouterLink>
+            <RouterLink v-if="(progress?.tacticalMatches ?? 0) >= 3" to="/play/teams"><span><strong>Týmová hra · Najít spojence</strong><small>Dva proti dvěma. Každý volí vlastní tah; vina se pak rozděluje společně.</small></span><span aria-hidden="true">→</span></RouterLink>
             <RouterLink v-if="lobby.boss?.revealed" to="/play/boss"><span><strong>{{ lobby.boss.rescued ? 'Odveta s Baronem' : 'Vyzvat Barona' }}</strong><small>{{ lobby.boss.rescued ? 'Baron čeká na další pokus.' : 'Ollivander je v zajetí. Osvoboď dílnu.' }}</small></span><span aria-hidden="true">→</span></RouterLink>
           </nav>
           <section class="game-wand-summary" aria-label="Tvoje hůlka a postup">
@@ -617,7 +623,8 @@ onBeforeUnmount(() => {
             </div>
           </section>
           <p v-if="progress?.titles?.length">Tvé tituly: {{ progress.titles.join(' · ') }}</p>
-          <nav class="game-side-links" aria-label="Další cesty"><RouterLink to="/play/pod-peceti">Pod pečetí</RouterLink><RouterLink to="/play/chronicle">Moje kronika →</RouterLink><RouterLink to="/play/ranking">Žebříček →</RouterLink><RouterLink v-if="lobby.player.xp >= 30" to="/play/keeper">{{ progress?.keeperState === 'captured' ? 'Dílnu převzal Baron →' : 'Navštívit magický kufr →' }}</RouterLink><RouterLink v-if="progress?.messages?.length" to="/play/messages">Zprávy z dílny →</RouterLink></nav>
+          </template>
+          <nav class="game-side-links" aria-label="Další cesty"><RouterLink to="/play/chronicle">Moje kronika →</RouterLink><RouterLink to="/play/ranking">Žebříček →</RouterLink><RouterLink v-if="lobby.player.xp >= 30" to="/play/keeper">{{ progress?.keeperState === 'captured' ? 'Dílnu převzal Baron →' : 'Navštívit magický kufr →' }}</RouterLink><RouterLink v-if="progress?.messages?.length" to="/play/messages">Zprávy z dílny →</RouterLink></nav>
         </template>
       </template>
     </div>
