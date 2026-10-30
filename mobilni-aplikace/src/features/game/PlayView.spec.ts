@@ -106,15 +106,28 @@ describe('mobile game interaction', () => {
       ? { pending: [], tacticalMatches }
       : { player, opponents: [], incoming: [], active: [], history: [] }));
     const view = await render('/play');
-    expect(view.findAll('.game-mode-links a').map(link => link.attributes('href'))).toEqual(['/play/kouzlo-bez-dozoru']);
+    expect(view.findAll('.game-destinations a').map(link => link.attributes('href'))).toEqual(['/play/souboj-hulek', '/play/kouzlo-bez-dozoru', '/play/pod-peceti']);
+    expect(view.find('.game-start').exists()).toBe(false);
+    await view.vm.$router.push('/play/souboj-hulek');
+    await flushPromises();
+    expect(view.get('h1').text()).toBe('Souboj hůlek');
+    expect(view.find('.game-destinations').exists()).toBe(false);
+    expect(view.findAll('.game-mode-links a')).toHaveLength(0);
     player.tacticalUnlocked = true;
     player.yoloUnlocked = true;
     tacticalMatches = 3;
     window.dispatchEvent(new Event('online'));
     await flushPromises();
     const destinations = view.findAll('.game-mode-links a').map(link => link.attributes('href'));
-    expect(destinations).toEqual(['/play/kouzlo-bez-dozoru', '/play/challenge?mode=tactical', '/play/teams', '/play/challenge?mode=yolo']);
+    expect(destinations).toEqual(['/play/challenge?mode=tactical', '/play/challenge?mode=yolo', '/play/teams']);
     expect(view.get('.game-start a').attributes('href')).toBe('/play/challenge');
+    await view.vm.$router.push('/play/challenge?mode=yolo');
+    await flushPromises();
+    expect(view.get('.game-header a').attributes('href')).toBe('/play/souboj-hulek');
+    expect((view.get('input[value="yolo"]').element as HTMLInputElement).checked).toBe(true);
+    await view.vm.$router.push('/play/souboj-hulek');
+    await flushPromises();
+    expect(view.get('.game-header a').attributes('href')).toBe('/play?browse=1');
   });
 
   it('keeps the owner name Olivander even when the character has another label', async () => {
@@ -363,10 +376,20 @@ describe('mobile game interaction', () => {
     const view = await render('/play');
     expect(view.findComponent(WandWorkshop).exists()).toBe(false);
     expect(view.get('a[href="/play/wand"]').text()).toContain('kufrovy dílny');
+    expect(view.find('.game-destinations a[href="/play/pod-peceti"]').exists()).toBe(true);
+    expect(view.find('.game-destinations a[href="/play/kouzlo-bez-dozoru"]').exists()).toBe(false);
+    await view.vm.$router.push('/play/souboj-hulek');
+    await flushPromises();
+    expect(view.get('h1').text()).toBe('Nejdřív vlastní hůlku.');
+    expect(view.find('.game-start').exists()).toBe(false);
+    expect(view.find('.game-destinations').exists()).toBe(false);
+    await view.vm.$router.push('/play');
+    await flushPromises();
     expect(view.find('input[type="radio"]').exists()).toBe(false);
     api.request.mockResolvedValue({hasCharacter:true,wand:{wandId:'saved'},tier:1});
     window.dispatchEvent(new Event('online')); await flushPromises();
     expect(view.find('a[href="/play/wand"]').exists()).toBe(false);
+    expect(view.find('.game-destinations a[href="/play/kouzlo-bez-dozoru"]').exists()).toBe(true);
   });
   it('offers practice without making game requests or awarding XP', async () => {
     vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => { (array as Uint32Array).fill(0); return array; });

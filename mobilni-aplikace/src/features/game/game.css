@@ -185,6 +185,7 @@
 .game-experience .game-content h1 { letter-spacing: -.035em; }
 .game-experience .game-content h2 { font-size: 1.35rem; }
 .game-experience .game-start { margin: 24px 0 12px; }
+.game-experience .game-duels-intro { color: var(--wns-muted); }
 .game-experience .game-start > .aw-button { display: flex; width: 100%; justify-content: center; }
 .game-experience .game-secondary-link { margin-top: 4px; }
 .game-experience .game-mode-links { display: grid; margin-block: 8px 28px; }

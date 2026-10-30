@@ -15,6 +15,14 @@ afterEach(async () => {
 });
 
 describe('customer entry routes', () => {
+  it('protects the standalone wand duel page behind account access', async () => {
+    const resolved = router.resolve('/play/souboj-hulek');
+    expect(resolved.name).toBe('wand-duels');
+    expect(resolved.meta.title).toBe('Souboj hůlek');
+    await router.push(resolved.fullPath);
+    expect(router.currentRoute.value.path).toBe('/signin');
+    expect(router.currentRoute.value.query.return).toBe('/play/souboj-hulek');
+  });
   it.each(['/support/', '/SUPPORT', '/privacy/', '/PRIVACY', '/account-deletion/', '/ACCOUNT-DELETION', '/signin/', '/SIGNIN'])('keeps public route %s reachable even when identity is unavailable', async path => {
     vi.mocked(fetch).mockRejectedValue(new Error('network unavailable'));
     await router.push(`${path}?source=help#content`);
