@@ -129,7 +129,7 @@ internal sealed partial class KeepsakeStore
     public int SetPortraitConsent(string id, KeepsakeActor session, bool consent, string policyVersion, string key)
     {
         RequireFeature("PortraitEnabled");
-        if (policyVersion != "dv10-portrait-v1") { throw new KeepsakeException("unknown_consent_policy"); }
+        if (policyVersion is not ("dv10-portrait-v1" or "dv10-portrait-v2")) { throw new KeepsakeException("unknown_consent_policy"); }
         lock (gate)
         {
             using var connection = Open();

@@ -34,6 +34,7 @@ import './game.css';
 import './boss.css';
 import './duel.css';
 import SoundToggle from '../../application/SoundToggle.vue';
+import ApplicationHeaderActions from '../../application/ApplicationHeaderActions.vue';
 import { wnsSound } from '../../application/wnsSound';
 
 const route = useRoute();
@@ -371,9 +372,9 @@ onBeforeUnmount(() => {
     <template v-if="!rickrollActive">
     <div v-if="bossSetup && bossProfile?.revealed || match?.mode === 'boss'" :key="match?.phase" class="boss-scene-light" aria-hidden="true" />
     <div class="game-content">
-      <header class="game-header">
-        <SoundToggle />
-        <RouterLink :to="route.path === '/play' ? '/me/character' : { path: '/play', query: { browse: '1' } }">← {{ route.path === '/play' ? 'Moje postava' : 'Ke hře' }}</RouterLink>
+      <ApplicationHeaderActions><SoundToggle /></ApplicationHeaderActions>
+      <header v-if="route.path !== '/play' || tableDuel" class="game-header">
+        <RouterLink v-if="route.path !== '/play'" :to="{ path: '/play', query: { browse: '1' } }">← Ke hře</RouterLink>
         <span v-if="tableDuel" class="game-eyebrow">{{ practice ? 'Trénink · bez XP' : modeName(match!.mode) }}</span>
         <GameRules v-if="tableDuel" :practice="practice" :tactical="match?.mode === 'tactical'" />
       </header>

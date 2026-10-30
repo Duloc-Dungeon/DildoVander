@@ -49,6 +49,22 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; state = undefined; vi.restoreAllMocks(); });
 
 describe('authenticated game wand illustration', () => {
+  it.each(['ready', 'repairing', 'repair_failed'])('keeps approved revision 2 artwork visible in %s state', async status => {
+    api.request.mockResolvedValueOnce(character(firstAsset, { version: 2, status }));
+    await state!.refresh(wandId);
+    expect(state!.url.value).toBe('blob:wand-1');
+    expect(api.transport).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads a mobile workshop wand without a physical suitcase slot', async () => {
+    const snapshot = character();
+    api.request.mockResolvedValueOnce({ ...snapshot, generatedWand: { ...snapshot.generatedWand, physicalSlot: 0 } });
+    await state!.refresh(wandId);
+    expect(state!.url.value).toBe('blob:wand-1');
+    expect(state!.name.value).toBe('Měsíční ozvěna');
+    expect(api.transport).toHaveBeenCalledTimes(1);
+  });
+
   it('loads only the exact current wand and uses the owner-checked PNG route', async () => {
     await state!.refresh(wandId);
     expect(api.request).toHaveBeenCalledWith('/app/v1/customer/character', 'GET', undefined, expect.any(AbortSignal));

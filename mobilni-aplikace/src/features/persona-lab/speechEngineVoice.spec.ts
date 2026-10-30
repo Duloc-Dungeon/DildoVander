@@ -47,6 +47,43 @@ describe('Speech Engine control and WebRTC ownership', () => {
   });
   afterEach(() => { voice.dispose(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
+  it('drains the last RTC speech after the control session ends', async () => {
+    await connect();
+    event({ type: 'ready', playbackMode: 'stream' });
+    callbacks.onModeChange?.({ mode: 'speaking' });
+    event({ type: 'ended' });
+    socket.onclose?.({ code: 1000 });
+    expect(rtc.endSession).not.toHaveBeenCalled();
+    expect(rtc.setMicMuted).toHaveBeenLastCalledWith(true);
+    expect(observer.error).not.toHaveBeenCalled();
+    callbacks.onModeChange?.({ mode: 'listening' });
+    expect(rtc.endSession).toHaveBeenCalledOnce();
+    expect(observer.phase).toHaveBeenLastCalledWith('ended');
+    expect(observer.closed).toHaveBeenCalledOnce();
+  });
+
+  it('keeps explicit Stop immediate while the final speech drains', async () => {
+    await connect();
+    event({ type: 'ready', playbackMode: 'stream' });
+    callbacks.onModeChange?.({ mode: 'speaking' });
+    event({ type: 'ended' });
+    voice.end();
+    expect(rtc.endSession).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(rtc.endSession).toHaveBeenCalledOnce();
+  });
+
+  it('bounds the drain if the SDK never reports completion', async () => {
+    await connect();
+    event({ type: 'ready', playbackMode: 'stream' });
+    callbacks.onModeChange?.({ mode: 'speaking' });
+    event({ type: 'ended' });
+    await vi.advanceTimersByTimeAsync(119999);
+    expect(rtc.endSession).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(rtc.endSession).toHaveBeenCalledOnce();
+  });
+
   it('starts RTC before control readiness and waits for both transports', async () => {
     await connect();
     expect(sdk.start).toHaveBeenCalledWith(expect.objectContaining({

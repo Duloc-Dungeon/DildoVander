@@ -1,0 +1,304 @@
+[
+  {
+    "id": "hermione",
+    "name": "Hermione Granger",
+    "aliases": [
+      "Hermiona",
+      "Hermiona Grangerová",
+      "Hermiona Grangerova"
+    ],
+    "appearance": "A book-inspired portrait of a clever teenage witch with bushy brown hair, brown eyes and plain Gryffindor school robes.",
+    "joke": "She solemnly balances three open books on a reading stand while a fourth tiny book acts as a step beneath the stand; every book looks essential.",
+    "style": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. "
+  },
+  {
+    "id": "ron",
+    "name": "Ron Weasley",
+    "aliases": [
+      "Ron"
+    ],
+    "appearance": "A book-inspired portrait of a lanky teenage wizard with bright red hair, freckles and a long nose, wearing Gryffindor school robes.",
+    "joke": "He has set a tiny chess knight on a large cushion beside his sandwich; the knight has planted one foot on the bread as if claiming a castle.",
+    "style": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. "
+  },
+  {
+    "id": "pettigrew",
+    "name": "Peter Pettigrew",
+    "aliases": [
+      "Petr Pettigrew",
+      "Červíček",
+      "Cervicek"
+    ],
+    "appearance": "A small nervous-looking middle-aged wizard with thinning hair and a shabby brown coat.",
+    "joke": "He sits very formally at a grand dining table but has set a tiny mouse-sized dinner plate beside his own, with the larger portion of cheese on the tiny plate."
+  },
+  {
+    "id": "dementor-santa",
+    "name": "Dementor",
+    "aliases": [
+      "Mozkomor"
+    ],
+    "appearance": "A tall floating figure in a ragged black hooded cloak with long skeletal hands and a cold aura.",
+    "joke": "A small red Santa hat rests on the black hood. It carefully wraps a Christmas present, but its own cold aura has frozen the ribbon into a rigid bow; it holds the bow like an unexpectedly complicated problem."
+  },
+  {
+    "id": "dementor-gardener",
+    "name": "Dementor",
+    "aliases": [
+      "Mozkomor"
+    ],
+    "appearance": "A tall floating figure in a ragged black hooded cloak with long skeletal hands and a cold aura.",
+    "joke": "It earnestly waters a small flowering houseplant; the water has frozen into a solid arc between the watering can and the pot. The creature waits patiently for the impossible pouring to finish."
+  },
+  {
+    "id": "ginny",
+    "name": "Ginny Weasley",
+    "aliases": [
+      "Ginny"
+    ],
+    "appearance": "Long red hair, freckles and Gryffindor robes, a confident expression.",
+    "joke": "She calmly holds a polished broom upright while a tiny dustpan rests at its feet, as though her impressive sporting equipment has been reassigned to sweeping the corridor."
+  },
+  {
+    "id": "george",
+    "name": "George Weasley",
+    "aliases": [
+      "George"
+    ],
+    "appearance": "A red-haired adult Weasley twin with a mischievous face and a colorful waistcoat.",
+    "joke": "He presents a single perfectly ordinary biscuit on a grand velvet cushion while a transparent glass cover beside it is crowded with escape-proof padlocks."
+  },
+  {
+    "id": "hagrid",
+    "name": "Rubeus Hagrid",
+    "aliases": [
+      "Hagrid"
+    ],
+    "appearance": "An enormous broad half-giant with long shaggy dark hair, a huge beard and a rough brown coat.",
+    "joke": "He handles a tiny floral porcelain teacup with enormous careful fingers while sitting on a comically small wooden chair, entirely sincere about his good manners."
+  },
+  {
+    "id": "bellatrix",
+    "name": "Bellatrix Lestrange",
+    "aliases": [
+      "Bellatrix",
+      "Bellatrix Lestrangeová"
+    ],
+    "appearance": "A book-inspired portrait of a middle-aged witch with thick dark curls, heavy-lidded eyes and elegant black robes.",
+    "joke": "She has laid a tiny pink cake on a silver stand and is gravely decorating it with a neat cream rosette, applying the full intensity of her dramatic personality to an extremely dainty task.",
+    "style": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. "
+  },
+  {
+    "id": "harry",
+    "name": "Harry Potter",
+    "aliases": [
+      "Harry"
+    ],
+    "appearance": "Messy black hair, round glasses, lightning-shaped forehead scar and Gryffindor robes.",
+    "joke": "Harry poses very seriously for his school portrait while his snowy owl Hedwig perches beside him wearing an identical pair of tiny round glasses and looking even more solemn."
+  },
+  {
+    "id": "lockhart",
+    "name": "Gilderoy Lockhart",
+    "aliases": [
+      "Zlatoslav Lockhart",
+      "Lockhart"
+    ],
+    "appearance": "A book-inspired portrait of a handsome adult wizard with wavy blond hair, bright blue eyes, a dazzling smile and elaborate lilac robes.",
+    "joke": "A tall peacock feather on his magnificent hat bends toward a small mirror in his hand, admiring itself while he also poses with a dazzling self-satisfied smile.",
+    "style": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. "
+  },
+  {
+    "id": "rita",
+    "name": "Rita Skeeter",
+    "aliases": [
+      "Rita Holoubková",
+      "Rita Holoubkova"
+    ],
+    "appearance": "An adult blonde witch with elaborate curls, jeweled glasses and bright green robes.",
+    "joke": "Her long green quill is busily writing while she lounges with a teacup; the quill has exhausted its ink and now stands demanding attention beside a bottle vastly smaller than itself."
+  },
+  {
+    "id": "neville",
+    "name": "Neville Longbottom",
+    "aliases": [
+      "Neville"
+    ],
+    "appearance": "Brown hair, a round earnest face and Gryffindor robes.",
+    "joke": "He proudly holds a beautifully tended small plant whose curling vine has gently stolen the ribbon intended for his gardening medal and tied itself a perfect bow."
+  },
+  {
+    "id": "fred",
+    "name": "Fred Weasley",
+    "aliases": [
+      "Fred"
+    ],
+    "appearance": "A red-haired adult Weasley twin with a mischievous expression and an orange waistcoat.",
+    "joke": "He gravely demonstrates a trick box; a tiny white flag on a plain pole has popped out, as if the prank itself has given up. The flag has no markings."
+  },
+  {
+    "id": "luna",
+    "name": "Luna Lovegood",
+    "aliases": [
+      "Lenka Láskorádová",
+      "Lenka Laskoradova",
+      "Luna"
+    ],
+    "appearance": "Long pale blonde hair, dreamy eyes, radish earrings and Ravenclaw robes.",
+    "joke": "She serenely listens with a teacup held to her ear while a seashell waits on a saucer with a teaspoon, perfectly convinced she has arranged tea correctly."
+  },
+  {
+    "id": "sirius",
+    "name": "Sirius Black",
+    "aliases": [
+      "Sirius"
+    ],
+    "appearance": "A book-inspired portrait of an adult wizard with long dark hair, gray eyes, a short beard and an elegant slightly worn waistcoat.",
+    "joke": "He sits gravely on a grand armchair while a small black dog-shaped cushion occupies an even more luxurious miniature armchair at his feet.",
+    "style": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. "
+  },
+  {
+    "id": "snape",
+    "name": "Severus Snape",
+    "aliases": [
+      "Snape"
+    ],
+    "appearance": "A book-inspired portrait of a stern adult potions professor with straight black shoulder-length hair, pale skin, a hooked nose and a high-collared black robe.",
+    "joke": "He regards a tiny pink kitchen timer beside a magnificent brass cauldron with icy academic disappointment, as though the timer has failed an examination.",
+    "style": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. "
+  },
+  {
+    "id": "myrtle",
+    "name": "Moaning Myrtle",
+    "aliases": [
+      "Ufňukaná Uršula",
+      "Ufnukana Ursula",
+      "Myrtle"
+    ],
+    "appearance": "A fully clothed translucent schoolgirl ghost with round glasses, lank dark hair and old-fashioned school robes.",
+    "joke": "She solemnly attempts to dry her own transparent glasses with a solid handkerchief, which keeps falling through her ghostly fingers onto a neat stack of identical failed handkerchiefs."
+  },
+  {
+    "id": "voldemort",
+    "name": "Lord Voldemort",
+    "aliases": [
+      "Voldemort",
+      "Tom Riddle"
+    ],
+    "appearance": "A pale bald adult dark wizard with a flat snake-like nose and long elegant black robes.",
+    "joke": "He sits with immense dignity before a tiny porcelain egg cup containing a boiled egg whose smooth pale shape closely matches his head; he looks deeply unimpressed by the resemblance."
+  },
+  {
+    "id": "lupin",
+    "name": "Remus Lupin",
+    "aliases": [
+      "Remus",
+      "Lupin"
+    ],
+    "appearance": "An adult wizard with light brown graying hair, a short mustache, a tired kind face and a worn tweed jacket.",
+    "joke": "He carefully grades a neat stack of papers while his own frayed jacket elbow is patched with an immaculate round full-moon-shaped piece of pale fabric, which he regards with weary amusement."
+  },
+  {
+    "id": "dementor-tea",
+    "name": "Dementor",
+    "aliases": [
+      "Mozkomor"
+    ],
+    "appearance": "A tall floating figure in a ragged black hooded cloak with long skeletal hands and a cold aura.",
+    "joke": "It sits politely at afternoon tea. Its teapot and cup are covered in icicles, and the teaspoon stands rigidly upright in frozen tea. It still holds the milk jug ready with impeccable manners."
+  },
+  {
+    "id": "trelawney",
+    "name": "Sybill Trelawney",
+    "aliases": [
+      "Patricia Trelawney",
+      "Sibyla Trelawneyová",
+      "Sybila Trelawneyová",
+      "Trelawney",
+      "Trelawneyová"
+    ],
+    "appearance": "An adult divination professor with enormous round magnifying glasses, wild hair, layered shawls and bead necklaces.",
+    "joke": "She gazes solemnly into a crystal ball, but the ball is completely fogged from a steaming teacup placed directly beneath it; she polishes a tiny viewing hole with great prophetic concentration."
+  },
+  {
+    "id": "krum",
+    "name": "Viktor Krum",
+    "aliases": [
+      "Viktor"
+    ],
+    "appearance": "A young adult athletic wizard with short dark hair, heavy eyebrows and dark red Durmstrang robes.",
+    "joke": "He poses with intimidating sporting seriousness while a tiny fan-made knitted scarf has been wrapped around his imposing broom handle, tied in an excessively neat little bow."
+  },
+  {
+    "id": "dobby",
+    "name": "Dobby",
+    "aliases": [
+      "Dobby "
+    ],
+    "appearance": "A small house-elf with enormous green eyes, long pointed ears and a simple loose cloth tunic.",
+    "joke": "He proudly presents a magnificent pair of socks on a velvet cushion while a royal crown has been politely pushed to the far corner of the same table as the less interesting object."
+  },
+  {
+    "id": "umbridge",
+    "name": "Dolores Umbridge",
+    "aliases": [
+      "Dolores",
+      "Umbridgeová"
+    ],
+    "appearance": "A book-inspired portrait of a short middle-aged witch with a round face, short brown curls and a spotless pink cardigan with a matching bow.",
+    "joke": "She sits in a spotless pink cardigan with a matching bow; a tiny kitten on the cushion beside her wears an identical pink bow and looks even more judgmental than she does.",
+    "style": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. "
+  },
+  {
+    "id": "fleur",
+    "name": "Fleur Delacour",
+    "aliases": [
+      "Fleur"
+    ],
+    "appearance": "A young adult witch with long silvery blonde hair and elegant pale blue Beauxbatons clothes.",
+    "joke": "She maintains flawless poise while a tiny household feather duster has become entangled in the dramatic feather ornament of her elegant blue hat."
+  },
+  {
+    "id": "draco",
+    "name": "Draco Malfoy",
+    "aliases": [
+      "Malfoy",
+      "Draco"
+    ],
+    "appearance": "Slick pale blond hair, a pointed face and immaculate Slytherin robes.",
+    "joke": "He looks down imperiously at a tiny silver shoehorn presented on a large velvet cushion, as though putting on his polished shoes requires an entire royal ceremony."
+  },
+  {
+    "id": "narcissa",
+    "name": "Narcissa Malfoy",
+    "aliases": [
+      "Narcissa Malfoyová",
+      "Narcissa Malfoyova",
+      "Narcissa"
+    ],
+    "appearance": "A book-inspired portrait of an aristocratic adult witch with long pale blond hair, blue eyes and elegant dark green robes.",
+    "joke": "She raises one pristine white glove to inspect a single fluffy cat hair, treating the tiny imperfection like an event of great state importance.",
+    "style": "An original literary interpretation painted in richly layered oils, with expressive painterly faces rather than a film still. "
+  },
+  {
+    "id": "ollivander",
+    "name": "Garrick Ollivander",
+    "aliases": [
+      "Olivander",
+      "Ollivander"
+    ],
+    "appearance": "An elderly craftsman with wispy white hair, pale observant eyes and a worn formal coat.",
+    "joke": "He solemnly measures an ordinary teaspoon with a long enchanted measuring tape; the tape has curled into a respectful little bow at the spoon tip."
+  },
+  {
+    "id": "moody",
+    "name": "Alastor Moody",
+    "aliases": [
+      "Moody",
+      "Pošuk Moody",
+      "Posuk Moody"
+    ],
+    "appearance": "A weathered adult wizard with wild graying hair, a distinctive oversized magical blue eye and a heavy battered coat.",
+    "joke": "His normal eye watches a teacup suspiciously while the magical blue eye turns toward a tiny biscuit perched on the opposite shoulder, making vigilance at teatime visibly exhausting."
+  }
+]

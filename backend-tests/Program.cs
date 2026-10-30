@@ -6,8 +6,20 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
+if (args is ["--gemini-images"]) { await GeminiImageTests.RunAsync(); return; }
+
+if (args is ["--generate-portrait-backups", var alternateScenes, var alternateDestination, var alternateModel])
+{ await PortraitBackupGenerator.RunAsync(alternateScenes, alternateDestination, alternateModel); return; }
+if (args is ["--generate-portrait-backups", var scenesPath, var backupsDirectory])
+{ await PortraitBackupGenerator.RunAsync(scenesPath, backupsDirectory); return; }
+if (args is ["--gemini-chronicle-live", var referencePath, var chronicleOutput])
+{ await CharacterPortraitLiveTests.RunChronicleAsync(referencePath, chronicleOutput); return; }
+if (args is ["--gemini-portrait-live", var geminiOutput, var characterName, var characterWorld, var characterTraits])
+{ await CharacterPortraitLiveTests.RunGeminiAsync(geminiOutput, characterName, characterWorld, characterTraits); return; }
 // Paid provider diagnostic is explicit and never part of normal offline CI.
 if (args is ["--character-portrait-live", var portraitOutput]) { await CharacterPortraitLiveTests.RunAsync(portraitOutput); return; }
+if (args is ["--character-portrait-control-live", var controlPortraitOutput]) { await CharacterPortraitLiveTests.RunAsync(controlPortraitOutput, originalCharacter: true); return; }
+if (args is ["--character-portrait-adult-live", var adultPortraitOutput]) { await CharacterPortraitLiveTests.RunAsync(adultPortraitOutput, adultCharacter: true); return; }
 if (args is ["--chronicle"]) { PersonalChronicleTests.Run(); ChronicleSourceTests.Run(); GameChronicleBackfillTests.Run(); return; }
 if (args is ["--chronicle-http"]) { await MobileGameTests.RunChronicleHttpAsync(); return; }
 if (args is ["--push"]) { await PushTests.RunAsync(); return; }

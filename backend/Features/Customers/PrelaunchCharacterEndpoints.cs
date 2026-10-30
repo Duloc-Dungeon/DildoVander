@@ -234,6 +234,16 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
         activity?.SetTag("app.attempt", job.Attempt);
         using var scope = scopes.CreateScope();
         var authority = scope.ServiceProvider.GetRequiredService<CustomerAdmissionAuthority>();
+        if (provider.RequiresCurrentAiConsent)
+        {
+            var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<AccountUser>>();
+            var user = await users.FindByIdAsync(job.AccountId);
+            if (user is null || user.Disabled || !AccountAiConsent.HasConsent(user))
+            {
+                store.CompletePortrait(job, null, "ai_consent_required");
+                return;
+            }
+        }
         Task<bool> IsCurrentAsync()
         {
             try

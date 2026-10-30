@@ -16,8 +16,8 @@ import InformationBackLink from './InformationBackLink.vue';
         <p>Přístup k účtu chrání přístupový klíč. Pro přípravu postavy uložíme její jméno a univerzum. Tyto údaje použijeme také k vytvoření portrétu a případně personalizované zprávy o načítání, pokud je tato možnost zapnutá.</p>
       </section>
       <section>
-        <h2>Zpracování u OpenAI</h2>
-        <p>Volba „Chci si nechat připravit osobní překvapení“ ve formuláři povoluje zpracování údajů o postavě. Teprve po vašem potvrzení odešleme její fiktivní jméno a univerzum poskytovatelům OpenAI pro obohacení profilu, osobní text a vytvoření portrétu. Přístupové klíče účtu se jim neposílají. Nezadávejte osobní ani citlivé údaje. Informace o zpracování najdete v <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener noreferrer">zásadách ochrany soukromí OpenAI</a>.</p>
+        <h2>Zpracování textů a obrázků pomocí AI</h2>
+        <p>Volba „Chci si nechat připravit osobní překvapení“ ve formuláři povoluje zpracování údajů o postavě. Teprve po vašem potvrzení odešleme její fiktivní jméno a univerzum službě OpenAI pro obohacení profilu a osobní text a službě Google Gemini pro vytvoření portrétu. Pro ilustraci společného zážitku může Google dostat také uložené podoby účastníků a potvrzený průběh události. Přístupové klíče účtu se jim neposílají. Nezadávejte osobní ani citlivé údaje. Informace o zpracování najdete v <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener noreferrer">zásadách ochrany soukromí OpenAI</a> a <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">zásadách ochrany soukromí Google</a>.</p>
       </section>
       <section>
         <h2>Uložení a odstranění</h2>
@@ -92,7 +92,7 @@ import InformationBackLink from './InformationBackLink.vue';
     </template>
     <section aria-labelledby="privacy-elevenlabs">
       <h2 id="privacy-elevenlabs">Hlas a záložní ilustrace ElevenLabs</h2>
-      <p>Jednotný souhlas s AI při registraci nebo jeho jednorázovém obnovení pokrývá OpenAI i ElevenLabs. ElevenLabs dostává zvuk mikrofonu pro přepis a text odpovědí pro vytvoření hlasu. Přepis a přípravu hůlky zpracovává OpenAI. Před každým dalším hovorem se souhlas nevyžaduje znovu. Můžeš pokračovat psaním bez hlasového přenosu do ElevenLabs.</p>
+      <p>Jednotný souhlas s AI při registraci nebo jeho jednorázovém obnovení pokrývá OpenAI, ElevenLabs a Google Gemini. Při přidání Googlu je nutné jednou potvrdit aktualizovaný souhlas. ElevenLabs dostává zvuk mikrofonu pro přepis a text odpovědí pro vytvoření hlasu. Přepis a přípravu hůlky zpracovává OpenAI. Před každým dalším hovorem se souhlas nevyžaduje znovu. Můžeš pokračovat psaním bez hlasového přenosu do ElevenLabs.</p>
       <p>Pokud se ilustrace hůlky u OpenAI nepodaří, může následovat jeden pokus přes ElevenLabs. Předává se jen vizuální popis uložené hůlky, nikoli fotografie, jméno hosta nebo celý rozhovor. Podrobnosti uvádějí <a href="https://elevenlabs.io/privacy-policy" target="_blank" rel="noopener noreferrer">zásady soukromí ElevenLabs</a>.</p>
     </section>
     <section aria-labelledby="privacy-push">

@@ -8,7 +8,7 @@ using SkiaSharp;
 namespace Kufr.Backend.Features.Customers;
 
 internal sealed record CharacterPortraitSource(string Url, string Title, string Author, string License, string LicenseUrl);
-internal sealed record CharacterPortraitFallback(byte[] Image, CharacterPortraitSource Source);
+internal sealed record CharacterPortraitFallback(byte[] Image, CharacterPortraitSource? Source);
 
 internal interface ICharacterPortraitFallbackProvider
 {

@@ -2,16 +2,17 @@ import { ref } from 'vue';
 import { account, accountTransport } from '../identity/session';
 import { secureUuid } from '../../application/identifiers.mjs';
 import { GuestError, isUuid } from './client';
-export interface WandArtwork { locator: string; assetId: string | null; status: 'ready' | 'queued' | 'running' | 'failed' | 'missing'; canRetry: boolean; version: 1; synthetic: boolean }
+export interface WandArtwork { locator: string; assetId: string | null; status: 'ready' | 'repairing' | 'repair_failed' | 'queued' | 'running' | 'failed' | 'missing'; canRetry: boolean; version: number; synthetic: boolean }
 /** Artwork references are identifiers, never bearer URLs or prompts. */
 export function projectWandArtwork(raw: unknown): WandArtwork | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
   if (!isUuid(value.locator) || value.assetId != null && !isUuid(value.assetId)
-    || !['ready', 'queued', 'running', 'failed', 'missing'].includes(String(value.status)) || value.version !== 1) return null;
+    || !['ready', 'repairing', 'repair_failed', 'queued', 'running', 'failed', 'missing'].includes(String(value.status))
+    || !Number.isSafeInteger(value.version) || Number(value.version) < 1) return null;
   const assetId = isUuid(value.assetId) ? value.assetId : null;
-  if (value.status === 'ready' && !assetId) return null;
-  return { locator: value.locator, assetId, status: value.status as WandArtwork['status'], canRetry: !assetId && ['failed', 'missing'].includes(String(value.status)) && value.canRetry === true, version: 1, synthetic: value.synthetic === true };
+  if (['ready', 'repairing', 'repair_failed'].includes(String(value.status)) && !assetId) return null;
+  return { locator: value.locator, assetId, status: value.status as WandArtwork['status'], canRetry: !assetId && ['failed', 'missing'].includes(String(value.status)) && value.canRetry === true, version: Number(value.version), synthetic: value.synthetic === true };
 }
 export function useWandArtworkRetry() {
   const busy = ref(false); const failed = ref(false);

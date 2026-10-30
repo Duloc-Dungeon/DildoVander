@@ -13,6 +13,8 @@ internal static class CharacterPortraitTests
         var root = Path.Combine(Path.GetTempPath(), "dv-portrait-tests-" + Guid.NewGuid().ToString("N"));
         try
         {
+            await GeminiImageTests.RunAsync();
+            CharacterPortraitBackupTests.Run();
             await CharacterPortraitFallbackTests.RunAsync();
             await AccountIdentityTests.RunPortraitFallbackAsync();
             await AttributionMigrationAsync(Path.Combine(root, "attribution"));
@@ -109,7 +111,7 @@ internal static class CharacterPortraitTests
 
         foreach (var code in new[] { "moderation_blocked", "content_policy_violation", "safety_violation" })
         {
-            using var content = new StringContent(JsonSerializer.Serialize(new { error = new { code, message = "private upstream text" } }));
+            using var content = new StringContent(JsonSerializer.Serialize(new { error = new { code, message = "private upstream text", moderation_details = new { moderation_stage = "output", categories = new[] { "violence", "private-label" } } } }));
             try
             {
                 await CharacterProviderFailure.InspectPortraitFailureAsync(content, default);
@@ -118,7 +120,9 @@ internal static class CharacterPortraitTests
             catch (CharacterException error)
             {
                 Check(error.Code == "portrait_content_rejected" && !error.Message.Contains("private", StringComparison.Ordinal)
-                    && !CharacterProviderFailure.IsTransient(error), "portrait refusal is explicit, private and not transient");
+                    && !CharacterProviderFailure.IsTransient(error)
+                    && (string?)error.Data["portrait_moderation_stage"] == "output"
+                    && (string?)error.Data["portrait_moderation_categories"] == "violence", "portrait refusal is explicit, private and not transient");
             }
         }
         foreach (var body in new[] { "not json", "{}", "{\"error\":{\"code\":\"private-code\"}}",
@@ -164,6 +168,7 @@ internal static class CharacterPortraitTests
             && harryPrompt.Contains("Fictional universe: „Harry Potter“", StringComparison.Ordinal)
             && harryPrompt.Contains("lightning-shaped forehead scar", StringComparison.Ordinal)
             && harryPrompt.Contains("age-appropriate", StringComparison.Ordinal)
+            && harryPrompt.Contains("richly detailed oil-painted portrait", StringComparison.Ordinal)
             && !harryPrompt.Contains("Never describe this application's purpose", StringComparison.Ordinal),
             "Harry Potter portrait retains recognizable fictional traits without narrative-only instructions");
         var prompt = handler.Prompt!;
@@ -193,6 +198,9 @@ internal static class CharacterPortraitTests
             Check(request.RequestUri?.AbsolutePath == "/v1/images/generations", "portrait fixture never calls a text provider");
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
             Prompt = body.RootElement.GetProperty("prompt").GetString();
+            Check(body.RootElement.GetProperty("quality").GetString() == "medium"
+                && body.RootElement.GetProperty("moderation").GetString() == "auto",
+                "portrait request bounds rendering quality and uses standard moderation");
             using var bitmap = new SKBitmap(128, 128);
             bitmap.Erase(new SKColor(184, 115, 51));
             using var image = SKImage.FromBitmap(bitmap);

@@ -25,7 +25,23 @@ internal static class CharacterProviderFailure
                 || !error.TryGetProperty("code", out var code) || code.ValueKind != JsonValueKind.String) { return; }
             if (code.GetString() is "moderation_blocked" or "content_policy_violation" or "safety_violation")
             {
-                throw new CharacterException("portrait_content_rejected", 422);
+                var rejection = new CharacterException("portrait_content_rejected", 422);
+                if (error.TryGetProperty("moderation_details", out var details) && details.ValueKind == JsonValueKind.Object)
+                {
+                    if (details.TryGetProperty("moderation_stage", out var stage) && stage.ValueKind == JsonValueKind.String
+                        && stage.GetString() is "input" or "output" or "unknown")
+                    {
+                        rejection.Data["portrait_moderation_stage"] = stage.GetString();
+                    }
+                    if (details.TryGetProperty("categories", out var categories) && categories.ValueKind == JsonValueKind.Array)
+                    {
+                        rejection.Data["portrait_moderation_categories"] = string.Join(",", categories.EnumerateArray()
+                            .Where(item => item.ValueKind == JsonValueKind.String)
+                            .Select(item => item.GetString()).Where(value => value is "harassment" or "self-harm" or "sexual" or "violence")
+                            .Distinct().Take(4));
+                    }
+                }
+                throw rejection;
             }
         }
         catch (JsonException) { }

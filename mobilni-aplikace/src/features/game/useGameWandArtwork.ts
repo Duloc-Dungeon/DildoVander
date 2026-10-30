@@ -1,7 +1,7 @@
 import { onScopeDispose, ref, watch } from 'vue';
 import { account, accountRequest } from '../identity/session';
 import { AccountArchiveClient } from '../archive/accountArchive';
-import { projectGeneratedWand } from '../archive/generatedWand';
+import { projectMobileGeneratedWand } from '../archive/generatedWand';
 import { projectWandArtwork } from '../archive/wandArtwork';
 
 interface CharacterSnapshot {
@@ -48,7 +48,7 @@ export function useGameWandArtwork() {
       );
       if (token !== generation || controller.signal.aborted || account.value?.id !== accountId) return;
 
-      const wand = projectGeneratedWand(snapshot.generatedWand);
+      const wand = projectMobileGeneratedWand(snapshot.generatedWand);
       if (!wand || wand.wandId !== wandId) {
         boundArtworkKey = '';
         releaseUrl();
@@ -59,7 +59,7 @@ export function useGameWandArtwork() {
 
       name.value = wand.name;
       const artwork = projectWandArtwork(snapshot.artwork);
-      if (!artwork || artwork.status !== 'ready' || !artwork.assetId) {
+      if (!artwork || !['ready', 'repairing', 'repair_failed'].includes(artwork.status) || !artwork.assetId) {
         boundArtworkKey = '';
         releaseUrl();
         synthetic.value = false;

@@ -28,6 +28,8 @@ try {
       }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${state} ${width}: horizontal overflow`);
       if (state === 'lobby') {
+        assert.equal(await page.getByRole('link', { name: '← Moje postava', exact: true }).count(), 0);
+        await page.locator('#application-header-actions .sound-toggle').waitFor();
         const teamLink = await page.getByRole('link', { name: /Najít spojence/ }).boundingBox();
         assert.ok(teamLink && teamLink.y + teamLink.height < 760, `${width}: earned team mode is visible before the fixed navigation`);
       }

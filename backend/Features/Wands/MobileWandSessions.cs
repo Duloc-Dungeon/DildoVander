@@ -78,7 +78,7 @@ internal sealed partial class WandGenerationStore
             INSERT INTO mobile_wand_voice_leases(account_id,lease,expires_at) VALUES($a,$l,$until)
             ON CONFLICT(account_id) DO UPDATE SET lease=$l,expires_at=$until
             WHERE mobile_wand_voice_leases.expires_at<=$now
-            """, ("$a", owner), ("$l", lease), ("$until", Now + 210), ("$now", Now));
+            """, ("$a", owner), ("$l", lease), ("$until", Now + WorkshopVoiceLimits.LeaseSeconds), ("$now", Now));
         return command.ExecuteNonQuery() == 1 ? lease : null;
     }
 

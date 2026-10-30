@@ -2,6 +2,7 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text.Json;
 using Kufr.Backend.Features.Chronicle;
+using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Images;
 using Kufr.Backend.Features.OpenAi;
 using OpenAI;
@@ -14,10 +15,18 @@ namespace Kufr.Backend.Features.Keepsakes;
 
 // Uses the installed image provider configuration. No text model re-adjudicates
 // a result, and no current character profile is consulted during generation.
-internal sealed class ChronicleIllustrator(IConfiguration configuration) : IChronicleIllustrator, IDisposable
+internal sealed class ChronicleIllustrator : IChronicleIllustrator, IDisposable
 {
-    private readonly HttpClient http = new(new HttpClientHandler { AllowAutoRedirect = false })
-    { Timeout = Timeout.InfiniteTimeSpan };
+    private readonly IConfiguration configuration;
+    private readonly HttpClient http;
+    public bool RequiresCurrentAiConsent => (configuration["Chronicle:ProviderMode"] ?? configuration["Keepsake:ProviderMode"]) == "openai"
+        && configuration["Chronicle:ImageProvider"] == "gemini";
+
+    public ChronicleIllustrator(IConfiguration configuration) : this(configuration,
+        new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan }) { }
+
+    internal ChronicleIllustrator(IConfiguration configuration, HttpClient http)
+    { this.configuration = configuration; this.http = http; }
 
     public async Task<ChronicleIllustration> GenerateAsync(ChronicleEventInput snapshot, CancellationToken cancellationToken)
     {
@@ -28,6 +37,30 @@ internal sealed class ChronicleIllustrator(IConfiguration configuration) : IChro
             return new(RenderCard(snapshot, null, true), "image/png", Synthetic: true);
         }
         if (mode != "openai") { throw new InvalidOperationException("chronicle_illustrator_unconfigured"); }
+        if (configuration["Chronicle:ImageProvider"] is not (null or "openai" or "gemini"))
+        { throw new InvalidOperationException("chronicle_illustrator_unconfigured"); }
+        if (configuration["Chronicle:ImageProvider"] == "gemini")
+        {
+            using var geminiTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            geminiTimeout.CancelAfter(TimeSpan.FromMinutes(3));
+            using var frozenReferences = ContactSheet(snapshot);
+            byte[] geminiScene;
+            try
+            {
+                geminiScene = await new GeminiImageGenerator(http, configuration["GEMINI_API_KEY"], configuration["Gemini:ImageModel"] ?? GeminiImageGenerator.Model).GenerateAsync(
+                    BuildPrompt(snapshot), "1:1", frozenReferences?.ToArray(), geminiTimeout.Token);
+            }
+            catch (Exception error) when (frozenReferences is not null && !cancellationToken.IsCancellationRequested
+                && error is CharacterException or HttpRequestException or OperationCanceledException)
+            {
+                // Provider failure never triggers another paid request or substitutes a
+                // different character. Preserve the frozen portraits and render
+                // the confirmed event text locally as a commemorative card.
+                cancellationToken.ThrowIfCancellationRequested();
+                geminiScene = frozenReferences.ToArray();
+            }
+            return new(RenderCard(snapshot, geminiScene, false), "image/png");
+        }
         var key = configuration["OPENAI_API_KEY"] ?? throw new InvalidOperationException("chronicle_illustrator_unconfigured");
         var model = configuration["Chronicle:ImageModel"] ?? configuration["Keepsake:ImageModel"]
             ?? Kufr.Backend.Features.Images.ImageGenerationDefaults.Model;
@@ -55,8 +88,8 @@ internal sealed class ChronicleIllustrator(IConfiguration configuration) : IChro
     }
 
     private const string SceneDirection =
-        "Vytvoř původní situační ilustraci osobní kroniky pro dospělou společenskou hru: "
-        + "jemná kresba tuší, tlumené barvy, konkrétní dění a klidný situační humor. Žádné nápisy ani odznaky v obrázku. "
+        "Vytvoř původní situační ilustraci osobní kroniky společenské hry: "
+        + "propracovaná olejomalba jako oživlý portrét ve starém kouzelnickém hradě, bohaté pigmenty, jemné tahy štětce, plastický šerosvit a absurdní situační humor podaný s vážnou tváří. Žádné nápisy ani odznaky v obrázku. "
         + "Zachovej účastníky, jejich tehdejší podobu a hůlky z přiložených zmrazených podkladů. "
         + "Humor vyjádři jedním obrazovým rozporem vycházejícím z doložené situace: obřadná póza proti všednímu následku, "
         + "kontrast měřítka nebo nenápadná reakce postavy na skutečný výsledek. Nepřidávej novou událost kvůli gagu. "
@@ -184,8 +217,14 @@ internal sealed class ChronicleIllustrator(IConfiguration configuration) : IChro
             canvas.Clear(SKColors.White);
             for (var index = 0; index < images.Count; index++)
             {
-                canvas.DrawBitmap(images[index], new SKRect(index % columns * 384, index / columns * 384,
-                    (index % columns + 1) * 384, (index / columns + 1) * 384), new SKSamplingOptions(SKFilterMode.Linear));
+                var portrait = images[index];
+                var scale = Math.Min(384f / portrait.Width, 384f / portrait.Height);
+                var width = portrait.Width * scale;
+                var height = portrait.Height * scale;
+                var left = index % columns * 384 + (384 - width) / 2;
+                var top = index / columns * 384 + (384 - height) / 2;
+                // Preserve facial proportions in frozen reference sheets.
+                canvas.DrawBitmap(portrait, new SKRect(left, top, left + width, top + height), new SKSamplingOptions(SKFilterMode.Linear));
             }
             using var image = SKImage.FromBitmap(sheet);
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);
@@ -202,7 +241,11 @@ internal sealed class ChronicleIllustrator(IConfiguration configuration) : IChro
         if (scene is not null)
         {
             using var illustration = SKBitmap.Decode(scene) ?? throw new InvalidDataException("chronicle_image_invalid");
-            canvas.DrawBitmap(illustration, new SKRect(0, 0, 1024, 1024), new SKSamplingOptions(SKFilterMode.Linear));
+            var scale = Math.Min(1024f / illustration.Width, 1024f / illustration.Height);
+            var width = illustration.Width * scale;
+            var height = illustration.Height * scale;
+            canvas.DrawBitmap(illustration, new SKRect((1024 - width) / 2, (1024 - height) / 2,
+                (1024 + width) / 2, (1024 + height) / 2), new SKSamplingOptions(SKFilterMode.Linear));
         }
         else
         {

@@ -77,7 +77,7 @@ internal sealed class SpeechEngineSessions : BackgroundService
                 asr = new { provider = "scribe_realtime" },
                 tts = new { model_id = options.Model, voice_id = voice, speed = 1.0 },
                 turn = new { turn_eagerness = "normal", speculative_turn = false },
-                conversation = new { max_duration_seconds = 180, client_events = new[] {
+                conversation = new { max_duration_seconds = WorkshopVoiceLimits.ProviderSeconds, client_events = new[] {
                     "audio", "interruption", "user_transcript", "tentative_user_transcript", "agent_response", "agent_response_correction" } },
                 privacy = new { record_voice = false, retention_days = 0, delete_audio = true, delete_transcript_and_pii = true },
                 call_limits = new { agent_concurrency_limit = 1, daily_limit = 1, bursting_enabled = false }
@@ -219,7 +219,7 @@ internal sealed class SpeechEngineSessions : BackgroundService
     internal sealed class Entry(MobileWandAdmission admission)
     {
         internal MobileWandAdmission Admission { get; } = admission;
-        internal DateTimeOffset Deadline { get; } = DateTimeOffset.UtcNow.AddSeconds(210);
+        internal DateTimeOffset Deadline { get; } = DateTimeOffset.UtcNow.AddSeconds(WorkshopVoiceLimits.LeaseSeconds);
         internal string? EngineId;
         internal int UpstreamClaimed;
         internal int ControlClaimed;

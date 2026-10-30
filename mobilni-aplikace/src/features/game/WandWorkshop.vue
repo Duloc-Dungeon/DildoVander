@@ -337,7 +337,7 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 
 <template>
   <section class="trunk-workshop" :data-result="!!wand" :data-new-wand="newlyCompleted" :data-mode="mode" :data-stage="stage" aria-labelledby="workshop-title">
-    <header class="trunk-workshop__header"><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton><RouterLink v-else to="/play" @click="stopMedia">← Zpět do hry</RouterLink><RouterLink v-if="!prelaunch" to="/me/character" @click="stopMedia">Moje postava</RouterLink></header>
+    <header v-if="prelaunch" class="trunk-workshop__header"><AwButton @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton></header>
     <div class="trunk-workshop__identity">
       <h1 id="workshop-title" ref="title" tabindex="-1">{{ wand ? wand.name : upgrade ? 'Nová kapitola tvé hůlky' : 'Kufrova dílna' }}</h1>
       <p v-if="entry?.profile"><strong>{{ entry.profile.name }}</strong> · {{ entry.profile.universe }}</p>

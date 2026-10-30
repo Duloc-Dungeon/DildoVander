@@ -19,10 +19,10 @@ onMounted(() => {
 });
 onBeforeUnmount(() => observer?.disconnect());
 const links = [
-  { to: '/play/wand', alias: '/me/character', label: 'Dílna', icon: character },
+  { to: '/play/wand', label: 'Dílna', icon: character },
   { to: '/play', label: 'Hry', icon: evening },
   { to: '/me/keepsakes', alias: '/archive/duel', label: 'Památky', icon: keepsakes },
-  { to: '/me/account', label: 'Já', icon: account },
+  { to: '/me/character', alias: '/me/account', label: 'Já', icon: account },
 ];
 function isSelected(link: { to: string; alias?: string }): boolean {
   if (link.to === '/play' && route.path === '/play/wand') return false;

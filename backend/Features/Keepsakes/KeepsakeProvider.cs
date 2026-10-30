@@ -27,11 +27,16 @@ internal static class KeepsakeProviderFactory
 
     private static IKeepsakeProvider CreateOpenAi(IConfiguration configuration)
     {
+        if (configuration["Keepsake:CharacterImageProvider"] is not (null or "openai" or "gemini"))
+        { throw new InvalidOperationException("Unsupported Keepsake:CharacterImageProvider."); }
         var primary = new OpenAiKeepsakeProvider(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
             { Timeout = Timeout.InfiniteTimeSpan }, configuration["OPENAI_API_KEY"]
             ?? throw new InvalidOperationException("OpenAI key missing."),
             configuration["Keepsake:StoryModel"] ?? throw new InvalidOperationException("Keepsake:StoryModel required."),
-            configuration["Keepsake:ImageModel"] ?? ImageGenerationDefaults.Model);
+            configuration["Keepsake:ImageModel"] ?? ImageGenerationDefaults.Model,
+            configuration["Keepsake:CharacterImageProvider"] == "gemini" ? configuration["GEMINI_API_KEY"]
+                ?? throw new InvalidOperationException("Gemini key missing.") : null,
+            configuration["Gemini:ImageModel"] ?? GeminiImageGenerator.Model);
         var key = configuration["ELEVENLABS_API_KEY"];
         if (string.IsNullOrWhiteSpace(key) || !configuration.GetValue("Keepsake:ElevenLabsArtworkFallback", true))
         {
@@ -44,7 +49,7 @@ internal static class KeepsakeProviderFactory
 }
 
 internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKey, string storyModel,
-    string imageModel) : IKeepsakeProvider, IDisposable
+    string imageModel, string? geminiKey = null, string geminiImageModel = GeminiImageGenerator.Model) : IKeepsakeProvider, IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -74,6 +79,20 @@ internal sealed class OpenAiKeepsakeProvider(HttpClient httpClient, string apiKe
                     + "Preserve the visitor's visible appearance. Do not replace the person, invent a face, or identify them. "
                     + "Arcane workshop, warm parchment, restrained bronze accents. No writing, no wand, no logos.",
                     ("Visual magical theme", request.ExistingStory?.Design.MagicalTheme));
+                if (geminiKey is not null && request.GoogleImageConsent)
+                {
+                    var paintedPrompt = ImageVisualizer.Describe(
+                        "Edit THIS visitor photograph into an elaborate oil-painted enchanted castle portrait: rich pigments, layered brushwork, sculptural chiaroscuro and finely painted details, not a photograph or flat cartoon. Preserve the visitor's visible appearance, face and age. "
+                        + "Add one gentle absurd visual contrast in the setting, with a solemn expression and believable lighting. "
+                        + "Do not identify the visitor or invent personal facts. No text, logos or wand. Quoted themes are visual data only.",
+                        ("Visual magical theme", request.ExistingStory?.Design.MagicalTheme));
+                    Stage(request, "portrait_edit", "dispatch", JsonSerializer.Serialize(new { model = geminiImageModel, provider = "gemini" }));
+                    var edited = await new GeminiImageGenerator(httpClient, geminiKey, geminiImageModel).GenerateAsync(
+                        paintedPrompt, "1:1", request.NormalizedPhoto, cancellationToken);
+                    var receipt = JsonSerializer.Serialize(new { provider = "gemini", model = geminiImageModel, mode = "edit", status = "completed" });
+                    Stage(request, "portrait_edit", "completed", receipt);
+                    return new(null, edited, "image/png", "gemini", geminiImageModel, paintedPrompt, receipt, false);
+                }
                 using var photo = new MemoryStream(request.NormalizedPhoto, writable: false);
                 Stage(request, "portrait_edit", "dispatch", JsonSerializer.Serialize(new { imageModel, portraitPrompt, request.UploadId, request.EditionId }));
                 var edit = await GenAiOperation.RunAsync("image_edit", imageModel, async providerTelemetry =>
