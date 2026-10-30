@@ -1,3 +1,5 @@
+import { withinRickrollWindow } from './rickrollWindow';
+
 interface CountdownObservation {
   launchAt: number | null;
   remaining: number;
@@ -6,25 +8,19 @@ interface CountdownObservation {
   waiting: boolean;
 }
 
-/** A page-local surprise: missed deadlines and new page loads never replay it. */
+/** Eligible on arrival as well as at countdown zero; clocks use server time. */
 export class CountdownRickroll {
   private started = false;
-  private previous: CountdownObservation | undefined;
 
   constructor(private readonly openVideo: () => void) {}
 
   reset(): void {
-    this.previous = undefined;
+    // Visibility changes do not replay a completed presentation.
   }
 
   observe(current: CountdownObservation): void {
     if (this.started) return;
-    const previous = this.previous;
-    this.previous = current.watching && current.waiting && current.remaining > 0 ? current : undefined;
-    // Ticks run every second. A long gap means the page slept through zero.
-    if (!current.watching || current.launchAt === null || current.remaining > 0
-      || !previous || previous.launchAt !== current.launchAt
-      || current.now - previous.now < 0 || current.now - previous.now > 2_000) return;
+    if (!current.watching || !withinRickrollWindow(current.launchAt, current.now)) return;
     this.started = true;
     this.openVideo();
   }

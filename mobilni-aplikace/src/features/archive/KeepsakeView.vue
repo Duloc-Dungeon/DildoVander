@@ -256,7 +256,7 @@ async function generatePortrait() {
   await action(async check => {
     if (!owner.value || !photo.value || !photoConsent.value || !edition.value) return;
     const file = photo.value; const editionId = edition.value.id;
-    const consent = await mutateArchive<{ consentVersion: number }>('/portrait-consents', check, { data: { accepted: true, policyVersion: 'dv10-portrait-v1' } }); check();
+    const consent = await mutateArchive<{ consentVersion: number }>('/portrait-consents', check, { data: { accepted: true, policyVersion: 'dv10-portrait-v2' } }); check();
     const upload = await mutateArchive<{ upload: { id: string } }>('/portrait-uploads', check, { bytes: file, consentVersion: consent.consentVersion }); check();
     await mutateArchive('/portraits', check, { data: { uploadId: upload.upload.id, editionId, variant: 'portrait_only', consentVersion: consent.consentVersion } }); check();
     clearPhoto(); message.value = 'keepsake.message-uploaded'; await load();

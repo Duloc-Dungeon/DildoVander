@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="BackendTests" />
+    <EmbeddedResource Include="Assets/CharacterPortraits/catalog.json" LogicalName="Kufr.Backend.CharacterPortraits.catalog.json" Condition="Exists('Assets/CharacterPortraits/catalog.json')" />
+    <EmbeddedResource Include="Assets/CharacterPortraits/*.webp" LogicalName="Kufr.Backend.CharacterPortraits.%(Filename)%(Extension)" />
     <PackageReference Include="Google.Apis.Auth" Version="1.73.0" />
     <EmbeddedResource Include="Features/SealedCase/Content/*.json" />
     <EmbeddedResource Include="Features/SealedCase/Content/*.md" />

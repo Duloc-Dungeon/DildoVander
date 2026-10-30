@@ -215,6 +215,7 @@ internal sealed partial class KeepsakeStore
                 request.UploadId, request.Variant, photo, story)
             {
                 GenerationKind = job.Kind,
+                GoogleImageConsent = job.Kind == "portrait" && document.ConsentPolicy == "dv10-portrait-v2",
                 CanonicalArtworkAssetId = CanonicalGeneratedArtworkId(document),
                 RecordStage = (stage, phase, content) => RecordProviderStage(job, stage, phase, content)
             };

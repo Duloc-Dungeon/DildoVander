@@ -52,7 +52,7 @@ internal sealed partial class OpenAiGameYoloProvider
         {
             model = Model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary), max_output_tokens = 1400,
             reasoning = new { effort = "low" },
-            instructions = "Jsi Bohumil Křivopísk. Česky vyhodnoť Souboj špatných nápadů podle scénáře ve vstupu. "
+            instructions = Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text + "Jsi Bohumil Křivopísk. Česky vyhodnoť Souboj špatných nápadů podle scénáře ve vstupu. "
                 + "Použij POUZE šest uložených rozhodnutí, jejich přínosy, ceny a již vyřešené následky. Každý beat odpovídá jednomu dějství. "
                 + "Cíl je přesně objective ze vstupu. delivery.goalMet a consequence jsou závazná fakta; neměň je. "
                 + "Pokud cíl splnil jen jeden, musí vyhrát on. Pokud ani jeden, outcome=fiasco, winnerId=null. Pokud oba, zvaž uskutečnitelnost, "

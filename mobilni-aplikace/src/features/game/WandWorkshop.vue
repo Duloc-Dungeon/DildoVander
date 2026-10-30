@@ -336,8 +336,8 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 </script>
 
 <template>
-  <section class="trunk-workshop" :data-result="!!wand" :data-new-wand="newlyCompleted" :data-mode="mode" :data-stage="stage" aria-labelledby="workshop-title">
-    <header class="trunk-workshop__header"><AwButton v-if="prelaunch" @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton><RouterLink v-else to="/play" @click="stopMedia">← Zpět do hry</RouterLink><RouterLink v-if="!prelaunch" to="/me/character" @click="stopMedia">Moje postava</RouterLink></header>
+  <section class="trunk-workshop" :data-result="!!wand" :data-new-wand="newlyCompleted" :data-mode="mode" :data-stage="stage" :data-voice-active="active" aria-labelledby="workshop-title">
+    <header v-if="prelaunch" class="trunk-workshop__header"><AwButton @click="stopMedia(); emit('exit')">Zpět k odpočtu</AwButton></header>
     <div class="trunk-workshop__identity">
       <h1 id="workshop-title" ref="title" tabindex="-1">{{ wand ? wand.name : upgrade ? 'Nová kapitola tvé hůlky' : 'Kufrova dílna' }}</h1>
       <p v-if="entry?.profile"><strong>{{ entry.profile.name }}</strong> · {{ entry.profile.universe }}</p>
@@ -497,6 +497,10 @@ onBeforeUnmount(() => { controller.abort(); clearTimeout(poll); stopMedia(); rel
 .trunk-workshop__live-line span { white-space: pre-wrap; }
 .trunk-workshop__media-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: .5rem 1rem; padding-block: .5rem; border-top: 1px solid var(--wns-line); }
 .trunk-workshop__media-controls > :is(button, .aw-button) { min-height: 3.5rem; }
+@media (max-width: 849px) {
+  .trunk-workshop[data-voice-active='true'] :deep(.trunk-stage__visual) { max-width: min(100%, 28svh); }
+  .trunk-workshop[data-voice-active='true'] .trunk-workshop__media-controls { order: -1; }
+}
 .trunk-workshop__media-controls .trunk-workshop__status { grid-column: 1 / -1; min-block-size: 4.5em; }
 .trunk-workshop__volume { display: grid; grid-column: 1 / -1; gap: .25rem; }
 .trunk-workshop__volume input { width: 100%; min-height: 2.75rem; accent-color: var(--wns-mint); }

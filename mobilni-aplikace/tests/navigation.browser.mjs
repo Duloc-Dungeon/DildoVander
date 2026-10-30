@@ -62,7 +62,7 @@ try {
       await assertApplicationHeader(page);
       await navigation.waitFor();
       assert.deepEqual(await navigation.locator('a').evaluateAll(links => links.map(link => [link.textContent, link.getAttribute('href')])), [
-        ['Dílna', '/play/wand'], ['Hry', '/play'], ['Památky', '/me/keepsakes'], ['Já', '/me/account'],
+        ['Dílna', '/play/wand'], ['Hry', '/play'], ['Památky', '/me/keepsakes'], ['Já', '/me/character'],
       ]);
       assert.equal(await page.locator('.primary-navigation').count(), 0);
       assert.equal(await navigation.locator('img').count(), 4);
@@ -113,6 +113,9 @@ try {
     await page.getByText('Tvoje postava je připravená.', { exact: false }).waitFor();
     await checkNavigation('Hry');
     await navigation.getByRole('link', { name: 'Já', exact: true }).click();
+    await page.waitForURL('**/me/character');
+    await checkNavigation('Já');
+    await page.getByRole('link', { name: 'Můj účet', exact: true }).click();
     await page.waitForURL('**/me/account');
     await page.locator('#customer-account-title').waitFor();
     await checkNavigation('Já');
@@ -134,10 +137,11 @@ try {
     await page.goto(`${origin}/me/conversation`);
     await page.waitForURL('**/play/wand');
     assert.equal(await page.getByRole('button', { name: /Najít kufr|Připojit/ }).count(), 0);
-    await page.getByRole('link', { name: 'Moje postava', exact: true }).click();
+    assert.equal(await page.getByRole('link', { name: /Zpět do hry|Moje postava/ }).count(), 0);
+    await navigation.getByRole('link', { name: 'Já', exact: true }).click();
     await page.waitForURL('**/me/character');
     await page.getByRole('heading', { name: 'Moje postava', exact: true }).waitFor();
-    await checkNavigation('Dílna');
+    await checkNavigation('Já');
     await page.screenshot({ path: path.join(output, `character-${width}.png`) });
     await navigation.getByRole('link', { name: 'Památky', exact: true }).click();
     await page.waitForURL('**/me/keepsakes');
@@ -167,6 +171,8 @@ try {
     }), 'text-only archive notices keep the full text column');
     await page.screenshot({ path: path.join(output, `archive-notice-${width}.png`) });
     await navigation.getByRole('link', { name: 'Já', exact: true }).click();
+    await page.waitForURL('**/me/character');
+    await page.getByRole('link', { name: 'Můj účet', exact: true }).click();
     await page.waitForURL('**/me/account');
     await page.locator('.application-footer').getByRole('link', { name: 'Podpora', exact: true }).click();
     await page.waitForURL('**/support');

@@ -28,6 +28,10 @@ try {
       if (request.failure()?.errorText !== 'net::ERR_ABORTED') failedRequests.push(request.url());
     });
     await page.goto(`${origin}/__game/wand-moon`);
+    await page.waitForFunction(() => {
+      const image = document.querySelector('.game-magic-clash__origin:not(.game-magic-clash__origin--opponent) img');
+      return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+    });
     const stage = page.locator('.game-magic-clash--theatre');
     await stage.waitFor();
     await page.locator('.game-magic-clash__origin img').first().waitFor();

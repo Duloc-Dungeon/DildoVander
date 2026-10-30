@@ -23,7 +23,11 @@ describe('canonical wand artwork', () => {
     const published = projectWandArtwork({ locator, assetId: asset, status: 'ready', canRetry: true, version: 1, prompt: 'private', accountId: 'secret' });
     expect(published).toEqual({ locator, assetId: asset, status: 'ready', canRetry: false, version: 1, synthetic: false });
     expect(projectWandArtwork({ locator, status: 'ready', version: 1 })).toBeNull();
-    expect(projectWandArtwork({ locator, status: 'failed', version: 2 })).toBeNull();
+    for (const version of [0, -1, 1.5, '2', Number.MAX_SAFE_INTEGER + 1]) {
+      expect(projectWandArtwork({ locator, assetId: asset, status: 'ready', version })).toBeNull();
+    }
+    expect(projectWandArtwork({ locator, assetId: asset, status: 'ready', version: 2 })?.version).toBe(2);
+    expect(projectWandArtwork({ locator, status: 'repairing', version: 2 })).toBeNull();
     expect(projectWandArtwork({ locator: 'https://foreign.example', status: 'failed', version: 1 })).toBeNull();
   });
   it('retains one operation key for uncertain retries and fences account changes', async () => {

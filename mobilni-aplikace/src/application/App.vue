@@ -25,6 +25,7 @@ import { customerMembershipState, launchAllowed, refreshCustomerMembership, refr
 import ApplicationUpdateGate from './ApplicationUpdateGate.vue';
 import { applicationUpdates } from './nativeApplicationUpdates';
 import OwnerPlayerControls from './OwnerPlayerControls.vue';
+import GroupOpeningRickroll from '../features/launch/GroupOpeningRickroll.vue';
 import { isOwnerPlayer, setOwnerPlayer } from './ownerMode';
 
 const route = useRoute();
@@ -163,20 +164,27 @@ function refreshSession(): void {
   if (!document.hidden) {
     void refreshIdentity().then(() => {
       if (document.hidden) return;
-      // Account changes reset cached access state synchronously. Fetch policies
-      // after identity reconciliation so own-account routes can render the shell.
-      void refreshLaunchAccess().then(() => {
-        if (disposed) return;
-        const redirect = waitingRoomRedirect(route);
-        if (redirect) void router.replace(redirect);
-      });
-      void refreshCustomerMembership();
+      void refreshAccountAccess();
     }).catch(() => { /* Keep established identity and policies until verification succeeds. */ });
   }
 }
 let launchTimer: ReturnType<typeof setInterval> | undefined;
 let launchRefreshPending = false;
 let disposed = false;
+function refreshAccountAccess(): void {
+  const identity = identityKey.value;
+  void refreshLaunchAccess().then(() => {
+    if (disposed || document.hidden || identity !== identityKey.value) return;
+    const redirect = waitingRoomRedirect(route);
+    if (redirect) void router.replace(redirect);
+  });
+  void refreshCustomerMembership();
+}
+// Passkey account changes also happen without a document/visibility refresh.
+// Own-account routes stay reachable while their shell policies are reconciled.
+watch(identityKey, () => {
+  if (account.value && !document.hidden) void refreshAccountAccess();
+}, { flush: 'post' });
 async function refreshOpenEvening(): Promise<void> {
   if (disposed || document.hidden || launchRefreshPending || !account.value || !route.meta.requiresAccount
     || canEnterStaffArea(account.value) || account.value.roles.includes('Tester')
@@ -244,6 +252,7 @@ onBeforeUnmount(() => {
       <footer v-if="!launchExperience && !gameExperience" class="application-footer"><span>Wand Night Stand</span><RouterLink to="/support">{{ customerCopy.text('shell.support') }}</RouterLink><RouterLink to="/privacy">{{ customerCopy.text('shell.privacy') }}</RouterLink><a v-if="browserMode" class="application-install-link" href="/ios/">{{ customerCopy.text('shell.iphone') }}</a><span>{{ customerCopy.text('shell.verification') }}</span></footer>
     </div>
   </div>
+  <GroupOpeningRickroll />
   </ApplicationUpdateGate>
   </div>
 </template>

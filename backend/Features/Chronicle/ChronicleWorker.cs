@@ -36,6 +36,16 @@ internal sealed class ChronicleWorker(ChronicleStore store, IChronicleIllustrato
                 using (var scope = scopes.CreateScope())
                 {
                     var database = scope.ServiceProvider.GetRequiredService<AccountDatabase>();
+                    if (illustrator.RequiresCurrentAiConsent)
+                    {
+                        var ids = lease.Event.Participants.Select(person => person.AccountId).Distinct().ToArray();
+                        var users = await database.Users.Where(user => ids.Contains(user.Id)).ToListAsync(stoppingToken);
+                        if (users.Count != ids.Length || users.Any(user => user.Disabled || !AccountAiConsent.HasConsent(user)))
+                        {
+                            store.Fail(lease, "ai_consent_required", dispatchUncertain: false);
+                            return true;
+                        }
+                    }
                     var characters = scope.ServiceProvider.GetRequiredService<CharacterProfileStore>();
                     var subjects = lease.Event.Participants.Select(person => new SealedCaseSubject(person.AccountId, ChronicleStore.ProfileId(person))).ToArray();
                     using var admission = new SealedCasePrivacyAuthority(database.Database.GetConnectionString()!, characters).Acquire(subjects, null);

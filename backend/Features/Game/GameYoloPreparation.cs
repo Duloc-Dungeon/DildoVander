@@ -89,7 +89,7 @@ internal sealed partial class OpenAiGameYoloProvider
         {
             model = Model, store = false, service_tier = OpenAiServiceTierPolicy.For(OpenAiOperation.Ordinary), max_output_tokens = 5000,
             reasoning = new { effort = "low" },
-            instructions = "Vytvoř celý nový český scénář Souboje špatných nápadů ze OBOU fikčních postav a jejich skutečných hůlek ve vstupu. "
+            instructions = Kufr.Backend.Features.Conversations.CzechHumorInstructions.Text + "Vytvoř celý nový český scénář Souboje špatných nápadů ze OBOU fikčních postav a jejich skutečných hůlek ve vstupu. "
                 + "Nevybírej z katalogu: vymysli společný konkrétní problém, situaci, předmět, cíl i jednotlivé akce a protiakce obou hráčů. "
                 + "Cíl musí být dosažitelné neškodné fikční doručení předmětu na určené místo v nepoškozeném stavu; receipt je úplná věta potvrzující právě tento úspěch. "
                 + "ObjectName je název předmětu v prvním pádě, destination cílové místo. SelectionReason krátce pojmenuje konkrétní doložený podklad OBOU postav a hůlek, bez interních ID. "

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       project:
-        description: Compatibility input for dependency regeneration (quick checks only)
+        description: Compatibility input; affected projects are selected from the PR diff
         type: string
       pr_number:
         description: Same-repository development PR number
@@ -25,9 +25,12 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 
 concurrency:
-  group: development-ci-${{ github.event.pull_request.number || inputs.pr_number || github.ref }}
+  # A title/body edit must never cancel an in-flight source validation.
+  # Metadata runs still execute the same fail-closed checks; no green shortcut.
+  group: development-ci-${{ github.event.action == 'edited' && !github.event.changes.base && format('metadata-{0}', github.run_id) || github.event.pull_request.number || inputs.pr_number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -39,7 +42,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Verify dispatched PR identity before accepting quick checks
+      - name: Verify dispatched PR identity before accepting checks
         if: github.event_name == 'workflow_dispatch'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -111,21 +114,93 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_design_system.py'
           python3 scripts/check_design_system.py
 
+  changes:
+    needs: candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      backend: ${{ steps.projects.outputs.backend }}
+      firmware: ${{ steps.projects.outputs.firmware }}
+      web: ${{ steps.projects.outputs.web }}
+      ios: ${{ steps.projects.outputs.ios }}
+      android: ${{ steps.projects.outputs.android }}
+      ai-eval: ${{ steps.projects.outputs.ai-eval }}
+      site: ${{ steps.projects.outputs.site }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Select affected product checks
+        id: projects
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || inputs.expected_base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_head_sha }}
+        run: python3 scripts/ci/select_projects.py select --base "$BASE_SHA" --head "$HEAD_SHA"
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/kufr-backend.yml
+
+  firmware:
+    needs: changes
+    if: needs.changes.outputs.firmware == 'true'
+    uses: ./.github/workflows/kufr-firmware.yml
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    uses: ./.github/workflows/kufr-web.yml
+    with:
+      share-web-dist: ${{ needs.changes.outputs.site == 'true' }}
+
+  ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    uses: ./.github/workflows/kufr-ios.yml
+
+  android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    uses: ./.github/workflows/kufr-android.yml
+
+  ai-eval:
+    needs: changes
+    if: needs.changes.outputs.ai-eval == 'true'
+    uses: ./.github/workflows/kufr-ai-eval.yml
+
+  site:
+    needs: [changes, web]
+    if: always() && needs.changes.result == 'success' && needs.changes.outputs.site == 'true' && ((needs.changes.outputs.web == 'true' && needs.web.result == 'success') || (needs.changes.outputs.web == 'false' && needs.web.result == 'skipped'))
+    uses: ./.github/workflows/kufr-site.yml
+    with:
+      reuse-web-dist: ${{ needs.changes.outputs.web == 'true' }}
+
   required:
     name: Development required
     if: always()
-    needs: [candidate, secret-scan, repository]
+    needs: [candidate, secret-scan, repository, changes, backend, firmware, web, ios, android, ai-eval, site]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     env:
       RESULTS: ${{ toJSON(needs) }}
+      SELECTED: ${{ toJSON(needs.changes.outputs) }}
     steps:
-      - name: Require every quick check
+      - name: Require repository checks and every selected product check
         run: |
           python3 - <<'PY'
           import json, os
           results = json.loads(os.environ['RESULTS'])
-          failed = [name for name, job in results.items() if job['result'] != 'success']
+          selected = json.loads(os.environ['SELECTED'])
+          required = {'candidate', 'secret-scan', 'repository', 'changes'}
+          products = {'backend', 'firmware', 'web', 'ios', 'android', 'ai-eval', 'site'}
+          if set(selected) != products or any(value not in ('true', 'false') for value in selected.values()):
+              raise SystemExit('Missing or invalid product selection')
+          if set(results) != required | products:
+              raise SystemExit('Missing required job result')
+          failed = [name for name, job in results.items()
+                    if job['result'] != ('success' if name in required or selected.get(name) == 'true' else 'skipped')]
           if failed:
               raise SystemExit('Development checks did not pass: ' + ', '.join(failed))
           PY

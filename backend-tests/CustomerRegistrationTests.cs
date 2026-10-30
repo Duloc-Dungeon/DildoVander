@@ -128,7 +128,9 @@ internal static partial class AccountIdentityTests
         Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = false })).StatusCode
             == HttpStatusCode.Conflict, "legacy consent cannot be granted by a false choice");
         Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = 1 })).StatusCode
-            == HttpStatusCode.Conflict, "an old client cannot grant the broader OpenAI and ElevenLabs consent using the old disclosure");
+            == HttpStatusCode.Conflict, "an old client cannot grant broader processing consent using the old disclosure");
+        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = 2 })).StatusCode
+            == HttpStatusCode.Conflict, "OpenAI and ElevenLabs consent does not silently authorize Google");
         Check(!(await CsrfAsync(customer)).GetProperty("account").GetProperty("openAiConsent").GetBoolean(),
             "rejecting an old disclosure leaves processing disabled");
         Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode

@@ -9,10 +9,10 @@ describe('WNS customer navigation', () => {
     await router.push(path);
     const wrapper = mount(WnsNavigation, { global: { plugins: [router] } });
     expect(wrapper.findAll('a').map(link => [link.text(), link.attributes('href')])).toEqual([
-      ['Dílna', '/play/wand'], ['Hry', '/play'], ['Památky', '/me/keepsakes'], ['Já', '/me/account'],
+      ['Dílna', '/play/wand'], ['Hry', '/play'], ['Památky', '/me/keepsakes'], ['Já', '/me/character'],
     ]);
     expect(wrapper.findAll('[aria-current="page"]')).toHaveLength(1);
-    expect(wrapper.get('[aria-current="page"]').attributes('href')).toBe(path === '/play/wand' || path === '/me/character' ? '/play/wand' : path.startsWith('/play/') ? '/play' : path);
+    expect(wrapper.get('[aria-current="page"]').attributes('href')).toBe(path === '/me/account' ? '/me/character' : path === '/play/wand' ? '/play/wand' : path.startsWith('/play/') ? '/play' : path);
     expect(wrapper.findAll('img')).toHaveLength(4);
     expect(wrapper.text()).not.toContain('kufr');
     wrapper.unmount();

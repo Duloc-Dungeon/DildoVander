@@ -14,6 +14,16 @@ const errors = [];
 try {
   for (const width of [320, 390, 1280]) {
     const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: 'reduce' });
+    // Synthetic assertion only; cryptographic WebAuthn is covered by accounts.browser.mjs.
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator.credentials, 'get', { value: async () => ({
+        id: 'synthetic-next-account', rawId: new Uint8Array([1, 2, 3]).buffer, type: 'public-key',
+        getClientExtensionResults: () => ({}), response: {
+          clientDataJSON: new ArrayBuffer(1), authenticatorData: new ArrayBuffer(1),
+          signature: new ArrayBuffer(1), userHandle: null,
+        },
+      }) });
+    });
     const page = await context.newPage();
     page.setDefaultTimeout(10_000);
     page.on('pageerror', error => errors.push(error.message));
@@ -21,6 +31,10 @@ try {
     let characterFails = true;
     let logoutFails = true;
     let sessionFails = false;
+    let currentAccount = { id: 'midnight-fixture', displayName: 'Synthetic guest', roles: ['Customer'], openAiConsent: true };
+    let launchOpen = false;
+    let releaseMembership;
+    const membershipGate = new Promise(resolve => { releaseMembership = resolve; });
     const writes = [];
     const tokens = [];
     await context.route('**/*', async route => {
@@ -39,7 +53,21 @@ try {
           return route.fulfill({ status: 204 });
         }
         if (sessionFails) return json({ code: 'unavailable' }, 503);
-        return json({ enabled: true, account: signedIn ? { id: 'midnight-fixture', displayName: 'Synthetic guest', roles: ['Customer'], openAiConsent: true } : null, csrfToken: logoutFails ? 'initial-synthetic-token' : 'renewed-synthetic-token', origin });
+        return json({ enabled: true, account: signedIn ? currentAccount : null, csrfToken: logoutFails ? 'initial-synthetic-token' : 'renewed-synthetic-token', origin });
+      }
+      if (url.pathname === '/app/v1/passkeys/request-options' && request.method() === 'POST') {
+        return json({ challenge: 'AAAA', allowCredentials: [], userVerification: 'required' });
+      }
+      if (url.pathname === '/app/v1/passkeys/sign-in' && request.method() === 'POST') {
+        assert.equal(request.postDataJSON().credential.type, 'public-key');
+        currentAccount = { ...currentAccount, id: 'next-account', displayName: 'Další host' };
+        signedIn = true;
+        return json({});
+      }
+      if (launchOpen && url.pathname === '/app/v1/launch') return json({ allowed: true });
+      if (launchOpen && url.pathname === '/app/v1/customer/access') {
+        if (currentAccount.id === 'next-account') await membershipGate;
+        return json({ state: 'active', accessRevision: 1 });
       }
       if (url.pathname === '/app/v1/prelaunch/character' && characterFails) return json({ code: 'unavailable' }, 503);
       return route.continue();
@@ -51,10 +79,12 @@ try {
     }
     await page.goto(`${origin}/__fixture/E`);
     await page.getByRole('alert').filter({ hasText: 'Tvoji postavu' }).waitFor();
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
     await page.locator('.countdown').waitFor();
     const logout = page.getByRole('button', { name: 'Odhlásit se', exact: true });
     assert.equal(await logout.isEnabled(), true);
     assert(await logout.evaluate(button => button.getBoundingClientRect().height >= 44));
+    await page.keyboard.press('Tab');
     await logout.focus();
     assert.notEqual(await logout.evaluate(button => getComputedStyle(button).outlineStyle), 'none');
     assert.equal(await page.locator('.portrait-stage').count(), 0);
@@ -92,6 +122,31 @@ try {
     await retry.waitFor({ state: 'detached' });
     assert.equal(await page.locator('button[type="submit"]').isEnabled(), true);
     await inspect('signin-recovered');
+
+    // Reuse the same document after the old account expires and another key signs in.
+    signedIn = true;
+    launchOpen = true;
+    await page.goto(`${origin}/me/account`);
+    await page.locator('.wns-game-navigation').waitFor();
+    assert.equal(await page.locator('.account-link').textContent(), 'Synthetic guest');
+    const documentStarted = await page.evaluate(() => performance.timeOrigin);
+    signedIn = false;
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await page.waitForURL(url => url.pathname === '/signin' && url.searchParams.get('return') === '/me/account');
+    await page.getByRole('button', { name: 'Přihlásit přístupovým klíčem', exact: true }).click();
+    await page.waitForURL(`${origin}/me/account`);
+    assert.equal(await page.locator('.wns-game-navigation').count(), 0, 'new membership must be confirmed before exposing navigation');
+    assert.equal(await page.locator('.account-link').count(), 0, 'the previous account header stays redacted');
+    releaseMembership();
+    await page.locator('.wns-game-navigation').waitFor();
+    assert.equal(await page.locator('.account-link').textContent(), 'Další host');
+    assert.equal(await page.evaluate(() => performance.timeOrigin), documentStarted, 'account switch must not require a document reload');
+    await page.keyboard.press('Tab');
+    await page.getByRole('link', { name: 'Dílna', exact: true }).focus();
+    assert.notEqual(await page.getByRole('link', { name: 'Dílna', exact: true }).evaluate(link => getComputedStyle(link).outlineStyle), 'none');
+    await inspect('account-switch-shell');
+    assert(writes.every(([method, route]) => method === 'DELETE' && route === '/app/v1/session'
+      || method === 'POST' && ['/app/v1/passkeys/request-options', '/app/v1/passkeys/sign-in'].includes(route)), 'no provider or unrelated mutation');
     await context.close();
   }
   assert.deepEqual(errors, []);

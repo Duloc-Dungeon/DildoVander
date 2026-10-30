@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useVisitHumor } from "../humor/visitHumor";
+const { copy: humor } = useVisitHumor();
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
@@ -34,7 +36,7 @@ onBeforeUnmount(() => { clear(); document.removeEventListener('visibilitychange'
 <template>
   <section v-if="allowed" class="page-stack" aria-labelledby="customer-duels-title">
     <h2 id="customer-duels-title">Tvoje souboje</h2>
-    <p>Uložené souboje zachovávají tehdejší postavy, hůlky a kouzla.</p>
+    <p>Uložené souboje zachovávají tehdejší postavy, hůlky a kouzla. {{ humor.duelHistory }}</p>
     <AwButton variant="secondary" :busy="busy" @click="refresh">Obnovit souboje</AwButton>
     <AwNotice v-if="failed" tone="warning">Historii soubojů se nepodařilo ověřit. Zkus ji znovu obnovit.</AwNotice>
     <p v-else-if="!busy && !items.length">Zatím tu nemáš uložený žádný souboj. Obsluha večera může pozvat dvě postavy s dokončeným výběrem hůlky.</p>

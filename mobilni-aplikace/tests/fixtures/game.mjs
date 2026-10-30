@@ -99,7 +99,7 @@ export async function createGameFixtureServer(port = 0) {
     if (url.pathname === '/app/v1/customer/wand') return json({hasCharacter: true, wand: ['first-wand', 'task-without-wand'].includes(state) ? null : {wandId:'synthetic-saved-wand'}, tier: ['first-wand', 'task-without-wand'].includes(state) ? 0 : state === 'upgrade-wand' ? 1 : 2});
     const wandKind = state === 'wand-thorn' ? 'thorn' : 'moon';
     if (url.pathname === '/app/v1/customer/character') return json({ generatedWand: wandSnapshot(wandKind),
-      artwork: { locator: artworkLocator, assetId: artworkAssets[wandKind], status: 'ready', version: 1, synthetic: true } });
+      artwork: { locator: artworkLocator, assetId: artworkAssets[wandKind], status: 'ready', version: 2, synthetic: true } });
     if (url.pathname.startsWith(`/app/v1/archive/owned/${artworkLocator}/assets/`)) {
       if (url.pathname !== `/app/v1/archive/owned/${artworkLocator}/assets/${artworkAssets[wandKind]}`) return json({}, 404);
       response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });

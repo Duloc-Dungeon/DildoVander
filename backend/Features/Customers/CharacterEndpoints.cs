@@ -20,8 +20,13 @@ internal static class CharacterEndpoints
         services.AddSingleton<CustomerAdmissionAuthority>();
         services.TryAddSingleton<ICharacterEnrichmentProvider, OpenAiCharacterEnrichmentProvider>();
         services.AddHostedService<CharacterEnrichmentWorker>();
-        services.TryAddSingleton<ICharacterPortraitProvider, OpenAiCharacterPortraitProvider>();
-        services.TryAddSingleton<ICharacterPortraitFallbackProvider, WikimediaCharacterPortraitFallbackProvider>();
+        services.TryAddSingleton<ICharacterPortraitProvider>(_ => configuration["CustomerCharacters:PortraitProvider"] switch
+        {
+            "gemini" => new GeminiCharacterPortraitProvider(configuration),
+            null or "openai" => new OpenAiCharacterPortraitProvider(configuration),
+            _ => throw new CharacterException("portrait_provider_configuration_error", 503)
+        });
+        services.TryAddSingleton<ICharacterPortraitFallbackProvider, CharacterPortraitFallbackProvider>();
         services.AddHostedService<CharacterPortraitWorker>();
         return services;
     }

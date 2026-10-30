@@ -9,34 +9,163 @@
     "artworkSource": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["url", "title", "author", "license", "licenseUrl"],
+      "required": [
+        "url",
+        "title",
+        "author",
+        "license",
+        "licenseUrl"
+      ],
       "properties": {
-        "url": { "type": "string", "maxLength": 2048, "pattern": "^https://commons\\.wikimedia\\.org/wiki/File:[^\\s<>?#]+$" },
-        "title": { "type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[^<>\\u0000-\\u001f\\u007f-\\u009f]+$" },
-        "author": { "type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[^<>\\u0000-\\u001f\\u007f-\\u009f]+$" },
-        "license": { "type": "string", "maxLength": 80, "pattern": "^([Cc][Cc]0|[Pp][Uu][Bb][Ll][Ii][Cc] [Dd][Oo][Mm][Aa][Ii][Nn]|[Cc][Cc] [Bb][Yy](-[Ss][Aa])? (1\\.0|2\\.0|2\\.5|3\\.0|4\\.0))$" },
-        "licenseUrl": { "type": "string", "maxLength": 2048, "pattern": "^https://(commons\\.wikimedia\\.org/wiki/File:[^\\s<>?#]+|creativecommons\\.org/licenses/[^\\s<>?#]+)$" }
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://commons\\.wikimedia\\.org/wiki/File:[^\\s<>?#]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[^<>\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "author": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[^<>\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^([Cc][Cc]0|[Pp][Uu][Bb][Ll][Ii][Cc] [Dd][Oo][Mm][Aa][Ii][Nn]|[Cc][Cc] [Bb][Yy](-[Ss][Aa])? (1\\.0|2\\.0|2\\.5|3\\.0|4\\.0))$"
+        },
+        "licenseUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://(commons\\.wikimedia\\.org/wiki/File:[^\\s<>?#]+|creativecommons\\.org/licenses/[^\\s<>?#]+)$"
+        }
       }
     },
     "artwork": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "properties": {
-        "status": { "type": "string" },
-        "loadingMessage": { "type": ["string", "null"] },
-        "errorCode": { "type": ["string", "null"] },
-        "finalMessage": { "type": ["string", "null"] },
-        "welcome": { "anyOf": [{ "type": "null" }, { "type": "object", "additionalProperties": false, "required": ["joke", "identity", "teaser"], "properties": { "joke": { "type": "string" }, "identity": { "type": "string" }, "teaser": { "type": "string" } } }] },
-        "url": { "type": ["string", "null"] },
-        "source": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/artworkSource" }] }
+        "status": {
+          "type": "string"
+        },
+        "loadingMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finalMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "welcome": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "joke",
+                "identity",
+                "teaser"
+              ],
+              "properties": {
+                "joke": {
+                  "type": "string"
+                },
+                "identity": {
+                  "type": "string"
+                },
+                "teaser": {
+                  "type": "string"
+                },
+                "jokes": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "minItems": 3,
+                  "maxItems": 6,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/artworkSource"
+            }
+          ]
+        }
       }
     }
   },
-  "required": ["joke", "identity", "teaser"],
+  "required": [
+    "joke",
+    "identity",
+    "teaser"
+  ],
   "properties": {
-    "joke": { "type": "string", "minLength": 1, "maxLength": 120 },
-    "identity": { "type": "string", "maxLength": 120 },
-    "teaser": { "type": "string", "maxLength": 100 }
+    "joke": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "identity": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "teaser": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "jokes": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "minItems": 3,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      }
+    }
   }
 }

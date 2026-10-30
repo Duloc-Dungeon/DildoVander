@@ -392,7 +392,7 @@ try {
   await page.getByRole('link', { name: 'Otevřít dílnu', exact: true }).waitFor();
   assert(await page.getByRole('navigation', { name: 'Hlavní navigace', exact: true }).getByRole('link', { name: /Památky/ }).isVisible());
   const customerNav = page.getByRole('navigation', { name: 'Hlavní navigace', exact: true });
-  assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/play/wand', '/play', '/me/keepsakes', '/me/account']);
+  assert.deepEqual(await customerNav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/play/wand', '/play', '/me/keepsakes', '/me/character']);
   for (const removedEntry of ['Rozhovor']) {
     assert.equal(await customerNav.getByRole('link', { name: removedEntry, exact: true }).count(), 0, `${removedEntry} is not part of customer navigation`);
   }
@@ -412,6 +412,8 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'customer-wand-game-320-large-text.png'), fullPage: true });
   await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
   await customerNav.getByRole('link', { name: 'Já', exact: true }).click();
+  await page.getByRole('heading', { name: 'Moje postava', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Můj účet', exact: true }).click();
   await page.getByRole('heading', { name: 'Přístupové klíče' }).waitFor();
   assert.equal(await page.getByLabel('Název přístupového klíče 1').count(), 1);
   assert.equal(await page.getByRole('heading', { name: 'Verze aplikace' }).count(), 0);
@@ -561,7 +563,7 @@ try {
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
       for (const route of ['/', '/play', '/play/wand', '/me/keepsakes', '/archive/duel', '/keepsake/', '/signin', '/settings', '/settings/admin', '/me/account', '/unavailable-page']) {
-        await page.goto(origin + route); await page.getByRole('main').waitFor(); await page.waitForTimeout(100); await fits();
+        await page.goto(origin + route, { waitUntil: 'networkidle' }); await page.getByRole('main').waitFor(); await fits();
         const currentPath = new URL(page.url()).pathname;
         if (currentPath === '/signin') {
           await assertApplicationHeader(page);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { humorVariants, pickVariant } from "../humor/visitHumor";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AwButton from '../../components/AwButton.vue';
 import PortraitMirror from '../../components/scene/PortraitMirror.vue';
@@ -6,7 +7,7 @@ import CharacterIntroduction from './CharacterIntroduction.vue';
 import userIcon from '../../assets/wns-v2/icons/regular/user.svg';
 import type { PrelaunchCharacterResponse } from './generatedPrelaunchCharacter';
 import { characterDisplayName } from '../customer/characterLabel';
-import { characterIntroductionFallback, characterIntroductionText } from './characterWelcomeText';
+import { characterIntroductionText } from './characterWelcomeText';
 
 const props = defineProps<{
   character: PrelaunchCharacterResponse['character'];
@@ -18,7 +19,11 @@ const props = defineProps<{
   busy: boolean;
   retryAttempted?: boolean;
   retrying?: boolean;
+  humorRoll?: number;
 }>();
+const localRoll = Math.random();
+const visitRoll = computed(() => props.humorRoll ?? localRoll);
+const fallbackJoke = computed(() => pickVariant(humorVariants.portrait, visitRoll.value)!);
 const emit = defineEmits<{ continue: []; retry: []; failed: [] }>();
 const elapsed = ref(0);
 const preparationWaitMs = 5 * 60_000;
@@ -30,7 +35,7 @@ const heading = ref<HTMLElement>();
 const personalSince = ref(0);
 let lastTick = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
-const personalJoke = computed(() => characterIntroductionText(props.artwork, props.artwork?.status === 'ready'));
+const personalJoke = computed(() => characterIntroductionText(props.artwork, props.artwork?.status === 'ready', visitRoll.value));
 const showPersonal = computed(() => !!personalJoke.value && elapsed.value >= 900);
 const preparationFailed = computed(() => props.failed || props.readFailed
   || ['failed', 'not_requested', 'unavailable'].includes(props.artwork?.status ?? ''));
@@ -48,6 +53,7 @@ const status = computed(() => {
   if (phase.value === 'portrait' && props.character) return 'Postava je připravená. Večer může začít.';
   if (props.retryAttempted && !props.retrying) return 'Pokus o načtení je dokončený. Můžeš pokračovat i bez dokončené přípravy.';
   if (elapsed.value >= preparationWaitMs) return 'Příprava zatím není dokončená. Můžeš pokračovat a vrátit se k ní později.';
+  if (props.artwork?.errorCode === 'portrait_content_rejected') return 'Poskytovatel obrázků tento portrét odmítl. Postava zůstává uložená.';
   if (preparationFailed.value) return 'Načtení se nepodařilo. Můžeš ho jednou zkusit znovu.';
   return 'Čekáme na postavu a portrét, nejvýše pět minut. Jakmile budou připravené, můžeš pokračovat.';
 });
@@ -86,7 +92,7 @@ onBeforeUnmount(() => clearInterval(timer));
     </div>
     <div class="entrance-copy">
       <h1 id="entrance-title" ref="heading" tabindex="-1">{{ title }}</h1>
-      <CharacterIntroduction class="entrance-joke" :active="active" :replay-key="portraitReplay" :text="showPersonal ? personalJoke : characterIntroductionFallback" />
+      <CharacterIntroduction class="entrance-joke" :active="active" :replay-key="portraitReplay" :text="showPersonal ? personalJoke : fallbackJoke" />
       <div v-if="phase === 'portrait' || phase === 'placeholder'" class="entrance-identity">
         <p v-if="artwork?.welcome?.identity">{{ artwork.welcome.identity }}</p>
         <p v-if="artwork?.welcome?.teaser" class="entrance-teaser">{{ artwork.welcome.teaser }}</p>

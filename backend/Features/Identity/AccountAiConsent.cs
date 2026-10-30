@@ -8,9 +8,9 @@ internal sealed record AccountAiConsentRequest(bool OpenAiConsent, int ConsentVe
 /// <summary>Account-scoped processing choice; registration and later AI requests share this evidence.</summary>
 internal static class AccountAiConsent
 {
-    // Version 2 explicitly covers OpenAI and ElevenLabs. Older evidence never
+    // Version 3 explicitly covers OpenAI, ElevenLabs and Google Gemini. Older evidence never
     // silently authorizes the newly named processor, including old app clients.
-    internal const int CurrentVersion = 2;
+    internal const int CurrentVersion = 3;
     internal static bool HasConsent(AccountUser user) => user.OpenAiConsentAt is > 0
         && user.OpenAiConsentVersion == CurrentVersion;
     internal static bool HasConsent(AccountCeremony ceremony) => ceremony.OpenAiConsentAt is > 0

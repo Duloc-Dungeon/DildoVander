@@ -6,7 +6,7 @@ import { AccountArchiveClient } from '../archive/accountArchive';
 import { projectWandArtwork, useWandArtworkRetry, type WandArtwork } from '../archive/wandArtwork';
 import { useArchiveMedia } from '../archive/useArchiveMedia';
 import { isUuid } from '../archive/client';
-import { projectGeneratedWand, type GeneratedWand as GeneratedWandSnapshot } from '../archive/generatedWand';
+import { projectMobileGeneratedWand, type GeneratedWand as GeneratedWandSnapshot } from '../archive/generatedWand';
 import AwButton from '../../components/AwButton.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
@@ -31,7 +31,7 @@ const route = useRoute();
 watch(() => account.value?.id, id => interfaceLanguagePreference.setScope(id), { immediate: true, flush: 'sync' });
 const pane = computed(() => route.path.split('/').at(-1) ?? 'character');
 const profile = ref<CharacterProfile | null>(null);
-const selectedWand = ref<GeneratedWandSnapshot | null>(null);
+const selectedWand = ref<Omit<GeneratedWandSnapshot, 'physicalSlot'> | null>(null);
 const profileArtworkClient = new AccountArchiveClient(() => account.value?.id ?? '');
 const profileArtwork = useArchiveMedia(profileArtworkClient);
 const artworkState = ref<WandArtwork | null>(null);
@@ -141,7 +141,7 @@ async function loadProfile(epoch = generation): Promise<void> {
     const result = await accountRequest<{ profile: CharacterProfile | null; generatedWand?: unknown; artwork?: unknown }>('/app/v1/customer/character', 'GET', undefined, accountWorkController.signal);
     if (epoch !== generation) return;
     profile.value = result.profile;
-    selectedWand.value = result.profile ? projectGeneratedWand(result.generatedWand) : null;
+    selectedWand.value = result.profile ? projectMobileGeneratedWand(result.generatedWand) : null;
     bindProfileArtwork(result.artwork);
     form.value = {
       name: result.profile?.userInput.name ?? '', world: result.profile?.userInput.world ?? '',
@@ -206,7 +206,7 @@ async function refreshEnrichment(epoch = generation): Promise<void> {
   try {
     const result = await accountRequest<{ profile: CharacterProfile | null; generatedWand?: unknown; artwork?: unknown }>('/app/v1/customer/character', 'GET', undefined, accountWorkController.signal);
     if (epoch !== generation || !result.profile || result.profile.profileId !== profile.value?.profileId || result.profile.revision !== profile.value.revision) return;
-    selectedWand.value = projectGeneratedWand(result.generatedWand);
+    selectedWand.value = projectMobileGeneratedWand(result.generatedWand);
     bindProfileArtwork(result.artwork);
     // Refresh server-derived enrichment only; never replace the visitor's in-progress form edits.
     profile.value = { ...profile.value, status: result.profile.status, enrichment: result.profile.enrichment, errorCode: result.profile.errorCode, updatedAt: result.profile.updatedAt };
@@ -227,7 +227,7 @@ onBeforeUnmount(resetPrivateState);
 
 <template>
   <section class="page-stack customer-page" :class="`customer-page--${pane}`" :aria-labelledby="`customer-${pane}-title`">
-    <header><h1 :id="`customer-${pane}-title`">{{ customerCopy.text(paneTitleKeys[pane] ?? 'customer.space') }}</h1><p v-if="pane === 'character' && !profile">{{ customerCopy.text('customer.character-header') }}</p></header>
+    <header class="customer-page__header"><div><h1 :id="`customer-${pane}-title`">{{ customerCopy.text(paneTitleKeys[pane] ?? 'customer.space') }}</h1><p v-if="pane === 'character' && !profile">{{ customerCopy.text('customer.character-header') }}</p></div><RouterLink v-if="pane === 'character'" to="/me/account">{{ customerCopy.text('customer.account-pane') }}</RouterLink><RouterLink v-else-if="pane === 'account'" to="/me/character">{{ customerCopy.text('customer.character-pane') }}</RouterLink></header>
     <AwNotice v-if="errorFeedback" tone="warning" role="alert">{{ errorFeedback.copyKey ? customerCopy.text(errorFeedback.copyKey) : errorFeedback.message }}<small v-if="errorFeedback.diagnosticCode"> {{ customerCopy.text('customer.diagnostic', { code: errorFeedback.diagnosticCode }) }}</small></AwNotice>
     <AwNotice v-if="noticeCopyKey" tone="info" role="status">{{ customerCopy.text(noticeCopyKey) }}</AwNotice>
 
@@ -247,7 +247,7 @@ onBeforeUnmount(resetPrivateState);
       <PrivateCharacterAvatar v-if="profile" :profile-id="profile.profileId" :revision="profile.revision" :name="profile.userInput.name" />
       <details v-if="profile && selectedWand" class="character-details">
         <summary>Tvoje hůlka · {{ selectedWand.name }}</summary>
-        <GeneratedWand :wand="selectedWand" show-name
+        <GeneratedWand :wand="selectedWand" mobile show-name
         :image-url="profileArtwork.artworkUrl.value"
         :image-pending="!!profileArtworkPath && !profileArtwork.artworkUrl.value && !profileArtwork.artworkError.value"
         :image-error="profileArtwork.artworkError.value" :image-state="artworkState?.status" :synthetic="artworkState?.synthetic"
@@ -286,7 +286,6 @@ onBeforeUnmount(resetPrivateState);
       <p v-if="profile" class="aw-muted">{{ customerCopy.text('customer.revision', { revision: profile.revision }) }}</p>
     </form>
       </details>
-      <RouterLink to="/me/account">{{ customerCopy.text('customer.account-help') }}</RouterLink>
     </section>
 
     <CustomerKeepsakes v-else-if="pane === 'keepsakes'" />
@@ -299,6 +298,8 @@ onBeforeUnmount(resetPrivateState);
 <style scoped>
 .customer-page { --wns-display: var(--wns-font-family); container: customer-page / inline-size; width: 100%; margin-inline: auto; gap: var(--wns-space-32); color: var(--wns-text, #f5f5f0); }
 .customer-page--character { max-width: 62rem; }
+.customer-page__header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: var(--wns-space-16); }
+.customer-page__header > a { min-height: 44px; display: inline-flex; align-items: center; }
 .customer-page--account { max-width: 48rem; }
 .customer-page > header { display: grid; gap: var(--wns-space-12); padding: 0; }
 .customer-page > header h1 { max-width: 20ch; margin: 0; font: 800 clamp(2rem, 1.25rem + 3vw, 3.5rem)/1.08 var(--wns-display); letter-spacing: -.035em; text-wrap: balance; overflow-wrap: anywhere; }

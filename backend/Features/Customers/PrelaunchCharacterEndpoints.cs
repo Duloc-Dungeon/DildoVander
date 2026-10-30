@@ -164,7 +164,7 @@ internal static class PrelaunchCharacterEndpoints
                 finalMessage = PortraitContentPolicy.ValidMessage(portrait.FinalMessage) ? portrait.FinalMessage : (portrait.Status == "ready"
                     ? CharacterWelcomePolicy.LegacyText(CharacterWelcomePolicy.Fallback) : null),
                 welcome = portrait.Welcome is { } welcome && CharacterWelcomePolicy.ValidText(welcome)
-                    ? new { joke = welcome.Joke, identity = welcome.Identity, teaser = welcome.Teaser }
+                    ? new { joke = welcome.Joke, identity = welcome.Identity, teaser = welcome.Teaser, jokes = welcome.Jokes }
                     : null,
                 source = portrait.Status == "ready" ? portrait.Source : null,
                 url = portrait.Status == "ready"
@@ -234,6 +234,16 @@ internal sealed class CharacterPortraitWorker(IServiceScopeFactory scopes, Chara
         activity?.SetTag("app.attempt", job.Attempt);
         using var scope = scopes.CreateScope();
         var authority = scope.ServiceProvider.GetRequiredService<CustomerAdmissionAuthority>();
+        if (provider.RequiresCurrentAiConsent)
+        {
+            var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<AccountUser>>();
+            var user = await users.FindByIdAsync(job.AccountId);
+            if (user is null || user.Disabled || !AccountAiConsent.HasConsent(user))
+            {
+                store.CompletePortrait(job, null, "ai_consent_required");
+                return;
+            }
+        }
         Task<bool> IsCurrentAsync()
         {
             try
