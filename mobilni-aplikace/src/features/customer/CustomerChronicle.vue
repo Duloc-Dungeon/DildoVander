@@ -661,7 +661,7 @@ onBeforeUnmount(() => {
 .chronicle__entry-copy small, .chronicle__entry-copy > span { color: var(--wns-muted, #adb5b0); font-size: .82rem; }
 .chronicle__entry-copy strong { font-size: 1rem; }
 .chronicle__entry--locked .chronicle__entry-mark { color: var(--wns-muted, #adb5b0); }
-.chronicle__detail { position: sticky; top: 1rem; display: grid; gap: .75rem; overflow-wrap: anywhere; }
+.chronicle__detail { position: sticky; top: calc(var(--application-header-height, 0px) + 1rem); display: grid; gap: .75rem; overflow-wrap: anywhere; }
 .chronicle__detail h3 { margin-bottom: .15rem; font-size: clamp(1.25rem, 2.3vw, 1.8rem); }
 .chronicle__art { display: block; width: 100%; max-height: 34rem; aspect-ratio: 4 / 3; object-fit: contain; border: 1px solid var(--wns-line, #343939); border-radius: .8rem; background: #0d100e; }
 .chronicle__art-placeholder { display: grid; place-items: center; min-height: 10rem; border: 1px dashed var(--wns-line, #59645d); border-radius: .8rem; padding: 1.25rem; color: var(--wns-muted, #adb5b0); text-align: center; }

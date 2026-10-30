@@ -84,8 +84,7 @@ internal static class ApplicationUpdateTests
         try
         {
             var launchStore = new LaunchPolicyStore(Path.Combine(root, "launch"));
-            launchStore.Update("admin", new(0, false, null, false, true, 9_000_000_000_000, false,
-                "Europe/Prague", "", "waiting", false, "prompt"), 1_000);
+            launchStore.Update("admin", new(0, "Europe/Prague", false, "prompt"), 1_000);
 
             var accountConnectionString = new SqliteConnectionStringBuilder
             {

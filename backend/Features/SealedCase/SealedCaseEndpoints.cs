@@ -71,7 +71,7 @@ internal static partial class SealedCaseEndpoints
                 return ApiProblem.Create(h, 403, "sealed_case_group_required");
             // Staff launch admission does not otherwise evaluate their party countdown.
             // Complete only a due, server-owned group countdown before checking access.
-            var launch = h.RequestServices.GetRequiredService<LaunchPolicyStore>().CompleteForcedCountdown(user.LaunchGroupId,
+            var launch = h.RequestServices.GetRequiredService<LaunchPolicyStore>().OpenDueGroup(user.LaunchGroupId,
                 h.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow().ToUnixTimeMilliseconds());
             if (launch?.OpenedAt is null || !(await h.RequestServices.GetRequiredService<LaunchAccessService>().EvaluateAsync(h.User)).Allowed)
                 return ApiProblem.Create(h, 403, "sealed_case_launch_unavailable");

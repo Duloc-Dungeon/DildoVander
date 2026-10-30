@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { assertApplicationHeader } from './fixtures/application-header.mjs';
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 await stat(path.join(dist, 'index.html'));
@@ -95,6 +96,7 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Zkontrolovat znovu' }).evaluate(element => element === document.activeElement), true);
   for (const [width, height] of [[390, 844], [1280, 800]]) {
     await page.setViewportSize({ width, height });
+    await assertApplicationHeader(page);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `no horizontal overflow at ${width}`);
     assert.equal(await update.evaluate(element => element.getBoundingClientRect().height >= 44), true);
     await page.screenshot({ path: path.join(screenshots, `required-${width}.png`) });

@@ -14,6 +14,7 @@ export interface WorkshopSession {
 }
 export interface WorkshopEntry {
   eligible: boolean; reason: string | null; tier: number;
+  voiceProvider?: 'elevenlabs' | 'gpt-live' | 'speech-engine';
   profile: { profileId: string; revision: number; name: string; universe: string; version: string; description: string; status?: string } | null;
   session: WorkshopSession | null;
 }

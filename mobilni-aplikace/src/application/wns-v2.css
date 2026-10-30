@@ -32,12 +32,33 @@
   font-family: var(--wns-font-family);
 }
 body { background: var(--wns-bg); color: var(--wns-text); }
+.application-frame { --application-content-height: calc(100dvh - var(--application-header-height, 5.25rem)); }
+.application-frame .application-shell { min-height: var(--application-content-height); }
+.application-frame .application-sidebar { top: var(--application-header-height); height: var(--application-content-height); }
+.application-frame :is([tabindex='-1'], input, select, textarea, button, a, summary) {
+  scroll-margin-top: calc(var(--application-header-height) + var(--wns-space-16));
+}
+/* Keep browser-scrolled operator controls clear of both fixed mobile bars. */
+@media (max-width: 720px) {
+  .application-shell:not(.launch-mode):not(.game-mode):not(.customer-mode):not(.has-customer-navigation) .application-main :is(label, input, select, textarea, button, a, summary) {
+    scroll-margin-block: calc(var(--application-header-height) + var(--wns-space-16)) calc(var(--application-navigation-height) + max(8px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) + var(--wns-space-16));
+  }
+}
 /* Browser-owned surfaces belong to the same stage as the application controls. */
 ::selection { background: var(--wns-mint); color: var(--wns-on-mint); }
 html { scrollbar-color: var(--wns-line) var(--wns-bg); }
 .application-shell :is(input, textarea) { caret-color: var(--wns-mint); }
 .application-shell a { text-underline-offset: .25em; text-decoration-thickness: 1px; }
 .application-shell :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 3px solid var(--wns-focus-ring);
+  outline-offset: 4px;
+}
+/* These anchors announce a new page or step; they are not controls. Keep the
+   focus transfer for assistive technology without drawing a frame around it. */
+.application-shell :is(main, section, h1, h2, h3, h4, h5, h6)[tabindex='-1']:focus {
+  outline: none;
+}
+.application-shell :is([tabindex='0'], [role='button'], [role='tab'], [role='radio']):focus-visible {
   outline: 3px solid var(--wns-focus-ring);
   outline-offset: 4px;
 }
@@ -67,7 +88,27 @@ html { scrollbar-color: var(--wns-line) var(--wns-bg); }
 }
 .application-main .aw-button--secondary { background: var(--wns-surface-raised); color: var(--wns-text); border-color: var(--wns-line); }
 .application-main .aw-button--danger { background: var(--wns-peach); color: var(--wns-on-peach); }
+.application-shell .aw-button {
+  text-align: center;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+  transition: background-color 160ms ease-out, border-color 160ms ease-out, filter 160ms ease-out;
+}
+@media (hover: hover) and (pointer: fine) {
+  .application-shell .aw-button:not(:disabled):not([aria-disabled='true']):hover {
+    filter: brightness(1.06);
+  }
+  .application-main .aw-button--secondary:not(:disabled):not([aria-disabled='true']):hover {
+    background: var(--wns-line);
+  }
+}
+.application-shell .aw-button:not(:disabled):not([aria-disabled='true']):active { filter: brightness(.94); }
+.application-shell .aw-button:is(:disabled, [aria-disabled='true']) { filter: none; cursor: not-allowed; }
+.application-shell .aw-button[aria-busy='true'] { cursor: progress; }
 .application-main :is(.aw-input, .aw-select, .aw-textarea, .game-field select) { background: var(--wns-input-bg); color: var(--wns-text); border: 1px solid var(--wns-input-border); border-radius: var(--wns-radius-field); min-height: var(--wns-field-height); font-size: 1rem; }
+.application-main :is(.aw-input, .aw-select, .aw-textarea) { max-width: 100%; }
+.application-main textarea.aw-textarea { resize: vertical; }
+.application-shell :is(input[type='checkbox'], input[type='radio']) { accent-color: var(--wns-focus-ring); }
 .application-main :is(input, textarea)::placeholder { color: var(--wns-placeholder); }
 .application-main .aw-notice { border-radius: var(--wns-radius-field); box-shadow: none; }
 .application-shell .aw-notice {
@@ -99,6 +140,18 @@ html { scrollbar-color: var(--wns-line) var(--wns-bg); }
 .aw-notice__content > strong { display: block; margin-bottom: .25rem; }
 .notification-content button { border-radius: var(--wns-radius-icon); cursor: pointer; flex: none; }
 .application-main p { line-height: var(--wns-leading-body); }
+/* Carry the entrance's reading rhythm through forms and supporting pages. */
+.application-main :is(.aw-input, .aw-select, .aw-textarea) { max-width: 100%; min-width: 0; }
+.application-main :is(input[type='checkbox'], input[type='radio']) { accent-color: var(--wns-mint); }
+.application-shell .aw-button:not(:disabled):active { filter: brightness(.92); }
+.application-main :is(time, .countdown, .identity-list, .launch-audit, .portrait-jobs) { font-variant-numeric: tabular-nums; }
+.application-main .information-page { max-width: 48rem; gap: var(--wns-space-32); }
+.application-main .information-page > h1 { max-width: 18ch; font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.08; letter-spacing: -.035em; }
+.application-main .information-page > section { padding-block-start: var(--wns-space-24); }
+.application-main .information-page p { max-width: 65ch; }
+.application-main .information-page h2 { margin-bottom: var(--wns-space-12); font-size: 1.35rem; }
+.application-main .information-page :is(a, summary) { scroll-margin-block: var(--wns-space-32); }
+.application-main .information-page a { overflow-wrap: anywhere; }
 .application-main .eyebrow, .game-eyebrow { font-family: var(--wns-font-family); letter-spacing: .12em; font-weight: 800; }
 .wns-hero { position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .8fr); align-items: center; gap: 12px; min-height: 240px; padding: 24px; margin-block: 24px; border-radius: var(--wns-radius-hero); background: var(--wns-amber); color: var(--wns-on-amber); }
 .wns-hero h2 { font-size: 1.6rem; margin: 0 0 12px; }
@@ -172,7 +225,7 @@ html { scrollbar-color: var(--wns-line) var(--wns-bg); }
   padding: var(--wns-space-32) var(--customer-page-gutter) var(--wns-space-48);
 }
 .application-shell.launch-mode .application-main > .customer-page--account {
-  padding-top: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + var(--wns-space-24));
+  padding-top: var(--wns-space-24);
 }
 :root[data-theme] .customer-mode .application-header {
   padding-inline: max(var(--customer-page-gutter), calc((100% - var(--customer-content-width)) / 2 + var(--customer-page-gutter)));
@@ -185,7 +238,7 @@ html { scrollbar-color: var(--wns-line) var(--wns-bg); }
   gap: var(--wns-space-12) var(--wns-space-24);
 }
 .has-customer-navigation :is(a, button, input, select, textarea, summary) {
-  scroll-margin-block: var(--wns-space-32) calc(var(--customer-navigation-clearance) + var(--wns-space-32));
+  scroll-margin-block: calc(var(--application-header-height, 0px) + var(--wns-space-32)) calc(var(--customer-navigation-clearance) + var(--wns-space-32));
 }
 .wns-game-navigation a { position: relative; border-radius: var(--wns-radius-icon); }
 .wns-game-navigation a.router-link-active { background: var(--wns-surface-raised); }

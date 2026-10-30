@@ -1,5 +1,6 @@
 // Offline, repeatable mobile visual/interaction evidence. No provider or production calls.
 import assert from 'node:assert/strict';
+import { assertApplicationHeader } from './fixtures/application-header.mjs';
 import { createServer } from 'node:http';
 import { readFile, mkdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -39,12 +40,17 @@ async function fixtures(context){
     return route.continue();
   });
 }
+async function enterReception(page) {
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
+  await page.locator('.portrait-stage').waitFor();
+}
 async function capture(page,name,details){
+  await assertApplicationHeader(page);
   await page.evaluate(()=>document.fonts.ready);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,name+' overflow');
   const clipped=await page.evaluate(()=>[...document.querySelectorAll('input,select,button,a')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&(r.left<-.5||r.right>innerWidth+.5);}).map(el=>el.tagName+':'+el.textContent?.trim().slice(0,40)));
   assert.deepEqual(clipped,[],name+' clipped controls');
-  const shortTargets=await page.evaluate(()=>[...document.querySelectorAll('.signin-help a,.signin-options button,.signin-wordmark,.launch-wordmark,.launch-footer a,.launch-account-options summary,.consent-fieldset label,.consent-fieldset summary')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height<43.5;}).map(el=>el.textContent?.trim().slice(0,40)));
+  const shortTargets=await page.evaluate(()=>[...document.querySelectorAll('.signin-help a,.signin-options button,.application-topbar__brand,.launch-footer a,.launch-account-options summary,.consent-fieldset label,.consent-fieldset summary')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height<43.5;}).map(el=>el.textContent?.trim().slice(0,40)));
   assert.deepEqual(shortTargets,[],name+' touch targets below44px');
   await page.screenshot({path:path.join(output,name+'.png'),fullPage:true});
   records.push({file:name+'.png',...details,mode:'fixture',role:signedIn?'Customer':'anonymous'});
@@ -61,18 +67,20 @@ try{
       await page.goto(origin+'/signin#invite=fixture-code-not-live-1234567890');
       await page.getByLabel('Jméno postavy').waitFor({timeout:10000}).catch(async error=>{await page.screenshot({path:path.join(output,'failure-signin.png'),fullPage:true});console.log(page.url(),await page.locator('body').innerText(),errors);throw error;});
       assert.equal(await page.getByRole('checkbox').isChecked(),false);
+      assert.equal(await page.getByRole('button',{name:'Mám kód obnovy',exact:true}).count(),0);
+      assert.equal(await page.getByText('Kód obnovy',{exact:true}).count(),0);
       const title = page.locator('#sign-in-title');
       await title.focus();
       assert.equal(await title.evaluate(element => getComputedStyle(element).outlineStyle), 'none', 'signup heading has no focus border');
       await capture(page,`signin-invite-${width}x${height}-${theme}-cs`,{route:'/signin',state:'invitation',viewport:`${width}x${height}`,theme,language:'cs'});
       if(width===390){await page.getByLabel('Jméno postavy').focus();await page.setViewportSize({width,height:440});await capture(page,`signin-keyboard-${width}x440-${theme}-cs`,{route:'/signin',state:'focused input; keyboard-sized viewport, not native keyboard',viewport:`${width}x440`,theme,language:'cs'});await page.setViewportSize({width,height});}
       signedIn=true;ready=false;long=false;
-      await page.goto(origin+'/launch');await page.locator('.portrait-stage').waitFor();
+      await page.goto(origin+'/launch');await enterReception(page);
       assert.equal(await page.getByText('DO NOT SHOW HOST NOTE').count(),0);
       const frame=await page.locator('.portrait-stage').boundingBox();assert.ok(Math.abs(frame.width/frame.height-.8)<.001);
       assert.equal(await page.locator('.prelaunch-wand').count(),0,'the workshop waits for the portrait');
       await capture(page,`launch-waiting-${width}x${height}-${theme}-cs`,{route:'/launch',state:'saved, image pending',viewport:`${width}x${height}`,theme,language:'cs'});
-      ready=true;await page.reload();await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('[data-curtain="open"]').waitFor();await page.locator('.launch-final').waitFor();
+      ready=true;await page.reload();await enterReception(page);await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('[data-curtain="open"]').waitFor();await page.locator('.launch-final').waitFor();
       await page.evaluate(()=>window.scrollTo(0,0));
       await page.getByRole('button',{name:'Vytvořit hůlku',exact:true}).waitFor();
       const workshop=await page.locator('.prelaunch-wand').boundingBox();
@@ -80,7 +88,7 @@ try{
       assert.ok(workshop && countdown && countdown.y>=workshop.y+workshop.height,
         'the countdown stays below the newly available workshop without overlapping it');
       await capture(page,`launch-revealed-${width}x${height}-${theme}-cs`,{route:'/launch',state:'revealed card',viewport:`${width}x${height}`,theme,language:'cs'});
-      long=true;revision++;await page.reload();await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('.launch-final').waitFor();
+      long=true;revision++;await page.reload();await enterReception(page);await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('.launch-final').waitFor();
       await page.evaluate(()=>{document.documentElement.style.fontSize='125%';window.scrollTo(0,0);});
       await capture(page,`launch-long-250chars-text125-${width}x${height}-${theme}-cs`,{route:'/launch',state:'80-char name,160-char universe,250-char card,125% text',viewport:`${width}x${height}`,theme,language:'cs'});
       const jokeBox = await page.locator('.launch-joke').evaluate(el => ({ scroll: el.scrollHeight, client: el.clientHeight, lineHeight: getComputedStyle(el).lineHeight, overflow: getComputedStyle(el).overflow }));
@@ -94,7 +102,7 @@ try{
   ready=true;long=false;signedIn=true;revision=100;
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'no-preference',recordVideo:{dir:output,size:{width:390,height:844}}});
   await fixtures(context);const page=await context.newPage();const video=page.video();
-  await page.goto(origin+'/launch');await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('[data-curtain="opening"]').waitFor();
+  await page.goto(origin+'/launch');await enterReception(page);await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('[data-curtain="opening"]').waitFor();
   // Add test-only scroll runway: this compact card otherwise fits too closely to scroll completely off-screen.
   await page.evaluate(()=>{const runway=document.createElement('div');runway.id='test-scroll-runway';runway.style.height='100vh';document.body.append(runway);});
   await page.waitForTimeout(250);
@@ -104,18 +112,18 @@ try{
   await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
   await page.evaluate(()=>document.getElementById('test-scroll-runway')?.remove());
   await page.locator('[data-curtain="opening"]').waitFor();
-  const transform=await page.locator('.curtain-wing-left').evaluate(el=>new DOMMatrix(getComputedStyle(el).transform).m41);
-  assert.ok(Math.abs(transform)<70,'quick re-entry must restart near the closed centre, not partially opened');
-  await page.waitForTimeout(350);await page.reload();
+  const opening=await page.locator('.mirror-mist').evaluate(el=>parseFloat(getComputedStyle(el).getPropertyValue('--mirror-opening')));
+  assert.ok(opening<25,'quick re-entry restarts the mirror mist near its covered state');
+  await page.waitForTimeout(350);await page.reload();await enterReception(page);
   await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('[data-curtain="opening"]').waitFor();
   await capture(page,'curtain-replayed-after-reload-390x844-lord-voldemort-cs',{route:'/launch',state:'interrupted reveal replay, same revision/image',viewport:'390x844',theme:'lord-voldemort',language:'cs'});
   await page.locator('[data-curtain="open"]').waitFor();
   await capture(page,'curtain-completed-390x844-lord-voldemort-cs',{route:'/launch',state:'completed opening',viewport:'390x844',theme:'lord-voldemort',language:'cs'});
   const callsBefore= requests;
-  await page.reload();await page.locator('[data-curtain="open"]').waitFor();
+  await page.reload();await enterReception(page);await page.locator('[data-curtain="open"]').waitFor();
   assert.equal(await page.locator('[data-curtain="opening"]').count(),0,'seen revision opens immediately');
   assert.equal(requests,callsBefore+1,'reload only refetches authorised bytes; no generation request');
-  revision++;await page.reload();await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('[data-curtain="opening"]').waitFor();
+  revision++;await page.reload();await enterReception(page);await page.locator('.portrait-stage').scrollIntoViewIfNeeded();await page.locator('[data-curtain="opening"]').waitFor();
   await page.locator('[data-curtain="open"]').waitFor();
   await context.close();await video.saveAs(path.join(output,'curtain-interrupt-return-revision.webm'));
   assert.deepEqual(errors,[]);

@@ -1,4 +1,4 @@
-// Verifies production schedule changes through the real app shell without live services.
+// Verifies server access revalidation through the real app shell without live services.
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -63,7 +63,7 @@ try {
     await page.locator('.countdown').waitFor();
     assert.equal(await page.locator('.character-countdown-grid > div').count(), 4);
     const countdown = await page.locator('.character-countdown-grid strong').allTextContents();
-    assert(countdown.some(value => Number(value) > 0), 'future production term remains visible in the countdown');
+    assert(countdown.some(value => Number(value) > 0), 'future group opening remains visible in the countdown');
     assert.equal(await page.getByRole('button', { name: 'Odhlásit se', exact: true }).isEnabled(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
     await page.evaluate(() => document.fonts.ready);

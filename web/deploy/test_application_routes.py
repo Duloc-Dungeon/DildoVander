@@ -121,12 +121,21 @@ class ApplicationRoutingTests(unittest.TestCase):
             self.assertIn(value, block)
         self.assertNotIn('try_files', block)
 
-    def test_all_static_vue_entries_have_an_exact_server_page(self):
+    def test_all_production_static_vue_entries_have_an_exact_server_page(self):
         config = proxy.render_compatibility('keepsake.example.invalid')
         pages = set(re.findall(r'location = ([^ ]+) \{\n(?:(?!\n}).)*?try_files /index.html =404;', config, re.DOTALL))
         router = Path(__file__).resolve().parents[2] / 'mobilni-aplikace/src/application/router.ts'
-        routes = set(re.findall(r"\{\s*path:\s*'([^']+)'", router.read_text(encoding='utf-8')))
-        static_entries = {route for route in routes if ':' not in route}
+        source = router.read_text(encoding='utf-8')
+        development_spread = re.compile(r'\.\.\.\(import\.meta\.env\.DEV \? (\[.*?\]) : \[\]\)', re.DOTALL)
+        development_blocks = development_spread.findall(source)
+        development_entries = {route for block in development_blocks
+                               for route in re.findall(r"\{\s*path:\s*'([^']+)'", block)}
+        self.assertEqual({'/local-try-hub'}, development_entries)
+        self.assertFalse(development_entries & pages, 'Local-only pages must not receive production ingress')
+        production_source = development_spread.sub('', source)
+        production_routes = set(re.findall(r"\{\s*path:\s*'([^']+)'", production_source))
+        self.assertFalse(production_routes & development_entries, 'Local-only pages must not have an unconditional route')
+        static_entries = {route for route in production_routes if ':' not in route}
         self.assertFalse(static_entries - pages, 'Vue entries missing from exact server ingress: ' + str(static_entries - pages))
 
     def test_customer_pages_are_private_get_only_and_do_not_catch_apis(self):

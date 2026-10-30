@@ -14,6 +14,7 @@ internal static partial class AccountIdentityTests
     internal static async Task RunCustomerSessionResultHttpAsync()
     {
         await using var fixture = await Fixture.StartAsync(customerFeatures: true);
+        fixture.OpenSelectedCustomerGroup();
         using var administrator = fixture.Client();
         using var customer = fixture.Client();
         using var viewer = fixture.Client();
@@ -28,7 +29,7 @@ internal static partial class AccountIdentityTests
         var customerId = customerIdentity.GetProperty("account").GetProperty("id").GetString()!;
 
         var invite = await JsonAsync(await administrator.PostAsJsonAsync("/app/v1/admin/invitations",
-            new { role = "Viewer", recoveryUserId = (string?)null }));
+            new { role = "Viewer" }));
         await EnrollAsync(viewer, viewerKey, invite.GetProperty("token").GetString()!, "Readiness linked viewer");
         var viewerId = (await CsrfAsync(viewer)).GetProperty("account").GetProperty("id").GetString()!;
 

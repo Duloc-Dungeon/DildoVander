@@ -20,30 +20,24 @@ internal static partial class AccountEndpoints
         {
             users = result,
             grants = await db.ResourceGrants.OrderBy(x => x.Id).Take(1000).ToArrayAsync(),
-            invitations = await db.Invitations.Where(x => x.Purpose != "bootstrap" && !x.Consumed && x.ExpiresAt > Now())
+            invitations = await db.Invitations.Where(x => x.Purpose == "invite" && x.UserId == null && !x.Consumed && x.ExpiresAt > Now())
                 .OrderBy(x => x.ExpiresAt).ThenBy(x => x.TokenHash)
                 .Select(x => new { x.Purpose, x.Role, x.UserId, x.LaunchGroupId, x.ExpiresAt }).Take(100).ToArrayAsync()
         });
     }
 
     private static async Task<IResult> InviteAsync(InvitationRequest request, HttpContext context,
-        AccountDatabase db, UserManager<AccountUser> users)
+        AccountDatabase db)
     {
-        // Only an owner can issue credentials or recovery. Administrators manage
+        // Only an owner can issue invitations. Administrators manage
         // resources, but cannot manufacture a second owner or take over accounts.
         if (!context.User.IsInRole(AccountRoles.Owner)) { return ApiProblem.Create(context, 403, "owner_required"); }
         if (!AccountRoles.All.Contains(request.Role)) { return Error(context, "invalid_role"); }
-        if (request.RecoveryUserId is not null && request.LaunchGroupId is not null)
-        { return Error(context, "recovery_group_assignment_forbidden"); }
         if (request.LaunchGroupId is not null)
         {
             var launchStore = context.RequestServices.GetService<LaunchPolicyStore>();
             if (launchStore is null) { return ApiProblem.Create(context, 503, "launch_groups_unavailable"); }
             if (launchStore.ReadGroup(request.LaunchGroupId) is null) { return Error(context, "launch_group_unavailable"); }
-        }
-        if (request.RecoveryUserId is not null && await users.FindByIdAsync(request.RecoveryUserId) is not { Disabled: false })
-        {
-            return Error(context, "recovery_unavailable");
         }
         if (await db.Invitations.CountAsync(x => !x.Consumed && x.ExpiresAt > Now()) >= 100)
         {
@@ -52,8 +46,8 @@ internal static partial class AccountEndpoints
         var token = Secret();
         var invitation = new AccountInvitation
         {
-            TokenHash = Hash(token), Purpose = request.RecoveryUserId is null ? "invite" : "recovery",
-            Role = request.Role, UserId = request.RecoveryUserId, LaunchGroupId = request.LaunchGroupId,
+            TokenHash = Hash(token), Purpose = "invite",
+            Role = request.Role, LaunchGroupId = request.LaunchGroupId,
             ExpiresAt = Now() + 3600
         };
         db.Invitations.Add(invitation);

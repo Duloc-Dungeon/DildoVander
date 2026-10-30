@@ -7,7 +7,7 @@ import AdminNavigation from '../identity/AdminNavigation.vue';
   <div class="page-stack launch-management-page">
     <header>
       <h1>Večer a pozvánky</h1>
-      <p>Připravte skupinu, pozvěte účastníky a potvrďte odpočet do otevření večera.</p>
+      <p>Připravte skupinu, pozvěte účastníky a nastavte spuštění aplikace pro nové hosty.</p>
     </header>
     <AdminNavigation current="evening" />
     <LaunchManagementPanel />
@@ -15,5 +15,6 @@ import AdminNavigation from '../identity/AdminNavigation.vue';
 </template>
 
 <style scoped>
-.launch-management-page { max-width: 74rem; margin: 0 auto; }
+.launch-management-page { max-width: 74rem; margin-inline: auto; }
+.launch-management-page > header { max-width: 68ch; }
 </style>

@@ -13,6 +13,7 @@ internal static partial class AccountIdentityTests
         await using var fixture = await Fixture.StartAsync(
             customerFeatures: true,
             configureEndpoints: app => app.MapCustomerConversationPreferences());
+        fixture.OpenSelectedCustomerGroup();
         using var customerA = fixture.Client();
         using var customerB = fixture.Client();
         using var anonymous = fixture.Client();
@@ -201,7 +202,7 @@ internal static partial class AccountIdentityTests
     {
         await CsrfAsync(client);
         var options = await JsonAsync(await client.PostAsJsonAsync(
-            "/app/v1/customer/enrollment/options", new { displayName, openAiConsent = true }));
+            "/app/v1/customer/enrollment/options", new { displayName, openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
         using var completion = await client.PostAsJsonAsync(
             "/app/v1/customer/enrollment/complete", new { credential = key.Create(options) });
         Check(completion.IsSuccessStatusCode, "customer preference fixture enrolls using a real passkey");

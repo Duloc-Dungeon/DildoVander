@@ -261,6 +261,11 @@ internal static class CharacterDirectorTests
         Check(CharacterDirector.Evaluate(session, CharacterPhase.Opening, 0).QuestionBudget == 1
             && CharacterDirector.Evaluate(session, CharacterPhase.Responding, 1).QuestionBudget == 1
             && CharacterDirector.Evaluate(session, CharacterPhase.Responding, 2).QuestionBudget == 0, "two content-question session budget with one per reply");
+        var reply = CharacterDirector.Evaluate(session, CharacterPhase.Responding, 1);
+        var finale = CharacterDirector.Evaluate(session, CharacterPhase.Ready, 2);
+        Check(reply.WordBudget == 28 && reply.SpeechIntent == CharacterSpeechIntent.Question
+            && finale.WordBudget == 35 && finale.QuestionBudget == 0,
+            "shorter speech preserves a follow-up conversation before the autonomous finale");
         Check(CharacterDirector.Evaluate(session, CharacterPhase.Deciding, 0).QuestionBudget == 0
             && CharacterDirector.Evaluate(session, CharacterPhase.Closing, 0).QuestionBudget == 0,
             "no questionnaire during decision or closing");

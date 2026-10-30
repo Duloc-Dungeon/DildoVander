@@ -29,11 +29,10 @@ describe('lost access guidance', () => {
     await details.get('summary').trigger('click');
     expect(details.attributes('open')).toBeDefined();
     expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktuj podporu');
-    expect(wrapper.text()).toContain('Podpora tě provede ověřením vlastnictví účtu; jednorázový kód obnovy může vystavit pouze vlastník služby.');
-    expect(wrapper.text()).toContain('Kód obnovy má omezenou platnost.');
-    expect(wrapper.text()).toContain('původní klíče odebrány a ostatní relace odhlášeny');
+    expect(wrapper.text()).toContain('Podpora ti pomůže zjistit další možnosti přístupu.');
     expect(wrapper.text()).toContain('Zobrazované jméno ani odkaz na památku vlastnictví účtu neprokazují.');
-    expect(wrapper.text()).toContain('Nikomu neposílej přístupové klíče ani obnovovací kódy.');
+    expect(wrapper.text()).toContain('Nikomu neposílej přístupové klíče.');
+    expect(wrapper.text()).not.toContain('kód obnovy');
     expect(wrapper.find('form').exists()).toBe(false);
     expect(wrapper.find('input').exists()).toBe(false);
     expect(wrapper.findAll('button')).toHaveLength(0);
@@ -47,9 +46,8 @@ describe('lost access guidance', () => {
     await nextTick();
     expect(wrapper.get('summary').text()).toBe('Nemůžeš se přihlásit?');
     expect(wrapper.get('a[href="/support"]').text()).toBe('kontaktuj podporu');
-    expect(wrapper.text()).toContain('jednorázový kód obnovy může vystavit pouze vlastník služby');
-    expect(wrapper.text()).toContain('původní klíče odebrány a ostatní relace odhlášeny');
-    expect(wrapper.text()).toContain('Nikomu neposílej přístupové klíče ani obnovovací kódy.');
+    expect(wrapper.text()).toContain('Podpora ti pomůže zjistit další možnosti přístupu.');
+    expect(wrapper.text()).toContain('Nikomu neposílej přístupové klíče.');
     wrapper.unmount();
   });
 });

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { assertApplicationHeader } from './fixtures/application-header.mjs';
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const screenshots = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'dildovander-application-browser');
@@ -247,7 +248,12 @@ try {
   await page.keyboard.press('Enter');
   assert.notEqual(await lostAccess.getAttribute('open'), null);
   assert(await lostAccess.getByRole('link', { name: 'kontaktuj podporu' }).isVisible());
-  assert.match(await lostAccess.innerText(), /pouze vlastník služby/);
+  assert.equal(await lostAccess.getByRole('link', { name: 'kontaktuj podporu' }).getAttribute('href'), '/support');
+  const recoveryGuidance = await lostAccess.innerText();
+  assert.match(recoveryGuidance, /Podpora ti pomůže zjistit další možnosti přístupu/);
+  assert.match(recoveryGuidance, /Zobrazované jméno ani odkaz na památku vlastnictví účtu neprokazují/);
+  assert.match(recoveryGuidance, /Nikomu neposílej přístupové klíče/);
+  assert.equal(await lostAccess.locator('form, input, button').count(), 0, 'recovery guidance does not introduce an account-claim or secret-entry flow');
   assert.equal(await page.locator('.shell-preferences').count(), 0, 'sign-in keeps the prelaunch shell free of feature navigation and preferences');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(origin + '/signin');
@@ -558,11 +564,12 @@ try {
         await page.goto(origin + route); await page.getByRole('main').waitFor(); await page.waitForTimeout(100); await fits();
         const currentPath = new URL(page.url()).pathname;
         if (currentPath === '/signin') {
-          assert.equal(await page.locator('.application-header, .primary-navigation, .application-footer, .shell-preferences').count(), 0, 'prelaunch sign-in does not expose ordinary feature navigation');
+          await assertApplicationHeader(page);
+          assert.equal(await page.locator('.primary-navigation, .application-footer, .shell-preferences').count(), 0, 'prelaunch sign-in does not expose ordinary feature navigation');
           continue;
         }
         if (width <= 720 && !['/play', '/play/wand'].includes(currentPath)) {
-          assert(await page.locator('.application-header').evaluate(header => header.getBoundingClientRect().height < 150), 'collapsed mobile header leaves room for the current task');
+          assert(await page.locator('.application-topbar').evaluate(header => header.getBoundingClientRect().height < 150), 'collapsed mobile header leaves room for the current task');
           assert(await page.locator('.primary-navigation a').evaluateAll(links => links.every(link => {
             const rect = link.getBoundingClientRect();
             return rect.width >= 44 && rect.height >= 44;
@@ -575,7 +582,8 @@ try {
           }), 'deep-linked navigation stays visible in the scrolling bar');
         }
         if (new URL(page.url()).pathname === '/signin') {
-          assert.equal(await page.locator('.application-header, .primary-navigation, .application-footer').count(), 0, 'sign-in hides ordinary navigation and feature links');
+          await assertApplicationHeader(page);
+          assert.equal(await page.locator('.primary-navigation, .application-footer').count(), 0, 'sign-in hides ordinary navigation and feature links');
         } else if (currentPath === '/me/account') {
           await hasHeading('Můj účet');
           const installer = page.getByRole('link', { name: 'Aplikace pro iPhone', exact: true });
@@ -654,7 +662,7 @@ try {
     document.documentElement.style.setProperty('--safe-area-inset-top', '24px');
     document.documentElement.style.setProperty('--safe-area-inset-bottom', '32px');
   });
-  assert(await page.locator('.application-header').evaluate(element => parseFloat(getComputedStyle(element).paddingTop) >= 24), 'Android SystemBars top inset protects the header');
+  assert(await page.locator('.application-topbar').evaluate(element => parseFloat(getComputedStyle(element).paddingTop) >= 24), 'Android SystemBars top inset protects the header');
   const mobileNavigation = page.locator('.primary-navigation');
   assert(await mobileNavigation.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight - 32), 'Android SystemBars bottom inset lifts the floating navigation');
   await mobileNavigation.getByRole('link', { name: 'Domů', exact: true }).click();

@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.WebSockets;
 using System.Text.Json;
 using Kufr.Backend.Features.Customers;
 using Kufr.Backend.Features.Game;
@@ -31,6 +33,9 @@ internal static partial class AccountIdentityTests
                 services.AddSingleton<IMobileWandQuestionProvider, PrelaunchWorkshopDialogue>();
                 services.AddSingleton<WandGenerationService>();
                 services.AddSingleton<MobileWandRuntime>();
+                services.AddSingleton(new ElevenLabsWorkshopOptions());
+                services.AddSingleton<IWorkshopSpeechProvider, ElevenLabsWorkshopProvider>();
+                services.AddSingleton<ElevenLabsWorkshopRuntime>();
                 services.AddSingleton<MobileWorkshopLiveRuntime>();
                 services.AddSingleton<GptLiveClient>();
                 services.AddSingleton(sp => GptLiveOptions.Read(sp.GetRequiredService<IConfiguration>()));
@@ -41,7 +46,11 @@ internal static partial class AccountIdentityTests
                     ["Keepsake:ProviderMode"] = "openai", ["Keepsake:ImageModel"] = "gpt-image-1.5",
                     ["OPENAI_API_KEY"] = "synthetic-offline-workshop-key"
                 }),
-            configureEndpoints: app => app.MapMobileWands());
+            configureEndpoints: app =>
+            {
+                app.MapMobileWands();
+                app.MapWorkshopLive();
+            });
         Check(!fixture.App.Services.GetServices<IHostedService>()
             .Any(service => service is KeepsakeWorker or MobileWandWorkshopWorker),
             "workshop scenario exclusively controls its manufacture and artwork queues");
@@ -55,8 +64,9 @@ internal static partial class AccountIdentityTests
         await CsrfAsync(owner);
         var launch = fixture.App.Services.GetRequiredService<LaunchPolicyStore>();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var group = launch.CreateGroup("test-owner", new("Closed wand night", null), now);
-        var otherGroup = launch.CreateGroup("test-owner", new("Other closed night", null), now);
+        var group = launch.CreateGroup("test-owner", new("Closed wand night"), now);
+        LaunchTestSchedule.Set(launch, group.Id, now + 86_400_000, now);
+        var otherGroup = launch.CreateGroup("test-owner", new("Other closed night"), now);
         var guestId = await EnrollWorkshopGuestAsync(guest, guestKey, "Early wand guest");
         var movedId = await EnrollWorkshopGuestAsync(movedGuest, movedKey, "Moving wand guest");
         var profiles = fixture.App.Services.GetRequiredService<CharacterProfileStore>();
@@ -83,7 +93,47 @@ internal static partial class AccountIdentityTests
         var admission = await WorkshopAdmissionAsync(guestId, operation, prepared);
         await fixture.App.Services.GetRequiredService<MobileWorkshopLiveRuntime>().RequireAuthorityAsync(admission, default);
         Check((await guest.PostAsJsonAsync(sessionPath + "/ticket", new { socketOrigin = "https://localhost" })).IsSuccessStatusCode,
-            "closed-night guest can obtain the same protected Live admission as text");
+            "stored unified OpenAI and ElevenLabs consent admits voice without a per-call checkbox");
+        Check((await guest.PostAsJsonAsync(sessionPath + "/ticket", new { socketOrigin = "https://localhost" })).IsSuccessStatusCode,
+            "the next voice admission reuses the same stored consent");
+        using (var anonymous = new HttpClient(new HttpClientHandler
+        {
+            UseProxy = false,
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+        }) { BaseAddress = guest.BaseAddress })
+        using (var request = new HttpRequestMessage(HttpMethod.Get,
+            sessionPath + "/live?ticket=invalid-workshop-ticket"))
+        {
+            request.Headers.Add("Origin", "https://localhost");
+            request.Headers.Connection.Add("Upgrade");
+            request.Headers.Upgrade.Add(new ProductHeaderValue("websocket"));
+            request.Headers.Add("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+            request.Headers.Add("Sec-WebSocket-Version", "13");
+            var response = await anonymous.SendAsync(request);
+            using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Check(response.StatusCode == HttpStatusCode.Unauthorized
+                && problem.RootElement.GetProperty("code").GetString() == "invalid_wand_ticket",
+                "cookie-less workshop WebSocket reaches ticket validation instead of being blocked by the launch gate");
+        }
+        using (var anonymous = new HttpClient(new HttpClientHandler
+        {
+            UseProxy = false,
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+        }) { BaseAddress = guest.BaseAddress })
+        using (var request = new HttpRequestMessage(HttpMethod.Get,
+            sessionPath + "/live?ticket=invalid-workshop-ticket"))
+        {
+            request.Headers.Add("Origin", "https://untrusted.example");
+            request.Headers.Connection.Add("Upgrade");
+            request.Headers.Upgrade.Add(new ProductHeaderValue("websocket"));
+            request.Headers.Add("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+            request.Headers.Add("Sec-WebSocket-Version", "13");
+            var response = await anonymous.SendAsync(request);
+            using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Check(response.StatusCode == HttpStatusCode.Forbidden
+                && problem.RootElement.GetProperty("code").GetString() == "account_origin_required",
+                "cookie-less workshop WebSocket still rejects an untrusted Origin before accepting the ticket");
+        }
         var messageId = Guid.NewGuid().ToString("N");
         const string messageText = "I find a new route before asking for directions.";
         Check((await guest.PostAsJsonAsync(sessionPath + "/messages",
@@ -210,13 +260,8 @@ internal static partial class AccountIdentityTests
             new { messageId = savedReply.MessageId, expectedRevision = savedReply.Revision })).IsSuccessStatusCode,
             "portrait-only revision permits saving an exact reply from the completed historical workshop");
 
-        var currentGroup = launch.ReadGroup(group.Id) ?? throw new InvalidOperationException("Workshop group disappeared.");
         var openingTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var countdownDraft = launch.SaveCountdown("test-owner", group.Id,
-            new(currentGroup.Revision, 1, false), openingTime - 2000);
-        var countdown = launch.ConfirmCountdown("test-owner", group.Id,
-            new(countdownDraft.Revision), openingTime - 2000);
-        launch.StartGroup("test-owner", group.Id, new(countdown.Revision), openingTime);
+        LaunchTestSchedule.Set(launch, group.Id, openingTime, openingTime);
         var opened = (await JsonAsync(await guest.GetAsync(sessionPath))).GetProperty("session");
         Check(opened.GetProperty("wand").GetProperty("wandId").GetString() == wandId
             && (await guest.GetAsync(artworkPath)).IsSuccessStatusCode,

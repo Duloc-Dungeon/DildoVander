@@ -1054,6 +1054,7 @@ internal static partial class MobileGameTests
         await fixture.LoginAsync(alice, fixture.AliceId);
         await fixture.LoginAsync(bob, fixture.BobId);
         await fixture.LoginAsync(foreign, fixture.ForeignId);
+        await fixture.RevokeAsync(fixture.PausedId);
         await fixture.LoginAsync(paused, fixture.PausedId);
         Check((await alice.GetAsync("/app/v1/game")).StatusCode == HttpStatusCode.OK, "active launch group reads game lobby");
         Check((await alice.GetAsync("/app/v1/game/progress")).StatusCode == HttpStatusCode.OK,
@@ -1122,7 +1123,7 @@ internal static partial class MobileGameTests
         await fixture.Profiles.WriteLabelAsync(fixture.BobId, new(bobProfile.ProfileId, null, "Jana"));
         var pausedResponse = await paused.GetAsync("/app/v1/game");
         Check(pausedResponse.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Locked,
-            "paused group is denied (" + (int)pausedResponse.StatusCode + ")");
+            "revoked group member is denied (" + (int)pausedResponse.StatusCode + ")");
         Check((await foreign.GetAsync("/app/v1/game")).StatusCode == HttpStatusCode.OK, "separate active group has its own game scope");
 
         foreign.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(foreign));
@@ -1442,10 +1443,12 @@ internal static partial class MobileGameTests
                 "owner toggle requires a recent passkey session");
         await fixture.LoginAsync(owner, fixture.PausedId);
         owner.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(owner));
+        fixture.SetProductionOpen(false);
         using (var inactive = await owner.PostAsJsonAsync(adminRoute + fixture.PausedGroupId + "/boss/rickroll",
             new { operationId = Guid.NewGuid().ToString("D"), expectedRevision = 0, enabled = true }))
             Check(inactive.StatusCode == HttpStatusCode.Conflict,
-                "owner cannot configure a group that has not opened");
+                "owner cannot configure a group before production opens");
+        fixture.SetProductionOpen(true);
 
         Check(!fixture.BossStore.ReadBoss(fixture.ActiveGroupId).RickrollEnabled
             && fixture.BossStore.ReadBoss(fixture.ActiveGroupId).RickrollRevision == 0,
@@ -1533,9 +1536,10 @@ internal static partial class MobileGameTests
             Check(anotherPlayer.StatusCode == HttpStatusCode.OK
                 && (await anotherPlayer.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("play").GetBoolean(),
                 "another eligible player gets an independent claim");
+        fixture.SetProductionOpen(false);
         using (var ownerClaim = await owner.PostAsJsonAsync("/app/v1/game/boss/rickroll/claim", new { }))
             Check(ownerClaim.StatusCode == HttpStatusCode.Forbidden,
-                "account without an active player group cannot claim");
+                "owner cannot claim in their unopened selected group");
         Console.WriteLine("Boss Rickroll HTTP: CSRF, admin/recent-role/group gates, toggle revisions, media availability and per-player claims passed.");
     }
 
@@ -1647,6 +1651,9 @@ internal static partial class MobileGameTests
             builder.Services.AddSingleton<WandDecisionService>();
             builder.Services.AddSingleton(new GptLiveOptions());
             builder.Services.AddSingleton<MobileWandRuntime>();
+            builder.Services.AddSingleton(new ElevenLabsWorkshopOptions { UseLegacyGptLive = withLiveTransport });
+            builder.Services.AddSingleton<IWorkshopSpeechProvider, ElevenLabsWorkshopProvider>();
+            builder.Services.AddSingleton<ElevenLabsWorkshopRuntime>();
             builder.Services.AddSingleton<IMobileWandQuestionProvider>(textWorkshopProvider);
             builder.Services.AddSingleton<MobileWorkshopLiveRuntime>();
             var app = builder.Build();
@@ -1680,19 +1687,13 @@ internal static partial class MobileGameTests
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
             var customer = await roles.FindByNameAsync(AccountRoles.Customer) ?? throw new InvalidOperationException("Customer role missing");
             var launch = app.Services.GetRequiredService<LaunchPolicyStore>();
-            var configuration = launch.Read();
-            launch.Update("fixture", new(configuration.Revision, true, null, true, false, null, false,
-                configuration.TimeZone, configuration.Teaser, configuration.InitialLoadingMessage,
-                configuration.PersonalizedLoadingEnabled, configuration.PersonalizedLoadingPrompt), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var active = launch.CreateGroup("fixture", new("Mobile Game HTTP", null, false, true), now);
+            var active = launch.CreateGroup("fixture", new("Mobile Game HTTP", false, true), now);
             ActiveGroupId = active.Id;
-            var countdown = launch.SaveCountdown("fixture", active.Id, new(active.Revision, 1, true), now - 2000);
-            launch.ConfirmCountdown("fixture", active.Id, new(countdown.Revision), now - 2000);
-            var foreign = launch.CreateGroup("fixture", new("Mobile Game Foreign", null), now);
-            var foreignCountdown = launch.SaveCountdown("fixture", foreign.Id, new(foreign.Revision, 1, true), now - 2000);
-            launch.ConfirmCountdown("fixture", foreign.Id, new(foreignCountdown.Revision), now - 2000);
-            var other = launch.CreateGroup("fixture", new("Mobile Game Paused", null), now);
+            LaunchTestSchedule.Set(launch, active.Id, now, now);
+            var foreign = launch.CreateGroup("fixture", new("Mobile Game Foreign"), now);
+            LaunchTestSchedule.Set(launch, foreign.Id, now, now);
+            var other = launch.CreateGroup("fixture", new("Mobile Game Paused"), now);
             foreach (var (id, name, groupId) in new[] { (AliceId, "Alice", active.Id), (BobId, "Bob", active.Id), (ForeignId, "Foreign", foreign.Id), (PausedId, "Paused", other.Id) })
             {
                 var user = new AccountUser { Id = id, UserName = id + "@example.invalid", Email = id + "@example.invalid", EmailConfirmed = true, DisplayName = name, OpenAiConsentAt = 1, OpenAiConsentVersion = AccountAiConsent.CurrentVersion, LaunchGroupId = groupId, LaunchGroupJoinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), LaunchGroupAccessRevision = 1, CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
@@ -1760,6 +1761,20 @@ internal static partial class MobileGameTests
             return KeepsakeActor.ForAccount(accountId, session.Id, () => true);
         }
 
+        internal void SetProductionOpen(bool open)
+        {
+            // Explicit fixture reset simulates another closed evening; production
+            // administration cannot reclose an already opened group.
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Path.Combine(app.Services.GetRequiredService<AccountConfiguration>().DataRoot, "launch.sqlite") }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE launch_groups SET opened_at=$opened,launch_at=$opened WHERE id=$group";
+            command.Parameters.AddWithValue("$group", ActiveGroupId);
+            command.Parameters.AddWithValue("$opened", open ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : DBNull.Value);
+            command.ExecuteNonQuery();
+        }
+
         internal async Task MakeOwnerAsync(string id)
         {
             await using var scope = app.Services.CreateAsyncScope();
@@ -1768,7 +1783,8 @@ internal static partial class MobileGameTests
             var user = await db.Users.SingleAsync(user => user.Id == id);
             await users.RemoveFromRoleAsync(user, AccountRoles.Customer);
             await users.AddToRoleAsync(user, AccountRoles.Owner);
-            user.LaunchGroupId = null;
+            // Bind the owner to the group this fixture opens/closes, rather than automatic name ordering.
+            user.LaunchGroupId = ActiveGroupId;
             user.LaunchGroupAccessRevision++;
             await db.SaveChangesAsync();
         }

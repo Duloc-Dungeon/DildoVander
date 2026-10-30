@@ -3,10 +3,12 @@ import { watch } from 'vue';
 import { installAccessGuard } from './accessGuard';
 import { installInformationNavigation } from './informationNavigation';
 import { customerCopy, type CustomerCopyKey } from './customerCopy';
+import { accountToolRoutes } from './accountToolRoutes';
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    ...(import.meta.env.DEV ? [{ path: '/local-try-hub', name: 'local-try-hub', component: () => import('../features/local-try-hub/LocalTryHubView.vue'), meta: { title: 'Místní zkoušení' } }] : []),
     { path: '/', name: 'home', redirect: to => ({ path: '/signin', query: to.query, hash: to.hash === '#director' ? '' : to.hash }) },
     { path: '/demo', redirect: '/' },
     { path: '/support', name: 'support', component: () => import('../features/information/SupportView.vue'), meta: { title: 'Podpora' } },
@@ -26,8 +28,7 @@ export const router = createRouter({
     { path: '/me/conversation', name: 'customer-conversation', redirect: '/play/wand' },
     { path: '/me/keepsakes', name: 'customer-keepsakes', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Moje památky', private: true, requiresAccount: true } },
     { path: '/me/account', name: 'customer-account', component: () => import('../features/customer/CustomerView.vue'), meta: { title: 'Můj účet', private: true, requiresAccount: true } },
-    { path: '/testing-sessions', name: 'testing-sessions', component: () => import('../features/testing-sessions/TestingSessionsView.vue'), meta: { title: 'Testovací relace', private: true, requiresAccount: true, tester: true } },
-    { path: '/persona-lab', name: 'persona-lab', component: () => import('../features/persona-lab/PersonaLabView.vue'), meta: { title: 'AI laboratoř', private: true, requiresAccount: true, lab: true } },
+    ...accountToolRoutes,
     ...['/tonight', '/suitcase/:pathMatch(.*)*', '/connections', '/app/:pathMatch(.*)*', '/companion/:pathMatch(.*)*'].map(path => ({ path, redirect: '/play' })),
     ...['/workshop/:pathMatch(.*)*', '/simulator/:pathMatch(.*)*'].map(path => ({ path, redirect: '/play/wand' })),
     ...['/archive', '/archive/chronicle', '/keepsake/chronicle.html', '/keepsake/evening/:pathMatch(.*)*'].map(path => ({ path, redirect: '/me/keepsakes' })),
@@ -39,8 +40,7 @@ export const router = createRouter({
     { path: '/settings/admin', name: 'admin', component: () => import('../features/identity/AdminView.vue'), meta: { title: 'Správa', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/settings/admin/launch', name: 'launch-admin', component: () => import('../features/launch/LaunchManagementView.vue'), meta: { title: 'Večer a pozvánky', private: true, requiresAccount: true, administrator: true, staff: true } },
     { path: '/settings/admin/characters', name: 'character-admin', component: () => import('../features/customer/CharacterAdminView.vue'), meta: { title: 'Postavy a portréty', private: true, requiresAccount: true, administrator: true, staff: true } },
-    { path: '/admin/customer-sessions', name: 'customer-admin', component: () => import('../features/customer/CustomerAdminView.vue'), meta: { title: 'Zákaznické relace', private: true, requiresAccount: true, staff: true, operation: true } },
-    { path: '/:pathMatch(.*)*', component: () => import('./NotFoundView.vue'), meta: { title: 'Stránka nenalezena' } },
+    { path: '/:pathMatch(.*)*', name: 'notFound', component: () => import('./NotFoundView.vue'), meta: { title: 'Stránka nenalezena' } },
   ],
   scrollBehavior(to, from, saved) {
     if (saved) return saved;

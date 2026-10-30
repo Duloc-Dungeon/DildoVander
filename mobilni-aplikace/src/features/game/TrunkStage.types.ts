@@ -43,6 +43,8 @@ export interface TrunkStageProjection {
   /** Hide when the owning result view already presents the name or status. */
   showCaption?: boolean;
   showArtworkStatus?: boolean;
+  /** The owning workshop enables the reveal only for a newly completed wand. */
+  animateReveal?: boolean;
 }
 
 export interface TrunkStageAssets {

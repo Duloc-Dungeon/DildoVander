@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Claims;
 using Kufr.Backend.Features.Identity;
+using Kufr.Backend.Features.Launch;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
@@ -13,6 +14,7 @@ internal static partial class AccountIdentityTests
     internal static async Task RunCustomerAdmissionHttpsAsync()
     {
         await using var fixture = await Fixture.StartAsync(customerFeatures: true);
+        fixture.OpenSelectedCustomerGroup();
         var owner = fixture.Client();
         var other = fixture.Client();
         var account = await AddAdmissionCookieAsync(fixture, owner);
@@ -20,7 +22,8 @@ internal static partial class AccountIdentityTests
         const string path = "/app/v1/customer/waiting/granted-device";
         using (var initial = await owner.GetAsync(path))
         {
-            Check(initial.StatusCode == HttpStatusCode.OK, "real HTTPS waiting read accepts production cookie and neutral authority");
+            Check(initial.StatusCode == HttpStatusCode.OK, "real HTTPS waiting read accepts production cookie and neutral authority; HTTP "
+                + (int)initial.StatusCode + ": " + await initial.Content.ReadAsStringAsync());
         }
         await using (var scope = fixture.App.Services.CreateAsyncScope())
         {
@@ -56,7 +59,13 @@ internal static partial class AccountIdentityTests
         await using var scope = fixture.App.Services.CreateAsyncScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<AccountUser>>();
         var id = Guid.NewGuid().ToString("N");
-        var user = new AccountUser { Id = id, UserName = id, DisplayName = "Admission test guest", CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+        var groupId = scope.ServiceProvider.GetRequiredService<LaunchPolicyStore>().ReadBetaAdmission().GroupId
+            ?? throw new InvalidOperationException("Admission fixture has no selected launch group.");
+        var user = new AccountUser
+        {
+            Id = id, UserName = id, DisplayName = "Admission test guest", CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            LaunchGroupId = groupId, LaunchGroupJoinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), LaunchGroupAccessRevision = 1
+        };
         Check((await users.CreateAsync(user)).Succeeded, "HTTPS admission user seed");
         var session = new AccountSession
         {

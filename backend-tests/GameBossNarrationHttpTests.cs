@@ -2,6 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Kufr.Backend.Features.Game;
+using Kufr.Backend.Features.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 internal static partial class MobileGameTests
 {
@@ -64,17 +67,94 @@ internal static partial class MobileGameTests
         Check(revoked.StatusCode == HttpStatusCode.Forbidden,
             "membership revoked during GPT I/O prevents publishing/returning the reply");
         Console.WriteLine("Baron HTTP auth, CSRF, ownership, no-wand, cache and mid-generation revocation passed.");
+        await RunBossConsentFencesHttpAsync();
+    }
+
+    private static async Task RunBossConsentFencesHttpAsync()
+    {
+        var narrator = new BossHttpNarrator { Delay = true };
+        var speech = new BossHttpSpeech();
+        await using var fixture = await HttpFixture.StartAsync(withKeepsakes: true, bossNarrator: narrator, bossSpeech: speech);
+        using var client = fixture.Client();
+        await fixture.LoginAsync(client, fixture.AliceId);
+        client.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(client));
+        var id = await fixture.CreateBossAttemptAsync();
+        var path = $"/app/v1/game/boss/attempts/{id}";
+        var state = await (await client.GetAsync(path)).Content.ReadFromJsonAsync<JsonElement>();
+        var revision = state.GetProperty("revision").GetInt64();
+        await ConsentAsync(1);
+        foreach (var suffix in new[] { "/narration", "/audio" })
+        {
+            using var denied = await client.PostAsJsonAsync(path + suffix, new { expectedRevision = revision });
+            Check(denied.StatusCode == HttpStatusCode.Conflict
+                && (await denied.Content.ReadAsStringAsync()).Contains("ai_consent_required"),
+                "legacy v1 evidence cannot authorize either Baron provider");
+        }
+        Check(narrator.Calls == 0 && speech.Calls == 0, "old consent is rejected before any provider call");
+        await ConsentAsync(AccountAiConsent.CurrentVersion);
+        var pendingText = client.PostAsJsonAsync(path + "/narration", new { expectedRevision = revision });
+        await narrator.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await ConsentAsync(1);
+        narrator.Release.TrySetResult();
+        using var staleText = await pendingText;
+        Check(staleText.StatusCode == HttpStatusCode.Conflict
+            && fixture.BossStore.ReadBossNarration(fixture.ActiveGroupId, fixture.AliceId, id, revision, narrator.LastInput!.Key)?.Text is null,
+            "consent downgraded during GPT I/O prevents publication");
+        await ConsentAsync(AccountAiConsent.CurrentVersion);
+        narrator.Delay = false;
+        Check((await client.PostAsJsonAsync(path + "/narration", new { expectedRevision = revision })).IsSuccessStatusCode,
+            "current unified consent permits Baron narration");
+        speech.Delay = true;
+        var pendingAudio = client.PostAsJsonAsync(path + "/audio", new { expectedRevision = revision });
+        await speech.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await ConsentAsync(1);
+        speech.Release.TrySetResult();
+        using var staleAudio = await pendingAudio;
+        Check(staleAudio.StatusCode == HttpStatusCode.Conflict
+            && fixture.BossStore.ReadBossNarration(fixture.ActiveGroupId, fixture.AliceId, id, revision, narrator.LastInput!.Key)?.Audio is null,
+            "consent downgraded during ElevenLabs I/O prevents audio publication");
+        await ConsentAsync(AccountAiConsent.CurrentVersion);
+        speech.Delay = false;
+        Check((await client.PostAsJsonAsync(path + "/audio", new { expectedRevision = revision })).IsSuccessStatusCode,
+            "current unified consent permits Baron speech");
+        var publishedKey = speech.CacheKey;
+        speech.VoiceKey = "new-http-voice:eleven_v4:delivery-v1";
+        speech.Delay = true;
+        speech.Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        speech.Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var revokedAudio = client.PostAsJsonAsync(path + "/audio", new { expectedRevision = revision });
+        await speech.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        using (var scope = fixture.ChronicleServices.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AccountDatabase>().Sessions.Where(session => session.UserId == fixture.AliceId)
+                .ExecuteUpdateAsync(update => update.SetProperty(session => session.ExpiresAt, 1));
+        }
+        speech.Release.TrySetResult();
+        using var revoked = await revokedAudio;
+        Check(revoked.StatusCode == HttpStatusCode.Unauthorized
+            && fixture.BossStore.ReadBossNarration(fixture.ActiveGroupId, fixture.AliceId, id, revision, narrator.LastInput!.Key)?.AudioKey == publishedKey,
+            "an account session revoked during speech cannot publish under a new audio key");
+        Console.WriteLine("Baron unified-consent v1/v2, mid-GPT/TTS downgrade and active-session publication fences passed (offline).");
+
+        async Task ConsentAsync(int version)
+        {
+            using var scope = fixture.ChronicleServices.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<AccountDatabase>().Users.Where(user => user.Id == fixture.AliceId)
+                .ExecuteUpdateAsync(update => update.SetProperty(user => user.OpenAiConsentVersion, version));
+        }
     }
 
     private sealed class BossHttpNarrator : IGameBossNarrator
     {
         internal int Calls;
         internal bool Delay;
+        internal GameBossNarrationInput? LastInput;
         internal TaskCompletionSource Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public async Task<string> NarrateBossAsync(GameBossNarrationInput input, CancellationToken token)
         {
             Calls++;
+            LastInput = input;
             if (Delay) { Entered.SetResult(); await Release.Task.WaitAsync(token); }
             return "Zkušební replika Barona.";
         }
@@ -83,9 +163,17 @@ internal static partial class MobileGameTests
     private sealed class BossHttpSpeech : IGameBossSpeech
     {
         public bool Enabled => true;
-        public string CacheKey => "http-voice:eleven_v4:delivery-v1";
+        internal string VoiceKey = "http-voice:eleven_v4:delivery-v1";
+        public string CacheKey => VoiceKey;
         internal int Calls;
-        public Task<byte[]> SpeakAsync(string text, CancellationToken token)
-        { Calls++; return Task.FromResult<byte[]>([1, 2, 3]); }
+        internal bool Delay;
+        internal TaskCompletionSource Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task<byte[]> SpeakAsync(string text, CancellationToken token)
+        {
+            Calls++;
+            if (Delay) { Entered.TrySetResult(); await Release.Task.WaitAsync(token); }
+            return [1, 2, 3];
+        }
     }
 }

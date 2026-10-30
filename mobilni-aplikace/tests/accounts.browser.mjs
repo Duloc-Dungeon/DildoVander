@@ -61,18 +61,29 @@ try {
   await owner.page.goto(origin.origin + '/settings/admin');
   await owner.page.locator('.invitation-group summary').click();
   await owner.page.getByLabel('Název skupiny', { exact: true }).fill('Izolovaná skupina');
-  const futureOpening = new Date(Date.now() + 86400000).toISOString().slice(0, 16);
-  await owner.page.getByLabel(/Čas otevření \(/).fill(futureOpening);
   const createdGroupResponse = owner.page.waitForResponse(response =>
     response.url() === origin.origin + '/app/v1/admin/launch/groups' && response.request().method() === 'POST');
   await owner.page.getByRole('button', { name: 'Vytvořit skupinu', exact: true }).click();
   const createdGroup = await createdGroupResponse;
   assert.equal(createdGroup.status(), 200);
   const { group: invitationGroup } = await createdGroup.json();
-  assert.equal(invitationGroup.launchAt, null, 'saving a group keeps its countdown unconfirmed');
-  assert.equal(invitationGroup.countdownConfirmedAt, null);
-  assert(invitationGroup.countdownDurationSeconds > 0, 'opening date is saved only as a duration draft');
-  await owner.page.getByText('Skupina je uložená. Odpočet nastavíte a potvrdíte ve správě čekárny.').waitFor();
+  assert.equal(invitationGroup.launchAt, null, 'new groups wait for an opening configured in evening management');
+  assert.equal(Object.hasOwn(invitationGroup, 'countdownDurationSeconds'), false, 'the removed countdown draft is absent');
+  await owner.page.getByText('Skupina je uložená. Termín spuštění náborové skupiny nastavíte ve správě večera. Již otevřené skupiny zůstávají přístupné.').waitFor();
+  assert.equal(await owner.page.locator('#recovery-account').count(), 0, 'account recovery cannot be selected');
+  assert.equal(await owner.page.getByRole('button', { name: 'Vytvořit kód obnovy', exact: true }).count(), 0);
+  await owner.page.goto(origin.origin + '/settings/admin/launch');
+  await owner.page.getByLabel('Skupina pro nově připojené hosty', { exact: true }).selectOption(invitationGroup.id);
+  // This identity journey needs an already open group; scheduling itself has a separate suite.
+  const pastOpening = new Date(Date.now() - 86400000).toISOString().slice(0, 16);
+  await owner.page.getByLabel('Kdy se spustí aplikace pro tuto skupinu', { exact: true }).fill(pastOpening);
+  await owner.page.getByLabel('Přijímat nové účastníky', { exact: true }).check();
+  const savedOpeningResponse = owner.page.waitForResponse(response =>
+    response.url() === origin.origin + '/app/v1/admin/launch/beta-admission' && response.request().method() === 'PUT');
+  await owner.page.getByRole('button', { name: 'Uložit skupinu, spuštění a nábor', exact: true }).click();
+  assert.equal((await savedOpeningResponse).status(), 200);
+  await owner.page.goto(origin.origin + '/settings/admin');
+  await owner.page.getByLabel('Skupina pozvánky', { exact: true }).selectOption(invitationGroup.id);
   // A newer app talking to an older backend can receive invalid_role. Exercise
   // the real rejection and in-app diagnostic without inventing a successful invite.
   await owner.page.getByLabel('Role nového účtu', { exact: true }).evaluate(select => select.add(new Option('Unsupported role', 'UnsupportedRole')));

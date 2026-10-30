@@ -157,18 +157,6 @@ def run_offline(output, check_only=False):
     return report
 
 
-def validate_skills():
-    for name in ["dildovander-character-design", "dildovander-character-eval"]:
-        path = ROOT / ".agents/skills" / name / "SKILL.md"
-        text = path.read_text(encoding="utf-8")
-        if not text.startswith("---\nname: " + name + "\ndescription: ") or "\n---\n" not in text:
-            raise ValueError("Invalid skill metadata: " + name)
-        for link in re.findall(r"\]\(([^)]+)\)", text):
-            if not link.startswith("https://") and not (path.parent / link).resolve().is_file():
-                raise ValueError("Missing skill reference: " + link)
-    return True
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Explicit offline capture of the current authored DV01 prompts.")
     parser.add_argument("--capture-current-reference", action="store_true", required=True)

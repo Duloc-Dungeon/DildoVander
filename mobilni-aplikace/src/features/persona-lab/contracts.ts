@@ -81,7 +81,7 @@ export interface ReliabilitySummary {
 }
 export interface SessionInput { revisionId: string; engine: LabEngine; scenarioId: string; fixtureId: string; label: string; comparisonId?: string; recordContent: boolean; platform?: LabClientPlatform }
 export interface RevisionInput { parentId: string; name: string; instructions: string; engine: LabEngine; voice: string }
-export interface SocketTicket { url: string; path: string; expiresAt: string }
+export interface SocketTicket { url: string; path: string; expiresAt: string; speechEngine?: { conversationToken: string; firstMessage: string } | null }
 export interface LabSuite {
   id: string; ownerId: string; status: 'running' | 'completed' | 'failed'; createdAt: string; completedAt: string | null;
   revisionId: string; engine: LabEngine;

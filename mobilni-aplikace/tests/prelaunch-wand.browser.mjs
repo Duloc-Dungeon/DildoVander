@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { createWorkshopFixtureServer } from './fixtures/wand-workshop.mjs';
+import { assertApplicationHeader } from './fixtures/application-header.mjs';
 
 const { server, origin, requests } = await createWorkshopFixtureServer(0, { reference: true });
 const output = process.env.APP_SCREENSHOTS ?? path.join(tmpdir(), 'dildovander-prelaunch-wand');
@@ -50,6 +51,7 @@ try {
     } }));
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     await page.goto(`${origin}/__workshop/prelaunch`);
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
     await page.getByText(loadingJoke, { exact: true }).waitFor();
     assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Portrét');
     assert.equal(await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).count(), 0, 'wait for the portrait before offering the workshop');
@@ -63,21 +65,37 @@ try {
     await page.getByText(welcome.joke, { exact: true }).waitFor();
     assert.equal(await overflow(), false, `${width}: missing portrait fits`);
     await page.screenshot({ path: path.join(output, `portrait-failed-${width}.png`), fullPage: true }); captures++;
+    if (width === 390) await page.emulateMedia({ reducedMotion: 'no-preference' });
+    // Position the portrait before its short reveal animation starts.
+    await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
     portraitStatus = 'ready';
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
+    if (width === 390) {
+      await page.locator('.portrait-mirror[data-mirror="revealing"]').waitFor();
+      // Full-page capture can scroll the portrait out of view and cancel its reveal.
+      await page.screenshot({ path: path.join(output, 'portrait-animation-after-w-390.png') }); captures++;
+    }
     assert.equal(await page.locator('.viewport-curtain').count(), 0, 'portrait and wand reveal without a curtain overlay');
     await page.locator('.portrait-stage[data-curtain="open"]').waitFor();
+    if (width === 390) await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
     await page.evaluate(() => window.scrollTo(0, 0));
     const prepareButton = page.getByRole('button', { name: 'Vytvořit hůlku', exact: true });
-    const prepareBox = await prepareButton.boundingBox();
-    assert(prepareBox && prepareBox.y + prepareBox.height <= 844, `${width}: prepare action is in the first viewport`);
+    const portraitBox = await page.locator('.portrait-stage').boundingBox();
+    const handoffBox = await page.locator('.prelaunch-wand').boundingBox();
+    assert(portraitBox && portraitBox.y < 300 && portraitBox.width >= Math.min(width - 32, 300), `${width}: portrait leads the first viewport`);
+    assert(portraitBox && handoffBox && handoffBox.y >= portraitBox.y + portraitBox.height, `${width}: workshop follows the character`);
     assert.equal(await page.locator('.launch-next-step').count(), 0, 'there is one state-aware wand action');
     await page.getByText(/Večer se otevře/).waitFor();
     assert.equal(requests.filter(request => request.method !== 'GET').length, 0, 'reveal and entry only read state');
     assert.equal(await overflow(), false, `${width}: reveal fits`);
     await page.screenshot({ path: path.join(output, `reveal-${width}.png`), fullPage: true }); captures++;
+    // The W entrance was clicked; restore keyboard modality before checking its ring.
+    await page.keyboard.press('Tab');
+    const handoffHeading = page.locator('#prelaunch-wand-title');
+    await handoffHeading.focus();
+    assert.equal(await handoffHeading.evaluate(element => document.activeElement === element), true, 'handoff heading remains an announcement target');
+    assert.equal(await handoffHeading.evaluate(element => getComputedStyle(element).outlineStyle), 'none', 'handoff announcement does not frame its heading');
     await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).focus();
     const focus = await prepareButton.evaluate(button => ({
       color: getComputedStyle(button).outlineColor,
@@ -104,6 +122,14 @@ try {
         'character recovery does not silently start manufacturing');
     }
     assert.equal(await page.locator('.launch-card').isVisible(), false, 'portrait yields to workshop');
+    const caseBox = await page.locator('.trunk-stage__visual').boundingBox();
+    assert(caseBox && caseBox.width >= Math.min(width - 64, 260), `${width}: case remains the main workshop object`);
+    const topbarBox = await page.locator('.application-topbar').boundingBox();
+    assert(caseBox && topbarBox && caseBox.y - topbarBox.height < 300 && caseBox.y + caseBox.height <= 844, `${width}: case stays visible below the shared top bar`);
+    await assertApplicationHeader(page);
+    assert.equal(await page.locator('.launch-masthead, .signin-masthead').count(), 0, 'workshop keeps only the shared brand header');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: path.join(output, `case-${width}.png`) }); captures++;
     assert.equal(await page.locator('#workshop-title').evaluate(element => element === document.activeElement), true);
     assert.equal(await page.locator('a[href="/play"]').count(), 0, 'prelaunch workshop stays outside the game');
     await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
@@ -124,6 +150,7 @@ try {
     await page.getByRole('button', { name: 'Zpět k odpočtu', exact: true }).click();
     await page.getByRole('button', { name: 'Pokračovat v tvorbě hůlky', exact: true }).waitFor();
     await page.reload();
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
     await page.getByRole('button', { name: 'Pokračovat v tvorbě hůlky', exact: true }).click();
     await page.getByRole('button', { name: 'Raději psát', exact: true }).click();
     await page.getByRole('button', { name: 'To stačí, vyrob hůlku', exact: true }).click();
@@ -160,6 +187,7 @@ try {
     await page.locator('.prelaunch-wand-keepsake').getByText('Referenční hůlka', { exact: false }).waitFor();
     assert.equal(new URL(page.url()).pathname, '/launch');
     await page.reload();
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
     await page.getByRole('button', { name: 'Prohlédnout hůlku', exact: true }).waitFor();
     assert.equal(await page.locator('[aria-current="step"]').innerText(), 'Čekárna', 'server restores the completed preparation after reload');
     assert.equal(requests.filter(request => request.path.endsWith('/sessions') && request.method === 'POST').length, 1, 'reload/resume does not duplicate manufacture');

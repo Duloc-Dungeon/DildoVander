@@ -53,6 +53,18 @@ internal static partial class AccountIdentityTests
         try { await Task.Delay(Timeout.InfiniteTimeSpan, cancellation.Token); }
         catch (OperationCanceledException) { }
     }
+    public static async Task RunRemovedRecoveryAsync()
+    {
+        await using var fixture = await Fixture.StartAsync();
+        using var owner = fixture.Client();
+        using var ownerKey = new VirtualPasskey();
+        await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Owner");
+        var session = await CsrfAsync(owner);
+        var ownerId = session.GetProperty("account").GetProperty("id").GetString()!;
+        await RejectedRecoveryAndOwnerRaceAsync(fixture, owner, ownerId, ownerKey);
+        Console.WriteLine("PASS removed recovery payload rejection, legacy token fencing, unchanged owner session/passkey, normal invitations and concurrent last-owner protection");
+    }
+
     public static async Task RunAsync()
     {
         ServiceCredentialBoundaries();
@@ -71,7 +83,7 @@ internal static partial class AccountIdentityTests
         Check((await stranger.GetAsync("/app/v1/admin/users")).StatusCode == HttpStatusCode.Unauthorized, "anonymous admin denied");
         Check((await stranger.PostAsJsonAsync("/app/v1/passkeys/request-options", new { })).StatusCode == HttpStatusCode.BadRequest, "CSRF required before signin");
         await CsrfAsync(owner);
-        Check((await owner.PostAsJsonAsync("/app/v1/enrollment/options", new { token = "incorrect-bootstrap-token-value", displayName = "Owner", openAiConsent = true })).StatusCode == HttpStatusCode.BadRequest, "no first anonymous bypass");
+        Check((await owner.PostAsJsonAsync("/app/v1/enrollment/options", new { token = "incorrect-bootstrap-token-value", displayName = "Owner", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest, "no first anonymous bypass");
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Owner");
         var ownerSession = await CsrfAsync(owner);
         var ownerId = ownerSession.GetProperty("account").GetProperty("id").GetString()!;
@@ -111,7 +123,7 @@ internal static partial class AccountIdentityTests
             Check((await crossOrigin.PostAsJsonAsync("/app/v1/passkeys/request-options", new { })).StatusCode == HttpStatusCode.Forbidden, "unlisted origin denied");
         }
 
-        var invitationResponse = await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Operator", recoveryUserId = (string?)null });
+        var invitationResponse = await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Operator" });
         Check(invitationResponse.IsSuccessStatusCode, "owner invitation");
         var invitation = (await JsonAsync(invitationResponse)).GetProperty("token").GetString()!;
         using var operatorClient = fixture.Client();
@@ -121,9 +133,9 @@ internal static partial class AccountIdentityTests
         var operatorId = operatorSession.GetProperty("account").GetProperty("id").GetString()!;
         await ModelReleaseTests.RunDeniedAsync(operatorClient);
         Check((await operatorClient.GetAsync("/app/v1/admin/users")).StatusCode == HttpStatusCode.Forbidden, "operator admin denied");
-        Check((await operatorClient.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Owner", recoveryUserId = (string?)null })).StatusCode == HttpStatusCode.Forbidden, "operator cannot mint owner");
+        Check((await operatorClient.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Owner" })).StatusCode == HttpStatusCode.Forbidden, "operator cannot mint owner");
         await CsrfAsync(stranger);
-        Check((await stranger.PostAsJsonAsync("/app/v1/enrollment/options", new { token = invitation, displayName = "Replay", openAiConsent = true })).StatusCode == HttpStatusCode.BadRequest, "invitation replay denied");
+        Check((await stranger.PostAsJsonAsync("/app/v1/enrollment/options", new { token = invitation, displayName = "Replay", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest, "invitation replay denied");
 
         await SeedAsync(fixture.App, async db =>
         {
@@ -132,7 +144,7 @@ internal static partial class AccountIdentityTests
             db.ResourceGrants.Add(new AccountResourceGrant { Id = "workshop-grant", UserId = operatorId, ResourceType = "workshop", ResourceId = "granted-twin", Permission = "read" });
             await db.SaveChangesAsync();
         });
-        Check((await stranger.PostAsJsonAsync("/app/v1/enrollment/options", new { token = "expired-invitation-secret", displayName = "Expired", openAiConsent = true })).StatusCode == HttpStatusCode.BadRequest, "expired invitation denied");
+        Check((await stranger.PostAsJsonAsync("/app/v1/enrollment/options", new { token = "expired-invitation-secret", displayName = "Expired", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest, "expired invitation denied");
         operatorClient.DefaultRequestHeaders.Add("X-DV-Device-Id", "denied-device");
         Check((await operatorClient.GetAsync("/v1/test-device")).StatusCode == HttpStatusCode.Unauthorized, "other device denied");
         operatorClient.DefaultRequestHeaders.Remove("X-DV-Device-Id");
@@ -161,9 +173,9 @@ internal static partial class AccountIdentityTests
         Check(beforeRoleChange.GetProperty("sessions").GetArrayLength() == 2, "multiple revocable sessions persisted");
         Check((await owner.PutAsJsonAsync($"/app/v1/admin/users/{operatorId}", new { role = "Viewer", disabled = false })).IsSuccessStatusCode, "owner role change");
         Check((await stranger.GetAsync("/app/v1/account")).StatusCode == HttpStatusCode.Unauthorized, "role change revokes existing sessions");
-        Check((await operatorClient.GetAsync("/v1/test-account-simulation/sim-auth")).StatusCode == HttpStatusCode.Unauthorized, "session revocation also removes private simulation authorization");
-        Check((await operatorClient.GetAsync("/v1/evenings")).StatusCode == HttpStatusCode.Unauthorized, "revoked session cannot read evenings");
-        Check((await operatorClient.GetAsync("/v1/show/devices/granted-device")).StatusCode == HttpStatusCode.Unauthorized, "revoked account session cannot observe Show");
+        Check((await operatorClient.GetAsync("/v1/test-account-simulation/sim-auth")).StatusCode == HttpStatusCode.Locked, "revoked session cannot bypass the launch lock for private simulation");
+        Check((await operatorClient.GetAsync("/v1/evenings")).StatusCode == HttpStatusCode.Locked, "revoked session cannot bypass the launch lock to read evenings");
+        Check((await operatorClient.GetAsync("/v1/show/devices/granted-device")).StatusCode == HttpStatusCode.Locked, "revoked account session cannot bypass the launch lock to observe Show");
         await SignInAsync(stranger, operatorKey);
         var fresh = await CsrfAsync(stranger);
         Check(fresh.GetProperty("account").GetProperty("roles")[0].GetString() == "Viewer", "signin reads current role");
@@ -172,7 +184,7 @@ internal static partial class AccountIdentityTests
         Check((await stranger.DeleteAsync("/app/v1/session")).StatusCode == HttpStatusCode.NoContent, "signout succeeds");
         Check((await stranger.GetAsync("/app/v1/account")).StatusCode == HttpStatusCode.Unauthorized, "signout revokes session");
         await CeremonyReplayAndExpiryAsync(fixture, ownerKey);
-        await RecoveryAndOwnerRaceAsync(fixture, owner, ownerId, ownerKey);
+        await RejectedRecoveryAndOwnerRaceAsync(fixture, owner, ownerId, ownerKey);
         Console.WriteLine("PASS account identity HTTPS WebAuthn registration/signin, authz, CSRF/origin, invitation replay/expiry, session revocation, device/workshop grants and last-owner protection");
     }
 
@@ -226,7 +238,7 @@ internal static partial class AccountIdentityTests
         using var ownerKey = new VirtualPasskey(); using var actorKey = new VirtualPasskey();
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Stream owner"); var ownerIdentity = await CsrfAsync(owner);
         var ownerId = ownerIdentity.GetProperty("account").GetProperty("id").GetString();
-        var invite = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new {role = "Operator", recoveryUserId = (string?)null}));
+        var invite = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new {role = "Operator"}));
         await EnrollAsync(actor, actorKey, invite.GetProperty("token").GetString()!, "Stream operator");
         var identity = await CsrfAsync(actor); var userId = identity.GetProperty("account").GetProperty("id").GetString()!;
         await SeedAsync(fixture.App, async db =>
@@ -371,7 +383,7 @@ internal static partial class AccountIdentityTests
             "simulation media grant revocation effective immediately");
         await SeedAsync(fixture.App, db => db.Sessions.Where(x => x.UserId != operatorId)
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.AuthenticatedAt, AccountEndpoints.Now() - 601)));
-        Check((await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Viewer", recoveryUserId = (string?)null })).StatusCode == HttpStatusCode.Forbidden,
+        Check((await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Viewer" })).StatusCode == HttpStatusCode.Forbidden,
             "admin change requires recent passkey verification");
         var ownKey = (await JsonAsync(await owner.GetAsync("/app/v1/account"))).GetProperty("passkeys")[0].GetProperty("id").GetString();
         Check((await owner.PutAsJsonAsync($"/app/v1/passkeys/{ownKey}", new { name = "Expired authentication" })).StatusCode == HttpStatusCode.Forbidden, "passkey rename requires recent authentication");
@@ -382,44 +394,57 @@ internal static partial class AccountIdentityTests
         Check((await owner.PostAsJsonAsync("/app/v1/passkeys/reauthenticate", new { credential = ownerKey.Assert(options) })).IsSuccessStatusCode,
             "same-account passkey step-up succeeds");
         owner.DefaultRequestHeaders.Remove("X-DV-Confirm");
-        Check((await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Viewer", recoveryUserId = (string?)null })).StatusCode == HttpStatusCode.Conflict,
+        Check((await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Viewer" })).StatusCode == HttpStatusCode.Conflict,
             "recent verification does not bypass explicit confirmation");
         owner.DefaultRequestHeaders.Add("X-DV-Confirm", "yes");
     }
 
-    private static async Task RecoveryAndOwnerRaceAsync(Fixture fixture, HttpClient owner, string ownerId, VirtualPasskey ownerKey)
+    private static async Task RejectedRecoveryAndOwnerRaceAsync(Fixture fixture, HttpClient owner, string ownerId, VirtualPasskey ownerKey)
     {
-        var response = await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Owner", recoveryUserId = ownerId });
-        var recoveryToken = (await JsonAsync(response)).GetProperty("token").GetString()!;
-        using var recovery = fixture.Client();
-        await CsrfAsync(recovery);
-        var options = await recovery.PostAsJsonAsync("/app/v1/enrollment/options", new { token = recoveryToken, displayName = "", openAiConsent = true });
-        Check(options.IsSuccessStatusCode, "recovery creation options");
-        var recoveryIdentity = (await JsonAsync(options)).GetProperty("user");
-        Check(recoveryIdentity.GetProperty("displayName").GetString() == "Wand Night Stand Owner · Olivander"
-            && Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(recoveryIdentity.GetProperty("id").GetString()!)) == ownerId,
-            "recovery uses the existing server-bound account name and stable user handle without requesting a new identity");
-        Check((await recovery.PostAsJsonAsync("/app/v1/enrollment/complete", new { credential = new { } })).StatusCode == HttpStatusCode.BadRequest, "unverified recovery cannot remove original keys");
-        using (var original = fixture.Client()) { await SignInAsync(original, ownerKey); }
-        using var replacementKey = new VirtualPasskey();
-        await EnrollAsync(recovery, replacementKey, recoveryToken, "Recovered");
-        await CsrfAsync(recovery);
-        Check((await owner.GetAsync("/app/v1/account")).StatusCode == HttpStatusCode.Unauthorized, "verified recovery revokes previous owner session");
-        using (var lostKey = fixture.Client())
+        Check((await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Owner", recoveryUserId = ownerId })).StatusCode == HttpStatusCode.BadRequest,
+            "removed recovery payload cannot silently create a new-account invitation");
+        Check((await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Owner", recoveryUserId = (string?)null })).StatusCode == HttpStatusCode.BadRequest,
+            "obsolete recovery field is rejected even when null");
+        var legacyToken = AccountEndpoints.Secret();
+        await SeedAsync(fixture.App, async db =>
         {
-            await CsrfAsync(lostKey);
-            var lostOptions = await JsonAsync(await lostKey.PostAsJsonAsync("/app/v1/passkeys/request-options", new { }));
-            Check((await lostKey.PostAsJsonAsync("/app/v1/passkeys/sign-in", new { credential = ownerKey.Assert(lostOptions) })).StatusCode == HttpStatusCode.Unauthorized, "recovery removes old passkeys");
-        }
-        Check((await recovery.PostAsJsonAsync("/app/v1/enrollment/options", new { token = recoveryToken, displayName = "Replay", openAiConsent = true })).StatusCode == HttpStatusCode.BadRequest, "recovery token single use");
-        var secondInvite = await JsonAsync(await recovery.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Owner", recoveryUserId = (string?)null }));
+            db.Invitations.Add(new AccountInvitation
+            {
+                TokenHash = AccountEndpoints.Hash(legacyToken), Purpose = "recovery",
+                Role = "Owner", ExpiresAt = AccountEndpoints.Now() + 3600
+            });
+            await db.SaveChangesAsync();
+        });
+        using var obsolete = fixture.Client();
+        await CsrfAsync(obsolete);
+        Check((await obsolete.PostAsJsonAsync("/app/v1/enrollment/options", new { token = legacyToken, displayName = "Legacy", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest,
+            "persisted recovery tokens cannot begin new-account enrollment");
+
+        await SeedAsync(fixture.App, db => db.Invitations.Where(x => x.TokenHash == AccountEndpoints.Hash(legacyToken))
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.Purpose, "invite").SetProperty(x => x.UserId, ownerId)));
+        Check((await obsolete.PostAsJsonAsync("/app/v1/enrollment/options", new { token = legacyToken, displayName = "Legacy", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.BadRequest,
+            "user-bound legacy tokens cannot be relabeled as invitations");
+
+        // A ceremony started on an earlier version must also fail at completion.
+        var retiredInvite = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Viewer" }));
+        var retiredToken = retiredInvite.GetProperty("token").GetString()!;
+        var options = await JsonAsync(await obsolete.PostAsJsonAsync("/app/v1/enrollment/options", new { token = retiredToken, displayName = "Retired", openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion }));
+        using var replacementKey = new VirtualPasskey();
+        var credential = replacementKey.Create(options);
+        await SeedAsync(fixture.App, db => db.Invitations.Where(x => x.TokenHash == AccountEndpoints.Hash(retiredToken))
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.Purpose, "recovery").SetProperty(x => x.UserId, ownerId)));
+        Check((await obsolete.PostAsJsonAsync("/app/v1/enrollment/complete", new { credential })).StatusCode == HttpStatusCode.BadRequest,
+            "legacy recovery completion cannot replace existing passkeys or revoke sessions");
+        Check((await owner.GetAsync("/app/v1/account")).IsSuccessStatusCode, "rejected recovery preserves the current owner session");
+        using (var original = fixture.Client()) { await SignInAsync(original, ownerKey); }
+        var secondInvite = await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Owner" }));
         using var secondOwner = fixture.Client();
         using var secondKey = new VirtualPasskey();
         await EnrollAsync(secondOwner, secondKey, secondInvite.GetProperty("token").GetString()!, "Second owner");
         var second = await CsrfAsync(secondOwner);
         var secondId = second.GetProperty("account").GetProperty("id").GetString()!;
         var attempts = await Task.WhenAll(
-            recovery.PutAsJsonAsync($"/app/v1/admin/users/{ownerId}", new { role = "Viewer", disabled = false }),
+            owner.PutAsJsonAsync($"/app/v1/admin/users/{ownerId}", new { role = "Viewer", disabled = false }),
             secondOwner.PutAsJsonAsync($"/app/v1/admin/users/{secondId}", new { role = "Viewer", disabled = false }));
         Check(attempts.Count(x => x.StatusCode == HttpStatusCode.NoContent) == 1
             && attempts.Count(x => x.StatusCode == HttpStatusCode.Conflict) == 1, "concurrent demotion leaves one owner");
@@ -508,7 +533,7 @@ internal static partial class AccountIdentityTests
     private static async Task EnrollAsync(HttpClient client, VirtualPasskey key, string token, string name)
     {
         await CsrfAsync(client);
-        var response = await client.PostAsJsonAsync("/app/v1/enrollment/options", new { token, displayName = name, openAiConsent = true });
+        var response = await client.PostAsJsonAsync("/app/v1/enrollment/options", new { token, displayName = name, openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion });
         Check(response.IsSuccessStatusCode, "creation options: " + await response.Content.ReadAsStringAsync());
         var options = await JsonAsync(response);
         var completion = await client.PostAsJsonAsync("/app/v1/enrollment/complete", new { credential = key.Create(options) });
@@ -559,11 +584,20 @@ internal static partial class AccountIdentityTests
             jars[client] = jar; return client;
         }
         public CookieContainer Cookies(HttpClient client) => jars[client];
+        public void OpenSelectedCustomerGroup()
+        {
+            // Functional customer APIs run after opening; prelaunch fixtures keep the default future schedule.
+            var launch = App.Services.GetRequiredService<LaunchPolicyStore>();
+            var groupId = launch.ReadBetaAdmission().GroupId
+                ?? throw new InvalidOperationException("Customer fixture has no selected launch group.");
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            LaunchTestSchedule.Set(launch, groupId, now - 1000, now);
+        }
         public static async Task<Fixture> StartAsync(bool browserMode = false, bool customerFeatures = false,
             bool deletionFeatures = false, bool customerMemoryFeatures = false,
             bool accountDataExportFeatures = false, Action<WebApplication>? configureEndpoints = null,
             Action<IServiceCollection>? configureServices = null, Action<IConfiguration>? configureConfiguration = null,
-            bool betaRecruitmentOpen = true)
+            bool betaRecruitmentOpen = true, string environmentName = "Testing")
         {
             var root = Path.Combine(Path.GetTempPath(), "dv-account-tests-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -576,7 +610,7 @@ internal static partial class AccountIdentityTests
             certRequest.CertificateExtensions.Add(san.Build());
             using var generated = certRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(1));
             var certificate = X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pfx), null, X509KeyStorageFlags.UserKeySet);
-            var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environmentName });
             builder.Configuration.Sources.Clear();
             builder.Logging.ClearProviders();
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -664,7 +698,7 @@ internal static partial class AccountIdentityTests
                 var selected = launch.CreateOrSelectBetaGroup("test-fixture",
                     new(admission.Revision), now);
                 launch.UpdateBetaAdmission("test-fixture",
-                    new(selected.Admission.Revision, selected.Group.Id, true, null), now);
+                    new(selected.Admission.Revision, selected.Group.Id, true, null, selected.Group.Revision, now + 86_400_000), now);
             }
             app.UseWebSockets(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy();
             app.MapLaunchEndpoints(); app.MapAccountEndpoints(); app.MapDigitalTwin(); app.MapModelReleases();

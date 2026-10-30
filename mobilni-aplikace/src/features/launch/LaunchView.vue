@@ -3,6 +3,7 @@ import PushNotifications from '../identity/PushNotifications.vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import AwButton from '../../components/AwButton.vue';
+import ApplicationHeaderActions from '../../application/ApplicationHeaderActions.vue';
 import AwField from '../../components/AwField.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from '../identity/AccountDeletion.vue';
@@ -26,7 +27,7 @@ import type { PrelaunchCharacterResponse as PrelaunchState } from './generatedPr
 
 import { interfaceLanguagePreference } from '../../application/interfaceLanguage';
 import { customerFixedUniverse, customerMembershipState, refreshCustomerMembership } from '../../application/launchAccess';
-import { isCustomerAccount } from '../../application/access';
+import { isCustomerAccount, requiresCustomerMembership } from '../../application/access';
 import { CountdownRickroll } from './countdownRickroll';
 import RickrollVideo from '../media/RickrollVideo.vue';
 import { readRickrollVideo } from '../media/rickrollMedia';
@@ -58,10 +59,11 @@ const canPrepareWand = computed(() => isCustomerAccount(account.value)
   && customerMembershipState.value === 'active' && !!state.value?.character
   && (revealed.value && hasPortrait.value || phase.value === 'failed'));
 const groupOpening = ref(false);
+const receptionEntered = ref(false);
 const rickrollActive = ref(false);
 const rickrollSource = ref<string>();
 const countdownRickroll = new CountdownRickroll(() => { rickrollActive.value = true; });
-const countdownVisible = computed(() => !rickrollActive.value && !groupOpening.value && !requiresBetaAdmission.value && !workshopOpen.value
+const countdownVisible = computed(() => receptionEntered.value && !rickrollActive.value && !groupOpening.value && !requiresBetaAdmission.value && !workshopOpen.value
   && (!!state.value?.character || !!account.value && !!policy.value && !policy.value.allowed && !characterVerified.value));
 const groupPresenting = ref(false);
 const groupBusy = ref(false);
@@ -79,7 +81,7 @@ let serverTimeAnchor = 0;
 let monotonicAnchor = 0;
 let lastLaunchCheck = Number.NEGATIVE_INFINITY;
 const registration = computed(() => invitationRegistration.value?.owner === account.value?.id ? invitationRegistration.value : null);
-const requiresBetaAdmission = computed(() => isCustomerAccount(account.value) && customerMembershipState.value === 'unassigned');
+const requiresBetaAdmission = computed(() => requiresCustomerMembership(account.value) && customerMembershipState.value === 'unassigned');
 const writing = computed(() => registration.value?.status === 'saving');
 const uncertain = computed(() => registration.value?.status === 'uncertain');
 const hasPortrait = computed(() => !!portrait.url.value);
@@ -110,7 +112,7 @@ const statusMessage = computed(() => {
   return copy.value.saved;
 });
 const receptionJoke = computed(() => {
-  const personal = characterIntroductionText(state.value?.artwork ?? null, canPrepareWand.value);
+  const personal = characterIntroductionText(state.value?.artwork ?? null, state.value?.artwork?.status === 'ready' || phase.value === 'failed');
   return personal || characterIntroductionFallback;
 });
 const receptionStatus = computed(() => {
@@ -162,6 +164,7 @@ watch(() => account.value?.id, id => {
   if (pollTimer) clearTimeout(pollTimer);
   pollTimer = undefined;
   groupOpening.value = false;
+  receptionEntered.value = false;
   groupPresenting.value = false;
   groupBusy.value = false;
   entranceRetryAttempted.value = false;
@@ -202,9 +205,12 @@ function onWorkshopOpen(open: boolean): void {
 function rememberDraft(): void {
   if (account.value && !state.value?.character && !writing.value && !uncertain.value) setInvitationDraft(account.value.id, name.value, universe.value);
 }
+function formFocusIn(event: FocusEvent): void {
+  formFocused.value = event.target instanceof HTMLInputElement;
+}
 function formFocusOut(event: FocusEvent): void {
   const form = event.currentTarget;
-  if (form instanceof HTMLElement && event.relatedTarget instanceof Node && form.contains(event.relatedTarget)) return;
+  if (form instanceof HTMLElement && event.relatedTarget instanceof HTMLInputElement && form.contains(event.relatedTarget)) return;
   formFocused.value = false;
 }
 async function refreshPolicy(): Promise<void> {
@@ -216,6 +222,9 @@ async function refreshPolicy(): Promise<void> {
     || value.launchAt != null && !Number.isFinite(value.launchAt)) throw new Error(copy.value.readFailed);
   serverTimeAnchor = value.serverNow;
   monotonicAnchor = performance.now();
+  // Observe zero while the waiting scene is still visible. Updating permission
+  // first can hide it and reset the surprise before its final tick is observed.
+  updateCountdown(value);
   policy.value = value;
   if (value.audience === 'revoked') {
     groupOpening.value = false;
@@ -234,10 +243,9 @@ async function refreshPolicy(): Promise<void> {
       catch { if (owner === account.value?.id) readError.value = copy.value.readFailed; }
     }
   }
-  updateCountdown();
   if (rickrollActive.value) return;
   // Server permission always wins over local presentation, including staff/testers.
-  if (value.allowed && account.value && !isCustomerAccount(account.value)) {
+  if (value.allowed && account.value && (!isCustomerAccount(account.value) || account.value.roles.includes('Tester'))) {
     // Operational accounts keep their established destination. The consumer
     // group-opening presentation must not become a staff onboarding detour.
     await router.replace(defaultSignedInDestination(account.value));
@@ -251,15 +259,20 @@ async function refreshPolicy(): Promise<void> {
     else groupOpening.value = true;
   }
 }
+function enterReception(): void {
+  receptionEntered.value = true;
+  if (policy.value?.allowed) void enterGroup(false);
+}
 async function enterGroup(continueToApp = false): Promise<void> {
   const owner = account.value;
-  if (!owner || groupBusy.value || !policy.value?.allowed || (isCustomerAccount(owner) && customerMembershipState.value !== 'active')) return;
+  if (!owner || groupBusy.value || !policy.value?.allowed || (requiresCustomerMembership(owner) && customerMembershipState.value !== 'active')) return;
   const epoch = accountEpoch;
   groupBusy.value = true;
   error.value = '';
   try {
     await refreshPolicy();
-    if (epoch !== accountEpoch || !policy.value?.allowed || account.value?.id !== owner.id || customerMembershipState.value !== 'active') return;
+    if (epoch !== accountEpoch || !policy.value?.allowed || account.value?.id !== owner.id
+      || (requiresCustomerMembership(account.value) && customerMembershipState.value !== 'active')) return;
     if (!continueToApp) {
       entranceRetryAttempted.value = false;
       groupPresenting.value = true;
@@ -320,18 +333,19 @@ async function refreshCharacter(signal?: AbortSignal): Promise<void> {
   name.value = value.character.name;
   universe.value = value.character.universe;
 }
-function updateCountdown(): void {
+function updateCountdown(currentPolicy: LaunchPolicy | null = policy.value): void {
   const now = performance.now();
-  remaining.value = policy.value?.launchAt == null ? 0 : Math.max(0, policy.value.launchAt - (serverTimeAnchor + now - monotonicAnchor));
+  remaining.value = currentPolicy?.launchAt == null ? 0 : Math.max(0, currentPolicy.launchAt - (serverTimeAnchor + now - monotonicAnchor));
   countdownRickroll.observe({
-    launchAt: policy.value?.launchAt ?? null,
+    launchAt: currentPolicy?.launchAt ?? null,
     remaining: remaining.value,
     now,
-    watching: !!rickrollSource.value && countdownVisible.value && presentationForeground.value && !document.hidden,
-    waiting: !!account.value && policy.value?.allowed === false && policy.value.audience !== 'revoked',
+    watching: !!rickrollSource.value && countdownVisible.value && presentationForeground.value && !document.hidden
+      && currentPolicy?.audience !== 'revoked',
+    waiting: !!account.value && currentPolicy?.allowed === false && currentPolicy.audience !== 'revoked',
   });
   if (rickrollActive.value) return;
-  if (remaining.value === 0 && policy.value?.launchAt != null && now - lastLaunchCheck > 15_000) {
+  if (remaining.value === 0 && currentPolicy?.launchAt != null && now - lastLaunchCheck > 15_000) {
     lastLaunchCheck = now; void refreshPolicy().catch(() => {});
   }
 }
@@ -386,7 +400,7 @@ async function retryRead(): Promise<void> {
     if (epoch !== accountEpoch || controller?.signal.aborted) return;
     await refreshPolicy();
     if (epoch !== accountEpoch || controller?.signal.aborted) return;
-    if (isCustomerAccount(account.value) && customerMembershipState.value !== 'active') {
+    if (requiresCustomerMembership(account.value) && customerMembershipState.value !== 'active') {
       if (customerMembershipState.value === 'unassigned') await refreshBetaEnrollment();
       else if (customerMembershipState.value === null) readError.value = copy.value.readFailed;
       return;
@@ -515,7 +529,7 @@ onBeforeUnmount(() => {
 
 <template>
   <RickrollVideo v-if="rickrollSource" :src="rickrollSource" :active="rickrollActive" @dismiss="dismissRickroll" />
-  <SceneShell v-if="!rickrollActive && groupOpening" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
+  <SceneShell v-if="!rickrollActive && (!receptionEntered || groupOpening)" class="launch-page group-opening" :labelled-by="groupPresenting ? 'entrance-title' : 'group-opening-title'" :active="presentationForeground">
     <CharacterEntrance v-if="groupPresenting" :character="state?.character ?? null" :artwork="state?.artwork ?? null" :image="portrait.url.value" :failed="portrait.failed.value" :read-failed="!!displayedError" :active="presentationForeground" :busy="groupBusy" :retrying="entranceRetrying" :retry-attempted="entranceRetryAttempted" @continue="enterGroup(true)" @retry="retryEntrance" @failed="portrait.fail()">
       <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }}</AwNotice>
       <p v-if="portraitSource && hasPortrait" class="launch-attribution">Obrázek z internetu: <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> · {{ portraitSource.author }} · <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
@@ -523,24 +537,23 @@ onBeforeUnmount(() => {
     <template v-else>
       <div class="group-opening-art" data-scene-enter aria-hidden="true"><span>W</span></div>
       <section class="group-opening-copy">
-      <h1 id="group-opening-title">{{ language === 'en' ? 'The evening begins.' : 'Večer začíná.' }}</h1>
-      <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="groupBusy" @click="enterGroup(false)">{{ copy.retry }}</button></AwNotice>
-      <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterGroup(false)">Vstoupit</AwButton>
+      <h1 id="group-opening-title">{{ policy?.allowed ? 'Večer začíná.' : 'Wand Night Stand' }}</h1>
+      <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="groupBusy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
+      <AwButton variant="primary" :busy="groupBusy" :disabled="groupBusy" @click="enterReception">Vstoupit</AwButton>
     </section>
     </template>
     <footer class="launch-footer"><AwButton v-if="account" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton><details class="launch-account-options"><summary>{{ copy.account }}</summary><PushNotifications v-if="account && !accountDeletionRequested" /><AccountDeletion /></details><nav :aria-label="copy.account"><RouterLink to="/privacy">{{ copy.privacy }}</RouterLink><RouterLink to="/support">{{ copy.support }}</RouterLink></nav></footer>
   </SceneShell>
   <SceneShell v-else-if="!rickrollActive" class="launch-page" :class="{ 'keyboard-priority': formFocused }" :labelled-by="workshopOpen ? 'prelaunch-wand-title' : 'launch-title'">
-    <header class="launch-masthead">
-      <RouterLink to="/" class="launch-wordmark" :aria-label="copy.home"><span>Wand<br />Night Stand</span></RouterLink>
+    <ApplicationHeaderActions v-if="!workshopOpen">
       <AwButton v-if="account" class="launch-signout" :busy="signingOut" :disabled="signingOut" @click="leaveAccount">{{ copy.signOut }}</AwButton>
-    </header>
+    </ApplicationHeaderActions>
     <section v-if="requiresBetaAdmission" class="launch-card beta-admission-request">
       <PaperSurface class="launch-copy">
         <h1 id="launch-title">{{ language === 'en' ? 'Request beta access' : 'Požádat o přístup do bety' }}</h1>
-        <p>{{ language === 'en' ? 'Your account is ready. You can join the current beta group while it is accepting participants.' : 'Tvůj účet je připravený. Do současné beta skupiny můžeš vstoupit, dokud přijímá účastníky.' }}</p>
+        <p>{{ language === 'en' ? 'Your account is ready. You can join the current beta group while it is accepting participants.' : 'Tvůj účet je připravený. Do skupiny pro nové hosty můžeš vstoupit, dokud přijímá účastníky.' }}</p>
         <AwNotice v-if="betaEnrollmentAvailable === false" tone="info">{{ language === 'en' ? 'Enrollment for new participants is currently closed.' : 'Přijímání nových účastníků je nyní uzavřené.' }}</AwNotice>
-        <p v-else-if="betaEnrollmentAvailable === null" role="status">{{ language === 'en' ? 'We could not check the current beta access rules.' : 'Aktuální pravidla vstupu do bety se nepodařilo ověřit.' }}</p>
+        <p v-else-if="betaEnrollmentAvailable === null" role="status">{{ language === 'en' ? 'We could not check the current admission rules.' : 'Aktuální pravidla přijetí do skupiny se nepodařilo ověřit.' }}</p>
         <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <p v-if="membershipRequestMessage" role="status">{{ membershipRequestMessage }}</p>
         <AwButton v-if="betaEnrollmentAvailable === true" variant="primary" :busy="busy" :disabled="busy" @click="requestBetaAdmission">{{ language === 'en' ? 'Join the beta group' : 'Vstoupit do beta skupiny' }}</AwButton>
@@ -553,15 +566,14 @@ onBeforeUnmount(() => {
         <span>{{ step }}<small v-if="index === 1 && phase === 'failed'">Bez portrétu</small><span v-if="index < receptionStep" class="sr-only">{{ index === 1 && phase === 'failed' ? ' — přeskočeno' : ' — hotovo' }}</span></span>
       </li>
     </ol>
-    <PushNotifications v-if="wandComplete && !workshopOpen" context="waiting" class="launch-push-offer" />
-    <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" @complete-change="wandComplete = $event" />
     <section v-show="!workshopOpen" class="launch-card" :class="{ 'launch-card--reception': writing || state?.character }">
+      <PortraitCurtain v-if="!readError || state?.character || writing" class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation || portrait.pending.value" :unavailable="phase === 'failed'" @revealed="revealed = $event" @replay="portraitReplay++" @failed="portrait.fail()" />
       <PaperSurface class="launch-copy">
         <h1 v-if="!state?.character" id="launch-title">{{ readError && account ? copy.waitingTitle : writing ? 'Tvoje postava se připravuje.' : draftProvided ? name : copy.title }}</h1>
         <AwNotice v-if="displayedError" tone="danger" role="alert">{{ displayedError }} <button class="launch-retry" :disabled="busy" @click="retryRead">{{ copy.retry }}</button></AwNotice>
         <AwNotice v-if="phase === 'failed'" tone="warning" role="alert">{{ copy.failed }} <button class="launch-retry" :disabled="busy || portrait.pending.value" @click="retryPortrait">{{ copy.retry }}</button></AwNotice>
         <template v-if="!account"><RouterLink class="aw-button aw-button--primary" to="/signin">{{ copy.invitation }}</RouterLink></template>
-        <form v-else-if="characterVerified && !state?.character && !writing" class="launch-form" @submit.prevent="saveCharacter" @focusin="formFocused = true" @focusout="formFocusOut">
+        <form v-else-if="characterVerified && !state?.character && !writing" class="launch-form" @submit.prevent="saveCharacter" @focusin="formFocusIn" @focusout="formFocusOut">
           <p v-if="draftProvided && !uncertain">{{ copy.accountReady }}</p>
           <template v-if="!draftProvided">
             <AwField id="character-name" :label="copy.name" :hint="copy.nameHint"><input id="character-name" aria-describedby="character-name-hint" v-model="name" class="aw-input" maxlength="80" autocomplete="nickname" required @input="rememberDraft" /></AwField>
@@ -570,7 +582,7 @@ onBeforeUnmount(() => {
           </template>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
-        <form v-else-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait" @focusin="formFocused = true" @focusout="formFocusOut">
+        <form v-else-if="state?.character && !state.artwork" class="launch-form" @submit.prevent="prepareExistingPortrait" @focusin="formFocusIn" @focusout="formFocusOut">
           <p>{{ copy.missingPortrait }}</p>
           <AwButton type="submit" variant="primary" :busy="busy" :disabled="!consent">{{ copy.portrait }}</AwButton>
         </form>
@@ -579,8 +591,8 @@ onBeforeUnmount(() => {
           <p>{{ state.character.universe }}</p>
         </header>
         <div v-if="writing || state?.character" class="reception-introduction" :class="{ 'launch-final': canPrepareWand }">
-          <p class="launch-status" role="status" aria-atomic="true">{{ receptionStatus }}</p>
           <CharacterIntroduction class="launch-joke" :active="presentationForeground" :replay-key="portraitReplay" :text="receptionJoke" />
+          <p class="launch-status" role="status" aria-atomic="true">{{ receptionStatus }}</p>
           <template v-if="canPrepareWand && state?.artwork?.welcome">
             <p v-if="characterWelcomeText(state.artwork.welcome.identity)" class="launch-identity">{{ characterWelcomeText(state.artwork.welcome.identity) }}</p>
             <p v-if="characterWelcomeText(state.artwork.welcome.teaser)" class="launch-teaser">{{ characterWelcomeText(state.artwork.welcome.teaser) }}</p>
@@ -588,9 +600,10 @@ onBeforeUnmount(() => {
           <p v-if="portraitSource && revealed && hasPortrait" class="launch-attribution">Obrázek z internetu (upraveno pro portrét): <a :href="portraitSource.url" target="_blank" rel="noopener noreferrer">{{ portraitSource.title }}</a> — {{ portraitSource.author }}, <a :href="portraitSource.licenseUrl" target="_blank" rel="noopener noreferrer">{{ portraitSource.license }}</a></p>
         </div>
       </PaperSurface>
-      <PortraitCurtain v-if="!readError || state?.character || writing" class="launch-art" :image="portrait.url.value" :identity="characterIdentity" :alt="copy.portraitAlt" :preparing="actualPreparation || portrait.pending.value" :unavailable="phase === 'failed'" @revealed="revealed = $event" @replay="portraitReplay++" @failed="portrait.fail()" />
       <p v-if="!writing && !state?.character" class="launch-text launch-status" role="status">{{ statusMessage }}</p>
     </section>
+    <PrelaunchWand v-if="canPrepareWand" :key="characterIdentity" @open-change="onWorkshopOpen" @complete-change="wandComplete = $event" />
+    <PushNotifications v-if="wandComplete && !workshopOpen" context="waiting" class="launch-push-offer" />
     <section v-if="state?.character || account && policy && !policy.allowed && !characterVerified" v-show="!workshopOpen" class="reception-waiting" aria-label="Čekání na večer">
       <CharacterCountdown class="countdown" heading-as="h2" :name="wandComplete ? 'Vítej v čekárně.' : 'Večer se chystá.'" :universe="''" :values="timeParts" :units="[copy.days, copy.hours, copy.minutes, copy.seconds]" :title="copy.countdown" :label="copy.countdownLabel" :unscheduled="policy?.launchAt == null || remaining <= 0 ? copy.unscheduled : undefined" />
       <div class="reception-options">
@@ -606,11 +619,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.launch-page { min-height: 100dvh; padding: max(1rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px)); color: var(--aw-ivory); }
-.launch-masthead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .5rem 2rem; }
-.launch-wordmark { min-height: 44px; display: flex; align-items: center; gap: .8rem; color: var(--aw-ivory); text-decoration: none; font-family: var(--aw-font-display); font-size: 1.8rem; font-weight: 500; line-height: .9; letter-spacing: -.025em; }
-.launch-wordmark img { display: none; }
-.launch-wordmark span { white-space: nowrap; }
+.launch-page { min-height: var(--application-content-height, 100dvh); padding: 1rem max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px)); color: var(--aw-ivory); }
 .launch-language { display: inline-flex; align-items: center; font: inherit; font-size: .875rem; color: var(--aw-game-paper, var(--aw-ivory)); background: rgb(3 24 22 / .72); border: 1px solid var(--aw-game-brass, var(--aw-border-subtle)); border-radius: 8px; min-height: 44px; padding: .5rem; }
 .launch-card { width: min(100%, 42rem); margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
 .launch-art { order: 2; width: 100%; }
@@ -665,9 +674,6 @@ onBeforeUnmount(() => {
 :focus-visible { outline: 2px solid var(--aw-info); outline-offset: 3px; }
 @media (max-width: 760px) {
   .launch-page { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
-  .launch-masthead { padding-block: 0 1.5rem; }
-  .launch-wordmark { font-size: 1.55rem; }
-  .launch-wordmark img { width: 40px; height: 40px; }
   .launch-card { gap: .85rem; }
   .launch-copy { max-width: none; }
   .launch-copy :deep(h1) { font-size: 2.25rem; line-height: 1.1; }
@@ -677,8 +683,6 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 340px) { .launch-page { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); } }
 .launch-page { --wns-display: var(--wns-font-family); background: var(--wns-bg, #080909); color: var(--wns-text, #f5f5f0); }
-.launch-masthead { width: min(100%, 62rem); margin-inline: auto; padding-block: .5rem clamp(1.25rem, 5vh, 3rem); }
-.launch-wordmark { font: 800 1.2rem/.95 var(--wns-display); letter-spacing: -.06em; }
 .launch-language { border: 0; border-radius: 999px; background: transparent; color: var(--wns-muted, #b2b9b6); }
 .launch-card { max-width: 62rem; gap: 1.25rem; }
 .launch-copy { color: var(--wns-text, #f5f5f0); }
@@ -711,15 +715,15 @@ onBeforeUnmount(() => {
 .reception-steps .is-current { border-color: var(--wns-amber); color: var(--wns-amber); font-weight: 750; }
 .reception-steps .is-done { border-color: var(--wns-mint); color: var(--wns-mint); }
 .reception-steps small { display: block; font-size: .75rem; font-weight: 500; }
-.launch-card--reception { width: min(100%, 62rem); margin-block: 32px; }
+.launch-card--reception { width: min(100%, 62rem); margin-block: 24px 40px; gap: 28px; }
 .launch-card--reception .launch-copy { background: transparent; border: 0; padding: 0; border-radius: 0; }
-.launch-card--reception .launch-art { width: min(100%, 300px); align-self: center; }
-.reception-identity h1 { text-wrap: balance; }
-.reception-identity > p { margin: 8px 0 28px; color: var(--wns-muted); }
+.launch-card--reception .launch-art { order: 0; width: min(100%, 440px); max-width: none; align-self: center; margin-inline: auto; }
+.reception-identity h1 { max-width: 14ch; font-size: clamp(2.2rem, 8vw, 4rem); line-height: 1.06; letter-spacing: -.035em; text-wrap: balance; }
+.reception-identity > p { margin: 12px 0 24px; color: var(--wns-muted); }
 .reception-introduction { display: grid; gap: 20px; }
 .reception-introduction p { margin: 0; overflow-wrap: anywhere; }
 .reception-introduction .launch-status { color: var(--wns-mint); max-width: 48ch; }
-.reception-introduction .launch-joke { max-width: 28ch; font-size: clamp(1.4rem, 5vw, 2.1rem); line-height: 1.4; font-weight: 650; letter-spacing: -.02em; }
+.reception-introduction .launch-joke { max-width: 34ch; font-size: clamp(1.1rem, 3.8vw, 1.4rem); line-height: 1.55; font-weight: 500; letter-spacing: normal; }
 .reception-introduction .launch-identity { color: var(--wns-muted); font-size: 1rem; }
 .reception-waiting { display: grid; gap: 28px; width: min(100%, 62rem); margin: 40px auto 0; padding-top: 28px; border-top: 1px solid var(--wns-line); }
 .launch-push-offer { width: min(100%, 62rem); margin: 24px auto; }
@@ -732,5 +736,6 @@ onBeforeUnmount(() => {
 .reception-options .reception-seat { color: var(--wns-text); max-width: 42ch; line-height: 1.5; }
 .reception-options summary { cursor: pointer; min-height: 44px; padding-block: 12px; }
 .launch-page ::selection { background: var(--wns-violet); color: var(--wns-on-violet); }
-@media (min-width: 760px) { .launch-card--reception { grid-template-columns: minmax(0, 1fr) minmax(240px, .7fr); gap: 64px; } .reception-waiting { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; } }
+@media (min-width: 760px) { .launch-card--reception { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 64px; } .reception-waiting { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; } }
+@media (max-width: 759px) { .launch-card--reception .launch-art { width: min(100%, 340px, 46svh); } }
 </style>

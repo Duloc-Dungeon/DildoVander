@@ -17,7 +17,7 @@ internal static partial class MobileWandWorkshopEndpoints
     private sealed record AudioTranscription(string Text);
     private sealed record WorkshopAudioRequest(string? QuestionId, int? QuestionRevision, string? WandId);
     private sealed record WorkshopEligibility(bool Eligible, string? Reason, object? Profile, int Tier,
-        MobileWandWorkshopState? Session);
+        MobileWandWorkshopState? Session, string VoiceProvider);
 
     internal static void MapMobileWandWorkshop(this RouteGroupBuilder group)
     {
@@ -26,10 +26,13 @@ internal static partial class MobileWandWorkshopEndpoints
             WandGenerationStore wands, GameStore games) =>
         {
             if (upgrade is not (null or 0 or 1)) throw new WandGenerationException("invalid_wand_workshop_tier", 400);
+            var voiceProvider = http.RequestServices.GetService<LocalTryHubExperimentStore>()?.Snapshot()?.Provider
+                ?? (http.RequestServices.GetService<ElevenLabsWorkshopOptions>()?.UseLegacyGptLive == true ? "gpt-live"
+                    : http.RequestServices.GetService<ElevenLabsWorkshopOptions>()?.UseSpeechEngine == true ? "speech-engine" : "elevenlabs");
             var owner = Owner(http);
             var profile = await profiles.ReadAsync(owner, http.RequestAborted);
             if (profile is null)
-                return Results.Ok(new WorkshopEligibility(false, "character_required", null, 0, null));
+                return Results.Ok(new WorkshopEligibility(false, "character_required", null, 0, null, voiceProvider));
 
             var tier = Math.Max(MobileWandSessions.Current(wands, owner, profile.ProfileId, profile.Revision) is null ? 0 : 1,
                 wands.MobileTier(owner, profile.ProfileId, profile.Revision));
@@ -58,7 +61,7 @@ internal static partial class MobileWandWorkshopEndpoints
                 session = State(http, wands, operation, owner);
             }
             var available = unavailable is null;
-            return Results.Ok(new WorkshopEligibility(available, available ? null : unavailable, projectedProfile, tier, session));
+            return Results.Ok(new WorkshopEligibility(available, available ? null : unavailable, projectedProfile, tier, session, voiceProvider));
         }).RequireRateLimiting(AccountIdentity.PollingRateLimitPolicy);
 
         group.MapGet("/workshop/sessions/current", async (int? upgrade, HttpContext http,
@@ -366,14 +369,22 @@ internal static class MobileWandWorkshopPresentation
         if (state.Wand is not { } wand) throw new WandGenerationException("wand_result_unavailable", 409);
         var callback = state.Messages?.LastOrDefault(message => message.Role == "user" && message.Text != "Zahaj rozhovor s připravenou postavou.")?.Text
             ?? state.Steps.LastOrDefault(step => step.Answer is not null)?.Answer;
-        var detail = callback is null ? "Dílna si poznamenala i tvé velkorysé mlčení."
-            : $"A k tomu tvému „{Speech(callback, 120)}“ si hůlka zjevně udělala vlastní poznámku.";
-        return $"Hotovo. {Speech(wand.Name, 100)}, {Speech(wand.Material, 160)} a jádro z {Speech(wand.Core, 160)}. {detail}";
+        var opening = callback is null ? "Tvoje hůlka" : $"Na tvoje „{Speech(callback, 100)}“ odpovídá hůlka";
+        var introduction = $"{opening} {Speech(wand.Name, 100)}: {Speech(wand.Material, 80)}, jádro {Speech(wand.Core, 80)}.";
+        var spells = new[] { (Action: "strike", Label: "Útok"), (Action: "trick", Label: "Trik"), (Action: "shield", Label: "Štít") }
+            .Select(action =>
+            {
+                var spell = wand.Spells.SingleOrDefault(spell => spell.Action == action.Action)
+                    ?? throw new WandGenerationException("wand_result_unavailable", 409);
+                return $"{action.Label} {Speech(spell.Name, 100)}: {Speech(spell.Description, 300)}.";
+            });
+        return introduction + " " + string.Join(" ", spells);
     }
 
     private static string Speech(string value, int maximum)
     {
-        var safe = new string(value.Where(character => !char.IsControl(character) && character != '?').ToArray()).Trim();
+        var safe = new string(value.Where(character => !char.IsControl(character))
+            .Select(character => character is '.' or '?' or '!' ? ';' : character).ToArray()).Trim().TrimEnd(';');
         return safe.Length <= maximum ? safe : safe[..maximum].TrimEnd() + "…";
     }
 }

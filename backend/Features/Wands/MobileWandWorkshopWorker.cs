@@ -192,7 +192,8 @@ internal sealed class MobileWandWorkshopWorker(IServiceScopeFactory scopes, Wand
     internal static bool RealArtworkConfigured(IConfiguration configuration) =>
         string.Equals(configuration["Keepsake:ProviderMode"], "openai", StringComparison.OrdinalIgnoreCase)
         && !string.IsNullOrWhiteSpace(configuration["OPENAI_API_KEY"])
-        && OpenAiKeepsakeProvider.SupportsTransparentWandArtwork(configuration["Keepsake:ImageModel"]);
+        && OpenAiKeepsakeProvider.SupportsTransparentWandArtwork(configuration["Keepsake:ImageModel"]
+            ?? Kufr.Backend.Features.Images.ImageGenerationDefaults.Model);
 
     internal static KeepsakeIssueSnapshot ArtworkSnapshot(GeneratedWandSnapshot wand) => new(
         "mobile-wand:" + wand.WandId, "mobile-wand-workshop", 1, wand.WandId, wand.Name,

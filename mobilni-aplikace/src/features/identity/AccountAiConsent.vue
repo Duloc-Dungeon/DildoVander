@@ -4,6 +4,7 @@ import AwButton from '../../components/AwButton.vue';
 import AwNotice from '../../components/AwNotice.vue';
 import AccountDeletion from './AccountDeletion.vue';
 import { account, accountRequest, refreshIdentity, signOut } from './session';
+import { aiConsentVersion } from './aiConsent';
 const accepted = ref(false);
 const busy = ref(false);
 const error = ref(false);
@@ -13,7 +14,7 @@ async function confirm(): Promise<void> {
   const accountId = account.value?.id;
   busy.value = true; error.value = false;
   try {
-    await accountRequest('/app/v1/account/ai-consent', 'POST', { openAiConsent: true });
+    await accountRequest('/app/v1/account/ai-consent', 'POST', { openAiConsent: true, consentVersion: aiConsentVersion });
     if (account.value?.id === accountId) await refreshIdentity();
   } catch { if (account.value?.id === accountId) error.value = true; }
   finally { if (account.value?.id === accountId) busy.value = false; }
@@ -25,7 +26,7 @@ async function confirm(): Promise<void> {
     <p>Postavu, portrét, hůlku a hlasový rozhovor připravuje AI. Než budeš pokračovat, potřebujeme tvůj souhlas.</p>
     <AwNotice v-if="error" tone="danger" role="alert">Souhlas se nepodařilo uložit. Zkontroluj připojení a zkus to znovu.</AwNotice>
     <form @submit.prevent="confirm">
-      <label><input v-model="accepted" type="checkbox" required :disabled="busy" /> Souhlasím se zpracováním zadání postavy, potřebného kontextu a zvuku rozhovoru službou OpenAI pro přípravu osobního vtipu, portrétu, hůlky a hlasových odpovědí.</label>
+      <label><input v-model="accepted" type="checkbox" required :disabled="busy" /> Souhlasím se zpracováním zadání postavy, potřebného kontextu, přepisu a zvuku rozhovoru službami OpenAI a ElevenLabs pro přípravu osobního vtipu, portrétu, hůlky, rozpoznávání řeči a hlasových odpovědí.</label>
       <p><RouterLink to="/privacy">Informace o zpracování údajů</RouterLink></p>
       <AwButton type="submit" variant="primary" :disabled="!accepted" :busy="busy">Potvrdit a pokračovat</AwButton>
       <AwButton :disabled="busy" @click="signOut">Odhlásit se</AwButton>

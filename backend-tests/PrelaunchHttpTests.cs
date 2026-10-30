@@ -23,8 +23,7 @@ internal static partial class AccountIdentityTests
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Consent owner");
         await CsrfAsync(owner);
         var future = DateTimeOffset.UtcNow.AddDays(2).ToUnixTimeMilliseconds();
-        var update = new LaunchConfigurationUpdate(0, true, future, false, true, future, false,
-            "Europe/Prague", "Hvězdy drží tajemství.", "Někdo právě leští souhvězdí.", false, "Krátká věta.");
+        var update = new LaunchConfigurationUpdate(0, "Europe/Prague", false, "Krátká věta.");
         Check((await owner.PutAsJsonAsync("/app/v1/admin/launch", update)).IsSuccessStatusCode,
             "consent fixture has a real pending launch policy");
         var invitation = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations", new { role = "Customer" })))
@@ -45,7 +44,7 @@ internal static partial class AccountIdentityTests
         }
         Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = false })).StatusCode == HttpStatusCode.Conflict,
             "legacy account must affirm processing consent even while launch is pending");
-        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true })).StatusCode == HttpStatusCode.NoContent,
+        Check((await customer.PostAsJsonAsync("/app/v1/account/ai-consent", new { openAiConsent = true, consentVersion = Kufr.Backend.Features.Identity.AccountAiConsent.CurrentVersion })).StatusCode == HttpStatusCode.NoContent,
             "legacy account can record explicit processing consent before launch");
         var consentedSession = await JsonAsync(await customer.GetAsync("/app/v1/session"));
         Check(consentedSession.GetProperty("account").GetProperty("openAiConsent").GetBoolean(),
@@ -67,7 +66,6 @@ internal static partial class AccountIdentityTests
         using var groupTwoClient = fixture.Client();
         using var secondGroupTwoClient = fixture.Client();
         using var groupTesterClient = fixture.Client();
-        using var recoveryClient = fixture.Client();
         using var ownerKey = new VirtualPasskey();
         using var customerKey = new VirtualPasskey();
         using var unassignedKey = new VirtualPasskey();
@@ -76,12 +74,10 @@ internal static partial class AccountIdentityTests
         using var groupTwoKey = new VirtualPasskey();
         using var secondGroupTwoKey = new VirtualPasskey();
         using var groupTesterKey = new VirtualPasskey();
-        using var recoveryKey = new VirtualPasskey();
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Owner");
         await CsrfAsync(owner);
         var future = DateTimeOffset.UtcNow.AddDays(2).ToUnixTimeMilliseconds();
-        var update = new LaunchConfigurationUpdate(0, true, future, false, true, future, false,
-            "Europe/Prague", "Hvězdy drží tajemství.", "Někdo právě leští souhvězdí.", true, "One mysterious sentence.");
+        var update = new LaunchConfigurationUpdate(0, "Europe/Prague", true, "One mysterious sentence.");
         Check((await owner.PutAsJsonAsync("/app/v1/admin/launch", update)).IsSuccessStatusCode, "administrator can configure launch over real authenticated HTTPS");
         var ownerSession = await JsonAsync(await owner.GetAsync("/app/v1/session"));
         Check(ownerSession.GetProperty("account").GetProperty("displayName").GetString() == "Olivander",
@@ -100,40 +96,21 @@ internal static partial class AccountIdentityTests
         Check((await stranger.GetAsync("/app/v1/admin/launch/groups")).StatusCode == HttpStatusCode.Unauthorized,
             "unauthenticated visitor cannot enumerate launch groups");
         var groupOneAt = future;
-        var groupTwoAt = future + 60_000;
+        var groupTwoAt = future;
         var groupOne = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/launch/groups",
             new { name = "Night one" }))).GetProperty("group");
         var groupOneId = groupOne.GetProperty("id").GetString()!;
         Check(groupOne.GetProperty("launchAt").ValueKind == JsonValueKind.Null,
-            "new group has no effective schedule before its countdown is confirmed");
-        var groupOneDraft = await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown",
-            new { expectedRevision = 1, durationSeconds = 172800, forceStartAtEnd = false });
-        var groupOneDraftGroup = (await JsonAsync(groupOneDraft)).GetProperty("group");
-        var confirmedGroupOne = await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown/confirm",
-            new { expectedRevision = groupOneDraftGroup.GetProperty("revision").GetInt64() });
-        groupOne = (await JsonAsync(confirmedGroupOne)).GetProperty("group");
-        groupOneAt = groupOne.GetProperty("launchAt").GetInt64();
-        Check(groupOneAt > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            "explicit countdown confirmation starts a server-owned future deadline");
-        var legacyDraft = (await JsonAsync(await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}",
-            new { expectedRevision = groupOne.GetProperty("revision").GetInt64(), name = "Night one", launchAt = groupOneAt + 60_000 }))).GetProperty("group");
-        Check(legacyDraft.GetProperty("launchAt").ValueKind == JsonValueKind.Null
-            && legacyDraft.GetProperty("countdownConfirmedAt").ValueKind == JsonValueKind.Null,
-            "legacy absolute schedule edits save a closed draft rather than starting the countdown");
-        groupOne = (await JsonAsync(await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown/confirm",
-            new { expectedRevision = legacyDraft.GetProperty("revision").GetInt64() }))).GetProperty("group");
-        groupOneAt = groupOne.GetProperty("launchAt").GetInt64();
-        var staleGroup = await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}",
-            new { expectedRevision = legacyDraft.GetProperty("revision").GetInt64(), name = "Night one", launchAt = groupOneAt });
-        Check(staleGroup.StatusCode == HttpStatusCode.Conflict, "legacy schedule update cannot bypass countdown confirmation or revision checks");
+            "new group waits until the enrollment schedule is saved");
+        var launchStore = fixture.App.Services.GetRequiredService<LaunchPolicyStore>();
+        LaunchTestSchedule.Set(launchStore, groupOneId, future, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var removedCountdown = await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown",
+            new { expectedRevision = 1, durationSeconds = 60 });
+        Check(removedCountdown.StatusCode == HttpStatusCode.NotFound, "retired duration countdown route is absent");
         var groupTwo = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/launch/groups",
             new { name = "Night two" }))).GetProperty("group");
         var groupTwoId = groupTwo.GetProperty("id").GetString()!;
-        var groupTwoDraft = (await JsonAsync(await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupTwoId}/countdown",
-            new { expectedRevision = 1, durationSeconds = 259200, forceStartAtEnd = false }))).GetProperty("group");
-        groupTwo = (await JsonAsync(await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupTwoId}/countdown/confirm",
-            new { expectedRevision = groupTwoDraft.GetProperty("revision").GetInt64() }))).GetProperty("group");
-        groupTwoAt = groupTwo.GetProperty("launchAt").GetInt64();
+        LaunchTestSchedule.Set(launchStore, groupTwoId, future, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         var groupList = await JsonAsync(await owner.GetAsync("/app/v1/admin/launch/groups"));
         Check(groupList.GetProperty("groups").GetArrayLength() == 2, "owner can list launch groups for invitation selection");
         Check((await customer.GetAsync("/app/v1/admin/launch/groups")).StatusCode == HttpStatusCode.Forbidden,
@@ -172,7 +149,7 @@ internal static partial class AccountIdentityTests
             && groupOneAccess.GetProperty("launchAt").GetInt64() == groupOneAt
             && !groupTwoAccess.GetProperty("allowed").GetBoolean()
             && groupTwoAccess.GetProperty("launchAt").GetInt64() == groupTwoAt,
-            "invited accounts receive only their group-specific launch schedules");
+            "invited accounts use their assigned group opening times");
         var groupTwoAccessState = await JsonAsync(await groupTwoClient.GetAsync("/app/v1/customer/access"));
         var groupTwoUserId = groupTwoSession.GetProperty("account").GetProperty("id").GetString()!;
         var secondGroupTwoUserId = secondGroupTwoSession.GetProperty("account").GetProperty("id").GetString()!;
@@ -245,23 +222,6 @@ internal static partial class AccountIdentityTests
             && groupTesterAccess.GetProperty("audience").GetString() == "privileged",
             "tester role bypasses its assigned launch group schedule");
         var groupOneUserId = groupOneSession.GetProperty("account").GetProperty("id").GetString()!;
-        var recoveryInvite = (await JsonAsync(await owner.PostAsJsonAsync("/app/v1/admin/invitations",
-            new { role = "Customer", recoveryUserId = groupOneUserId }))).GetProperty("token").GetString()!;
-        await EnrollAsync(recoveryClient, recoveryKey, recoveryInvite, "Ignored recovery name");
-        var recoveredSession = await CsrfAsync(recoveryClient);
-        Check(recoveredSession.GetProperty("account").GetProperty("id").GetString() == groupOneUserId,
-            "recovery retains the original account rather than creating a replacement identity");
-        var recoveredAccess = await JsonAsync(await recoveryClient.GetAsync("/app/v1/launch"));
-        Check(!recoveredAccess.GetProperty("allowed").GetBoolean()
-            && recoveredAccess.GetProperty("launchAt").GetInt64() == groupOneAt,
-            "recovery preserves the account's original launch group membership");
-        string? recoveredGroupId = null;
-        await SeedAsync(fixture.App, async db =>
-        {
-            recoveredGroupId = await db.Users.Where(user => user.Id == groupOneUserId)
-                .Select(user => user.LaunchGroupId).SingleAsync();
-        });
-        Check(recoveredGroupId == groupOneId, "recovery leaves stored membership bound to its original group");
         Check((await owner.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.NoContent,
             "static model and download resources remain available to real administrators");
         const string readbackCredential = "offline-model-readback-credential-123456";
@@ -349,27 +309,6 @@ internal static partial class AccountIdentityTests
             "another authenticated account cannot read portrait by guessing revision");
         Check((await beta.GetAsync("/app/v1/admin/launch/artwork")).StatusCode == HttpStatusCode.Forbidden,
             "beta install entitlement grants no artwork administration");
-        await owner.PutAsJsonAsync("/app/v1/admin/launch", update with { ExpectedRevision = 1, BetaUnlocked = true });
-        Check((await JsonAsync(await beta.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean()
-            && !(await JsonAsync(await customer.GetAsync("/app/v1/launch"))).GetProperty("allowed").GetBoolean(),
-            "manual beta launch leaves production gated");
-        await owner.PutAsJsonAsync("/app/v1/admin/launch", update with { ExpectedRevision = 2, BetaUnlocked = true, ProductionUnlocked = true });
-        Check((await customer.GetAsync("/app/v1/customer/character")).IsSuccessStatusCode, "server unlock restores existing character experience");
-        Check((await beta.PostAsJsonAsync("/app/v1/admin/invitations",
-                new { role = "Customer", launchGroupId = groupOneId })).StatusCode == HttpStatusCode.Forbidden
-            && (await beta.PostAsJsonAsync("/app/v1/admin/launch/groups",
-                new { name = "Unauthorized", launchAt = groupOneAt })).StatusCode == HttpStatusCode.Forbidden,
-            "beta members cannot create launch groups or issue group invitations");
-        var groupTwoAfterUnlock = await JsonAsync(await groupTwoClient.GetAsync("/app/v1/launch"));
-        var recoveredAfterUnlock = await JsonAsync(await recoveryClient.GetAsync("/app/v1/launch"));
-        Check(!groupTwoAfterUnlock.GetProperty("allowed").GetBoolean()
-            && !recoveredAfterUnlock.GetProperty("allowed").GetBoolean(),
-            $"global unlock cannot bypass future group schedules (now {recoveredAfterUnlock.GetProperty("serverNow")}; group2 {groupTwoAfterUnlock.GetProperty("allowed")}/{groupTwoAfterUnlock.GetProperty("launchAt")}, recovered {recoveredAfterUnlock.GetProperty("allowed")}/{recoveredAfterUnlock.GetProperty("launchAt")}; membership {recoveredGroupId})");
-        Check((await groupTwoClient.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.Forbidden
-            && (await recoveryClient.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.Forbidden,
-            "group-specific launch gates also protect the resource-access boundary after a global unlock");
-        Check((await stranger.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.NoContent,
-            "production launch restores public resource access");
         await SeedAsync(fixture.App, db => db.Users.Where(user => user.Id == groupTwoUserId)
             .ExecuteUpdateAsync(updateUser => updateUser
                 .SetProperty(user => user.LaunchGroupRevokedAt, DateTimeOffset.UtcNow.ToUnixTimeSeconds())
@@ -396,28 +335,22 @@ internal static partial class AccountIdentityTests
                 member.GetProperty("userId").GetString() == groupTwoUserId
                 && member.GetProperty("state").GetString() == "revoked"),
             "moving a revoked account preserves revocation and fixed universe while advancing its membership revision");
-        var groupOneCountdown = await owner.PutAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown",
-            new { expectedRevision = groupOne.GetProperty("revision").GetInt64(), durationSeconds = 1, forceStartAtEnd = false });
-        var groupOneCountdownGroup = (await JsonAsync(groupOneCountdown)).GetProperty("group");
-        var groupOneCountdownConfirmed = await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/countdown/confirm",
-            new { expectedRevision = groupOneCountdownGroup.GetProperty("revision").GetInt64() });
-        groupOneCountdownGroup = (await JsonAsync(groupOneCountdownConfirmed)).GetProperty("group");
-        await Task.Delay(TimeSpan.FromMilliseconds(1100));
-        var groupOneStarted = await owner.PostAsJsonAsync($"/app/v1/admin/launch/groups/{groupOneId}/start",
-            new { expectedRevision = groupOneCountdownGroup.GetProperty("revision").GetInt64() });
-        Check(groupOneStarted.IsSuccessStatusCode,
-            "owner can explicitly start a non-Force group after its countdown ends");
+        var openingTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        LaunchTestSchedule.Set(launchStore, groupOneId, openingTime, openingTime);
+        LaunchTestSchedule.Set(launchStore, groupTwoId, openingTime, openingTime);
+        Check((await groupOneClient.GetAsync("/app/v1/customer/character")).IsSuccessStatusCode,
+            "a due group opens existing character access");
+        Check((await stranger.GetAsync("/app/v1/launch/resource-access")).StatusCode == HttpStatusCode.Forbidden,
+            "opening an enrolled evening does not grant anonymous resource access");
         var waitingRoomAfterStart = await JsonAsync(await owner.GetAsync("/app/v1/admin/launch/waiting-room"));
         var remainingWaiters = waitingRoomAfterStart.GetProperty("members").EnumerateArray().ToArray();
-        Check(remainingWaiters.Any(member => member.GetProperty("userId").GetString() == unassignedUserId
-                && member.GetProperty("groupId").GetString() == groupTwoId)
+        Check(!remainingWaiters.Any(member => member.GetProperty("userId").GetString() == unassignedUserId)
             && !remainingWaiters.Any(member => member.GetProperty("userId").GetString() == groupOneUserId)
-            && remainingWaiters.Any(member => member.GetProperty("userId").GetString() == secondGroupTwoUserId
-                && member.GetProperty("groupId").GetString() == groupTwoId)
+            && !remainingWaiters.Any(member => member.GetProperty("userId").GetString() == secondGroupTwoUserId)
             && remainingWaiters.Any(member => member.GetProperty("userId").GetString() == groupTwoUserId
                 && member.GetProperty("state").GetString() == "revoked"),
-            "started group members leave the waiting roster while independent group waiters and revoked accounts remain visible");
-        Console.WriteLine("Prelaunch invitation, audience, immediate save, background artwork, private asset and manual launch HTTPS checks passed.");
+            "all opened group members leave the waiting roster while revoked accounts remain visible");
+        Console.WriteLine("Prelaunch invitation, audience, background artwork, private asset and group opening HTTPS checks passed.");
     }
 
     private static async Task RunFailedPrelaunchEnrichmentRetryAsync()

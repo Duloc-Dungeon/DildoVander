@@ -1,6 +1,7 @@
 // Runs against the production bundle with a deterministic in-memory backend.
 // No account data, network service, or paid generation provider is used.
 import assert from 'node:assert/strict';
+import { assertApplicationHeader } from './fixtures/application-header.mjs';
 import { createServer } from 'node:http';
 import { readFile, mkdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -32,13 +33,7 @@ let account = { id: 'launch-guest', displayName: 'Host', roles: ['Customer'], op
 let characterReads = 0;
 let character = null;
 let artwork = { status: 'queued', loadingMessage: null, url: null, errorCode: null };
-let config = {
-  revision: 4, betaEnabled: true, betaLaunchAt: null, betaUnlocked: false,
-  productionEnabled: true, productionLaunchAt: null, productionUnlocked: false,
-  timeZone: 'Europe/Prague', teaser: 'Ještě chvíli. Hvězdy hledají správné místo.',
-  initialLoadingMessage: 'Někdo už klepe na dveře osudu. Olivander má kocovinu, a tak se i proroctví postavilo do fronty.',
-  personalizedLoadingEnabled: true, personalizedLoadingPrompt: 'Věta hravě a tajemně.',
-};
+let config = { revision: 4, timeZone: 'Europe/Prague', personalizedLoadingEnabled: true, personalizedLoadingPrompt: 'Věta hravě a tajemně.' };
 let jobs = [{ profileId: 'portrait-fixture', revision: 3, status: 'failed', attempt: 2, errorCode: 'provider_unavailable', updatedAt: Date.now() }];
 let audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: 4, changeSummary: 'schedule' }];
 const writes = [];
@@ -78,7 +73,7 @@ try {
     if (url.pathname === '/app/v1/session' && request.method() === 'DELETE') { account = null; return route.fulfill({ status: 204, body: '' }); }
     if (url.pathname === '/app/v1/customer/access') return json({ state: 'active', groupId: 'launch-fixture-beta', groupName: 'Interní beta', joinedAt: Math.floor(Date.now() / 1000), accessRevision: 1, fixedUniverse: null, recruitmentOpen: false, launchAt: null });
     if (url.pathname === '/app/v1/enrollment/default') return json({ available: true, groupId: 'launch-fixture-beta', groupName: 'Interní beta', fixedUniverse: null, universe: null });
-    if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || config.productionUnlocked || countdownDeadline !== null && Date.now() >= countdownDeadline), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: countdownDeadline ?? Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), teaser: config.teaser, initialLoadingMessage: config.initialLoadingMessage, personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
+    if (url.pathname === '/app/v1/launch') { await pendingPolicy; return json({ allowed: !!account && (['Owner', 'Administrator', 'Operator', 'Tester'].some(role => account.roles.includes(role)) || countdownDeadline !== null && Date.now() >= countdownDeadline), audience: account?.roles.includes('Beta') ? 'beta' : 'production', launchAt: countdownDeadline ?? Date.now() + 48 * 60 * 60 * 1000, serverNow: Date.now(), personalizedLoadingEnabled: config.personalizedLoadingEnabled }); }
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'GET') return json({ character, artwork: character ? artwork : null });
     if (url.pathname === '/app/v1/prelaunch/character' && request.method() === 'PUT') {
       const body = request.postDataJSON(); writes.push(body);
@@ -105,7 +100,7 @@ try {
     if (url.pathname === '/app/v1/admin/launch' && request.method() === 'GET') return json(config);
     if (url.pathname === '/app/v1/admin/launch' && request.method() === 'PUT') {
       const body = request.postDataJSON(); writes.push(body); config = { ...config, ...body, revision: config.revision + 1 };
-      audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: config.revision, changeSummary: 'guest_experience' }, ...audit];
+      audit = [{ actorId: 'admin-fixture', changedAt: Date.now(), revision: config.revision, changeSummary: 'personalization' }, ...audit];
       return json(config);
     }
     if (url.pathname === '/app/v1/admin/launch/artwork') return json({ jobs });
@@ -126,12 +121,17 @@ try {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal(await page.locator('.application-sidebar, .application-header, .application-footer').count(), 0,
     'unknown guest policy must not flash postlaunch navigation before its response');
+  await assertApplicationHeader(page);
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0,
     'ordinary invitation without an active operation has no hardware control');
   releasePolicy();
   await page.waitForLoadState('networkidle');
+  await page.locator('.group-opening-art').waitFor();
+  assert.equal(await page.locator('.character-countdown-grid').count(), 0);
+  await page.screenshot({ path: path.join(screenshots, 'launch-mobile-w-entrance.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByRole('heading', { name: /Vstup na vlastní pověst/ }).waitFor();
-  assert.equal(await page.getByRole('link', { name: 'Wand Night Stand, úvod' }).count(), 1);
+  assert.equal(await page.locator('.application-topbar__brand').count(), 1);
   assert.equal(await page.getByText(/DildoVander|tester|operátor|administrace/i).count(), 0);
   assert.equal(await page.getByLabel('Jméno postavy').count(), 1);
   assert.equal(await page.locator('.application-sidebar').count(), 0);
@@ -146,6 +146,7 @@ try {
   assert.equal(await page.locator('.application-sidebar').count(), 0);
   assert.equal(await page.getByText(/konverzac|kufr|památk|příběh/i).count(), 0);
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByRole('heading', { name: /Vstup na vlastní pověst/ }).waitFor();
   await page.getByLabel('Jméno postavy').fill('Matylda');
   await page.getByLabel('Univerzum').fill('Město za zrcadlem');
@@ -184,6 +185,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => localStorage.setItem('dildovander.interface-language.v1.account.launch-guest', 'en'));
   await page.reload();
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByRole('heading', { name: /Matylda/ }).waitFor();
   await page.setViewportSize({ width: 320, height: 740 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Czech narrow mobile must not overflow after loading a legacy English preference');
@@ -194,6 +196,7 @@ try {
   character.status = 'ready';
   artwork = { status: 'running', loadingMessage: 'null', welcome: { joke: ' null ', identity: '', teaser: '' }, finalMessage: 'NEVER SHOW BEFORE READY', url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByText('Postava dostane vlastní tvář. Zrcadlo si zatím vyjednává právo na jiný názor.').waitFor();
   const fallbackLoading = await page.locator('.launch-status').innerText();
   assert.match(fallbackLoading, /Chvíli strpení|Postava je uložená/);
@@ -202,11 +205,13 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-loading-fallback.png'), fullPage: true });
   artwork.loadingMessage = 'Matyldo, město za zrcadlem nám poslalo tvůj spis. Zrcadla požádala o přestávku.';
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByText(artwork.loadingMessage, { exact: true }).waitFor();
   assert.equal(await page.getByText('NEVER SHOW BEFORE READY').count(), 0);
   await page.screenshot({ path: path.join(screenshots, 'launch-mobile-character-loading.png'), fullPage: true });
   artwork = { status: 'ready', loadingMessage: null, finalMessage: 'Matyldo, tvůj portrét. Zrcadla z tvého města si oddychla. Čekala jsi snad víc? Olivander dnes nezvládá ani vlastní odraz.', url: null, errorCode: null };
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByAltText('Portrét tvé postavy').waitFor({ state: 'visible' });
   await page.getByRole('heading', { name: /Matylda/ }).waitFor();
   await page.locator('.portrait-stage').scrollIntoViewIfNeeded();
@@ -231,6 +236,7 @@ try {
   await page.goto(`${origin}/signin?return=/me/account`, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Přihlásit přístupovým klíčem', exact: true }).click();
   await page.waitForURL(`${origin}/launch`);
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByRole('button', { name: 'Vytvořit hůlku', exact: true }).waitFor();
   assert.equal(await page.getByRole('heading', { name: 'Ron Weasley', exact: true }).count(), 1);
   await page.screenshot({ path: path.join(screenshots, 'returning-guest-wand-preparation.png'), fullPage: true });
@@ -246,9 +252,13 @@ try {
   await page.goto(`${origin}/launch`, { waitUntil: 'networkidle' });
   artwork = null;
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
   await page.getByText('Postava je uložená. Ještě jí připravíme portrét.').waitFor();
   assert.equal(await page.getByRole('checkbox').count(), 0);
-  await page.getByRole('button', { name: 'Připravit překvapení' }).click();
+  await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/app/v1/prelaunch/character/retry') && response.request().method() === 'POST'),
+    page.getByRole('button', { name: 'Připravit překvapení' }).click(),
+  ]);
   assert(writes.some(write => write.expectedProfileId === 'legacy-profile' && write.expectedRevision === 8));
 
   await page.goto(`${origin}/signin#invite=fixture-invitation-token-1234567890`, { waitUntil: 'networkidle' });
@@ -265,15 +275,13 @@ try {
   await page.goto(`${origin}/settings/admin`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: 'Otevřít správu spuštění' }).click();
   await page.getByRole('heading', { name: 'Příprava večera' }).waitFor();
-  await page.getByText('Datum a čas otevření výchozí skupiny', { exact: true }).click();
-  await page.getByLabel('Použít beta odpočítávání').check();
-  await page.getByLabel('Časové pásmo').selectOption('Europe/Prague');
-  await page.getByLabel('Otevření beta účastníkům').fill('2026-03-30T10:00');
-  await page.getByRole('button', { name: 'Uložit plán' }).click();
-  assert(writes.some(write => write.expectedRevision === 4 && write.betaLaunchAt === Date.UTC(2026, 2, 30, 8)));
+  assert.equal(await page.locator('#beta-launch, #launch-audience, #countdown-minutes, #production-launch, #launch-teaser, #launch-loading').count(), 0);
+  await page.getByText('Osobní věty při přípravě postavy', { exact: true }).click();
+  await page.locator('#launch-prompt').fill('Nový pokyn pro osobní větu.');
+  await page.getByRole('button', { name: 'Uložit osobní věty', exact: true }).click();
+  assert(writes.some(write => write.expectedRevision === 4 && write.personalizedLoadingPrompt === 'Nový pokyn pro osobní větu.'));
   const beforePreview = writes.length;
   assert.equal(beforePreview, 3);
-  await page.getByText('Zprávy a osobní věta', { exact: true }).click();
   await page.getByRole('button', { name: 'Vytvořit ukázku' }).click();
   await page.getByText(/Hvězdy se schovaly/).waitFor();
   await page.locator('details.launch-admin__disclosure > summary').filter({ hasText: 'Příprava portrétů' }).click();
@@ -283,14 +291,14 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'launch-desktop-admin.png'), fullPage: true });
   for (const [audience, width, height] of rickrollVideo ? [['production', 390, 844], ['beta', 1440, 1000]] : []) {
     account = { id: 'launch-guest', displayName: 'Host', roles: audience === 'beta' ? ['Customer', 'Beta'] : ['Customer'], openAiConsent: true };
-    config.productionUnlocked = false;
     countdownDeadline = Date.now() + 5_000;
     await page.setViewportSize({ width, height });
     await page.goto(`${origin}/launch`, { waitUntil: 'networkidle' });
+    assert.equal(await page.locator('.character-countdown-grid').count(), 0);
+    await page.getByRole('button', { name: 'Vstoupit', exact: true }).click();
     await page.locator('.character-countdown-grid').waitFor();
     assert.equal(await page.locator('.rickroll-video').isVisible(), false);
-    // A normal earlier app tap may grant autoplay; no play/entry button is pressed at zero.
-    await page.locator('.launch-wordmark').click();
+    // Only the W entrance is tapped; playback at zero requires no second tap.
     await page.locator('.rickroll-video').waitFor();
     await page.waitForFunction(() => {
       const video = document.querySelector('.rickroll-video video');
@@ -305,7 +313,7 @@ try {
     assert.equal(await page.locator('.rickroll-video').isVisible(), false, 'restart after zero must enter normally');
   }
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ mobile: '390x844', tablet: '820x1180', desktop: '1440x1000', realMp4Playback: !!rickrollVideo, states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'admin schedule save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
+  console.log(JSON.stringify({ mobile: '390x844', tablet: '820x1180', desktop: '1440x1000', realMp4Playback: !!rickrollVideo, states: ['countdown', 'character creation', 'portrait pending and ready', 'invitation account switch', 'personalization save', 'personalization preview', 'artwork retry'], screenshots, mockedWrites: writes.length }, null, 2));
   await context.close();
 } finally {
   if (browser) await browser.close();

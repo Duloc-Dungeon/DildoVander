@@ -106,8 +106,8 @@ internal static class LaunchEndpoints
         var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
         foreach (var group in groups.Values.ToArray())
         {
-            if (group.ForceStartAtEnd && group.LaunchAt is not null && group.LaunchAt <= now)
-            { groups[group.Id] = store.CompleteForcedCountdown(group.Id, now) ?? group; }
+            if (group.LaunchAt is not null && group.LaunchAt <= now)
+            { groups[group.Id] = store.OpenDueGroup(group.Id, now) ?? group; }
         }
         var openedGroupIds = groups.Values.Where(group => group.OpenedAt is not null)
             .Select(group => group.Id).ToArray();
@@ -286,8 +286,8 @@ internal static class LaunchEndpoints
         admin.MapGet("/groups", (LaunchPolicyStore store, TimeProvider timeProvider) => Results.Ok(new
         {
             groups = store.ReadGroups().Select(group => group.LaunchAt is not null
-                && group.ForceStartAtEnd && group.LaunchAt <= timeProvider.GetUtcNow().ToUnixTimeMilliseconds()
-                    ? store.CompleteForcedCountdown(group.Id, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) ?? group
+                && group.LaunchAt <= timeProvider.GetUtcNow().ToUnixTimeMilliseconds()
+                    ? store.OpenDueGroup(group.Id, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) ?? group
                     : group).Select(group => group with { ChronicleClosedAt = store.ReadChronicleClosure(group.Id) }).ToArray()
         }));
         admin.MapGet("/waiting-room", ReadWaitingRoomAsync);
@@ -298,6 +298,7 @@ internal static class LaunchEndpoints
             return Results.Ok(new
             {
                 admission.Revision, admission.GroupId, admission.RecruitmentOpen, admission.FixedUniverse,
+                admission.GroupRevision, admission.GroupLaunchAt,
                 groupName = admission.GroupId is null ? null : store.ReadGroup(admission.GroupId)?.Name
             });
         });
@@ -315,7 +316,7 @@ internal static class LaunchEndpoints
                 return Results.Ok(new
                 {
                     result.Admission.Revision, result.Admission.GroupId, result.Admission.RecruitmentOpen,
-                    result.Admission.FixedUniverse, groupName = result.Group.Name
+                    result.Admission.FixedUniverse, result.Admission.GroupRevision, result.Admission.GroupLaunchAt, groupName = result.Group.Name
                 });
             }
             catch (LaunchConfigurationException error)
@@ -335,7 +336,8 @@ internal static class LaunchEndpoints
                 return Results.Ok(new
                 {
                     admission.Revision, admission.GroupId, admission.RecruitmentOpen, admission.FixedUniverse,
-                    groupName = admission.GroupId is null ? null : store.ReadGroup(admission.GroupId)?.Name
+                    admission.GroupRevision, admission.GroupLaunchAt,
+                groupName = admission.GroupId is null ? null : store.ReadGroup(admission.GroupId)?.Name
                 });
             }
             catch (LaunchConfigurationException error)
@@ -386,51 +388,6 @@ internal static class LaunchEndpoints
             {
                 var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
                 return Results.Ok(new { group = store.UpdateGroup(actor, id, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
-            }
-            catch (LaunchConfigurationException error)
-            { return ApiProblem.Create(context, error.Status, error.Code); }
-        });
-        admin.MapPut("/groups/{id}/countdown", async (string id, LaunchGroupCountdownUpdate request,
-            HttpContext context, LaunchPolicyStore store, TimeProvider timeProvider) =>
-        {
-            var recent = await AccountAuthorization.RequireRecentAsync(context);
-            if (recent is not null) { return recent; }
-            if (context.Request.Headers["X-DV-Confirm"] != "yes")
-            { return ApiProblem.Create(context, 409, "confirmation_required"); }
-            try
-            {
-                return Results.Ok(new { group = store.SaveCountdown(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!,
-                    id, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
-            }
-            catch (LaunchConfigurationException error)
-            { return ApiProblem.Create(context, error.Status, error.Code); }
-        });
-        admin.MapPost("/groups/{id}/countdown/confirm", async (string id, LaunchGroupRevision request,
-            HttpContext context, LaunchPolicyStore store, TimeProvider timeProvider) =>
-        {
-            var recent = await AccountAuthorization.RequireRecentAsync(context);
-            if (recent is not null) { return recent; }
-            if (context.Request.Headers["X-DV-Confirm"] != "yes")
-            { return ApiProblem.Create(context, 409, "confirmation_required"); }
-            try
-            {
-                return Results.Ok(new { group = store.ConfirmCountdown(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!,
-                    id, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
-            }
-            catch (LaunchConfigurationException error)
-            { return ApiProblem.Create(context, error.Status, error.Code); }
-        });
-        admin.MapPost("/groups/{id}/start", async (string id, LaunchGroupRevision request,
-            HttpContext context, LaunchPolicyStore store, TimeProvider timeProvider) =>
-        {
-            var recent = await AccountAuthorization.RequireRecentAsync(context);
-            if (recent is not null) { return recent; }
-            if (context.Request.Headers["X-DV-Confirm"] != "yes")
-            { return ApiProblem.Create(context, 409, "confirmation_required"); }
-            try
-            {
-                return Results.Ok(new { group = store.StartGroup(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!,
-                    id, request, timeProvider.GetUtcNow().ToUnixTimeMilliseconds()) });
             }
             catch (LaunchConfigurationException error)
             { return ApiProblem.Create(context, error.Status, error.Code); }
@@ -583,7 +540,8 @@ internal static class LaunchEndpoints
 
     private static bool IsAuthenticationSurface(PathString path) =>
         path.Equals("/app/v1/session", StringComparison.OrdinalIgnoreCase)
-        || System.Text.RegularExpressions.Regex.IsMatch(path.Value ?? "", "\\A/app/v1/customer/wand/sessions/[0-9a-f]{32}/live\\z")
+        || System.Text.RegularExpressions.Regex.IsMatch(path.Value ?? "", "\\A/app/v1/customer/wand/speech-engine/[0-9a-f]{64}\\z")
+        || System.Text.RegularExpressions.Regex.IsMatch(path.Value ?? "", "\\A/app/v1/customer/wand/(?:workshop/)?sessions/[0-9a-f]{32}/live\\z")
         || path.StartsWithSegments("/app/v1/customer/enrollment", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/app/v1/passkeys", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/app/v1/enrollment", StringComparison.OrdinalIgnoreCase)

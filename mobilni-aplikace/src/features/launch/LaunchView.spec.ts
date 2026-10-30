@@ -30,7 +30,11 @@ let artworkSource: { url: string; title: string; author: string; license: string
 let memberState: 'active' | 'unassigned' | 'revoked' = 'active';
 let memberUniverse: string | null = null;
 const character = { profileId: 'profile', revision: 1, name: 'Raven', universe: 'Fiction', status: 'queued' };
-function entry() { return mount(LaunchView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); }
+function entry(enterReception = true) {
+  const view = mount(LaunchView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } });
+  if (enterReception) void view.get('.group-opening-copy button').trigger('click');
+  return view;
+}
 function savedCreation(status: 'saving' | 'uncertain' | 'confirmed' = 'confirmed') {
   const draft = setInvitationDraft('guest', 'Raven', 'Fiction');
   invitationRegistration.value = { ...draft, status, writeStarted: true, ...(status === 'confirmed' ? { profileId: 'profile', revision: 1 } : {}) };
@@ -57,6 +61,72 @@ beforeEach(() => {
     return { character: persisted ? character : null, artwork: persisted ? { status: artworkStatus, finalMessage: 'PRIVATE FINAL', ...(artworkSource ? { source: artworkSource } : {}) } : null };
   });
 });
+it.each(['unassigned', 'revoked'] as const)('lets a mixed Tester leave the waiting room with %s membership', async membership => {
+  memberState = membership;
+  allowed = true;
+  api.setAccount({ id: 'guest', displayName: 'Tester', roles: ['Beta', 'Tester'], openAiConsent: true });
+  const view = entry(false);
+  await flushPromises();
+  expect(api.replace).toHaveBeenCalledWith('/me/character');
+  expect(api.request.mock.calls.some(call => call[0] === '/app/v1/enrollment/default')).toBe(false);
+  view.unmount();
+});
+
+it('opens the preparation and waiting layout only through the big W entrance', async () => {
+  persisted = true;
+  const view = entry(false);
+  try {
+    await flushPromises();
+    expect(view.get('.group-opening-art').text()).toBe('W');
+    expect(view.find('.reception-steps').exists()).toBe(false);
+    expect(view.find('.character-countdown-grid').exists()).toBe(false);
+    await view.get('.group-opening-copy button').trigger('click');
+    await flushPromises();
+    expect(view.find('.group-opening').exists()).toBe(false);
+    expect(view.find('.character-countdown-grid').exists()).toBe(true);
+    expect(view.text()).toContain('Postava');
+    expect(view.text()).toContain('Portrét');
+    expect(view.text()).toContain('Hůlka');
+    expect(view.text()).toContain('Čekárna');
+  } finally { view.unmount(); }
+});
+
+it('does not rickroll a visitor who has not entered the waiting layout', async () => {
+  persisted = true;
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => path === '/app/v1/launch'
+    ? { allowed: Date.now() >= deadline, audience: 'production', launchAt: deadline, serverNow: Date.now() } : original(path, method));
+  const view = entry(false);
+  try {
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(view.find('.rickroll-video').exists()).toBe(false);
+    expect(view.find('.group-opening').exists()).toBe(true);
+  } finally { view.unmount(); }
+});
+
+it('observes zero before an opening policy hides an unverified waiting scene', async () => {
+  const deadline = Date.now() + 2_000;
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    if (path === '/app/v1/launch') return { allowed: Date.now() >= deadline, audience: 'production', launchAt: deadline, serverNow: Date.now() };
+    if (path === '/app/v1/prelaunch/character') throw new Error('Temporary read failure');
+    return original(path, method);
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(view.find('.character-countdown-grid').exists()).toBe(true);
+    vi.setSystemTime(deadline);
+    window.dispatchEvent(new Event('online'));
+    await flushPromises();
+    expect(view.find('.rickroll-video').exists()).toBe(true);
+    expect(view.find('.group-opening').exists()).toBe(false);
+  } finally { view.unmount(); }
+});
+
 it('offers wand creation only after revealing the saved character', async () => {
   persisted = true; artworkStatus = 'ready';
   const view = entry();
@@ -67,7 +137,7 @@ it('offers wand creation only after revealing the saved character', async () => 
     view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
     expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true);
     expect(view.find('.launch-next-step').exists()).toBe(false);
-    expect(view.html().indexOf('Vytvořit hůlku')).toBeLessThan(view.html().indexOf('portrait-stage'));
+    expect(view.html().indexOf('portrait-stage')).toBeLessThan(view.html().indexOf('Vytvořit hůlku'));
     expect(view.text()).toContain('Večer se otevře');
     expect(view.findAllComponents({ name: 'PushNotifications' })).toHaveLength(1);
     expect(view.get('.launch-notifications summary').text()).toContain('Nastavit oznámení');
@@ -294,6 +364,8 @@ it('does not announce running portrait preparation when none has been requested'
     await flushPromises();
     expect(view.get('.launch-status').text()).toBe('Postava je uložená. Portrét zatím není připravený.');
     expect(view.get('form button').text()).toBe('Připravit překvapení');
+    await view.get('form button').trigger('focusin');
+    expect(view.get('.launch-page').classes()).not.toContain('keyboard-priority');
     expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
     expect(api.request.mock.calls.some(([, method]) => method === 'POST')).toBe(false);
   } finally { view.unmount(); }
@@ -326,7 +398,32 @@ it('shows the loading joke before the portrait and preserves the welcome in the 
     expect(view.get('.launch-joke').text()).toBe('Osobní uvítací věta.');
     api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'], openAiConsent: true });
     await flushPromises();
+    expect(view.find('.group-opening-art').exists()).toBe(true);
+    await view.get('.group-opening-copy button').trigger('click');
+    await flushPromises();
     expect(view.get('[aria-current="step"]').text()).not.toBe('Čekárna');
+  } finally { view.unmount(); }
+});
+it('shows the ready welcome joke before portrait visibility unlocks the workshop', async () => {
+  persisted = true; artworkStatus = 'ready';
+  const original = api.request.getMockImplementation()!;
+  api.request.mockImplementation(async (path: string, method?: string) => {
+    const result = await original(path, method);
+    return path === '/app/v1/prelaunch/character' ? { ...result, artwork: {
+      status: artworkStatus, loadingMessage: 'Přípravná věta.',
+      welcome: { joke: 'Hotový osobní vtip.' },
+    } } : result;
+  });
+  const view = entry();
+  try {
+    await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('Hotový osobní vtip.');
+    expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(false);
+    image.value = 'blob:portrait'; await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('Hotový osobní vtip.');
+    view.findComponent({ name: 'PortraitCurtain' }).vm.$emit('revealed', true); await flushPromises();
+    expect(view.get('.launch-joke').text()).toBe('Hotový osobní vtip.');
+    expect(view.findComponent({ name: 'PrelaunchWand' }).exists()).toBe(true);
   } finally { view.unmount(); }
 });
 it('reads the personal joke from welcome when only the loading field is invalid', async () => {
@@ -352,6 +449,8 @@ it('preserves an unfinished same-account draft and clears it from another accoun
     await flushPromises(); await view.get('#character-name').setValue('Noční archivář'); await view.get('#character-universe').setValue('Město');
     expect(getInvitationRegistration('guest')?.name).toBe('Noční archivář');
     api.setAccount({ id: 'other', displayName: 'Other', roles: ['Customer'], openAiConsent: true }); await flushPromises();
+    expect(view.find('#character-name').exists()).toBe(false);
+    await view.get('.group-opening-copy button').trigger('click'); await flushPromises();
     expect(view.get<HTMLInputElement>('#character-name').element.value).toBe(''); expect(view.text()).not.toContain('Noční archivář');
   } finally { view.unmount(); }
 });

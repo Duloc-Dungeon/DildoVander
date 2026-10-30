@@ -118,9 +118,6 @@ input, textarea { caret-color: var(--aw-accent); }
 .application-main .home-brand-art img { aspect-ratio: 1; object-fit: cover; border-radius: 24px; }
 .customer-page > header { max-width: 44rem; }
 .customer-page > header p { font-size: .95rem; }
-.customer-page .character-enrichment { border-radius: 0 var(--aw-radius-control) var(--aw-radius-control) 0; }
-.customer-page .private-character-avatar { padding: 1.25rem; border: 1px solid var(--aw-border-subtle); border-radius: var(--aw-radius-card); background: var(--aw-surface); }
-.customer-page .private-character-avatar > img { border: 1px solid var(--aw-border); }
 .customer-page .customer-actions { gap: .75rem; }
 .application-main .aw-field-description { line-height: 1.55; }
 .application-main .aw-input:focus { border-color: var(--aw-accent); }
@@ -133,9 +130,4 @@ input, textarea { caret-color: var(--aw-accent); }
   .application-main .home-brand-art img { aspect-ratio: 16 / 9; object-position: center; }
   .application-shell { padding-bottom: calc(var(--application-navigation-height, 5rem) + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 16px); }
   .application-shell:is(.launch-mode, .game-mode) { padding-bottom: 0; }
-  .customer-page .private-character-avatar { grid-template-columns: minmax(5rem, .5fr) minmax(0, 1fr); gap: 1rem; }
-  .customer-page .private-character-avatar > img { width: 100%; border-radius: 16px; }
-  .customer-page .private-character-avatar h2 { font-size: 1.1rem; }
-  .customer-page .private-character-avatar figcaption { font-size: .85rem; line-height: 1.55; }
 }
-@media (max-width: 360px) { .customer-page .private-character-avatar { grid-template-columns: minmax(0, 1fr); } }

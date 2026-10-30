@@ -30,7 +30,7 @@ internal sealed class PushEvents(AccountDatabase db, LaunchPolicyStore launch, T
         if (user.LaunchGroupId is not { } groupId) { return result; }
         result[$"membership:{groupId}:{user.LaunchGroupAccessRevision}"] =
             Message("Tvoje pozvánka na večer byla aktualizována.", "/launch", "invitation");
-        var group = launch.CompleteForcedCountdown(groupId, clock.GetUtcNow().ToUnixTimeMilliseconds());
+        var group = launch.OpenDueGroup(groupId, clock.GetUtcNow().ToUnixTimeMilliseconds());
         if (group is null) { return result; }
         // A forced countdown must progress even if nobody has the app open.
         var started = group.OpenedAt is not null;

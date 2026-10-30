@@ -12,6 +12,7 @@ internal static partial class AccountIdentityTests
     internal static async Task RunCustomerDataLockContentionAsync()
     {
         await using var fixture = await Fixture.StartAsync(customerMemoryFeatures: true);
+        fixture.OpenSelectedCustomerGroup();
         using var owner = fixture.Client();
         using var ownerKey = new VirtualPasskey();
         await EnrollAsync(owner, ownerKey, Fixture.Bootstrap, "Customer data lock test owner");

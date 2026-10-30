@@ -63,7 +63,7 @@ internal static class MobileWandTests
             await using var scope = app.Services.CreateAsyncScope();
             var users = scope.ServiceProvider.GetRequiredService<UserManager<AccountUser>>();
             var launch = app.Services.GetRequiredService<LaunchPolicyStore>();
-            var group = launch.CreateGroup("test", new("Closed workshop night", null),
+            var group = launch.CreateGroup("test", new("Closed workshop night"),
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             var user = new AccountUser { Id = "alice", UserName = "alice", DisplayName = "Alice", OpenAiConsentAt = 1,
                 LaunchGroupId = group.Id, LaunchGroupAccessRevision = 1,
@@ -79,7 +79,7 @@ internal static class MobileWandTests
             await WorkshopStateMachineAsync(profiles, wands, builder.Configuration);
             await WorkshopMembershipRecoveryAsync(Path.Combine(root, "membership-recovery"));
             await LegacyOperationRetirementAsync(profiles, wands);
-            await InFlightManufactureCaptureAsync(profiles, wands);
+            await InFlightManufactureCaptureAsync(profiles, Path.Combine(root, "inflight-capture"));
             var lease = wands.ClaimMobileVoice("alice")!;
             Check(secondStore.ClaimMobileVoice("alice") is null, "voice ownership is exclusive across instances");
             secondStore.ReleaseMobileVoice("alice", "incorrect-lease");
@@ -108,6 +108,16 @@ internal static class MobileWandTests
                 "ticket binds account operation, origin and immutable membership snapshot");
             try { runtime.Take(ticket, operation, "https://localhost"); throw new Exception("replayed ticket"); } catch (WandGenerationException) { }
             Check(await runtime.Authorized(admission, default), "live account admission");
+            var frozenAdmission = admission with { LaunchSnapshot = (group.Id, user.LaunchGroupAccessRevision) };
+            user.LaunchGroupAccessRevision++;
+            await db.SaveChangesAsync();
+            wands.RecoverWorkshopMembership("alice", operation, frozenAdmission.LaunchSnapshot!.Value,
+                group.Id, user.LaunchGroupAccessRevision);
+            var frozenTicket = runtime.Ticket(frozenAdmission);
+            var recoveredAdmission = runtime.Take(frozenTicket, operation, "https://localhost");
+            Check(recoveredAdmission.LaunchSnapshot == frozenAdmission.LaunchSnapshot
+                && !await runtime.Authorized(recoveredAdmission, default),
+                "ticket preserves the captured membership revision after recovery instead of silently granting the new binding");
             db.Sessions.Remove(await db.Sessions.SingleAsync(s => s.Id == "cookie")); await db.SaveChangesAsync();
             Check(!await runtime.Authorized(admission, default), "revoked cookie immediately loses voice authority");
             wands.DeleteProfile("alice", profile.ProfileId);
@@ -240,6 +250,12 @@ internal static class MobileWandTests
         var (profile, captured) = await PrepareProfileAsync(profiles, owner,
             new("Havran", "Fikční svět", "verze A", "Loví ztracené mapy"));
         var promptMessage = new MobileWandWorkshopMessage("humor-user", 1, "user", "Vyrob mi hůlku.", "text", 1);
+        using (var opening = JsonDocument.Parse(OpenAiMobileWandQuestionProvider.BuildReplyRequest(captured, [], "gpt-6.1-terra")))
+        {
+            using var openingInput = JsonDocument.Parse(opening.RootElement.GetProperty("input").GetString()!);
+            Check(openingInput.RootElement.GetProperty("conversation").GetArrayLength() == 0,
+                "a prepared profile can author an opening without invented guest evidence");
+        }
         using (var draft = JsonDocument.Parse(OpenAiMobileWandQuestionProvider.BuildReplyRequest(captured,
             [promptMessage], "gpt-6.1-terra")))
         using (var live = JsonDocument.Parse(JsonSerializer.Serialize(MobileWorkshopLiveRuntime.Start(
@@ -248,9 +264,9 @@ internal static class MobileWandTests
         {
             var instructions = draft.RootElement.GetProperty("instructions").GetString()!;
             var liveInstructions = live.RootElement.GetProperty("session").GetProperty("instructions").GetString()!;
-            Check(instructions.Contains(WorkshopHumorInstructions.Text)
+            Check(instructions == WorkshopPrompts.Dialogue
                 && liveInstructions.Contains(WorkshopHumorInstructions.Text),
-                "live voice and delegated dialogue receive the same character-based roast policy");
+                "dialogue uses the approved canonical Czech prompt while legacy Live retains its character-based policy");
             Check(liveInstructions.Contains("Emoce vyjadřuj intonací, důrazem a střídáním tempa")
                 && liveInstructions.Contains("při otázce") && liveInstructions.Contains("při opravě", StringComparison.OrdinalIgnoreCase)
                 && liveInstructions.Contains("An expressive original Czech baritone.")
@@ -518,8 +534,13 @@ internal static class MobileWandTests
             string.Join(',', nextPage.Select(job => job.AccountId)) + ")");
     }
 
-    private static async Task InFlightManufactureCaptureAsync(CharacterProfileStore profiles, WandGenerationStore wands)
+    private static async Task InFlightManufactureCaptureAsync(CharacterProfileStore profiles, string root)
     {
+        // Queue fairness coverage leaves more pending jobs than one worker batch can return.
+        Directory.CreateDirectory(root);
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        { ["Backend:DatabasePath"] = Path.Combine(root, "wands.sqlite") }).Build();
+        var wands = new WandGenerationStore(configuration, TimeProvider.System);
         const string owner = "inflight-captured-owner";
         var (profile, captured) = await PrepareProfileAsync(profiles, owner, new("Míra", "Fiktivní most"));
         var operation = Guid.NewGuid().ToString("N");

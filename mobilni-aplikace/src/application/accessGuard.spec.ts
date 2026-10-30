@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 
-const state = vi.hoisted(() => ({ account: null as { id: string; displayName: string; roles: string[] } | null, launchAllowed: false, membership: 'active' as 'active' | 'revoked' | 'unassigned' }));
+const state = vi.hoisted(() => ({ account: null as { id: string; displayName: string; roles: string[] } | null, generation: 0, launchAllowed: false, membership: 'active' as 'active' | 'revoked' | 'unassigned' }));
 vi.mock('../features/identity/session', async () => {
   const { ref } = await import('vue');
   const account = ref(state.account);
@@ -11,11 +11,12 @@ vi.mock('../features/identity/session', async () => {
     offlineSession: ref(false),
     offlineSessionExpiresAt: ref(0),
     refreshIdentity: vi.fn(async () => { account.value = state.account; }),
+    authenticationGenerationSnapshot: () => state.generation,
   };
 });
 import { installAccessGuard, waitingRoomRedirect } from './accessGuard';
-import { launchAllowed } from './launchAccess';
-import { account, refreshIdentity } from '../features/identity/session';
+import { launchAllowed, refreshLaunchAccess } from './launchAccess';
+import { account, accountRequest, refreshIdentity } from '../features/identity/session';
 import { notifications } from './notifications';
 import { setOwnerPlayer } from './ownerMode';
 
@@ -35,6 +36,8 @@ function createGuardedRouter() {
       { path: '/access-revoked', component: { template: '<div />' }, meta: { requiresAccount: true } },
       { path: '/launch', component: { template: '<div />' }, meta: { requiresAccount: true } },
       { path: '/me', component: { template: '<div />' }, meta: { requiresAccount: true } },
+      { path: '/testing-sessions', component: {}, meta: { requiresAccount: true, tester: true } },
+      { path: '/persona-lab', component: {}, meta: { requiresAccount: true, lab: true } },
       { path: '/suitcase', component: { template: '<div />' }, meta: { requiresAccount: true, staff: true, offlineLocal: true } },
     ],
   });
@@ -42,7 +45,7 @@ function createGuardedRouter() {
   return router;
 }
 
-beforeEach(() => { vi.clearAllMocks(); state.account = null; account.value = null; state.launchAllowed = false; state.membership = 'active'; });
+beforeEach(() => { vi.clearAllMocks(); state.account = null; account.value = null; state.generation = 0; state.launchAllowed = false; state.membership = 'active'; });
 
 describe('already open evening reconciliation', () => {
   it('returns an open customer screen to waiting only after a confirmed closure', () => {
@@ -66,6 +69,83 @@ describe('already open evening reconciliation', () => {
 });
 
 describe('launch access navigation', () => {
+  it.each(['logout', 'account-switch', 'role-loss', 'reauthentication'])('rechecks permissions after %s during launch verification', async change => {
+    state.account = { id: 'operator', displayName: 'Operator', roles: ['Operator'] };
+    state.launchAllowed = true;
+    let finishPolicy!: (value: { allowed: boolean }) => void;
+    let started!: () => void;
+    const policyStarted = new Promise<void>(resolve => { started = resolve; });
+    vi.mocked(accountRequest).mockImplementationOnce(() => {
+      started();
+      return new Promise(resolve => { finishPolicy = resolve; });
+    });
+    const router = createGuardedRouter();
+    const navigating = router.push('/persona-lab');
+    await policyStarted;
+    state.generation++;
+    if (change === 'logout') state.account = null;
+    if (change === 'account-switch') state.account = { id: 'new-operator', displayName: 'Other', roles: ['Operator'] };
+    if (change === 'role-loss') state.account = { id: 'operator', displayName: 'Guest', roles: ['Customer'] };
+    account.value = state.account;
+    finishPolicy({ allowed: false });
+    await navigating;
+    expect(router.currentRoute.value.path).toBe(change === 'logout' ? '/signin' : change === 'role-loss' ? '/me/character' : '/persona-lab');
+    if (change === 'account-switch' || change === 'reauthentication') expect(refreshIdentity).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a recoverable sign-in screen when initial session verification fails', async () => {
+    state.account = { id: 'operator', displayName: 'Operator', roles: ['Operator'] };
+    account.value = state.account;
+    vi.mocked(refreshIdentity).mockRejectedValueOnce(new Error('network unavailable'));
+    const router = createGuardedRouter();
+    await router.push('/persona-lab?mode=voice');
+    expect(router.currentRoute.value.path).toBe('/signin');
+    expect(router.currentRoute.value.query.return).toBe('/persona-lab?mode=voice');
+    expect(account.value?.id).toBe('operator');
+  });
+
+  it.each(['unassigned', 'revoked'] as const)('allows mixed testers into testing tools with %s customer membership', async membership => {
+    state.account = { id: 'tester', displayName: 'Tester', roles: ['Beta', 'Tester'] };
+    state.membership = membership;
+    state.launchAllowed = true;
+    const router = createGuardedRouter();
+    for (const path of ['/testing-sessions', '/persona-lab']) {
+      await router.push(path);
+      expect(router.currentRoute.value.path).toBe(path);
+    }
+  });
+
+  it.each([null, {}, { allowed: 'false' }, { allowed: 1 }])('fails closed on malformed launch policy %j', async policy => {
+    vi.mocked(accountRequest).mockResolvedValueOnce(policy as never);
+    const router = createGuardedRouter();
+    await router.push('/archive/duel');
+    expect(router.currentRoute.value.path).toBe('/signin');
+
+    state.account = { id: 'operator', displayName: 'Operator', roles: ['Operator'] };
+    vi.mocked(accountRequest).mockResolvedValueOnce(policy as never);
+    await router.push('/persona-lab');
+    expect(router.currentRoute.value.path).toBe('/launch');
+  });
+
+  it('does not admit a screen using a launch response superseded by a newer closure', async () => {
+    state.account = { id: 'operator', displayName: 'Operator', roles: ['Operator'] };
+    let finishPolicy!: (value: { allowed: boolean }) => void;
+    let started!: () => void;
+    const policyStarted = new Promise<void>(resolve => { started = resolve; });
+    vi.mocked(accountRequest).mockImplementationOnce(() => {
+      started();
+      return new Promise(resolve => { finishPolicy = resolve; });
+    });
+    const router = createGuardedRouter();
+    const navigating = router.push('/persona-lab');
+    await policyStarted;
+    await refreshLaunchAccess();
+    finishPolicy({ allowed: true });
+    await navigating;
+    expect(router.currentRoute.value.path).toBe('/launch');
+    expect(launchAllowed.value).toBe(false);
+  });
+
   it('allows the owner player to prepare before launch without a customer membership', async () => {
     state.account = { id: 'owner', displayName: 'Owner', roles: ['Owner'] };
     setOwnerPlayer(state.account, true);

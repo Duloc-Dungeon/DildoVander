@@ -46,7 +46,8 @@ describe('guest information pages', () => {
   it('localizes privacy disclosures without changing their consent, retention, or deletion boundaries', async () => {
     const wrapper = mount(PrivacyView, { global });
     expect(wrapper.get('h1').text()).toBe('Ochrana soukromí');
-    expect(wrapper.text()).not.toContain('OpenAI');
+    expect(wrapper.text()).toContain('OpenAI');
+    expect(wrapper.text()).toContain('ElevenLabs');
     expect(wrapper.text()).toContain('potvrzuješ při registraci');
     expect(wrapper.text()).toContain('nesmaže cizí památku');
     expect(wrapper.text()).toContain('24 hodin nebo 5 000 záznamů');
@@ -56,7 +57,8 @@ describe('guest information pages', () => {
     interfaceLanguagePreference.setLanguage('en');
     await nextTick();
     expect(wrapper.get('h1').text()).toBe('Ochrana soukromí');
-    expect(wrapper.text()).not.toContain('OpenAI');
+    expect(wrapper.text()).toContain('OpenAI');
+    expect(wrapper.text()).toContain('ElevenLabs');
     expect(wrapper.text()).toContain('potvrzuješ při registraci');
     expect(wrapper.text()).toContain('nesmaže cizí památku');
     expect(wrapper.text()).toContain('24 hodin nebo 5 000 záznamů');

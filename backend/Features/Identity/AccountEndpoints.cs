@@ -10,9 +10,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kufr.Backend.Features.Identity;
 
-internal sealed record EnrollmentRequest(string Token, string DisplayName, bool OpenAiConsent = false);
+internal sealed record EnrollmentRequest(string Token, string DisplayName, bool OpenAiConsent = false, int ConsentVersion = 1);
 internal sealed record PasskeyResponse(JsonElement Credential);
-internal sealed record InvitationRequest(string Role, string? RecoveryUserId, string? LaunchGroupId = null);
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
+internal sealed record InvitationRequest(string Role, string? LaunchGroupId = null);
 internal sealed record UserChange(string Role, bool Disabled);
 internal sealed record GrantRequest(string UserId, string ResourceType, string ResourceId, string Permission);
 internal sealed record InstallationChange(string Name, bool Trusted);
@@ -190,30 +191,24 @@ internal static partial class AccountEndpoints
             db.Invitations.Add(invitation);
             await db.SaveChangesAsync();
         }
-        if (invitation is null || invitation.Consumed || invitation.ExpiresAt <= Now()
+        if (invitation is null || !IsNewAccountInvitation(invitation) || invitation.Consumed || invitation.ExpiresAt <= Now()
             || (invitation.Purpose == "bootstrap" && !BootstrapMatches(configuration, hash))
             || (invitation.Purpose is "bootstrap" or "bootstrap-local" && await db.Users.AnyAsync()))
         {
             return Error(context, "invitation_expired_or_used");
         }
-        if (invitation.UserId is null && !request.OpenAiConsent)
+        if (!request.OpenAiConsent || request.ConsentVersion != AccountAiConsent.CurrentVersion)
         { return ApiProblem.Create(context, 409, "ai_consent_required"); }
-        var id = invitation.UserId ?? Guid.NewGuid().ToString("N");
-        var recoveryUser = invitation.UserId is null ? null : await db.Users.SingleOrDefaultAsync(x => x.Id == id && !x.Disabled);
-        if (invitation.UserId is not null && recoveryUser is null)
-        {
-            return Error(context, "recovery_unavailable");
-        }
-        if (recoveryUser is null && (string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Length > 80))
+        if (string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Length > 80)
         { return Error(context, "invalid_enrollment"); }
-        var name = recoveryUser?.DisplayName ?? request.DisplayName.Trim();
-        var roles = recoveryUser is null ? new[] { invitation.Role } : await (
-            from membership in db.UserRoles join role in db.Roles on membership.RoleId equals role.Id
-            where membership.UserId == id select role.Name!).ToArrayAsync();
+        var id = Guid.NewGuid().ToString("N");
+        var name = request.DisplayName.Trim();
+        var roles = new[] { invitation.Role };
         if (roles.Contains(AccountRoles.Owner, StringComparer.Ordinal)) { name = AccountRoles.OwnerDisplayName; }
         var label = PasskeyLabels.Account(name, roles);
         var options = await signIn.MakePasskeyCreationOptionsAsync(new() { Id = id, Name = label, DisplayName = label });
-        await SaveCeremonyAsync(context, db, "enroll", id, name, hash, openAiConsent: request.OpenAiConsent);
+        await SaveCeremonyAsync(context, db, "enroll", id, name, hash,
+            openAiConsent: request.OpenAiConsent && request.ConsentVersion == AccountAiConsent.CurrentVersion);
         return Results.Content(options, "application/json");
     }
 
@@ -259,50 +254,34 @@ internal static partial class AccountEndpoints
         // Conditional consumption and account creation share one SQLite transaction.
         // Concurrent completion can never consume the same invitation twice.
         var invitation = await db.Invitations.AsNoTracking().SingleOrDefaultAsync(x => x.TokenHash == ceremony.InvitationHash);
-        if (invitation is null || (invitation.Purpose == "bootstrap" && !BootstrapMatches(configuration, invitation.TokenHash))
+        if (invitation is null || !IsNewAccountInvitation(invitation) || (invitation.Purpose == "bootstrap" && !BootstrapMatches(configuration, invitation.TokenHash))
             || (invitation.Purpose is "bootstrap" or "bootstrap-local" && await db.Users.AnyAsync())
             || await db.Invitations.Where(x => x.TokenHash == ceremony.InvitationHash && !x.Consumed && x.ExpiresAt > Now())
                 .ExecuteUpdateAsync(update => update.SetProperty(x => x.Consumed, true)) != 1)
         {
             return Error(context, "invitation_expired_or_used");
         }
-        var user = invitation.UserId is null ? new AccountUser
+        var user = new AccountUser
         {
             Id = ceremony.UserId, UserName = ceremony.UserId, DisplayName = invitation.Role == AccountRoles.Owner ? AccountRoles.OwnerDisplayName : ceremony.DisplayName, CreatedAt = Now(),
             LaunchGroupId = invitation.LaunchGroupId,
             LaunchGroupJoinedAt = invitation.LaunchGroupId is null ? null : Now(),
             LaunchGroupAccessRevision = invitation.LaunchGroupId is null ? 0 : 1
-        } : await users.FindByIdAsync(invitation.UserId);
-        if (user is null || user.Disabled) { return Error(context, "recovery_unavailable"); }
-        if (invitation.UserId is null)
+        };
+        if (!AccountAiConsent.HasConsent(ceremony))
+        { return ApiProblem.Create(context, 409, "ai_consent_required"); }
+        user.OpenAiConsentAt = ceremony.OpenAiConsentAt;
+        user.OpenAiConsentVersion = ceremony.OpenAiConsentVersion;
+        if (!(await users.CreateAsync(user)).Succeeded)
         {
-            if (!AccountAiConsent.HasConsent(ceremony))
-            { return ApiProblem.Create(context, 409, "ai_consent_required"); }
-            user.OpenAiConsentAt = ceremony.OpenAiConsentAt;
-            user.OpenAiConsentVersion = ceremony.OpenAiConsentVersion;
-            if (!(await users.CreateAsync(user)).Succeeded)
+            return Error(context, "account_not_created");
+        }
+        foreach (var role in AccountRoles.AssignedRoles(invitation.Role))
+        {
+            if (!(await users.AddToRoleAsync(user, role)).Succeeded)
             {
                 return Error(context, "account_not_created");
             }
-            foreach (var role in AccountRoles.AssignedRoles(invitation.Role))
-            {
-                if (!(await users.AddToRoleAsync(user, role)).Succeeded)
-                {
-                    return Error(context, "account_not_created");
-                }
-            }
-        }
-        else
-        {
-            foreach (var passkey in await users.GetPasskeysAsync(user))
-            {
-                if (!(await users.RemovePasskeyAsync(user, passkey.CredentialId)).Succeeded)
-                {
-                    return Error(context, "recovery_failed");
-                }
-            }
-            await db.Sessions.Where(x => x.UserId == user.Id).ExecuteDeleteAsync();
-            if (!(await users.UpdateSecurityStampAsync(user)).Succeeded) { return Error(context, "recovery_failed"); }
         }
         PasskeyLabels.NameNew(attestation.Passkey, PasskeyLabels.Account(user.DisplayName, await users.GetRolesAsync(user)));
         if (!(await users.AddOrUpdatePasskeyAsync(user, attestation.Passkey)).Succeeded)
@@ -313,6 +292,10 @@ internal static partial class AccountEndpoints
         await CreateSessionAsync(context, user, signIn, db);
         return Results.NoContent();
     }
+
+    // Legacy recovery records remain stored but must never enroll or replace an account.
+    private static bool IsNewAccountInvitation(AccountInvitation invitation) =>
+        invitation.UserId is null && invitation.Purpose is "invite" or "bootstrap" or "bootstrap-local";
 
     private static async Task<IResult> AdditionalPasskeyOptionsAsync(HttpContext context, SignInManager<AccountUser> signIn,
         UserManager<AccountUser> users, AccountDatabase db)
@@ -462,13 +445,15 @@ internal static partial class AccountEndpoints
         return Results.NoContent();
     }
 
-    private static async Task CreateSessionAsync(HttpContext context, AccountUser user, SignInManager<AccountUser> signIn, AccountDatabase db)
+    private static async Task CreateSessionAsync(HttpContext context, AccountUser user, SignInManager<AccountUser> signIn,
+        AccountDatabase db, long? authenticatedAt = null)
     {
         await db.Sessions.Where(x => x.ExpiresAt <= Now()).ExecuteDeleteAsync();
         // Keep the installation/session list bounded without silently extending credentials.
         var old = await db.Sessions.Where(x => x.UserId == user.Id).OrderByDescending(x => x.ExpiresAt).Skip(19).ToArrayAsync();
         db.Sessions.RemoveRange(old);
-        var session = new AccountSession { Id = Secret(), UserId = user.Id, ExpiresAt = Now() + 12 * 3600, AuthenticatedAt = Now(), LastSeenAt = Now() };
+        var session = new AccountSession { Id = Secret(), UserId = user.Id, ExpiresAt = Now() + 12 * 3600,
+            AuthenticatedAt = authenticatedAt ?? Now(), LastSeenAt = Now() };
         db.Sessions.Add(session);
         await db.SaveChangesAsync();
         await signIn.SignInWithClaimsAsync(user, new AuthenticationProperties

@@ -38,6 +38,7 @@ try {
     await context.route('**/workshop/sessions/*/ticket', route => {
       const url = new URL(route.request().url());
       assert.equal(route.request().postDataJSON().socketOrigin, fixture.origin);
+      assert.equal(route.request().postDataJSON().elevenLabsConsent, undefined);
       url.protocol = 'ws:';
       url.pathname = url.pathname.replace('/ticket', '/live');
       url.searchParams.set('ticket', 'synthetic');
@@ -60,6 +61,7 @@ try {
     await page.getByText('Nová kapitola tvé hůlky', { exact: true }).waitFor();
     assert.equal(await page.locator('.trunk-stage__trunk').evaluate(image => image.complete && image.naturalWidth > 0), true);
     const talk = page.getByRole('button', { name: 'Promluvit s kufrem', exact: true });
+    assert.equal(await page.locator('#workshop-elevenlabs-consent').count(), 0);
     assert.equal(await talk.isEnabled(), true);
     await page.screenshot({ path: path.join(output, `upgrade-workshop-${width}.png`), fullPage: true });
     await talk.click();
@@ -111,6 +113,26 @@ try {
     socket.send(JSON.stringify({ type: 'transcript', role: 'assistant', delta: 'Další samostatná věta.' }));
     await page.getByRole('heading', { name: 'Další samostatná věta.', exact: true }).waitFor();
     socket.send(JSON.stringify({ type: 'turn', turn: { id: 'next-synthetic-turn', role: 'assistant', text: 'Zachovám klid a přidám důraz.', createdAt: new Date().toISOString() } }));
+    const snapshot = value => socket.send(JSON.stringify({ type: 'workshop_transcript', ...value }));
+    const userText = caption.locator('[data-speaker="user"] span');
+    const assistantText = caption.locator('[data-speaker="assistant"] span');
+    snapshot({ role: 'user', sequence: 1, text: 'Chci chranit', final: false });
+    await userText.getByText('Chci chranit', { exact: true }).waitFor();
+    snapshot({ role: 'user', sequence: 1, text: 'Chci chránit most.', final: true });
+    await userText.getByText('Chci chránit most.', { exact: true }).waitFor();
+    assert.equal(await caption.getByText('Chci chranit', { exact: true }).count(), 0, 'Interim recognition is replaced, never appended twice.');
+    snapshot({ role: 'assistant', sequence: 2, text: 'Takže', final: false });
+    await assistantText.getByText('Takže', { exact: true }).waitFor();
+    snapshot({ role: 'assistant', sequence: 2, text: 'Takže chceš chránit most.', final: false });
+    await assistantText.getByText('Takže chceš chránit most.', { exact: true }).waitFor();
+    snapshot({ role: 'user', sequence: 3, text: 'Počkej', final: false });
+    snapshot({ role: 'assistant', sequence: 2, text: 'Zastaralá odpověď.', final: true });
+    await userText.getByText('Počkej', { exact: true }).waitFor();
+    assert.equal(await caption.getByText('Zastaralá odpověď.', { exact: true }).count(), 0);
+    snapshot({ role: 'user', sequence: 3, text: 'Počkej, zachovej klid.', final: true });
+    snapshot({ role: 'assistant', sequence: 4, text: 'Zachovám klid a přidám důraz.', final: true });
+    await assistantText.getByText('Zachovám klid a přidám důraz.', { exact: true }).waitFor();
+    assert.deepEqual(await geometry(), beforeStreaming, `${width}: live transcript revisions preserve scene and controls`);
     socket.send(JSON.stringify({ type: 'state', session: fixture.voiceTurn('Vylepši hůlku. Zachovej klid a přidej důraz.') }));
     await page.getByText('Zachovám klid a přidám důraz.', { exact: true }).first().waitFor();
     await page.screenshot({ path: path.join(output, `upgrade-microphone-${width}.png`), fullPage: true });

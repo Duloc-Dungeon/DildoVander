@@ -121,7 +121,7 @@ internal static partial class AccountIdentityTests
         using var stranger = fixture.Client();
         using var strangerKey = new VirtualPasskey();
         using var invitationResponse = await owner.PostAsJsonAsync("/app/v1/admin/invitations",
-            new { role = "Viewer", recoveryUserId = (string?)null });
+            new { role = "Viewer" });
         var invitation = await JsonAsync(invitationResponse);
         await EnrollAsync(stranger, strangerKey, invitation.GetProperty("token").GetString()!, "Export viewer");
         var strangerSession = await CsrfAsync(stranger);
