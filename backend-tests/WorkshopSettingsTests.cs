@@ -104,7 +104,7 @@ internal static class WorkshopSettingsTests
                     "actual nonstream and typed streaming SDK requests preserve all 12000 Czech characters, reasoning caps and Terra Fast policy");
             }
         }
-        var appSettingsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../backend/appsettings.json"));
+        var appSettingsPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "runtime-appsettings.json");
         var runtimeConfiguration = new ConfigurationBuilder().AddJsonFile(appSettingsPath)
             .AddInMemoryCollection(new Dictionary<string, string?> { ["OPENAI_API_KEY"] = "offline-key" }).Build();
         using (var defaultHandler = new DialogueHandler())
