@@ -142,7 +142,7 @@ async function loadProfile(epoch = generation): Promise<void> {
     if (epoch !== generation) return;
     profile.value = result.profile;
     selectedWand.value = result.profile ? projectMobileGeneratedWand(result.generatedWand) : null;
-    bindProfileArtwork(result.artwork);
+    if (pane.value === 'character') bindProfileArtwork(result.artwork);
     form.value = {
       name: result.profile?.userInput.name ?? '', world: result.profile?.userInput.world ?? '',
       version: result.profile?.userInput.version ?? '', description: result.profile?.userInput.description ?? '',
@@ -198,6 +198,7 @@ async function deleteCharacter(): Promise<void> {
 
 function scheduleEnrichmentRefresh(epoch: number): void {
   if (enrichmentTimer) clearTimeout(enrichmentTimer);
+  if (pane.value !== 'character') return;
   if (profile.value && (['queued', 'running'].includes(profile.value.status) || (['queued', 'running'].includes(artworkState.value?.status ?? '') || artworkState.value?.status === 'missing' && artworkState.value.canRetry))) {
     enrichmentTimer = setTimeout(() => { void refreshEnrichment(epoch); }, 3000);
   }
@@ -220,7 +221,7 @@ function showProjectedError(cause: unknown): void {
 
 watch([() => account.value?.id, pane], () => {
   resetPrivateState();
-  if (account.value && pane.value === 'character') void loadProfile(generation);
+  if (account.value && ['character', 'account'].includes(pane.value)) void loadProfile(generation);
 }, { immediate: true, flush: 'sync' });
 onBeforeUnmount(resetPrivateState);
 </script>
@@ -290,6 +291,7 @@ onBeforeUnmount(resetPrivateState);
 
     <CustomerKeepsakes v-else-if="pane === 'keepsakes'" />
     <section v-else-if="pane === 'account'" class="page-stack">
+      <PrivateCharacterAvatar v-if="profile" text-only :profile-id="profile.profileId" :revision="profile.revision" :name="profile.userInput.name" />
       <SettingsView customer-surface />
     </section>
   </section>

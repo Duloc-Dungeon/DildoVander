@@ -35,17 +35,18 @@ const router = async (path = '/me/character') => {
 afterEach(() => { vi.clearAllMocks(); api.disconnect.mockResolvedValue(undefined); api.supported = true; api.setAccount({ id: 'customer-1', displayName: 'Guest', roles: ['Customer'], openAiConsent: true }); interfaceLanguagePreference.setLanguage('cs'); vi.useRealTimers(); });
 
 describe('customer character and digital workshop', () => {
-  it('does not load the character on account settings, but loads it when moving to the character pane', async () => {
+  it('loads the current character for the account joke and refreshes it on the character pane', async () => {
     api.request.mockImplementation(async (path: string) => path.endsWith('/character') ? { profile } : { items: [] });
     const navigation = await router('/me/account');
     const wrapper = mount(CustomerView, { global: { plugins: [navigation] } });
     try {
       await flushPromises();
-      expect(api.request.mock.calls.some(([path]) => path === '/app/v1/customer/character')).toBe(false);
+      expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/customer/character')).toHaveLength(1);
+      expect(wrapper.get('[data-test="character-portrait"]').attributes('text-only')).toBeDefined();
       expect(wrapper.text()).not.toContain('Stav rozhovoru se nepodařilo načíst');
       await navigation.push('/me/character');
       await flushPromises();
-      expect(api.request.mock.calls.some(([path]) => path === '/app/v1/customer/character')).toBe(true);
+      expect(api.request.mock.calls.filter(([path]) => path === '/app/v1/customer/character')).toHaveLength(2);
       expect(wrapper.text()).toContain(profile.userInput.name);
     } finally { wrapper.unmount(); }
   });

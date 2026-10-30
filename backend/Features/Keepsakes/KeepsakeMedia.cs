@@ -46,23 +46,40 @@ internal sealed partial class KeepsakeStore
             throw new KeepsakeException("wand_artwork_invalid", 422);
         }
 
-        var hasTransparentPixel = false;
+        var transparentPixels = 0L;
+        var perimeterPixels = 2L * info.Width + 2L * Math.Max(0, info.Height - 2);
+        var transparentPerimeterPixels = 0L;
         var hasVisiblePixel = false;
         for (var y = 0; y < info.Height; y++)
         {
             for (var x = 0; x < info.Width; x++)
             {
                 var alpha = bitmap.GetPixel(x, y).Alpha;
-                hasTransparentPixel |= alpha == 0;
-                hasVisiblePixel |= alpha > 0;
-                if (hasTransparentPixel && hasVisiblePixel)
+                if (alpha == 0)
                 {
-                    return;
+                    transparentPixels++;
+                    if (x == 0 || x == info.Width - 1 || y == 0 || y == info.Height - 1)
+                    {
+                        transparentPerimeterPixels++;
+                    }
                 }
+                hasVisiblePixel |= alpha > 0;
             }
         }
 
-        throw new KeepsakeException("wand_artwork_transparency_required", 422);
+        // The prompt requests a generous margin; require a real cutout and a clean frame
+        // edge so a mostly opaque/fog-filled canvas cannot pass on a few clear pixels.
+        var totalPixels = (long)info.Width * info.Height;
+        var hasMeaningfulCutout = transparentPixels >= totalPixels / 20
+            && bitmap.GetPixel(0, 0).Alpha == 0
+            && bitmap.GetPixel(info.Width - 1, 0).Alpha == 0
+            && bitmap.GetPixel(0, info.Height - 1).Alpha == 0
+            && bitmap.GetPixel(info.Width - 1, info.Height - 1).Alpha == 0
+            && transparentPerimeterPixels * 10 >= perimeterPixels * 9;
+        if (!hasVisiblePixel || !hasMeaningfulCutout)
+        {
+            throw new KeepsakeException("wand_artwork_transparency_required", 422);
+        }
     }
 
     private static (byte[] Bytes, int Width, int Height) DecodePhoto(byte[] original, string mediaType, bool normalize)

@@ -24,6 +24,7 @@ internal static class SpeechEngineTests
         JwtConformance();
         await RecognitionAsync();
         await ActivityAndReplyFencesAsync();
+        await CompletionReplyDoesNotDuplicateAsync();
         await RuntimeQueuedCommitFenceAsync();
         await ConcreteRuntimeOpeningAndVerdictAsync();
         await RejectedMessagesAsync();
@@ -187,8 +188,60 @@ internal static class SpeechEngineTests
         Check(current is not null, "current reply can acquire a durable side-effect lease");
         sideEffects++;
         current!.Dispose(); current.Dispose();
-        using var reacquired = recognition.EnterReply(7);
-        Check(sideEffects == 1 && reacquired is not null, "reply lease disposal is idempotent and releases the gate exactly once");
+        using (var reacquired = recognition.EnterReply(7))
+        {
+            Check(sideEffects == 1 && reacquired is not null, "reply lease disposal is idempotent and releases the gate exactly once");
+        }
+        recognition.CompleteConversation();
+        recognition.Activity(8);
+        socket.Message(Turn(8, "Late committed words after saved wand."));
+        await Task.Delay(50, deadline.Token);
+        Check(recognition.LatestEventId == 8 && !recognition.HasPendingAfter("8"),
+            "completion ignores late transcript evidence while retaining the provider's latest turn ownership");
+        var verdict = new SpeechEngineSpeechProvider(recognition, new LabSocketSender(socket)).ForCompletion(8);
+        await verdict.SpeakAsync("Saved wand verdict.", (_, _) => Task.CompletedTask, deadline.Token);
+        socket.Message(Turn(9, "Transcript after final phrase began."));
+        await UntilAsync(() => recognition.LatestEventId == 9, deadline.Token);
+        await verdict.CompleteReplyAsync(deadline.Token);
+        var retry = new SpeechEngineSpeechProvider(recognition, new LabSocketSender(socket)).ForCompletion(9);
+        await retry.SpeakAsync("Saved wand verdict.", (_, _) => Task.CompletedTask, deadline.Token);
+        await retry.CompleteReplyAsync(deadline.Token);
+        Check(socket.Sent.Any(json =>
+        {
+            using var message = JsonDocument.Parse(json);
+            return message.RootElement.TryGetProperty("is_final", out var final) && final.GetBoolean()
+                && message.RootElement.GetProperty("event_id").GetInt64() == 9;
+        }) && socket.Sent.Any(json =>
+        {
+            using var message = JsonDocument.Parse(json);
+            return message.RootElement.TryGetProperty("content", out var content) && content.GetString() == "Saved wand verdict."
+                && message.RootElement.GetProperty("event_id").GetInt64() == 9;
+        }) && !socket.Sent.Any(json =>
+        {
+            using var message = JsonDocument.Parse(json);
+            return message.RootElement.TryGetProperty("is_final", out var final) && final.GetBoolean()
+                && message.RootElement.GetProperty("event_id").GetInt64() == 8;
+        }), "saved verdict retries its complete text on a newer provider turn and never finalizes a stale turn");
+    }
+
+    private static async Task CompletionReplyDoesNotDuplicateAsync()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var upstream = new EngineSocket();
+        using var client = new EngineSocket();
+        await using var recognition = new SpeechEngineRecognition(upstream, deadline.Token);
+        upstream.Message(new { type = "init", conversation_id = "synthetic-conversation" });
+        await recognition.Ready.Task.WaitAsync(deadline.Token);
+        upstream.Message(Turn(1, "Accepted before completion."));
+        Check(await recognition.ReceiveAsync(deadline.Token) is { EventId: "1" }, "accepted event available before completion");
+        recognition.CompleteConversation();
+        var verdict = new SpeechEngineSpeechProvider(recognition, new LabSocketSender(client)).ForCompletion(1);
+        await verdict.SpeakAsync("Saved wand verdict.", (_, _) => Task.CompletedTask, deadline.Token);
+        await verdict.CompleteReplyAsync(deadline.Token);
+        var contentCount = upstream.Sent.Select(json => JsonDocument.Parse(json)).Count(document =>
+            document.RootElement.GetProperty("type").GetString() == "agent_response"
+            && document.RootElement.GetProperty("content").GetString() == "Saved wand verdict.");
+        Check(contentCount == 1, "completion finalization does not replay verdict text when provider ownership stayed on the same turn");
     }
 
     private static async Task RuntimeQueuedCommitFenceAsync()
@@ -362,6 +415,19 @@ internal static class SpeechEngineTests
                     && responses[^1].GetProperty("is_final").GetBoolean()
                     && string.Concat(responses.Select(value => value.GetProperty("content").GetString())).Contains(wand.Name, StringComparison.Ordinal),
                     "manufacture keeps the accepted turn open until the real saved-wand verdict, then emits one final marker");
+                client.Message(new { type = "speech_engine_activity", eventId = 2 });
+                upstream.Message(Turn(2, "Late speech after completion."));
+                await UntilAsync(() => upstream.Sent.Select(json => JsonSerializer.Deserialize<JsonElement>(json))
+                    .Any(value => value.GetProperty("type").GetString() == "agent_response"
+                        && value.GetProperty("event_id").GetInt64() == 2 && value.GetProperty("is_final").GetBoolean()), lifetime.Token);
+                var responsesAfterLateSpeech = upstream.Sent.Select(json => JsonSerializer.Deserialize<JsonElement>(json))
+                    .Where(value => value.GetProperty("type").GetString() == "agent_response").ToArray();
+                var replay = responsesAfterLateSpeech.Where(value => value.GetProperty("event_id").GetInt64() == 2).ToArray();
+                Check(replay.Length >= 2 && replay[^1].GetProperty("is_final").GetBoolean()
+                    && string.Concat(replay.Select(value => value.GetProperty("content").GetString()))
+                        .Contains(wand.Name, StringComparison.Ordinal)
+                    && wands.ReadWorkshopMessages("owner", "operation").Count(message => message.Role == "user") == 1,
+                    "the real completion Guard replays the whole saved verdict on a later provider-owned turn without persisting late speech");
             }
             finally { lifetime.Cancel(); await run.WaitAsync(TimeSpan.FromSeconds(5)); }
         }

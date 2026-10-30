@@ -78,6 +78,8 @@ if (args is ["--rickroll-media"]) { await RickrollMediaTests.RunAsync(); return;
 if (args is ["--mobile-game-boss"]) { GameBossTests.Run(); await GameBossRickrollTests.RunAsync(); await GameBossNarrationTests.RunAsync(); await MobileGameTests.RunBossNarrationHttpAsync(); return; }
 if (args is ["--mobile-game-teams"]) { GameTeamTests.Run(); return; }
 if (args is ["--mobile-game-progress"]) { GameProgressTests.Run(); return; }
+if (args is ["--mobile-game-arcade"]) { GameArcadeTests.Run(); Console.WriteLine("Arcade replay checks passed."); return; }
+if (args is ["--mobile-game-arcade-http"]) { await MobileGameTests.RunArcadeRequestSizeHttpAsync(); return; }
 if (args is ["--mobile-game-yolo-live"]) { await GameYoloLiveTests.RunAsync(); return; }
 if (args is ["--dv01-consolidation"]) { GptLiveVoiceTests.Run(); await AutonomousLiveTests.RunVoiceFallbackAsync(); await PersonalityTests.RunAsync(); return; }
 if (args is ["--character-portraits"]) { await CharacterPortraitTests.RunAsync(); return; }

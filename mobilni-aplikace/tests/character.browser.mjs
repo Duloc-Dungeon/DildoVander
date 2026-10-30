@@ -30,9 +30,10 @@ try {
     const context = await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce'});
     const page=await context.newPage(); page.setDefaultTimeout(10000);
     page.on('pageerror',e=>errors.push(e.message));
-    let consent=true, status='failed', retryCount=0;
+    let consent=true, status='running', retryCount=0;
     const requests=[];
     const joke='Tolik temné moci. A dovolenou ti stejně musí podepsat císař.';
+    const loadingJoke='Temná strana dorazila včas. Dovolenou jí zatím nikdo neschválil.';
     const profile={profileId:'fixture-profile',revision:1,userInput:{name:'Darth Vader',world:'Star Wars'},status:'ready'};
     await context.route('**/*',async route=>{
       const req=route.request(),url=new URL(req.url());
@@ -41,11 +42,12 @@ try {
       if(!url.pathname.startsWith('/app/'))return route.continue();
       requests.push({path:url.pathname,method:req.method()});
       if(url.pathname==='/app/v1/session')return json({enabled:true,account:{id:'fixture-owner',displayName:'Host',roles:['Customer'],openAiConsent:consent},csrfToken:'fixture'});
+      if(url.pathname==='/app/v1/account')return json({passkeyCount:1,passkeys:[],sessions:[],grants:[],associations:[]});
       if(url.pathname==='/app/v1/account/ai-consent'){assert.equal(req.postDataJSON().openAiConsent,true);consent=true;return route.fulfill({status:204});}
       if(url.pathname==='/app/v1/launch')return json({allowed:true});
       if(url.pathname==='/app/v1/customer/access')return json({state:'active',accessRevision:1,groupId:'fixture-group'});
       if(url.pathname==='/app/v1/customer/character')return json({profile});
-      if(url.pathname==='/app/v1/prelaunch/character')return json({character:{profileId:profile.profileId,revision:1,name:'Darth Vader',universe:'Star Wars',status:'ready'},artwork:status==='missing'?null:{status,welcome:{joke,identity:'Rytíř, jehož kariéra nabrala temný obrat.',teaser:''}}});
+      if(url.pathname==='/app/v1/prelaunch/character')return json({character:{profileId:profile.profileId,revision:1,name:'Darth Vader',universe:'Star Wars',status:'ready'},artwork:status==='missing'?null:{status,loadingMessage:status==='running'?loadingJoke:null,welcome:status==='running'?null:{joke,identity:'Rytíř, jehož kariéra nabrala temný obrat.',teaser:''}}});
       if(url.pathname==='/app/v1/prelaunch/character/retry'){
         assert.equal(req.method(),'POST');assert.deepEqual(req.postDataJSON(),{expectedProfileId:'fixture-profile',expectedRevision:1});retryCount++;status='ready';return json({});
       }
@@ -63,6 +65,9 @@ try {
       await page.screenshot({path:path.join(output,`${label}-${width}.png`),fullPage:true});captures++;
     };
     await page.goto(origin+'/me/character');
+    await page.getByText(loadingJoke,{exact:true}).waitFor();
+    await fits('preparing-portrait-personal-joke');
+    status='failed'; await page.reload();
     await page.getByText(joke,{exact:true}).waitFor();
     assert.equal(await page.getByRole('button',{name:'Vytvořit novou postavu',exact:true}).count(),0);
     assert.equal(await page.getByText('Upravit a upřesnit postavu',{exact:true}).count(),0);
@@ -91,6 +96,10 @@ try {
     await page.getByRole('button',{name:'Připravit portrét',exact:true}).click();
     await page.locator('.private-character-avatar .portrait-mirror[data-mirror="open"] > img[src^="blob:"]').waitFor();
     assert.equal(retryCount,2);
+    await page.goto(origin+'/me/account');
+    await page.locator('.private-character-avatar__joke').getByText(joke,{exact:true}).waitFor();
+    assert.equal(await page.locator('.private-character-avatar img').count(),0,'account joke does not download a portrait');
+    await fits('account-personal-joke');
     await page.goto(origin+'/play');
     await page.getByRole('heading',{name:'Nejdřív vlastní hůlku.',exact:true}).waitFor();
     await page.getByRole('link',{name:'Vstoupit do kufrovy dílny',exact:true}).waitFor();

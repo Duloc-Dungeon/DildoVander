@@ -32,6 +32,7 @@ const route = useRoute();
 const router = useRouter();
 startPushRuntime(router);
 const gameExperience = computed(() => route.path === '/play' || route.path.startsWith('/play/'));
+const sparkExperience = computed(() => route.path === '/play/kouzlo-bez-dozoru');
 const launchExperience = computed(() => route.path === '/launch' || route.path === '/signin'
   || !account.value
   || (requiresCustomerMembership(account.value) && customerMembershipState.value !== 'active')
@@ -47,7 +48,7 @@ let navigationObserver: ResizeObserver | undefined;
 const viewError = ref('');
 const groupContextRevision = ref(0);
 const customerAccount = computed(() => isCustomerAccount(account.value));
-const showCustomerNavigation = computed(() => customerAccount.value && !launchExperience.value
+const showCustomerNavigation = computed(() => customerAccount.value && !launchExperience.value && !sparkExperience.value
   && !/^\/play\/(?:match|team)\//.test(route.path) && !route.path.startsWith('/play/boss/') && route.path !== '/play/practice');
 const navigation = computed(() => canEnterStaffArea(account.value) || account.value?.roles.includes('Tester') ? [
   { to: '/', label: 'Domů', symbol: '⌂' },
@@ -217,10 +218,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="application-frame" :style="{ '--application-header-height': headerHeight }">
+  <div class="application-frame" :style="{ '--application-header-height': sparkExperience ? '0px' : headerHeight }">
   <a class="skip-link" href="#main-content">{{ customerCopy.text('shell.skip') }}</a>
   <AwButton v-if="(applicationUpdates.blocked.value || launchExperience || gameExperience) && (deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value)" class="launch-emergency-stop" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>
-  <ApplicationHeader @resize="headerHeight = `${$event}px`">
+  <ApplicationHeader v-if="!sparkExperience" @resize="headerHeight = `${$event}px`">
     <template v-if="!applicationUpdates.blocked.value && !launchExperience && !gameExperience">
       <RouterLink v-if="account" class="account-link" :to="customerAccount || account.roles.includes('Owner') ? '/me/account' : '/settings'">{{ account.displayName }}</RouterLink>
       <AwButton v-if="deviceCanStop || phoneActive || directorCanStop || servoBench.connected.value" variant="danger" :busy="stopBusy" @click="stop">Stop</AwButton>

@@ -1706,6 +1706,155 @@
         ]
       }
     },
+    "/app/v1/game/arcade": {
+      "get": {
+        "summary": "Read the active group arcade ranking",
+        "x-source": "Features/Game/GameArcade.cs",
+        "security": [{ "AccountSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Player best and eligible group ranking",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["rulesVersion", "playerId", "groupId", "best", "ranking"],
+                  "properties": {
+                    "rulesVersion": { "const": "spark-v1" },
+                    "playerId": { "type": "string" },
+                    "groupId": { "type": "string" },
+                    "best": { "type": "integer", "minimum": 0 },
+                    "ranking": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "displayName", "score", "rank"],
+                        "properties": {
+                          "id": { "type": "string" },
+                          "displayName": { "type": "string" },
+                          "score": { "type": "integer", "minimum": 0 },
+                          "rank": { "type": "integer", "minimum": 1 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Session unavailable" },
+          "403": { "description": "Ineligible account or group" },
+          "429": { "description": "Account rate limit reached" }
+        }
+      }
+    },
+    "/app/v1/game/arcade/runs": {
+      "post": {
+        "summary": "Issue an idempotent ranked arcade run",
+        "x-source": "Features/Game/GameArcade.cs",
+        "security": [{ "AccountSession": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["operationId"],
+                "properties": { "operationId": { "type": "string", "minLength": 8, "maxLength": 80 } }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-DV-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run ticket with deterministic course seed and expiry in Unix milliseconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["runId", "seed", "rulesVersion", "expiresAt"],
+                  "properties": {
+                    "runId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+                    "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+                    "rulesVersion": { "const": "spark-v1" },
+                    "expiresAt": { "type": "integer", "minimum": 0 }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid operation id" },
+          "401": { "description": "Session unavailable" },
+          "403": { "description": "Ineligible account or group" },
+          "429": { "description": "Account rate limit or outstanding run limit reached" }
+        }
+      }
+    },
+    "/app/v1/game/arcade/runs/{runId}/finish": {
+      "post": {
+        "summary": "Verify and submit a deterministic arcade replay",
+        "x-source": "Features/Game/GameArcade.cs",
+        "security": [{ "AccountSession": [] }],
+        "parameters": [
+          { "name": "runId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[0-9a-f]{32}$" } },
+          { "name": "X-DV-CSRF", "in": "header", "required": true, "schema": { "type": "string", "minLength": 1 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["endTick", "taps"],
+                "properties": {
+                  "endTick": { "type": "integer", "minimum": 1, "maximum": 108000 },
+                  "taps": {
+                    "type": "array",
+                    "maxItems": 24000,
+                    "items": { "type": "integer", "minimum": 0, "maximum": 107999 }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-max-request-bytes": 524288,
+        "responses": {
+          "200": {
+            "description": "Verified score and atomically updated best",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["score", "best", "newBest"],
+                  "properties": {
+                    "score": { "type": "integer", "minimum": 0 },
+                    "best": { "type": "integer", "minimum": 0 },
+                    "newBest": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid replay" },
+          "401": { "description": "Session unavailable" },
+          "403": { "description": "Ineligible account or group" },
+          "404": { "description": "Run unavailable" },
+          "409": { "description": "Conflicting replay" },
+          "410": { "description": "Run expired" },
+          "413": { "description": "Request body exceeds 512 KiB" },
+          "429": { "description": "Account rate limit reached" }
+        }
+      }
+    },
     "/app/v1/game/teams/{id}/opponents/{opponentId}/wand-artwork": {
       "get": {
         "summary": "Read current approved artwork for an opponent in an owned team match",

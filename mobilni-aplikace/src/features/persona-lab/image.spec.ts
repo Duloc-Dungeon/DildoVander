@@ -15,7 +15,7 @@ describe('consented image preparation', () => {
       set src(_value: string) { queueMicrotask(() => this.onload?.()); }
     });
     const draw = vi.fn();
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: draw } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ({ drawImage: draw })) as unknown as typeof HTMLCanvasElement.prototype.getContext);
     vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (this: HTMLCanvasElement, callback: BlobCallback) {
       expect(Math.max(this.width, this.height)).toBe(512);
       callback(new Blob([new Uint8Array(40000)], { type: 'image/jpeg' }));

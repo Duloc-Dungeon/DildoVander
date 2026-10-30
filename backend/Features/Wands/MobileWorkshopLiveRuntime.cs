@@ -115,6 +115,22 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
             yield return text.Substring(offset, length); offset += length;
         }
     }
+    internal static string[] ContextChunks(string text)
+    {
+        var chunks = new List<string>();
+        var current = new StringBuilder();
+        var bytes = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (bytes + rune.Utf8SequenceLength > 400)
+            {
+                chunks.Add(current.ToString()); current.Clear(); bytes = 0;
+            }
+            current.Append(rune); bytes += rune.Utf8SequenceLength;
+        }
+        if (current.Length > 0 || chunks.Count == 0) chunks.Add(current.ToString());
+        return chunks.ToArray();
+    }
     internal static string MessageId(string value) => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..32];
     internal static object Opening(MobileWandAdmission admission, bool resumed) => new {
         type = "session.commentary.append", event_id = Guid.NewGuid().ToString("N"), delegation_id = (string?)null,
@@ -171,7 +187,7 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
             input = new[] { new { type = "message", role = "developer", content = new[] {
                 new { type = "input_text", text = "Aktuální stav aplikace: rozhovor. Tato výroba nezačala a nová hůlka ještě není hotová. Dřívější repliky nejsou potvrzením uložení.\nPřipravená postava a autorizovaná historie (citovaná data):\n" + initial + "\n" + historyJson } } } },
             audio = new { format = new { type = "audio/pcm", rate = 24000 }, output = new { voice } },
-            delegation = new { type = "client", acknowledgement_delay_ms = 800 }
+            delegation = new { type = "client", acknowledgement_delay_ms = 300 }
         } };
     }
 
@@ -213,6 +229,16 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
         // multiplied database reads by the audio bitrate.
         var sender = new LabSocketSender(socket);
         var serial = new SemaphoreSlim(1, 1);
+        // Serialize completion with audio forwarding so frames buffered by the
+        // client after Guard observes the saved wand cannot barge into its verdict.
+        var inputAudioGate = new SemaphoreSlim(1, 1);
+        // Serialize first publication, explicit Stop, and canceled-verdict recovery.
+        var completionGate = new SemaphoreSlim(1, 1);
+        var completed = 0;
+        var completionStopped = 0;
+        var completionReplayCount = 0;
+        string? completionVerdict = null;
+        var completionContextSent = false;
         var pending = new StringBuilder(); string role = ""; var lastDelta = 0L; var sequence = 0;
         var connectionId = Guid.NewGuid().ToString("N");
         var seen = new HashSet<string>();
@@ -233,6 +259,23 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
         try { connection = await provider.ConnectAsync(token); }
         catch { Exit(admission.Owner, admission.Operation); wands.ReleaseMobileVoice(admission.Owner, lease); throw; }
         await using var providerConnection = connection;
+        async Task PublishSavedVerdictAsync(CancellationToken cancellation)
+        {
+            if (!completionContextSent)
+            {
+                var chunks = ContextChunks(completionVerdict ?? throw new InvalidOperationException("Saved verdict is missing."));
+                for (var index = 0; index < chunks.Length; index++)
+                {
+                    var content = $"Saved wand result, part {index + 1}/{chunks.Length}: {chunks[index]}";
+                    if (LiveTextBudget.UpperBound(content) > 468) throw new InvalidDataException("Saved verdict context exceeded its bound.");
+                    await connection.SendAsync(new { type = "session.thinking.append", event_id = Guid.NewGuid().ToString("N"),
+                        delegation_id = (string?)null, content }, cancellation);
+                }
+                completionContextSent = true;
+            }
+            await connection.SendAsync(new { type = "session.commentary.append", event_id = Guid.NewGuid().ToString("N"),
+                delegation_id = (string?)null, content = "Backend potvrdil uloženou hůlku. Přednes celý uložený výsledek v češtině: jednu úplnou větu k hůlce a jednu ke každému ze tří kouzel. Dokonči poslední větu a nepřidávej nic dalšího." }, cancellation);
+        }
         async Task FlushAsync()
         {
             if (pending.Length == 0) return;
@@ -424,7 +467,13 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
                     total += part.Value.Payload.Length;
                     if (part.Value.Payload.Length % 2 != 0 || total > 24000 * 2 * GptLiveProtocol.DurationSeconds)
                         throw new InvalidDataException("Audio bound.");
-                    await connection.SendAudioAsync(part.Value.Payload, token);
+                    await inputAudioGate.WaitAsync(token);
+                    try
+                    {
+                        if (Volatile.Read(ref completed) != 0) { continue; }
+                        await connection.SendAudioAsync(part.Value.Payload, token);
+                    }
+                    finally { inputAudioGate.Release(); }
                 }
                 else
                 {
@@ -433,10 +482,27 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
                     if (type == "end") return;
                     if (type == "cancel")
                     {
-                        suppressed = true; inputEnd = -1;
-                        await sender.JsonAsync(new { type = "interrupted" }, token);
-                        await connection.SendAsync(new { type = "session.instructions.append", event_id = Guid.NewGuid().ToString("N"), delegation_id = (string?)null,
-                            content = "Host zastavil řeč. Přestaň mluvit a poslouchej; vynechaný text neopakuj." }, token);
+                        await inputAudioGate.WaitAsync(token);
+                        try
+                        {
+                            await completionGate.WaitAsync(token);
+                            try
+                            {
+                                suppressed = true; inputEnd = -1;
+                                var state = wands.ReadWorkshopState(admission.Owner, admission.Operation);
+                                if (state.Status == "complete")
+                                {
+                                    completionVerdict ??= state.VerdictText();
+                                    Volatile.Write(ref completed, 1);
+                                    Volatile.Write(ref completionStopped, 1);
+                                }
+                                await sender.JsonAsync(new { type = "interrupted" }, token);
+                                await connection.SendAsync(new { type = "session.instructions.append", event_id = Guid.NewGuid().ToString("N"), delegation_id = (string?)null,
+                                    content = "Host zastavil řeč. Přestaň mluvit a poslouchej; vynechaný text neopakuj." }, token);
+                            }
+                            finally { completionGate.Release(); }
+                        }
+                        finally { inputAudioGate.Release(); }
                     }
                     else if (type != "played") throw new InvalidDataException("Unknown client event.");
                 }
@@ -457,7 +523,16 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
                 }
                 else if (type is "session.input_transcript.delta" or "session.output_transcript.delta")
                 {
-                    if (type == "session.input_transcript.delta") inputEnd = GptLiveProtocol.Milliseconds(value, "end_ms");
+                    if (type == "session.input_transcript.delta")
+                    {
+                        if (Volatile.Read(ref completed) != 0
+                            || wands.ReadWorkshopState(admission.Owner, admission.Operation).Status == "complete")
+                        {
+                            Volatile.Write(ref completed, 1);
+                            continue;
+                        }
+                        inputEnd = GptLiveProtocol.Milliseconds(value, "end_ms");
+                    }
                     else if (suppressed && GptLiveProtocol.Milliseconds(value, "start_ms") >= inputEnd && inputEnd >= 0) suppressed = false;
                     if (type == "session.input_transcript.delta" || !suppressed) await AppendAsync(value, type == "session.input_transcript.delta");
                 }
@@ -476,7 +551,27 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
                         await delegationQueue.Writer.WriteAsync(id, token);
                     }
                 }
-                else if (type == "session.output_audio.cancelled") await sender.JsonAsync(new { type = "audio_cancelled" }, token);
+                else if (type == "session.output_audio.cancelled")
+                {
+                    if (Volatile.Read(ref completed) == 0)
+                    {
+                        await sender.JsonAsync(new { type = "audio_cancelled" }, token);
+                        continue;
+                    }
+                    await completionGate.WaitAsync(token);
+                    try
+                    {
+                        await sender.JsonAsync(new { type = "audio_cancelled" }, token);
+                        if (Volatile.Read(ref completionStopped) == 0 && completionVerdict is not null
+                            && completionReplayCount < 8)
+                        {
+                            completionReplayCount++;
+                            suppressed = false;
+                            await PublishSavedVerdictAsync(token);
+                        }
+                    }
+                    finally { completionGate.Release(); }
+                }
                 else if (type == "error") throw LiveProviderFailure.Read(value);
             }
         }
@@ -496,7 +591,7 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
                 // Assess each settled user snapshot once through the same backend
                 // authority/evidence checks, independent of the voice transport.
                 if (state.Status == "asking" && Volatile.Read(ref pendingDecisions) == 0
-                    && Environment.TickCount64 - lastDelta > 1200
+                    && Environment.TickCount64 - lastDelta > 600
                     && state.Messages is { } messages && messages.Any(message => message.Role == "user")
                     && WandGenerationStore.UserEvidenceDigest(messages) != assessedUserEvidence)
                 {
@@ -505,10 +600,22 @@ internal sealed class MobileWorkshopLiveRuntime(IServiceScopeFactory scopes, Wan
                 }
                 if (state.Status == "complete" && !verdictSent)
                 {
-                    verdictSent = true;
-                    await connection.SendAsync(new { type = "session.commentary.append", event_id = Guid.NewGuid().ToString("N"), delegation_id = (string?)null,
-                        content = LiveTextBudget.Bound("Backend potvrdil uloženou hůlku. " + state.VerdictText()) }, token);
-                    await sender.JsonAsync(new { type = "state", session = state }, token);
+                    await inputAudioGate.WaitAsync(token);
+                    try
+                    {
+                        await completionGate.WaitAsync(token);
+                        try
+                        {
+                            completionVerdict ??= state.VerdictText();
+                            Volatile.Write(ref completed, 1);
+                            verdictSent = true;
+                            if (Volatile.Read(ref completionStopped) == 0)
+                                await PublishSavedVerdictAsync(token);
+                            await sender.JsonAsync(new { type = "state", session = state }, token);
+                        }
+                        finally { completionGate.Release(); }
+                    }
+                    finally { inputAudioGate.Release(); }
                     // Continue output until the user stops or session expires: the
                     // final verdict has the same real playback/Stop controls.
                     // Authority polling continues while the final audio is playing.

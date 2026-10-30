@@ -3,12 +3,14 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { replaySpark } from '../../src/features/arcade/sparkEngine.ts';
 const dist = path.resolve(fileURLToPath(new URL('../../dist/', import.meta.url)));
 const id = 'a'.repeat(32);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png', '.ttf': 'font/ttf' };
 export const gameStates = ['lobby', 'challenge', 'incoming', 'choice', 'waiting', 'result', 'early-result', 'adult', 'task-without-wand', 'yolo', 'error', 'empty', 'long', 'tactical', 'loadout', 'boss', 'boss-setup', 'captured', 'rescue', 'teams', 'team-choice', 'team-half', 'messages', 'ranking', 'ranking-long', 'ranking-empty', 'ranking-error', 'first-wand', 'upgrade-wand', 'wand-moon', 'wand-thorn'];
 const artworkLocator = '11111111-1111-4111-8111-111111111111';
+gameStates.push('spark');
 export const yoloStates = ['yolo-generating', 'yolo-failed', 'yolo-cancelled', 'yolo-long', 'yolo-task'];
 const artworkAssets = { moon: '22222222-2222-4222-8222-222222222222', thorn: '33333333-3333-4333-8333-333333333333' };
 const artworkHashes = Object.fromEntries(await Promise.all(['moon', 'thorn'].map(async kind => [kind,
@@ -67,6 +69,8 @@ function teamMatch(state, halftimeEndsAt) {
 }
 export async function createGameFixtureServer(port = 0) {
   const requests = [];
+  const sparkRuns = new Map();
+  let sparkBest = 0;
   const taskOutcomes = new Map();
   const previewRounds = new Map();
   let halftimeEndsAt;
@@ -92,10 +96,31 @@ export async function createGameFixtureServer(port = 0) {
       previewRounds.delete(selected);
       if (selected === 'team-half') halftimeEndsAt = Math.floor(Date.now() / 1000) + 15;
       const destinations = {challenge:'/play/challenge',lobby:'/play',empty:'/play','boss-setup':'/play/boss',boss:`/play/boss/${id}`,captured:'/play/keeper',rescue:'/play/keeper',teams:'/play/teams','team-choice':`/play/team/${id}`,'team-half':`/play/team/${id}`,messages:'/play/messages',ranking:'/play/ranking','first-wand':'/play','upgrade-wand':'/play/keeper'};
-      const destination = destinations[selected] ?? `/play/match/${id}`;
+      const destination = selected === 'spark' ? '/play/kouzlo-bez-dozoru' : destinations[selected] ?? `/play/match/${id}`;
       response.writeHead(302, { Location: selected.startsWith('ranking-') ? '/play/ranking' : destination, 'Set-Cookie': `game-fixture=${selected}; Path=/; SameSite=Strict` }); response.end(); return;
     }
     if (url.pathname === '/app/v1/session') return json({ enabled: true, account: { id: 'one', displayName: 'Mira', roles: ['Customer'], openAiConsent: true }, csrfToken: 'synthetic' });
+    if (url.pathname === '/app/v1/game/arcade') {
+      const ranking = [{ id: 'two', displayName: 'Eliška', score: 31 }, ...(sparkBest ? [{ id: 'one', displayName: 'Mira', score: sparkBest }] : [])]
+        .sort((a, b) => b.score - a.score).map((row, i) => ({ ...row, rank: i + 1 }));
+      return json({ rulesVersion: 'spark-v1', groupId: 'synthetic', playerId: 'one', best: sparkBest, ranking });
+    }
+    if (url.pathname === '/app/v1/game/arcade/runs' && request.method === 'POST') {
+      const ticket = { runId: randomUUID(), seed: 1, rulesVersion: 'spark-v1', expiresAt: Date.now() + 7200000 };
+      sparkRuns.set(ticket.runId, ticket); return json(ticket);
+    }
+    if (/^\/app\/v1\/game\/arcade\/runs\/[^/]+\/finish$/.test(url.pathname) && request.method === 'POST') {
+      const runId = url.pathname.split('/').at(-2);
+      if (!sparkRuns.has(runId)) return json({ code: 'arcade_run_unavailable' }, 404);
+      let raw = ''; for await (const chunk of request) raw += chunk;
+      const replay = JSON.parse(raw);
+      requests.push({ path: url.pathname, body: replay });
+      try {
+        const score = replaySpark(1, replay.endTick, replay.taps).score;
+        const newBest = score > sparkBest; sparkBest = Math.max(sparkBest, score);
+        return json({ score, best: sparkBest, newBest });
+      } catch { return json({ code: 'arcade_replay_invalid' }, 400); }
+    }
     if (url.pathname === '/app/v1/customer/wand') return json({hasCharacter: true, wand: ['first-wand', 'task-without-wand'].includes(state) ? null : {wandId:'synthetic-saved-wand'}, tier: ['first-wand', 'task-without-wand'].includes(state) ? 0 : state === 'upgrade-wand' ? 1 : 2});
     const wandKind = state === 'wand-thorn' ? 'thorn' : 'moon';
     if (url.pathname === '/app/v1/customer/character') return json({ generatedWand: wandSnapshot(wandKind),

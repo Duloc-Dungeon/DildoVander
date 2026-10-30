@@ -116,7 +116,72 @@ internal static partial class MobileGameTests
         await RunWorkshopStaleReadyRaceHttpAsync();
         await RunWorkshopMissingDelegationHttpAsync(disconnectDuringDecision: false);
         await RunWorkshopMissingDelegationHttpAsync(disconnectDuringDecision: true);
+        await RunWorkshopLiveVerdictRecoveryHttpAsync();
         Console.WriteLine("Mobile workshop customer Live bridge checks passed.");
+    }
+
+    private static async Task RunWorkshopLiveVerdictRecoveryHttpAsync()
+    {
+        await using var fixture = await HttpFixture.StartAsync(withLiveTransport: true,
+            workshopProvider: new TextWorkshopProvider(delayFirstReply: true, firstReplyReady: true),
+            includeSecondTurnAutomatically: false, liveCancelFirstCompletedVerdict: true);
+        using var client = fixture.Client();
+        await fixture.LoginAsync(client, fixture.ForeignId);
+        client.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(client));
+        await fixture.MarkForeignCharacterPreparedAsync();
+
+        const string path = "/app/v1/customer/wand/workshop/sessions";
+        var operation = Guid.NewGuid().ToString("N");
+        using var created = await client.PostAsJsonAsync(path, new { operationId = operation });
+        Check(created.StatusCode == HttpStatusCode.OK, "verdict recovery fixture opens a prepared workshop");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var socket = await ConnectWorkshopSocketAsync(client, fixture, path, operation, timeout.Token);
+        Check((await ReceiveSocketJsonAsync(socket, timeout.Token)).GetProperty("type").GetString() == "ready",
+            "verdict recovery customer Live socket reaches ready");
+
+        fixture.LiveSocketFactory!.QueueExchange(1);
+        await fixture.TextWorkshopProvider.WaitForReplyAsync(1, timeout.Token);
+        fixture.TextWorkshopProvider.ReleaseReply(1);
+        await WaitUntilAsync(() => fixture.Wands.ReadWorkshopState(fixture.ForeignId, operation).Status == "generating", timeout.Token);
+        await fixture.RunWorkshopWorkerAsync(fixture.ForeignId, operation);
+
+        await fixture.LiveSocketFactory.WaitForVerdictPublicationAsync(1, timeout.Token);
+        var savedVerdict = fixture.Wands.ReadWorkshopState(fixture.ForeignId, operation).VerdictText();
+        Check(string.Concat(fixture.LiveSocketFactory.SavedVerdictContext) == savedVerdict
+            && fixture.LiveSocketFactory.SavedVerdictContext.All(content => LiveTextBudget.UpperBound(content) <= 468),
+            "full saved result reaches GPT-Live context in bounded, lossless UTF-8 chunks");
+        await WaitForSocketTypeAsync(socket, "audio_cancelled", timeout.Token);
+        await fixture.LiveSocketFactory.WaitForVerdictPublicationAsync(2, timeout.Token);
+        Check(fixture.LiveSocketFactory.VerdictPublications == 2,
+            "a canceled completed Live verdict replays the whole saved phrase through Guard and Output");
+
+        await SendFragmentedAsync(socket, WebSocketMessageType.Text, Encoding.UTF8.GetBytes("{\"type\":\"cancel\"}"), timeout.Token);
+        await WaitForSocketTypeAsync(socket, "interrupted", timeout.Token);
+        fixture.LiveSocketFactory.QueueOutputCancellation();
+        await WaitForSocketTypeAsync(socket, "audio_cancelled", timeout.Token);
+        Check(fixture.LiveSocketFactory.VerdictPublications == 2,
+            "explicit Stop after completion permanently suppresses later verdict recovery");
+
+        await SendFragmentedAsync(socket, WebSocketMessageType.Text, Encoding.UTF8.GetBytes("{\"type\":\"end\"}"), timeout.Token);
+        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "verdict recovery checked", timeout.Token);
+        await WaitUntilAsync(() => !fixture.LiveRuntime.IsActive(fixture.ForeignId, operation), timeout.Token);
+    }
+
+    private static async Task WaitForSocketTypeAsync(ClientWebSocket socket, string expectedType, CancellationToken token)
+    {
+        var buffer = new byte[16 * 1024];
+        using var message = new MemoryStream();
+        while (true)
+        {
+            var result = await socket.ReceiveAsync(buffer.AsMemory(), token);
+            if (result.MessageType == WebSocketMessageType.Close) throw new WebSocketException($"Socket closed before {expectedType}.");
+            if (result.MessageType != WebSocketMessageType.Text) continue;
+            message.Write(buffer, 0, result.Count);
+            if (!result.EndOfMessage) continue;
+            using var json = JsonDocument.Parse(message.ToArray());
+            message.SetLength(0);
+            if (json.RootElement.TryGetProperty("type", out var type) && type.GetString() == expectedType) return;
+        }
     }
 
     private static async Task RunWorkshopMissingDelegationHttpAsync(bool disconnectDuringDecision)
@@ -1399,6 +1464,54 @@ internal static partial class MobileGameTests
             "game polling and commands do not consume the shared account/sign-in allowance");
     }
 
+    internal static async Task RunArcadeRequestSizeHttpAsync()
+    {
+        await using var fixture = await HttpFixture.StartAsync();
+        using var alice = fixture.Client();
+        await fixture.LoginAsync(alice, fixture.AliceId);
+        alice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(alice));
+
+        using var issued = await alice.PostAsJsonAsync("/app/v1/game/arcade/runs",
+            new { operationId = Guid.NewGuid().ToString("N") });
+        Check(issued.StatusCode == HttpStatusCode.OK, "arcade ticket can be issued over HTTP");
+        var runId = (await issued.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("runId").GetString()!;
+        using var vectorDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "spark-v1.json")));
+        var shortVector = vectorDocument.RootElement.GetProperty("vectors").EnumerateArray()
+            .Single(vector => vector.GetProperty("endTick").GetInt32() == 321);
+        var seed = shortVector.GetProperty("seed").GetUInt32();
+        var endTick = shortVector.GetProperty("endTick").GetInt32();
+        var taps = shortVector.GetProperty("taps").EnumerateArray().Select(tap => tap.GetInt32()).ToArray();
+        fixture.SetArcadeRunSeed(runId, seed);
+        var finishPath = $"/app/v1/game/arcade/runs/{runId}/finish";
+
+        alice.DefaultRequestHeaders.Remove("X-DV-CSRF");
+        using (var missingCsrf = await alice.PostAsync(finishPath,
+            new StringContent(new string(' ', 70 * 1024) + "{\"endTick\":1,\"taps\":[]}", Encoding.UTF8, "application/json")))
+        {
+            Check(missingCsrf.StatusCode == HttpStatusCode.BadRequest
+                && (await missingCsrf.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString() == "csrf_required",
+                "large arcade body still requires the existing CSRF check");
+        }
+
+        alice.DefaultRequestHeaders.Add("X-DV-CSRF", await fixture.CsrfAsync(alice));
+        var validReplay = JsonSerializer.Serialize(new { endTick, taps });
+        using (var withinLimit = await alice.PostAsync(finishPath,
+            new StringContent(new string(' ', 70 * 1024) + validReplay, Encoding.UTF8, "application/json")))
+        {
+            Check(withinLimit.StatusCode == HttpStatusCode.OK
+                && (await withinLimit.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("score").GetInt32() == 3,
+                "arcade finish successfully verifies a valid replay padded beyond the default 64 KiB limit");
+        }
+
+        using (var overLimit = await alice.PostAsync(finishPath,
+            new StringContent(new string(' ', 512 * 1024) + "{\"endTick\":1,\"taps\":[]}", Encoding.UTF8, "application/json")))
+        {
+            Check(overLimit.StatusCode == HttpStatusCode.RequestEntityTooLarge,
+                "arcade finish rejects a request body larger than 512 KiB");
+        }
+        Console.WriteLine("Arcade HTTP body limit and CSRF checks passed.");
+    }
+
     internal static async Task RunBossRickrollHttpAsync()
     {
         await using var fixture = await HttpFixture.StartAsync();
@@ -1593,7 +1706,8 @@ internal static partial class MobileGameTests
         internal static async Task<HttpFixture> StartAsync(bool withLiveTransport = false, GptLiveClient? liveClient = null,
             TextWorkshopProvider? workshopProvider = null, bool includeSecondTurnAutomatically = true,
             bool includeLiveDelegations = true, bool withKeepsakes = false, IGameYoloProvider? yoloProvider = null,
-            IGameBossNarrator? bossNarrator = null, IGameBossSpeech? bossSpeech = null)
+            IGameBossNarrator? bossNarrator = null, IGameBossSpeech? bossSpeech = null,
+            bool liveCancelFirstCompletedVerdict = false)
         {
             var root = Path.Combine(Path.GetTempPath(), "mobile-game-http-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
             var mediaPath = Path.Combine(root, "rickroll.mp4");
@@ -1627,7 +1741,7 @@ internal static partial class MobileGameTests
             });
             var textWorkshopProvider = workshopProvider ?? new TextWorkshopProvider();
             var liveSocketFactory = withLiveTransport && liveClient is null
-                ? new ScriptedLiveSocketFactory(includeSecondTurnAutomatically, includeLiveDelegations)
+                ? new ScriptedLiveSocketFactory(includeSecondTurnAutomatically, includeLiveDelegations, liveCancelFirstCompletedVerdict)
                 : null;
             builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
             builder.Services.AddAccountIdentity(builder.Configuration);
@@ -1659,7 +1773,7 @@ internal static partial class MobileGameTests
             var app = builder.Build();
             await AccountProvisioning.MigrateAsync(app.Services);
             await app.InitializeAccountsAsync();
-            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapGameLive(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
+            app.UseWebSockets(); app.UseMobileGameAuthentication(); app.UseRateLimiter(); app.UseAccountIdentity(); app.UseLaunchAccessPolicy(); app.MapMobileGame(); app.MapGameLive(); app.MapMobileGameBoss(); app.MapMobileGameProgress(); app.MapMobileGameArcade(); app.MapMobileGameTeams(); app.MapMobileWands(); app.MapWorkshopLive(); app.MapLaunchEndpoints();
             Kufr.Backend.Features.Chronicle.ChronicleEndpoints.MapMobileChronicle(app);
             app.MapLaunchChronicle();
             app.MapGet("/test/account-budget", () => Results.Ok()).RequireRateLimiting("account");
@@ -1994,6 +2108,20 @@ internal static partial class MobileGameTests
             command.Parameters.AddWithValue("$matches", matches);
             command.ExecuteNonQuery();
         }
+
+        internal void SetArcadeRunSeed(string runId, uint seed)
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = Path.Combine(app.Services.GetRequiredService<AccountConfiguration>().DataRoot, "mobile-game.sqlite")
+            }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE game_arcade_runs SET seed=$seed WHERE run_id=$run";
+            command.Parameters.AddWithValue("$seed", (long)seed);
+            command.Parameters.AddWithValue("$run", runId);
+            if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException("Arcade run ticket was not persisted.");
+        }
         internal async Task<string> CreateBossAttemptAsync()
         {
             var store = app.Services.GetRequiredService<GameStore>();
@@ -2029,19 +2157,51 @@ internal static partial class MobileGameTests
         private readonly System.Collections.Concurrent.ConcurrentQueue<string> events = new();
         private readonly bool includeSecondTurnAutomatically;
         private readonly bool includeLiveDelegations;
+        private readonly bool cancelFirstCompletedVerdict;
+        private readonly TaskCompletionSource[] verdictPublications = Enumerable.Range(0, 8)
+            .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).ToArray();
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> savedVerdictContext = new();
         private ScriptedLiveSocket? current;
+        private int verdictPublicationCount;
         internal string Diagnostics => string.Join(",", events);
+        internal int VerdictPublications => Volatile.Read(ref verdictPublicationCount);
+        internal string[] SavedVerdictContext => savedVerdictContext.ToArray();
 
-        internal ScriptedLiveSocketFactory(bool includeSecondTurnAutomatically = true, bool includeLiveDelegations = true)
+        internal ScriptedLiveSocketFactory(bool includeSecondTurnAutomatically = true, bool includeLiveDelegations = true,
+            bool cancelFirstCompletedVerdict = false)
         {
             this.includeSecondTurnAutomatically = includeSecondTurnAutomatically;
             this.includeLiveDelegations = includeLiveDelegations;
+            this.cancelFirstCompletedVerdict = cancelFirstCompletedVerdict;
         }
+
+        internal Task WaitForVerdictPublicationAsync(int count, CancellationToken token) =>
+            verdictPublications[count - 1].Task.WaitAsync(token);
+
+        internal int RecordVerdictPublication()
+        {
+            var count = Interlocked.Increment(ref verdictPublicationCount);
+            if (count <= verdictPublications.Length) verdictPublications[count - 1].TrySetResult();
+            return count;
+        }
+
+        internal bool ShouldCancelVerdict(int count) => cancelFirstCompletedVerdict && count == 1;
+
+        internal void RecordSavedVerdictContext(string content)
+        {
+            if (LiveTextBudget.UpperBound(content) > 468) throw new InvalidDataException("Saved context append exceeded the fixture's token bound.");
+            var delimiter = content.IndexOf(": ", StringComparison.Ordinal);
+            if (delimiter < 0) throw new InvalidDataException("Saved context framing was missing.");
+            savedVerdictContext.Enqueue(content[(delimiter + 2)..]);
+        }
+
+        internal void QueueOutputCancellation() =>
+            (current ?? throw new InvalidOperationException("The scripted Live socket is not connected.")).QueueOutputCancellation();
 
         internal Task<WebSocket> ConnectAsync(CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            current = new ScriptedLiveSocket(events, includeSecondTurnAutomatically, includeLiveDelegations);
+            current = new ScriptedLiveSocket(events, includeSecondTurnAutomatically, includeLiveDelegations, this);
             return Task.FromResult<WebSocket>(current);
         }
 
@@ -2049,7 +2209,7 @@ internal static partial class MobileGameTests
     }
 
     private sealed class ScriptedLiveSocket(System.Collections.Concurrent.ConcurrentQueue<string> events,
-        bool includeSecondTurnAutomatically, bool includeLiveDelegations) : WebSocket
+        bool includeSecondTurnAutomatically, bool includeLiveDelegations, ScriptedLiveSocketFactory factory) : WebSocket
     {
         private readonly System.Threading.Channels.Channel<ProviderFrame> input =
             System.Threading.Channels.Channel.CreateUnbounded<ProviderFrame>();
@@ -2082,6 +2242,14 @@ internal static partial class MobileGameTests
             }
             else if (eventType == "session.commentary.append")
             {
+                var content = root.GetProperty("content").GetString() ?? "";
+                if (content.StartsWith("Backend potvrdil uloženou hůlku.", StringComparison.Ordinal))
+                {
+                    var verdictNumber = factory.RecordVerdictPublication();
+                    Enqueue(new { type = "session.output_audio.delta", delta = Convert.ToBase64String(new byte[] { 0, 0, 1, 0 }) });
+                    if (factory.ShouldCancelVerdict(verdictNumber)) Enqueue(new { type = "session.output_audio.cancelled" });
+                    return Task.CompletedTask;
+                }
                 if (!root.TryGetProperty("delegation_id", out var delegationId) || delegationId.ValueKind == JsonValueKind.Null)
                 {
                     Enqueue(new { type = "session.output_audio.delta", delta = Convert.ToBase64String(new byte[] { 0, 0, 1, 0 }) });
@@ -2096,6 +2264,12 @@ internal static partial class MobileGameTests
                     Enqueue(new { type = "session.output_audio.delta",
                         delta = Convert.ToBase64String(new byte[] { 2, 0, 3, 0 }) });
                 }
+            }
+            else if (eventType == "session.thinking.append")
+            {
+                var content = root.GetProperty("content").GetString() ?? "";
+                if (content.StartsWith("Saved wand result, part ", StringComparison.Ordinal))
+                    factory.RecordSavedVerdictContext(content);
             }
             return Task.CompletedTask;
         }
@@ -2117,6 +2291,8 @@ internal static partial class MobileGameTests
         }
 
         internal void QueueExchange(int turn) => Exchange(turn);
+
+        internal void QueueOutputCancellation() => Enqueue(new { type = "session.output_audio.cancelled" });
 
         private void Exchange(int turn)
         {

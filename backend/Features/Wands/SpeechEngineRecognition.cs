@@ -20,6 +20,7 @@ internal sealed class SpeechEngineRecognition : IWorkshopRecognitionConnection
     private int disposed;
     private long activityEvent;
     private long playbackSequence;
+    private bool conversationComplete;
     internal long NextPlaybackSequence() => Interlocked.Increment(ref playbackSequence);
     internal TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -41,6 +42,7 @@ internal sealed class SpeechEngineRecognition : IWorkshopRecognitionConnection
     {
         lock (eventGate)
         {
+            if (conversationComplete) return;
             if (eventId <= newestEvent || eventId <= activityEvent || eventId > 9007199254740991L) return;
             activityEvent = eventId;
             if (!incoming.Writer.TryWrite(new("", false, eventId.ToString(System.Globalization.CultureInfo.InvariantCulture), SpeechStarted: true)))
@@ -51,6 +53,15 @@ internal sealed class SpeechEngineRecognition : IWorkshopRecognitionConnection
     internal bool HasPendingAfter(string? id) { lock (eventGate) return activityEvent > SpeechEngineProtocol.EventId(id); }
     internal bool IsPendingActivity(string? id) { lock (eventGate) return SpeechEngineProtocol.EventId(id) > newestEvent; }
     internal bool IsCurrent(long eventId) { lock (eventGate) return newestEvent == eventId && activityEvent <= eventId; }
+    internal long LatestEventId { get { lock (eventGate) return newestEvent; } }
+    internal void CompleteConversation()
+    {
+        lock (eventGate)
+        {
+            conversationComplete = true;
+            activityEvent = newestEvent;
+        }
+    }
     internal WorkshopReplyLease? EnterReply(long eventId)
     {
         Monitor.Enter(eventGate);
@@ -105,7 +116,18 @@ internal sealed class SpeechEngineRecognition : IWorkshopRecognitionConnection
                     case "user_transcript":
                         if (!initialized || !root.GetProperty("event_id").TryGetInt64(out var eventId) || eventId < 1)
                             throw new InvalidDataException("Invalid Speech Engine turn.");
-                        if (eventId <= Interlocked.Read(ref newestEvent)) break;
+                        lock (eventGate)
+                        {
+                            if (eventId <= newestEvent) break;
+                            if (conversationComplete)
+                            {
+                                // Keep transport ownership current for the saved verdict,
+                                // while discarding transcript text after completion.
+                                newestEvent = eventId;
+                                activityEvent = eventId;
+                                break;
+                            }
+                        }
                         var transcript = root.GetProperty("user_transcript");
                         if (transcript.ValueKind != JsonValueKind.Array || transcript.GetArrayLength() is < 1 or > 128)
                             throw new InvalidDataException("Invalid Speech Engine history.");
@@ -118,6 +140,12 @@ internal sealed class SpeechEngineRecognition : IWorkshopRecognitionConnection
                             throw new InvalidDataException("Invalid Speech Engine transcript.");
                         lock (eventGate)
                         {
+                            if (conversationComplete)
+                            {
+                                newestEvent = Math.Max(newestEvent, eventId);
+                                activityEvent = newestEvent;
+                                break;
+                            }
                             if (eventId <= newestEvent) break;
                             newestEvent = eventId;
                             if (!incoming.Writer.TryWrite(new(text, true, eventId.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -151,21 +179,25 @@ internal sealed class SpeechEngineRecognition : IWorkshopRecognitionConnection
 internal sealed class SpeechEngineSpeechProvider(SpeechEngineRecognition recognition, LabSocketSender client,
     long eventId = 0) : IWorkshopSpeechProvider
 {
-    private bool started;
+    private long? speakingEventId;
+    internal long LatestEventId => recognition.LatestEventId;
     public bool IsCurrentReply => recognition.IsCurrent(eventId);
     public WorkshopReplyLease? EnterReply() => recognition.EnterReply(eventId);
+    internal void CompleteConversation() => recognition.CompleteConversation();
     public async Task<IWorkshopRecognitionConnection> ConnectAsync(CancellationToken token)
     {
         await recognition.Ready.Task.WaitAsync(token);
         return recognition;
     }
     public IWorkshopSpeechProvider ForReply(string? id) => new SpeechEngineSpeechProvider(recognition, client, SpeechEngineProtocol.EventId(id));
+    internal IWorkshopSpeechProvider ForCompletion(long ownerEventId) =>
+        new SpeechEngineSpeechProvider(recognition, client, ownerEventId);
     public async Task SpeakAsync(string text, Func<byte[], CancellationToken, Task> audio, CancellationToken token)
     {
-        if (!started)
+        if (speakingEventId != eventId)
         {
             await client.JsonAsync(new { type = "speech_engine_speaking", eventId, sequence = recognition.NextPlaybackSequence() }, token);
-            started = true;
+            speakingEventId = eventId;
         }
         await recognition.SendAsync(eventId, text, false, token);
     }
