@@ -10,7 +10,7 @@ import App from '../src/application/App.vue';
 import { safeReturnPath } from '../src/application/navigation';
 import { deviceSession } from '../src/features/suitcase/deviceSession';
 import { nativeDebug } from '../src/features/suitcase/nativeDebug';
-import { account, accountDeletionRequested, offlineSession, offlineSessionExpiresAt, refreshIdentity } from '../src/features/identity/session';
+import { account, accountDeletionRequested, accountRequest, offlineSession, offlineSessionExpiresAt, refreshIdentity } from '../src/features/identity/session';
 import { installAccessGuard } from '../src/application/accessGuard';
 import type { DeviceSnapshot } from '../src/features/device_connection/FakeDeviceConnection';
 
@@ -30,6 +30,69 @@ function activeSnapshot(): DeviceSnapshot {
 }
 
 describe('application boundaries', () => {
+  it.each([false, true])('restores the shell for another account without reloading the document (signin return: %s)', async viaSignIn => {
+    const policyReads: string[] = [];
+    vi.mocked(accountRequest).mockImplementation(async path => {
+      policyReads.push(`${account.value?.id}:${path}`);
+      return (path === '/app/v1/launch' ? { allowed: true } : { state: 'active', accessRevision: 1 }) as never;
+    });
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      ...['/', '/signin', '/launch', '/play', '/play/wand', '/me/keepsakes', '/access-revoked'].map(path => ({ path, component: { template: '<p>Stránka</p>' } })),
+      { path: '/me/account', component: { template: '<p>Můj účet</p>' }, meta: { requiresAccount: true } },
+    ] });
+    account.value = { id: 'previous', displayName: 'Předchozí host', roles: ['Customer'], openAiConsent: true };
+    await router.push('/me/account');
+    const wrapper = mount(App, { global: { plugins: [router, createPinia()] } }); wrappers.push(wrapper);
+    try {
+      await flushPromises();
+      expect(wrapper.find('.wns-game-navigation').exists()).toBe(true);
+      if (viaSignIn) {
+        account.value = null;
+        await flushPromises();
+        expect(router.currentRoute.value.path).toBe('/signin');
+      }
+      account.value = { id: 'next', displayName: 'Nový host', roles: ['Customer'], openAiConsent: true };
+      if (viaSignIn) await router.replace('/me/account');
+      await flushPromises();
+      expect(router.currentRoute.value.path).toBe('/me/account');
+      expect(wrapper.find('.wns-game-navigation').exists()).toBe(true);
+      expect(wrapper.find('.account-link').text()).toBe('Nový host');
+      expect(wrapper.text()).not.toContain('Předchozí host');
+      expect(policyReads).toContain('next:/app/v1/customer/access');
+      expect(policyReads).toContain('next:/app/v1/launch');
+    } finally { vi.mocked(accountRequest).mockResolvedValue({ allowed: true }); }
+  });
+
+  it.each([
+    { allowed: false, membership: 'active' },
+    { allowed: true, membership: 'revoked' },
+    { allowed: true, membership: null },
+  ])('does not reuse the previous shell when the next account has $membership membership and launch=$allowed', async policy => {
+    vi.mocked(accountRequest).mockImplementation(async path => {
+      const previous = account.value?.id === 'previous';
+      return (path === '/app/v1/launch'
+        ? { allowed: previous || policy.allowed }
+        : { state: previous ? 'active' : policy.membership, accessRevision: 1 }) as never;
+    });
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      ...['/', '/signin', '/launch', '/play', '/play/wand', '/me/keepsakes', '/access-revoked'].map(path => ({ path, component: { template: '<p>Stránka</p>' } })),
+      { path: '/me/account', component: { template: '<p>Můj účet</p>' }, meta: { requiresAccount: true } },
+    ] });
+    account.value = { id: 'previous', displayName: 'Předchozí host', roles: ['Customer'], openAiConsent: true };
+    await router.push('/me/account');
+    const wrapper = mount(App, { global: { plugins: [router, createPinia()] } }); wrappers.push(wrapper);
+    try {
+      await flushPromises();
+      expect(wrapper.find('.wns-game-navigation').exists()).toBe(true);
+      account.value = { id: 'next', displayName: 'Nový host', roles: ['Customer'], openAiConsent: true };
+      await flushPromises();
+      expect(wrapper.find('.wns-game-navigation').exists()).toBe(false);
+      expect(wrapper.find('.account-link').exists()).toBe(false);
+      expect(wrapper.text()).not.toContain('Předchozí host');
+      expect(router.currentRoute.value.path).toBe('/me/account');
+    } finally { vi.mocked(accountRequest).mockResolvedValue({ allowed: true }); }
+  });
+
   it.each([
     { deletion: true, destination: '/account-deletion' },
     { deletion: false, destination: '/signin' },
