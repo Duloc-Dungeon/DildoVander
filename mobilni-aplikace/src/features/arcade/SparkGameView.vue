@@ -5,7 +5,7 @@ import SoundToggle from '../../application/SoundToggle.vue';
 import { account } from '../identity/session';
 import storeroomUrl from '../../assets/arcade/storeroom.webp';
 import sparkUrl from '../../assets/arcade/spark.webp';
-import { createCourse, createSpark, FIELD, MAX_TAPS, PRACTICE_SEED, stepSpark, TICK_MS } from './sparkEngine';
+import { createCourse, createSpark, FIELD, MAX_GATES, MAX_TAPS, PRACTICE_SEED, RULES_VERSION, stepSpark, TICK_MS } from './sparkEngine';
 import { createSparkRenderer, type SparkRenderer } from './sparkRenderer';
 import { createSparkAudio } from './sparkAudio';
 import { gatesLabel, resultCopy } from './sparkCopy';
@@ -32,7 +32,7 @@ const restartReady = ref(false);
 const pauseReason = ref('Pokus je pozastavený.');
 const reduced = ref(false);
 const audio = createSparkAudio();
-const practiceKey = `wns.spark.practice.v1.${account.value?.id ?? 'anonymous'}`;
+const practiceKey = `wns.spark.practice.${RULES_VERSION}.${account.value?.id ?? 'anonymous'}`;
 let renderer: SparkRenderer | undefined;
 let state = createSpark();
 let course = createCourse(PRACTICE_SEED);
@@ -156,7 +156,7 @@ async function setupGraphics() {
   }
 }
 onMounted(() => {
-  try { practiceBest.value = Math.max(0, Math.min(1201, Number(localStorage.getItem(practiceKey)) || 0)); } catch { /* Optional. */ }
+  try { practiceBest.value = Math.max(0, Math.min(MAX_GATES, Number(localStorage.getItem(practiceKey)) || 0)); } catch { /* Optional. */ }
   media = window.matchMedia('(prefers-reduced-motion: reduce)'); motionChanged(); media.addEventListener('change', motionChanged);
   document.addEventListener('visibilitychange', visibility); window.addEventListener('blur', blur);
   void setupGraphics(); void competition.connect();

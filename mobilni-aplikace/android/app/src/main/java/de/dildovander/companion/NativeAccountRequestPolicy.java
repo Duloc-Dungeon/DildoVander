@@ -208,7 +208,8 @@ final class NativeAccountRequestPolicy {
             return "GET".equals(method) && query != null && query.matches("^revision=[0-9a-fA-F]{64}$");
         }
         if (query == null && "/app/v1/game".equals(path)) return "GET".equals(method);
-        if (query == null && "/app/v1/game/arcade".equals(path)) return "GET".equals(method);
+        if ("/app/v1/game/arcade".equals(path)) return "GET".equals(method)
+            && (query == null || "rulesVersion=spark-v1".equals(query) || "rulesVersion=spark-v2".equals(query));
         if (query == null && "/app/v1/game/arcade/runs".equals(path)) return "POST".equals(method);
         if (query == null && path.matches("^/app/v1/game/arcade/runs/[0-9a-f]{32}/finish$")) return "POST".equals(method);
         if (query == null && "/app/v1/game/matches".equals(path)) return "POST".equals(method);

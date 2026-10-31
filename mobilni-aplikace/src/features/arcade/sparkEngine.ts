@@ -1,9 +1,10 @@
-/** Integer simulation shared by contract with the server's spark-v1 verifier.
- * See docs/arcade-rules-v1.md. No DOM, randomness, timers or rendering here. */
-export const RULES_VERSION = 'spark-v1';
+/** Integer simulation shared by contract with the server's spark-v2 verifier.
+ * See docs/arcade-rules-v2.md. No DOM, randomness, timers or rendering here. */
+export const RULES_VERSION = 'spark-v2';
 export const FIELD = { width: 360, height: 640, playerY: 480, radius: 7, left: 16, right: 344 } as const;
 export const TICK_MS = 1000 / 60;
 export const MAX_TICKS = 108000;
+export const MAX_GATES = 1321;
 export const MAX_TAPS = 24000;
 export const PRACTICE_SEED = 0x573253;
 export interface Gate { index: number; distance: number; center: number; width: number; height: number }
@@ -14,7 +15,7 @@ export interface SparkState {
 }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-export function createCourse(seed: number, count = 1201): Gate[] {
+export function createCourse(seed: number, count = MAX_GATES): Gate[] {
   let random = (seed >>> 0) || 1;
   let center = 244;
   return Array.from({ length: count }, (_, index) => {
@@ -23,7 +24,9 @@ export function createCourse(seed: number, count = 1201): Gate[] {
       center = clamp(center + (((random >>> 0) % 7) - 3) * 32, 92, 268);
     }
     const height = index % 7 === 6 ? 72 : 22;
-    const width = index === 0 ? 168 : Math.max(height === 72 ? 104 : 88, 152 - Math.floor(index / 5) * 4);
+    const width = index === 0 ? 168 : height === 72
+      ? Math.max(104, 152 - Math.floor(index / 5) * 4)
+      : Math.max(84, 148 - Math.floor(index / 5) * 4);
     return { index, distance: 120 + index * 180, center, width, height };
   });
 }
@@ -32,7 +35,10 @@ export function createSpark(): SparkState {
   return { tick: 0, x: 180, direction: 1, score: 0, status: 'flying' };
 }
 
-export function gateY(gate: Gate, tick: number): number { return FIELD.playerY - gate.distance + tick * 2; }
+// One extra pixel every fifth tick gives exactly 10% more speed without floating-point drift.
+export function movementAt(tick: number): number { return tick % 5 === 0 ? 3 : 2; }
+export function scrollAt(tick: number): number { return tick * 2 + Math.floor(tick / 5); }
+export function gateY(gate: Gate, tick: number): number { return FIELD.playerY - gate.distance + scrollAt(tick); }
 
 export function contact(x: number, tick: number, gate: Gate): Collision | undefined {
   if (x - FIELD.radius <= FIELD.left || x + FIELD.radius >= FIELD.right) {
@@ -54,11 +60,11 @@ export function stepSpark(state: SparkState, course: readonly Gate[], taps = 0):
   if (state.status !== 'flying') return;
   if (taps % 2) state.direction = state.direction === 1 ? -1 : 1;
   state.tick++;
-  state.x += state.direction * 2;
+  state.x += state.direction * movementAt(state.tick);
   const gate = course[state.score]!;
   state.collision = contact(state.x, state.tick, gate);
   if (state.collision) { state.status = 'crashed'; return; }
-  if (state.tick * 2 > gate.distance + gate.height / 2 + FIELD.radius) state.score++;
+  if (scrollAt(state.tick) > gate.distance + gate.height / 2 + FIELD.radius) state.score++;
   if (state.tick >= MAX_TICKS) state.status = 'complete';
 }
 

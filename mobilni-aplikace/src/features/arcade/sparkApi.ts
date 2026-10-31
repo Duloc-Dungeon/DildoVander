@@ -6,9 +6,13 @@ export interface SparkStandings { rulesVersion: string; playerId: string; groupI
 export interface SparkTicket { runId: string; seed: number; rulesVersion: string; expiresAt: number }
 export interface SparkReceipt { score: number; best: number; newBest: boolean }
 export interface SparkReplay { endTick: number; taps: number[] }
-export const readSparkStandings = (signal?: AbortSignal) => gameRequest<SparkStandings>('/arcade', undefined, signal);
+export async function readSparkStandings(signal?: AbortSignal): Promise<SparkStandings> {
+  const standings = await gameRequest<SparkStandings>(`/arcade?rulesVersion=${RULES_VERSION}`, undefined, signal);
+  if (standings.rulesVersion !== RULES_VERSION) throw new Error('Unsupported spark rules');
+  return standings;
+}
 export async function issueSparkTicket(signal?: AbortSignal, operationId = operation()): Promise<SparkTicket> {
-  const ticket = await gameRequest<SparkTicket>('/arcade/runs', { operationId }, signal);
+  const ticket = await gameRequest<SparkTicket>('/arcade/runs', { operationId, rulesVersion: RULES_VERSION }, signal);
   if (ticket.rulesVersion !== RULES_VERSION || !Number.isInteger(ticket.seed)
     || ticket.seed < 0 || ticket.seed > 0xffffffff || ticket.expiresAt <= Date.now()) throw new Error('Unsupported spark rules');
   return ticket;

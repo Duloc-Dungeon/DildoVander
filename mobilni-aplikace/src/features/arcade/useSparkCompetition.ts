@@ -80,7 +80,9 @@ export function useSparkCompetition() {
           if (disposed) return;
           receipt.value = { runId: run.ticket.runId, value };
           standingsGeneration++;
-          if (standings.value) standings.value.best = Math.max(standings.value.best, value.best);
+          if (standings.value?.rulesVersion === run.ticket.rulesVersion) {
+            standings.value.best = Math.max(standings.value.best, value.best);
+          }
           pending.value = pending.value.filter(item => item.ticket.runId !== run.ticket.runId);
           persist(); error.value = '';
         } catch (problem) {

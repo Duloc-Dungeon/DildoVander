@@ -22,13 +22,28 @@ internal sealed record ArcadeView(string RulesVersion, string PlayerId, string G
 internal static class GameArcadeRules
 {
     internal const string Version = "spark-v1";
+    internal const string HarderVersion = "spark-v2";
     internal const int MaximumTick = 108000;
     internal const int MaximumInputs = 24000;
-    internal const int MaximumGates = 1201;
+    internal const int MaximumGates = 1321;
     internal const int MaximumOutstandingRuns = 64;
 
-    internal static int Verify(uint seed, int endTick, IReadOnlyList<int> taps)
+    internal static string ValidateVersion(string? version)
     {
+        if (version is null or Version)
+        {
+            return Version;
+        }
+        if (version == HarderVersion)
+        {
+            return HarderVersion;
+        }
+        throw new GameFault(409, "arcade_rules_unavailable");
+    }
+
+    internal static int Verify(uint seed, int endTick, IReadOnlyList<int> taps, string version = Version)
+    {
+        ValidateVersion(version);
         if (endTick is < 1 or > MaximumTick || taps.Count > MaximumInputs)
             throw new GameFault(400, "arcade_replay_invalid");
         var previous = -1;
@@ -39,7 +54,7 @@ internal static class GameArcadeRules
             previous = tap;
         }
 
-        var gates = BuildGates(seed);
+        var gates = BuildGates(seed, version);
         var tapIndex = 0;
         var direction = 1;
         var x = 180;
@@ -51,8 +66,10 @@ internal static class GameArcadeRules
                 direction = -direction;
                 tapIndex++;
             }
-            x += direction * 2;
-            var scroll = tick + 1;
+            var completedTicks = tick + 1;
+            var movement = version == HarderVersion && completedTicks % 5 == 0 ? 3 : 2;
+            x += direction * movement;
+            var scroll = completedTicks * 2 + (version == HarderVersion ? completedTicks / 5 : 0);
             if (x - 7 <= 16 || x + 7 >= 344)
             {
                 if (tick + 1 != endTick || tapIndex != taps.Count)
@@ -61,14 +78,14 @@ internal static class GameArcadeRules
             }
 
             var gate = gates[cleared];
-            var centerY = 480 - gate.Distance + scroll * 2;
+            var centerY = 480 - gate.Distance + scroll;
             if (Collides(x, 480, gate.CenterX, gate.Width, gate.Height, centerY))
             {
                 if (tick + 1 != endTick || tapIndex != taps.Count)
                     throw new GameFault(400, "arcade_replay_invalid");
                 return cleared;
             }
-            if (scroll * 2 > gate.Distance + gate.Height / 2 + 7)
+            if (scroll > gate.Distance + gate.Height / 2 + 7)
                 cleared++;
         }
 
@@ -79,7 +96,7 @@ internal static class GameArcadeRules
 
     private sealed record Gate(int Distance, int CenterX, int Width, int Height);
 
-    private static Gate[] BuildGates(uint seed)
+    private static Gate[] BuildGates(uint seed, string version)
     {
         var gates = new Gate[MaximumGates];
         var center = 244;
@@ -88,6 +105,10 @@ internal static class GameArcadeRules
         {
             var width = i == 0 ? 168 : Math.Max(88, 152 - i / 5 * 4);
             var height = i % 7 == 6 ? 72 : 22;
+            if (version == HarderVersion && i > 0 && height == 22)
+            {
+                width -= 4;
+            }
             if (i > 0)
             {
                 state ^= state << 13;
@@ -132,12 +153,15 @@ internal sealed partial class GameStore
             CREATE TABLE IF NOT EXISTS game_arcade_runs(run_id TEXT PRIMARY KEY,operation_id TEXT NOT NULL,user_id TEXT NOT NULL,group_id TEXT NOT NULL,rules_version TEXT NOT NULL,seed INTEGER NOT NULL,expires_at INTEGER NOT NULL,taps_json TEXT,receipt_json TEXT,end_tick INTEGER,UNIQUE(user_id,group_id,operation_id));
             CREATE INDEX IF NOT EXISTS ix_game_arcade_runs_user_group ON game_arcade_runs(user_id,group_id);
             CREATE TABLE IF NOT EXISTS game_arcade_bests(group_id TEXT NOT NULL,user_id TEXT NOT NULL,score INTEGER NOT NULL,PRIMARY KEY(group_id,user_id));
+            CREATE TABLE IF NOT EXISTS game_arcade_bests_v2(group_id TEXT NOT NULL,user_id TEXT NOT NULL,score INTEGER NOT NULL,PRIMARY KEY(group_id,user_id));
             """;
         command.ExecuteNonQuery();
     }
 
-    internal ArcadeRunTicket IssueArcadeRun(string groupId, string userId, string operationId, long now)
+    internal ArcadeRunTicket IssueArcadeRun(string groupId, string userId, string operationId, long now,
+        string? rulesVersion = null)
     {
+        var version = GameArcadeRules.ValidateVersion(rulesVersion);
         ValidateArcadeOperation(operationId);
         using var connection = Open();
         EnsureArcadeTables(connection);
@@ -150,7 +174,7 @@ internal sealed partial class GameStore
             prune.Parameters.AddWithValue("$now", now);
             prune.ExecuteNonQuery();
         }
-        var seed = ReadCourseSeed(connection, transaction, groupId);
+        var seed = ReadCourseSeed(connection, transaction, groupId, version);
         using (var existing = connection.CreateCommand())
         {
             existing.Transaction = transaction;
@@ -159,6 +183,10 @@ internal sealed partial class GameStore
             using var reader = existing.ExecuteReader();
             if (reader.Read())
             {
+                if (reader.GetString(2) != version)
+                {
+                    throw new GameFault(409, "arcade_rules_conflict");
+                }
                 return new(reader.GetString(0), (uint)reader.GetInt64(1), reader.GetString(2), reader.GetInt64(3));
             }
         }
@@ -177,11 +205,11 @@ internal sealed partial class GameStore
             insert.Transaction = transaction;
             insert.CommandText = "INSERT INTO game_arcade_runs(run_id,operation_id,user_id,group_id,rules_version,seed,expires_at) VALUES($r,$o,$u,$g,$v,$s,$e)";
             insert.Parameters.AddWithValue("$r", runId); insert.Parameters.AddWithValue("$o", operationId); insert.Parameters.AddWithValue("$u", userId);
-            insert.Parameters.AddWithValue("$g", groupId); insert.Parameters.AddWithValue("$v", GameArcadeRules.Version); insert.Parameters.AddWithValue("$s", (long)seed); insert.Parameters.AddWithValue("$e", expiresAt);
+            insert.Parameters.AddWithValue("$g", groupId); insert.Parameters.AddWithValue("$v", version); insert.Parameters.AddWithValue("$s", (long)seed); insert.Parameters.AddWithValue("$e", expiresAt);
             insert.ExecuteNonQuery();
         }
         transaction.Commit();
-        return new(runId, seed, GameArcadeRules.Version, expiresAt);
+        return new(runId, seed, version, expiresAt);
     }
 
     internal ArcadeFinishReceipt FinishArcadeRun(string groupId, string userId, string runId, int endTick, IReadOnlyList<int>? taps, long now)
@@ -207,10 +235,7 @@ internal sealed partial class GameStore
             rules = reader.GetString(0); seed = (uint)reader.GetInt64(1); expires = reader.GetInt64(2);
             priorTaps = reader.IsDBNull(3) ? null : reader.GetString(3); priorReceipt = reader.IsDBNull(4) ? null : reader.GetString(4);
         }
-        if (rules != GameArcadeRules.Version)
-        {
-            throw new GameFault(409, "arcade_rules_unavailable");
-        }
+        var bestsTable = ArcadeBestsTable(rules);
         var tapsJson = JsonSerializer.Serialize(taps);
         if (priorReceipt is not null)
         {
@@ -225,12 +250,12 @@ internal sealed partial class GameStore
         {
             throw new GameFault(410, "arcade_run_expired");
         }
-        var score = GameArcadeRules.Verify(seed, endTick, taps);
+        var score = GameArcadeRules.Verify(seed, endTick, taps, rules);
         int oldBest;
         using (var best = connection.CreateCommand())
         {
             best.Transaction = transaction;
-            best.CommandText = "SELECT score FROM game_arcade_bests WHERE group_id=$g AND user_id=$u";
+            best.CommandText = $"SELECT score FROM {bestsTable} WHERE group_id=$g AND user_id=$u";
             best.Parameters.AddWithValue("$g", groupId); best.Parameters.AddWithValue("$u", userId);
             oldBest = Convert.ToInt32(best.ExecuteScalar() ?? 0);
         }
@@ -239,7 +264,7 @@ internal sealed partial class GameStore
         using (var updateBest = connection.CreateCommand())
         {
             updateBest.Transaction = transaction;
-            updateBest.CommandText = "INSERT INTO game_arcade_bests(group_id,user_id,score) VALUES($g,$u,$s) ON CONFLICT(group_id,user_id) DO UPDATE SET score=MAX(score,excluded.score)";
+            updateBest.CommandText = $"INSERT INTO {bestsTable}(group_id,user_id,score) VALUES($g,$u,$s) ON CONFLICT(group_id,user_id) DO UPDATE SET score=MAX(score,excluded.score)";
             updateBest.Parameters.AddWithValue("$g", groupId); updateBest.Parameters.AddWithValue("$u", userId); updateBest.Parameters.AddWithValue("$s", score);
             updateBest.ExecuteNonQuery();
         }
@@ -254,11 +279,11 @@ internal sealed partial class GameStore
         return receipt;
     }
 
-    private static uint ReadCourseSeed(SqliteConnection connection, SqliteTransaction transaction, string groupId)
+    private static uint ReadCourseSeed(SqliteConnection connection, SqliteTransaction transaction, string groupId, string version)
     {
         using var select = connection.CreateCommand(); select.Transaction = transaction;
         select.CommandText = "SELECT seed FROM game_arcade_courses WHERE group_id=$g AND rules_version=$v";
-        select.Parameters.AddWithValue("$g", groupId); select.Parameters.AddWithValue("$v", GameArcadeRules.Version);
+        select.Parameters.AddWithValue("$g", groupId); select.Parameters.AddWithValue("$v", version);
         var value = select.ExecuteScalar();
         if (value is not null)
         {
@@ -273,7 +298,7 @@ internal sealed partial class GameStore
         }
         using var insert = connection.CreateCommand(); insert.Transaction = transaction;
         insert.CommandText = "INSERT INTO game_arcade_courses(group_id,rules_version,seed) VALUES($g,$v,$s)";
-        insert.Parameters.AddWithValue("$g", groupId); insert.Parameters.AddWithValue("$v", GameArcadeRules.Version); insert.Parameters.AddWithValue("$s", (long)seed); insert.ExecuteNonQuery();
+        insert.Parameters.AddWithValue("$g", groupId); insert.Parameters.AddWithValue("$v", version); insert.Parameters.AddWithValue("$s", (long)seed); insert.ExecuteNonQuery();
         return seed;
     }
 
@@ -285,12 +310,13 @@ internal sealed partial class GameStore
     }
 
     internal (int Best, IReadOnlyList<ArcadeRankingRow> Ranking) ReadArcadeRanking(string groupId, string playerId,
-        IReadOnlyList<(string Id, string Name)> members)
+        IReadOnlyList<(string Id, string Name)> members, string? rulesVersion = null)
     {
+        var bestsTable = ArcadeBestsTable(rulesVersion);
         using var connection = Open(); EnsureArcadeTables(connection);
         var ids = members.Select(member => member.Id).ToHashSet(StringComparer.Ordinal);
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT user_id,score FROM game_arcade_bests WHERE group_id=$g"; command.Parameters.AddWithValue("$g", groupId);
+        command.CommandText = $"SELECT user_id,score FROM {bestsTable} WHERE group_id=$g"; command.Parameters.AddWithValue("$g", groupId);
         var scores = new Dictionary<string, int>(StringComparer.Ordinal);
         using (var reader = command.ExecuteReader()) while (reader.Read()) scores[reader.GetString(0)] = reader.GetInt32(1);
         var ordered = members.Select(member => (member.Id, member.Name, Score: scores.GetValueOrDefault(member.Id)))
@@ -323,10 +349,18 @@ internal sealed partial class GameStore
         EnsureArcadeTables(connection, transaction);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "DELETE FROM game_arcade_runs WHERE user_id=$u; DELETE FROM game_arcade_bests WHERE user_id=$u";
+        command.CommandText = "DELETE FROM game_arcade_runs WHERE user_id=$u; DELETE FROM game_arcade_bests WHERE user_id=$u; DELETE FROM game_arcade_bests_v2 WHERE user_id=$u";
         command.Parameters.AddWithValue("$u", accountId);
         command.ExecuteNonQuery();
     }
+
+    // The original board stays intact for released clients and pending v1 runs.
+    private static string ArcadeBestsTable(string? version) => GameArcadeRules.ValidateVersion(version) switch
+    {
+        GameArcadeRules.Version => "game_arcade_bests",
+        GameArcadeRules.HarderVersion => "game_arcade_bests_v2",
+        _ => throw new GameFault(409, "arcade_rules_unavailable")
+    };
 }
 
 internal static class GameArcadeEndpoints
@@ -352,22 +386,29 @@ internal static class GameArcadeEndpoints
         });
         group.MapGet("", async (HttpContext context, AccountDatabase db, GameStore store, CharacterProfileStore profiles) =>
         {
+            var requestedVersions = context.Request.Query["rulesVersion"];
+            if (requestedVersions.Count > 1)
+            {
+                throw new GameFault(400, "arcade_rules_invalid");
+            }
+            var version = GameArcadeRules.ValidateVersion(requestedVersions.FirstOrDefault());
             var groupId = (string)context.Items["arcade-group"]!;
             var members = await GameParticipants.Members(db, groupId).Select(user => new { user.Id, user.DisplayName }).ToListAsync(context.RequestAborted);
             var names = await ResolveNamesAsync(members.Select(row => (row.Id, row.DisplayName)), profiles, db, context.RequestAborted);
             var view = store.ReadArcadeRanking(groupId, ArcadeUser(context), members.Select(row =>
-                (row.Id, names.GetValueOrDefault(row.Id, row.DisplayName))).ToArray());
-            return Results.Ok(new ArcadeView(GameArcadeRules.Version, ArcadeUser(context), groupId, view.Best, view.Ranking));
+                (row.Id, names.GetValueOrDefault(row.Id, row.DisplayName))).ToArray(), version);
+            return Results.Ok(new ArcadeView(version, ArcadeUser(context), groupId, view.Best, view.Ranking));
         });
         group.MapPost("/runs", (ArcadeIssueCommand request, HttpContext context, GameStore store) =>
-            Results.Ok(store.IssueArcadeRun((string)context.Items["arcade-group"]!, ArcadeUser(context), request.OperationId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
+            Results.Ok(store.IssueArcadeRun((string)context.Items["arcade-group"]!, ArcadeUser(context), request.OperationId,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), request.RulesVersion)));
         group.MapPost("/runs/{runId}/finish", (string runId, ArcadeFinishCommand request, HttpContext context, GameStore store) =>
             Results.Ok(store.FinishArcadeRun((string)context.Items["arcade-group"]!, ArcadeUser(context), runId, request.EndTick,
                 request.Taps, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())))
             .WithMetadata(new RequestSizeLimitAttribute(512 * 1024));
     }
 
-    private sealed record ArcadeIssueCommand(string OperationId);
+    private sealed record ArcadeIssueCommand(string OperationId, string? RulesVersion = null);
 
     private static async Task<IReadOnlyDictionary<string, string>> ResolveNamesAsync(
         IEnumerable<(string Id, string Name)> players, CharacterProfileStore profiles, AccountDatabase accounts,
