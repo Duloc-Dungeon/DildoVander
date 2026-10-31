@@ -76,7 +76,10 @@ internal sealed class SpeechEngineSessions : BackgroundService
                 overrides = new { first_message = true },
                 asr = new { provider = "scribe_realtime" },
                 tts = new { model_id = options.Model, voice_id = voice, speed = 1.0 },
-                turn = new { turn_eagerness = "normal", speculative_turn = false },
+                // A party room contains other voices. Filter those before turn
+                // detection so background conversation does not cut off the reply.
+                vad = new { background_voice_detection = true },
+                turn = new { turn_eagerness = "patient", speculative_turn = false },
                 conversation = new { max_duration_seconds = WorkshopVoiceLimits.ProviderSeconds, client_events = new[] {
                     "audio", "interruption", "user_transcript", "tentative_user_transcript", "agent_response", "agent_response_correction" } },
                 privacy = new { record_voice = false, retention_days = 0, delete_audio = true, delete_transcript_and_pii = true },
