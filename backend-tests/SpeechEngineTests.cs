@@ -526,6 +526,9 @@ internal static class SpeechEngineTests
             Check(body.GetProperty("speech_engine").GetProperty("ws_url").GetString()
                 == "wss://engine.example.test/app/v1/customer/wand/speech-engine/" + prepared.Key,
                 "callback binds an unguessable server capability without guest identifiers");
+            Check(body.GetProperty("vad").GetProperty("background_voice_detection").GetBoolean()
+                && body.GetProperty("turn").GetProperty("turn_eagerness").GetString() == "patient",
+                "workshop filters background speakers and waits through conversational pauses");
             Check(!body.GetProperty("turn").GetProperty("speculative_turn").GetBoolean()
                 && !body.GetProperty("privacy").GetProperty("record_voice").GetBoolean()
                 && body.GetProperty("privacy").GetProperty("retention_days").GetInt32() == 0
