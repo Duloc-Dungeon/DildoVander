@@ -10,6 +10,7 @@
     <ProjectReference Include="../backend/backend.csproj" />
     <Content Include="../contracts/fixtures/spark-v1.json" Link="fixtures/spark-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../contracts/fixtures/spark-v2.json" Link="fixtures/spark-v2.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../contracts/fixtures/spark-v3.json" Link="fixtures/spark-v3.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../backend/appsettings.json" Link="fixtures/runtime-appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

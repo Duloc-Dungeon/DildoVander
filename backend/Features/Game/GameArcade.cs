@@ -23,6 +23,7 @@ internal static class GameArcadeRules
 {
     internal const string Version = "spark-v1";
     internal const string HarderVersion = "spark-v2";
+    internal const string NightInventoryVersion = "spark-v3";
     internal const int MaximumTick = 108000;
     internal const int MaximumInputs = 24000;
     internal const int MaximumGates = 1321;
@@ -38,12 +39,20 @@ internal static class GameArcadeRules
         {
             return HarderVersion;
         }
+        if (version == NightInventoryVersion)
+        {
+            return NightInventoryVersion;
+        }
         throw new GameFault(409, "arcade_rules_unavailable");
     }
 
     internal static int Verify(uint seed, int endTick, IReadOnlyList<int> taps, string version = Version)
     {
-        ValidateVersion(version);
+        version = ValidateVersion(version);
+        if (version == NightInventoryVersion)
+        {
+            return GameArcadeV3.Verify(seed, endTick, taps);
+        }
         if (endTick is < 1 or > MaximumTick || taps.Count > MaximumInputs)
             throw new GameFault(400, "arcade_replay_invalid");
         var previous = -1;
@@ -154,6 +163,7 @@ internal sealed partial class GameStore
             CREATE INDEX IF NOT EXISTS ix_game_arcade_runs_user_group ON game_arcade_runs(user_id,group_id);
             CREATE TABLE IF NOT EXISTS game_arcade_bests(group_id TEXT NOT NULL,user_id TEXT NOT NULL,score INTEGER NOT NULL,PRIMARY KEY(group_id,user_id));
             CREATE TABLE IF NOT EXISTS game_arcade_bests_v2(group_id TEXT NOT NULL,user_id TEXT NOT NULL,score INTEGER NOT NULL,PRIMARY KEY(group_id,user_id));
+            CREATE TABLE IF NOT EXISTS game_arcade_bests_v3(group_id TEXT NOT NULL,user_id TEXT NOT NULL,score INTEGER NOT NULL,PRIMARY KEY(group_id,user_id));
             """;
         command.ExecuteNonQuery();
     }
@@ -349,7 +359,7 @@ internal sealed partial class GameStore
         EnsureArcadeTables(connection, transaction);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "DELETE FROM game_arcade_runs WHERE user_id=$u; DELETE FROM game_arcade_bests WHERE user_id=$u; DELETE FROM game_arcade_bests_v2 WHERE user_id=$u";
+        command.CommandText = "DELETE FROM game_arcade_runs WHERE user_id=$u; DELETE FROM game_arcade_bests WHERE user_id=$u; DELETE FROM game_arcade_bests_v2 WHERE user_id=$u; DELETE FROM game_arcade_bests_v3 WHERE user_id=$u";
         command.Parameters.AddWithValue("$u", accountId);
         command.ExecuteNonQuery();
     }
@@ -359,6 +369,7 @@ internal sealed partial class GameStore
     {
         GameArcadeRules.Version => "game_arcade_bests",
         GameArcadeRules.HarderVersion => "game_arcade_bests_v2",
+        GameArcadeRules.NightInventoryVersion => "game_arcade_bests_v3",
         _ => throw new GameFault(409, "arcade_rules_unavailable")
     };
 }

@@ -1712,7 +1712,7 @@
         "x-source": "Features/Game/GameArcade.cs",
         "security": [{ "AccountSession": [] }],
         "parameters": [{ "name": "rulesVersion", "in": "query", "required": false,
-          "schema": { "type": "string", "enum": ["spark-v1", "spark-v2"], "default": "spark-v1" } }],
+          "schema": { "type": "string", "enum": ["spark-v1", "spark-v2", "spark-v3"], "default": "spark-v1" } }],
         "responses": {
           "200": {
             "description": "Player best and eligible group ranking",
@@ -1722,7 +1722,7 @@
                   "type": "object",
                   "required": ["rulesVersion", "playerId", "groupId", "best", "ranking"],
                   "properties": {
-                    "rulesVersion": { "type": "string", "enum": ["spark-v1", "spark-v2"] },
+                    "rulesVersion": { "type": "string", "enum": ["spark-v1", "spark-v2", "spark-v3"] },
                     "playerId": { "type": "string" },
                     "groupId": { "type": "string" },
                     "best": { "type": "integer", "minimum": 0 },
@@ -1766,7 +1766,7 @@
                 "required": ["operationId"],
                 "properties": {
                   "operationId": { "type": "string", "minLength": 8, "maxLength": 80 },
-                  "rulesVersion": { "type": "string", "enum": ["spark-v1", "spark-v2"], "default": "spark-v1" }
+                  "rulesVersion": { "type": "string", "enum": ["spark-v1", "spark-v2", "spark-v3"], "default": "spark-v1" }
                 }
               }
             }
@@ -1791,7 +1791,7 @@
                   "properties": {
                     "runId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
                     "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
-                    "rulesVersion": { "type": "string", "enum": ["spark-v1", "spark-v2"] },
+                    "rulesVersion": { "type": "string", "enum": ["spark-v1", "spark-v2", "spark-v3"] },
                     "expiresAt": { "type": "integer", "minimum": 0 }
                   }
                 }

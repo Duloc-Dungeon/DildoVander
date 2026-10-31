@@ -103,10 +103,10 @@ export async function createGameFixtureServer(port = 0) {
     if (url.pathname === '/app/v1/game/arcade') {
       const ranking = [{ id: 'two', displayName: 'Eliška', score: 31 }, ...(sparkBest ? [{ id: 'one', displayName: 'Mira', score: sparkBest }] : [])]
         .sort((a, b) => b.score - a.score).map((row, i) => ({ ...row, rank: i + 1 }));
-      return json({ rulesVersion: 'spark-v2', groupId: 'synthetic', playerId: 'one', best: sparkBest, ranking });
+      return json({ rulesVersion: 'spark-v3', groupId: 'synthetic', playerId: 'one', best: sparkBest, ranking });
     }
     if (url.pathname === '/app/v1/game/arcade/runs' && request.method === 'POST') {
-      const ticket = { runId: randomUUID(), seed: 1, rulesVersion: 'spark-v2', expiresAt: Date.now() + 7200000 };
+      const ticket = { runId: randomUUID(), seed: 1, rulesVersion: 'spark-v3', expiresAt: Date.now() + 7200000 };
       sparkRuns.set(ticket.runId, ticket); return json(ticket);
     }
     if (/^\/app\/v1\/game\/arcade\/runs\/[^/]+\/finish$/.test(url.pathname) && request.method === 'POST') {

@@ -6,7 +6,7 @@ internal static class GameArcadeTests
 {
     internal static void Run()
     {
-        foreach (var version in new[] { GameArcadeRules.Version, GameArcadeRules.HarderVersion })
+        foreach (var version in new[] { GameArcadeRules.Version, GameArcadeRules.HarderVersion, GameArcadeRules.NightInventoryVersion })
         {
             VerifyVectors(version);
         }
@@ -36,6 +36,13 @@ internal static class GameArcadeTests
             var expectedScore = vector.GetProperty("score").GetInt32();
             Require(GameArcadeRules.Verify(seed, endTick, taps, version) == expectedScore,
                 $"{version} shared replay vector seed={seed}, endTick={endTick} matches expected score");
+            if (version == GameArcadeRules.NightInventoryVersion && endTick == GameArcadeRules.MaximumTick)
+            {
+                ExpectFault(() => GameArcadeRules.Verify(seed, endTick - 1, taps, version),
+                    "v3 maximum-duration witness cannot omit its terminal tick");
+                ExpectFault(() => GameArcadeRules.Verify(seed, 10, [5, 4], version),
+                    "v3 rejects descending input ticks");
+            }
             if (version == GameArcadeRules.Version && endTick == GameArcadeRules.MaximumTick)
             {
                 ExpectFault(() => GameArcadeRules.Verify(seed, endTick, taps, GameArcadeRules.HarderVersion),
@@ -151,11 +158,15 @@ internal static class GameArcadeTests
             var members = new[] { ("alice", "Alice") };
             Require(store.ReadArcadeRanking("group-a", "alice", members).Best == 100, "existing v1 best survives upgrade");
             Require(store.ReadArcadeRanking("group-a", "alice", members, "spark-v2").Best == 0, "v2 starts with its own record");
+            Require(store.ReadArcadeRanking("group-a", "alice", members, "spark-v3").Best == 0, "v3 starts with its own record");
             var pending = store.IssueArcadeRun("group-a", "alice", "pending-legacy", 1000);
             var harder = store.IssueArcadeRun("group-a", "alice", "harder-operation", 1000, "spark-v2");
+            var night = store.IssueArcadeRun("group-a", "alice", "night-operation", 1000, "spark-v3");
             Require(pending.RulesVersion == "spark-v1" && harder.RulesVersion == "spark-v2", "omitted version remains v1");
             Require(store.IssueArcadeRun("group-a", "alice", "harder-operation", 1001, "spark-v2") == harder,
                 "v2 issuance retry returns the same ticket");
+            Require(store.IssueArcadeRun("group-a", "alice", "night-operation", 1001, "spark-v3") == night,
+                "v3 issuance retry returns the same ticket");
             try
             {
                 store.IssueArcadeRun("group-a", "alice", "harder-operation", 1001);
@@ -165,8 +176,18 @@ internal static class GameArcadeTests
             {
                 Require(fault.Status == 409 && fault.Code == "arcade_rules_conflict", "cross-version retry is an explicit conflict");
             }
-            ExpectFault(() => store.IssueArcadeRun("group-a", "alice", "unknown-version", 1001, "spark-v3"),
+            ExpectFault(() => store.IssueArcadeRun("group-a", "alice", "unknown-version", 1001, "spark-v4"),
                 "unknown rules cannot issue a ticket");
+            try
+            {
+                store.IssueArcadeRun("group-a", "alice", "night-operation", 1001);
+                throw new InvalidOperationException("cross-version v3 operation retry must fail");
+            }
+            catch (GameFault fault)
+            {
+                Require(fault.Status == 409 && fault.Code == "arcade_rules_conflict",
+                    "cross-version v3 retry is an explicit conflict");
+            }
             using (var seed = connection.CreateCommand())
             {
                 seed.CommandText = "UPDATE game_arcade_runs SET seed=1";
@@ -174,6 +195,23 @@ internal static class GameArcadeTests
             }
             var harderReceipt = store.FinishArcadeRun("group-a", "alice", harder.RunId, 72, [], 1100);
             Require(harderReceipt == new ArcadeFinishReceipt(1, 1, true), "v2 finish ignores the easier v1 record");
+            using var v3Fixture = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "spark-v3.json")));
+            var v3Vector = v3Fixture.RootElement.GetProperty("vectors")[0];
+            var v3Seed = v3Vector.GetProperty("seed").GetUInt32();
+            var v3EndTick = v3Vector.GetProperty("endTick").GetInt32();
+            var v3Taps = v3Vector.GetProperty("taps").EnumerateArray().Select(tap => tap.GetInt32()).ToArray();
+            using (var setV3Seed = connection.CreateCommand())
+            {
+                setV3Seed.CommandText = "UPDATE game_arcade_runs SET seed=$seed WHERE run_id=$run";
+                setV3Seed.Parameters.AddWithValue("$seed", (long)v3Seed);
+                setV3Seed.Parameters.AddWithValue("$run", night.RunId);
+                setV3Seed.ExecuteNonQuery();
+            }
+            var v3Receipt = store.FinishArcadeRun("group-a", "alice", night.RunId, v3EndTick, v3Taps, 1100);
+            Require(v3Receipt.Score == v3Vector.GetProperty("score").GetInt32() && v3Receipt.NewBest,
+                "v3 stored ticket dispatches to its verifier and isolated record");
+            Require(store.FinishArcadeRun("group-a", "alice", night.RunId, v3EndTick, v3Taps, 1200) == v3Receipt,
+                "v3 finish retry preserves its stored receipt");
             var legacyTaps = Enumerable.Range(0, 65).Select(index => index * 5).ToArray();
             Require(store.FinishArcadeRun("group-a", "alice", pending.RunId, 321, legacyTaps, 1100)
                 == new ArcadeFinishReceipt(3, 100, false), "pending v1 finishes against its own rules and record");
@@ -181,11 +219,14 @@ internal static class GameArcadeTests
                 "v2 replay retry preserves its receipt");
             Require(store.ReadArcadeRanking("group-a", "alice", members, "spark-v2").Best == 1,
                 "pending v1 completion does not inflate the v2 board");
+            Require(store.ReadArcadeRanking("group-a", "alice", members, "spark-v3").Best == v3Receipt.Best,
+                "v3 finish remains isolated from v1 and v2 boards");
+            Require(night.RulesVersion == "spark-v3", "v3 ticket records its verifier version");
             Require(store.ReadArcadeRanking("group-a", "alice", members).Best == 100, "v2 completion preserves the legacy board");
             store.DeleteAccount("alice");
             using var erased = connection.CreateCommand();
-            erased.CommandText = "SELECT (SELECT COUNT(*) FROM game_arcade_runs WHERE user_id='alice')+(SELECT COUNT(*) FROM game_arcade_bests WHERE user_id='alice')+(SELECT COUNT(*) FROM game_arcade_bests_v2 WHERE user_id='alice')";
-            Require(Convert.ToInt32(erased.ExecuteScalar()) == 0, "erasure covers runs and both rule versions' records");
+            erased.CommandText = "SELECT (SELECT COUNT(*) FROM game_arcade_runs WHERE user_id='alice')+(SELECT COUNT(*) FROM game_arcade_bests WHERE user_id='alice')+(SELECT COUNT(*) FROM game_arcade_bests_v2 WHERE user_id='alice')+(SELECT COUNT(*) FROM game_arcade_bests_v3 WHERE user_id='alice')";
+            Require(Convert.ToInt32(erased.ExecuteScalar()) == 0, "erasure covers runs and all rule versions' records");
         }
         finally
         {
