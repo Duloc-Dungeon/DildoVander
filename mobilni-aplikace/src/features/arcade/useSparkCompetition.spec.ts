@@ -9,8 +9,8 @@ vi.mock('../identity/session', () => ({ account: { value: { id: 'one' } } }));
 vi.mock('../game/game', () => ({ operation: () => crypto.randomUUID(), GameError: class GameError extends Error { constructor(public status: number, public code: string) { super(code); } } }));
 let wrapper: VueWrapper;
 let competition: ReturnType<typeof useSparkCompetition>;
-const standings = (best = 0): SparkStandings => ({ rulesVersion: 'spark-v2', playerId: 'one', groupId: 'group', best, ranking: [] });
-const ticket = (runId: string): SparkTicket => ({ runId, seed: 1, expiresAt: Date.now() + 7200000, rulesVersion: 'spark-v2' });
+const standings = (best = 0): SparkStandings => ({ rulesVersion: 'spark-v3', playerId: 'one', groupId: 'group', best, ranking: [] });
+const ticket = (runId: string): SparkTicket => ({ runId, seed: 1, expiresAt: Date.now() + 7200000, rulesVersion: 'spark-v3' });
 const replay = { endTick: 79, taps: [] };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 function start() { wrapper = mount(defineComponent({ setup() { competition = useSparkCompetition(); return () => null; } })); }
@@ -22,8 +22,8 @@ beforeEach(() => {
 afterEach(() => wrapper?.unmount());
 
 describe('ranked spark delivery', () => {
-  it('submits restored v1 runs without inflating the current v2 record', async () => {
-    const legacyTicket = { ...ticket('legacy'), rulesVersion: 'spark-v1' };
+  it.each(['spark-v1', 'spark-v2'])('submits restored %s runs without inflating the current v3 record', async (rulesVersion) => {
+    const legacyTicket = { ...ticket('legacy'), rulesVersion };
     localStorage.setItem('wns.spark.pending.v1.one', JSON.stringify([{ ticket: legacyTicket, replay }]));
     const nextStandings = deferred<SparkStandings>();
     api.read.mockResolvedValueOnce(standings(2)).mockReturnValueOnce(nextStandings.promise);

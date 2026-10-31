@@ -51,7 +51,7 @@ const arcadeRankingSchema = ajv.compile(arcadeRanking.responses['200'].content['
 assert.ok(arcadeRankingSchema({ rulesVersion: 'spark-v1', playerId: 'alice', groupId: 'group-a', best: 3,
   ranking: [{ id: 'alice', displayName: 'Alice', score: 3, rank: 1 }] }));
 assert.ok(arcadeRankingSchema({ rulesVersion: 'spark-v2', playerId: 'alice', groupId: 'group-a', best: 3, ranking: [] }));
-assert.equal(arcadeRankingSchema({ rulesVersion: 'spark-v3', playerId: 'alice', groupId: 'group-a', best: 3, ranking: [] }), false);
+assert.ok(arcadeRankingSchema({ rulesVersion: 'spark-v3', playerId: 'alice', groupId: 'group-a', best: 3, ranking: [] }));
 const arcadeIssue = document.paths['/app/v1/game/arcade/runs'].post;
 const arcadeFinish = document.paths['/app/v1/game/arcade/runs/{runId}/finish'].post;
 for (const operation of [arcadeIssue, arcadeFinish]) {
@@ -60,11 +60,13 @@ for (const operation of [arcadeIssue, arcadeFinish]) {
 const arcadeIssueRequestSchema = ajv.compile(arcadeIssue.requestBody.content['application/json'].schema);
 assert.ok(arcadeIssueRequestSchema({ operationId: uuid }));
 assert.ok(arcadeIssueRequestSchema({ operationId: uuid, rulesVersion: 'spark-v2' }));
-assert.equal(arcadeIssueRequestSchema({ operationId: uuid, rulesVersion: 'spark-v3' }), false);
+assert.ok(arcadeIssueRequestSchema({ operationId: uuid, rulesVersion: 'spark-v3' }));
+assert.equal(arcadeIssueRequestSchema({ operationId: uuid, rulesVersion: 'spark-v4' }), false);
 assert.equal(arcadeIssueRequestSchema({ operationId: 'short' }), false);
 const arcadeTicketSchema = ajv.compile(arcadeIssue.responses['200'].content['application/json'].schema);
 assert.ok(arcadeTicketSchema({ runId: 'a'.repeat(32), seed: 4294967295, rulesVersion: 'spark-v1', expiresAt: 7200000 }));
 assert.ok(arcadeTicketSchema({ runId: 'a'.repeat(32), seed: 4294967295, rulesVersion: 'spark-v2', expiresAt: 7200000 }));
+assert.ok(arcadeTicketSchema({ runId: 'a'.repeat(32), seed: 4294967295, rulesVersion: 'spark-v3', expiresAt: 7200000 }));
 assert.equal(arcadeTicketSchema({ runId: 'a'.repeat(32), seed: 4294967296, rulesVersion: 'spark-v1', expiresAt: 7200000 }), false);
 const arcadeReplaySchema = ajv.compile(arcadeFinish.requestBody.content['application/json'].schema);
 assert.ok(arcadeReplaySchema({ endTick: 108000, taps: [0, 5, 10] }));

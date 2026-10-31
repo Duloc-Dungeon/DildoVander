@@ -34,6 +34,7 @@
     "preview:game": "node tests/game.preview.mjs",
     "test:game:browser": "node tests/game.browser.mjs",
     "test:spark:browser": "node tests/spark.browser.mjs",
+    "test:spark-mechanics:browser": "node tests/spark-mechanics.browser.mjs",
     "test:game-live:browser": "node tests/game-live.browser.mjs",
     "preview:sealed-case": "node tests/sealed-case.preview.mjs",
     "preview:chronicle": "node tests/chronicle.preview.mjs",
