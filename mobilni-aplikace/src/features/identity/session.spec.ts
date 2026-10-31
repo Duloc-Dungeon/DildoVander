@@ -1029,3 +1029,14 @@ describe('authentication generation fences', () => {
     const identity = await import('./session'); await identity.refreshIdentity();
     expect(identity.offlineSession.value).toBe(false);
   });
+
+// Replay validation on the server accepts up to 512 KiB; native transport must carry it.
+it('grants the arcade replay body limit only to exact finish POST requests', async () => {
+  const identity = await import('./session');
+  const finish = `/app/v1/game/arcade/runs/${'a'.repeat(32)}/finish`;
+  expect(identity.accountTransportBodyLimit(finish, 'POST', 'application/json')).toBe(512 * 1024);
+  for (const path of [finish + '?extra=1', finish + '/', finish + '\n', finish.replace('/finish', '/cancel'), '/app/v1/game/arcade/runs']) {
+    expect(identity.accountTransportBodyLimit(path, 'POST', 'application/json')).toBe(262144);
+  }
+  expect(identity.accountTransportBodyLimit(finish, 'GET', null)).toBe(262144);
+});

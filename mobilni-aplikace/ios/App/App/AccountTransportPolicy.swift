@@ -53,6 +53,7 @@ enum AccountTransportPolicy {
     }
 
     static func accountRequestBodyLimit(path: String, method: String, contentType: String?) -> Int {
+        if method == "POST", path.range(of: "^/app/v1/game/arcade/runs/[0-9a-f]{32}/finish\\z", options: .regularExpression) != nil { return 512 * 1024 }
         if adminCharacterProfilePath(path) && method == "PUT" { return 256 * 1024 }
         if adminCharacterPortrait(path: path, method: method, read: false) {
             let type = contentType?.split(separator: ";", maxSplits: 1).first?
@@ -691,6 +692,9 @@ enum AccountTransportPolicy {
         if path == "/app/v1/customer/wand/sessions" { return method == "POST" }
         if path.range(of: "^/app/v1/customer/wand/sessions/[0-9a-f]{32}/ticket\\z", options: .regularExpression) != nil { return method == "POST" }
         if path == "/app/v1/game" { return method == "GET" }
+        if path == "/app/v1/game/arcade" { return method == "GET" }
+        if path == "/app/v1/game/arcade/runs" { return method == "POST" }
+        if path.range(of: "^/app/v1/game/arcade/runs/[0-9a-f]{32}/finish\\z", options: .regularExpression) != nil { return method == "POST" }
         if path == "/app/v1/game/matches" { return method == "POST" }
         if path == "/app/v1/game/progress" { return method == "GET" }
         if path == "/app/v1/game/progress/ack" { return method == "POST" }

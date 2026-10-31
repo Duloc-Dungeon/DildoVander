@@ -112,6 +112,7 @@ final class NativeAccountRequestPolicy {
     }
 
     static int requestBodyLimit(String path, String method, String contentType) {
+        if ("POST".equals(method) && path.matches("^/app/v1/game/arcade/runs/[0-9a-f]{32}/finish$")) return 512 * 1024;
         if (adminCharacterProfilePath(path) && "PUT".equals(method)) return 256 * 1024;
         if (adminCharacterPortraitPath(path, method, true)) {
             return Arrays.asList("image/jpeg", "image/png", "image/webp").contains(mediaType(contentType))
@@ -207,6 +208,9 @@ final class NativeAccountRequestPolicy {
             return "GET".equals(method) && query != null && query.matches("^revision=[0-9a-fA-F]{64}$");
         }
         if (query == null && "/app/v1/game".equals(path)) return "GET".equals(method);
+        if (query == null && "/app/v1/game/arcade".equals(path)) return "GET".equals(method);
+        if (query == null && "/app/v1/game/arcade/runs".equals(path)) return "POST".equals(method);
+        if (query == null && path.matches("^/app/v1/game/arcade/runs/[0-9a-f]{32}/finish$")) return "POST".equals(method);
         if (query == null && "/app/v1/game/matches".equals(path)) return "POST".equals(method);
         if (query == null && "/app/v1/game/progress".equals(path)) return "GET".equals(method);
         if (query == null && "/app/v1/game/progress/ack".equals(path)) return "POST".equals(method);
