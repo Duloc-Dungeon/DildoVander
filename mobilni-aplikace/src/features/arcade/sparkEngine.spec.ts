@@ -1,14 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { contact, createCourse, createSpark, MAX_TICKS, replaySpark, stepSpark } from './sparkEngine';
-import sharedVectors from '../../../../contracts/fixtures/spark-v1.json';
+import { contact, createCourse, createSpark, MAX_TICKS, movementAt, replaySpark, scrollAt, stepSpark } from './sparkEngine';
+import sharedVectors from '../../../../contracts/fixtures/spark-v2.json';
 
-describe('spark-v1 deterministic physics', () => {
+describe('spark-v2 deterministic physics', () => {
+  it('slightly narrows ordinary gates while preserving the opening and long corridors', () => {
+    const course = createCourse(1);
+    expect(course[0]!.width).toBe(168);
+    expect(course[1]!.width).toBe(148);
+    expect(course[80]!.width).toBe(84);
+    expect(course[6]!.width).toBe(148);
+    expect(course[83]!.width).toBe(104);
+  });
   it('agrees with shared maximum-duration vectors including every long corridor', () => {
     for (const vector of sharedVectors.vectors) expect(replaySpark(vector.seed, vector.endTick, vector.taps).score).toBe(vector.score);
   });
   it('matches the independent C# replay golden fixture', () => {
-    const taps = Array.from({ length: 65 }, (_, i) => i * 5);
-    expect(replaySpark(1, 321, taps)).toMatchObject({ score: 3, tick: 321, status: 'crashed' });
+    const taps = Array.from({ length: 59 }, (_, i) => i * 5);
+    expect(replaySpark(1, 292, taps)).toMatchObject({ score: 3, tick: 292, status: 'crashed' });
+  });
+  it('moves and scrolls 10% faster with integer steps', () => {
+    const state = createSpark(); const course = createCourse(1);
+    for (let tick = 0; tick < 10; tick++) stepSpark(state, course);
+    expect(state.x).toBe(202);
+    expect(scrollAt(10)).toBe(22);
   });
   it('uses unsigned generator values and consistent zero seeds', () => {
     expect(createCourse(0)).toEqual(createCourse(1));
@@ -21,14 +35,14 @@ describe('spark-v1 deterministic physics', () => {
   it('awards the first easy gate then makes an untended spark hit the wall', () => {
     const state = createSpark(); const course = createCourse(1);
     while (state.status === 'flying') stepSpark(state, course);
-    expect(state).toMatchObject({ score: 1, tick: 79, collision: { kind: 'wall', x: 344 } });
-    expect(replaySpark(1, 79, []).score).toBe(1);
+    expect(state).toMatchObject({ score: 1, tick: 72, collision: { kind: 'wall', x: 344 } });
+    expect(replaySpark(1, 72, []).score).toBe(1);
   });
   it('tests the circle itself at a shelf corner, not the decorative glow or its bounding square', () => {
     const gate = createCourse(1)[0]!;
-    // Gate corner (160, 475), spark center (166,480): outside r=7 despite overlapping squares.
-    expect(contact(166, 52, gate)).toBeUndefined();
-    expect(contact(164, 52, gate)?.kind).toBe('shelf');
+    // Gate corner (160, 476), spark center (166,480): outside r=7 despite overlapping squares.
+    expect(contact(166, 48, gate)).toBeUndefined();
+    expect(contact(164, 48, gate)?.kind).toBe('shelf');
   });
   it('does not ignore multiple inputs in the same tick', () => {
     const course = createCourse(1); const state = createSpark();
@@ -36,7 +50,7 @@ describe('spark-v1 deterministic physics', () => {
     stepSpark(state, course, 1); expect(state.x).toBe(180);
   });
   it('rejects early stops, simulation after death, unused and invalid taps', () => {
-    for (const [tick, taps] of [[20, []], [80, []], [79, [79]], [79, [-1]], [79, [2, 1]], [79, [.5]], [MAX_TICKS + 1, []]] as [number, number[]][]) {
+    for (const [tick, taps] of [[20, []], [73, []], [72, [72]], [72, [-1]], [72, [2, 1]], [72, [.5]], [MAX_TICKS + 1, []]] as [number, number[]][]) {
       expect(() => replaySpark(1, tick, taps)).toThrow();
     }
   });
@@ -63,14 +77,14 @@ describe('spark-v1 deterministic physics', () => {
         for (const state of states.values()) {
           const directions = (tick - 1) % 12 === 0 ? [state.direction, -state.direction] : [state.direction];
           for (const direction of directions) {
-            const x = state.x + direction * 2;
+            const x = state.x + direction * movementAt(tick);
             if (!contact(x, tick, course[gateIndex]!)) next.set((direction + 1) * 361 + x, { x, direction });
           }
         }
         expect(next.size, `seed ${seed}, tick ${tick}, gate ${gateIndex}`).toBeGreaterThan(0);
         states = next;
         const gate = course[gateIndex]!;
-        if (tick * 2 > gate.distance + gate.height / 2 + 7) gateIndex++;
+        if (scrollAt(tick) > gate.distance + gate.height / 2 + 7) gateIndex++;
       }
     }
   }, 20000);

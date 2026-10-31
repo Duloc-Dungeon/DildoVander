@@ -477,7 +477,8 @@ internal sealed partial class ChronicleStore
             p.DisplayName, p.Role, p.CharacterName, p.WandName, p.VisualReferenceVersion)).ToArray();
         return new(id, input.SourceKind, input.SourceId, input.GroupId, input.OccurredAt,
             input.Title, input.Summary, participants, input.Result, input.WinnerId,
-            detail ? input.Story ?? [] : [], detail ? input.Decisions ?? [] : [],
+            detail ? input.Story ?? [] : [], detail ? (input.Decisions ?? []).Select(decision =>
+                new ChronicleDecisionView(decision.AccountId, decision.Choice, decision.Consequence, decision.Evidence)).ToArray() : [],
             awards.Select(a => a with { EventId = id, AcquiredAt = input.OccurredAt }).ToArray(),
             state, true, input.ShareText, revision, detail ? input.DecisiveChoice : null, synthetic,
             input.SourceKind is not ("case" or "conversation") || input.Visibility == "public");

@@ -1509,7 +1509,45 @@ internal static partial class MobileGameTests
             Check(overLimit.StatusCode == HttpStatusCode.RequestEntityTooLarge,
                 "arcade finish rejects a request body larger than 512 KiB");
         }
-        Console.WriteLine("Arcade HTTP body limit and CSRF checks passed.");
+        using (var legacyRanking = await alice.GetAsync("/app/v1/game/arcade"))
+        {
+            var ranking = await legacyRanking.Content.ReadFromJsonAsync<JsonElement>();
+            Check(legacyRanking.StatusCode == HttpStatusCode.OK
+                && ranking.GetProperty("rulesVersion").GetString() == "spark-v1"
+                && ranking.GetProperty("best").GetInt32() == 3, "released clients retain their v1 ranking");
+        }
+        var harderOperation = Guid.NewGuid().ToString("N");
+        using var harderIssued = await alice.PostAsJsonAsync("/app/v1/game/arcade/runs",
+            new { operationId = harderOperation, rulesVersion = "spark-v2" });
+        var harderTicket = await harderIssued.Content.ReadFromJsonAsync<JsonElement>();
+        Check(harderIssued.StatusCode == HttpStatusCode.OK && harderTicket.GetProperty("rulesVersion").GetString() == "spark-v2",
+            "new clients explicitly negotiate v2");
+        using (var conflict = await alice.PostAsJsonAsync("/app/v1/game/arcade/runs", new { operationId = harderOperation }))
+        {
+            Check(conflict.StatusCode == HttpStatusCode.Conflict, "operation retries cannot change their rules version");
+        }
+        using (var harderFinished = await alice.PostAsJsonAsync(
+            $"/app/v1/game/arcade/runs/{harderTicket.GetProperty("runId").GetString()}/finish", new { endTick = 72, taps = Array.Empty<int>() }))
+        {
+            var receipt = await harderFinished.Content.ReadFromJsonAsync<JsonElement>();
+            Check(harderFinished.StatusCode == HttpStatusCode.OK && receipt.GetProperty("best").GetInt32() == 1,
+                "v2 receipt excludes the existing easier record");
+        }
+        using (var harderRanking = await alice.GetAsync("/app/v1/game/arcade?rulesVersion=spark-v2"))
+        {
+            var ranking = await harderRanking.Content.ReadFromJsonAsync<JsonElement>();
+            Check(harderRanking.StatusCode == HttpStatusCode.OK && ranking.GetProperty("rulesVersion").GetString() == "spark-v2"
+                && ranking.GetProperty("best").GetInt32() == 1, "explicit v2 ranking uses only v2 records");
+        }
+        using (var unknown = await alice.GetAsync("/app/v1/game/arcade?rulesVersion=spark-v3"))
+        {
+            Check(unknown.StatusCode == HttpStatusCode.Conflict, "unsupported rules do not silently fall back");
+        }
+        using (var duplicate = await alice.GetAsync("/app/v1/game/arcade?rulesVersion=spark-v1&rulesVersion=spark-v2"))
+        {
+            Check(duplicate.StatusCode == HttpStatusCode.BadRequest, "ambiguous rules query is rejected");
+        }
+        Console.WriteLine("Arcade HTTP body limit, CSRF and version compatibility checks passed.");
     }
 
     internal static async Task RunBossRickrollHttpAsync()
