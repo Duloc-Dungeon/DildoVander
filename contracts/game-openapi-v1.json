@@ -1711,6 +1711,8 @@
         "summary": "Read the active group arcade ranking",
         "x-source": "Features/Game/GameArcade.cs",
         "security": [{ "AccountSession": [] }],
+        "parameters": [{ "name": "rulesVersion", "in": "query", "required": false,
+          "schema": { "type": "string", "enum": ["spark-v1", "spark-v2"], "default": "spark-v1" } }],
         "responses": {
           "200": {
             "description": "Player best and eligible group ranking",
@@ -1720,7 +1722,7 @@
                   "type": "object",
                   "required": ["rulesVersion", "playerId", "groupId", "best", "ranking"],
                   "properties": {
-                    "rulesVersion": { "const": "spark-v1" },
+                    "rulesVersion": { "type": "string", "enum": ["spark-v1", "spark-v2"] },
                     "playerId": { "type": "string" },
                     "groupId": { "type": "string" },
                     "best": { "type": "integer", "minimum": 0 },
@@ -1744,6 +1746,8 @@
           },
           "401": { "description": "Session unavailable" },
           "403": { "description": "Ineligible account or group" },
+          "400": { "description": "Ambiguous rules version query" },
+          "409": { "description": "Unsupported rules version" },
           "429": { "description": "Account rate limit reached" }
         }
       }
@@ -1760,7 +1764,10 @@
               "schema": {
                 "type": "object",
                 "required": ["operationId"],
-                "properties": { "operationId": { "type": "string", "minLength": 8, "maxLength": 80 } }
+                "properties": {
+                  "operationId": { "type": "string", "minLength": 8, "maxLength": 80 },
+                  "rulesVersion": { "type": "string", "enum": ["spark-v1", "spark-v2"], "default": "spark-v1" }
+                }
               }
             }
           }
@@ -1784,7 +1791,7 @@
                   "properties": {
                     "runId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
                     "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
-                    "rulesVersion": { "const": "spark-v1" },
+                    "rulesVersion": { "type": "string", "enum": ["spark-v1", "spark-v2"] },
                     "expiresAt": { "type": "integer", "minimum": 0 }
                   }
                 }
@@ -1792,6 +1799,7 @@
             }
           },
           "400": { "description": "Invalid operation id" },
+          "409": { "description": "Unsupported rules or operation id reused for another rules version" },
           "401": { "description": "Session unavailable" },
           "403": { "description": "Ineligible account or group" },
           "429": { "description": "Account rate limit or outstanding run limit reached" }

@@ -16,11 +16,22 @@ internal static partial class MobileGameTests
         var other = fixture.BobId;
         var input = new ChronicleEventInput("yolo", "original-match", "historical-group", 1234,
             "Uložený příběh", "Tajný výsledek: společné fiasko.",
-            [new(owner, "Kazimír", "participant", VisualSnapshotJson: "{\"private\":\"frozen-portrait\"}"), new(other, "Berta", "participant")],
-            Result: "fiasco", Story: ["Plán", "Komplikace", "Následek"], ShareText: "Obě postavy v sazích.", Visibility: "public");
+            [new(owner, "Kazimír", "participant", VisualSnapshotJson: "{\"private\":\"frozen-portrait\"}"), new(other, "Berta", "participant", "Berta", "Jasan")],
+            Result: "fiasco", Story: ["Plán", "Komplikace", "Následek"],
+            Decisions: [new(owner, "Zvolil plán", "Plán uspěl"), new(other, "Ustoupil", "Zachoval klobouk", "Klobouk přežil")],
+            ShareText: "Obě postavy v sazích.", Visibility: "public", DecisiveChoice: "Zvolil plán");
         var id = fixture.Chronicle.Ingest(new(input, [owner, other], new Dictionary<string, IReadOnlyList<ChronicleAward>>
         { [owner] = [new("accomplices", "Spolupachatelé", "pair:historical", "Potvrzené společné fiasko.")] }))!;
+        var emptyResultId = fixture.Chronicle.Ingest(new(input with
+        {
+            SourceId = "empty-result-match",
+            Result = null,
+            WinnerId = null,
+            ShareText = null,
+            DecisiveChoice = null
+        }, [owner, other], new Dictionary<string, IReadOnlyList<ChronicleAward>>()))!;
         var path = "/app/v1/chronicle/" + id;
+        var emptyResultPath = "/app/v1/chronicle/" + emptyResultId;
         using var alice = fixture.Client();
         Check((await alice.GetAsync(path)).StatusCode == HttpStatusCode.Unauthorized, "Chronicle cannot be read anonymously.");
         await fixture.LoginAsync(alice, owner);
@@ -35,6 +46,41 @@ internal static partial class MobileGameTests
         revealed.EnsureSuccessStatusCode();
         var result = await revealed.Content.ReadFromJsonAsync<JsonElement>();
         Check(result.GetProperty("item").GetProperty("result").GetString() == "fiasco", "Reveal preserves a fiasco without inventing a winner.");
+        var revealedItem = result.GetProperty("item");
+        Check(!revealedItem.TryGetProperty("winnerId", out _)
+            && revealedItem.GetProperty("groupName").GetString() == "Dřívější skupina",
+            "Absent nullable fields are omitted while the reveal retains groupName.");
+        var participants = revealedItem.GetProperty("participants");
+        Check(!participants[0].TryGetProperty("characterName", out _) && !participants[0].TryGetProperty("wandName", out _)
+            && participants[1].GetProperty("characterName").GetString() == "Berta"
+            && participants[1].GetProperty("wandName").GetString() == "Jasan", "Participant optionals are omitted when absent and preserved when present.");
+        var decisions = revealedItem.GetProperty("decisions");
+        Check(!decisions[0].TryGetProperty("evidence", out _)
+            && decisions[1].GetProperty("evidence").GetString() == "Klobouk přežil"
+            && revealedItem.GetProperty("decisiveChoice").GetString() == "Zvolil plán"
+            && revealedItem.GetProperty("shareText").GetString() == "Obě postavy v sazích.",
+            "Decision evidence and other non-null optional values preserve their wire representation.");
+        var source = await alice.GetFromJsonAsync<JsonElement>("/app/v1/chronicle/source/yolo/original-match");
+        Check(!source.TryGetProperty("winnerId", out _) && source.GetProperty("result").GetString() == "fiasco",
+            "Source lookup uses the same null omission contract.");
+        var page = await alice.GetFromJsonAsync<JsonElement>("/app/v1/chronicle");
+        var listed = page.GetProperty("items")[0];
+        Check(!listed.TryGetProperty("decisiveChoice", out _) && !listed.TryGetProperty("winnerId", out _)
+            && listed.GetProperty("groupName").GetString() == "Dřívější skupina",
+            "List omits absent optionals while retaining its groupName contract.");
+        using var emptyResultReveal = await alice.PostAsJsonAsync(emptyResultPath + "/reveal", new { });
+        emptyResultReveal.EnsureSuccessStatusCode();
+        var emptyResultDetail = await alice.GetFromJsonAsync<JsonElement>(emptyResultPath);
+        Check(!emptyResultDetail.TryGetProperty("result", out _) && !emptyResultDetail.TryGetProperty("winnerId", out _)
+            && !emptyResultDetail.TryGetProperty("shareText", out _) && !emptyResultDetail.TryGetProperty("decisiveChoice", out _),
+            "Detail omits absent result, winner, share text, and decisive choice.");
+        page = await alice.GetFromJsonAsync<JsonElement>("/app/v1/chronicle");
+        var emptyResultListed = page.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == emptyResultId);
+        Check(!emptyResultListed.TryGetProperty("result", out _) && !emptyResultListed.TryGetProperty("winnerId", out _)
+            && !emptyResultListed.TryGetProperty("shareText", out _) && !emptyResultListed.TryGetProperty("decisiveChoice", out _)
+            && page.GetProperty("nextCursor").ValueKind == JsonValueKind.Null,
+            "List omits absent optionals and retains the nullable nextCursor field.");
         using var bob = fixture.Client();
         await fixture.LoginAsync(bob, other);
         Check(!(await bob.GetFromJsonAsync<JsonElement>(path)).GetProperty("revealed").GetBoolean(), "Each owner has a separate reveal state.");

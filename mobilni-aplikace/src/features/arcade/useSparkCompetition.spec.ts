@@ -9,8 +9,8 @@ vi.mock('../identity/session', () => ({ account: { value: { id: 'one' } } }));
 vi.mock('../game/game', () => ({ operation: () => crypto.randomUUID(), GameError: class GameError extends Error { constructor(public status: number, public code: string) { super(code); } } }));
 let wrapper: VueWrapper;
 let competition: ReturnType<typeof useSparkCompetition>;
-const standings = (best = 0): SparkStandings => ({ rulesVersion: 'spark-v1', playerId: 'one', groupId: 'group', best, ranking: [] });
-const ticket = (runId: string): SparkTicket => ({ runId, seed: 1, expiresAt: Date.now() + 7200000, rulesVersion: 'spark-v1' });
+const standings = (best = 0): SparkStandings => ({ rulesVersion: 'spark-v2', playerId: 'one', groupId: 'group', best, ranking: [] });
+const ticket = (runId: string): SparkTicket => ({ runId, seed: 1, expiresAt: Date.now() + 7200000, rulesVersion: 'spark-v2' });
 const replay = { endTick: 79, taps: [] };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 function start() { wrapper = mount(defineComponent({ setup() { competition = useSparkCompetition(); return () => null; } })); }
@@ -22,6 +22,18 @@ beforeEach(() => {
 afterEach(() => wrapper?.unmount());
 
 describe('ranked spark delivery', () => {
+  it('submits restored v1 runs without inflating the current v2 record', async () => {
+    const legacyTicket = { ...ticket('legacy'), rulesVersion: 'spark-v1' };
+    localStorage.setItem('wns.spark.pending.v1.one', JSON.stringify([{ ticket: legacyTicket, replay }]));
+    const nextStandings = deferred<SparkStandings>();
+    api.read.mockResolvedValueOnce(standings(2)).mockReturnValueOnce(nextStandings.promise);
+    api.finish.mockResolvedValue({ score: 100, best: 100, newBest: true });
+    start(); await competition.refresh(); await competition.retry();
+    expect(api.finish.mock.calls[0]!.slice(0, 2)).toEqual(['legacy', replay]);
+    expect(competition.best.value).toBe(2);
+    expect(competition.pending.value).toHaveLength(0);
+    nextStandings.resolve(standings(2)); await flushPromises();
+  });
   it('drains a run that finishes while the previous result is still saving', async () => {
     const first = deferred<SparkReceipt>(); api.finish.mockReturnValueOnce(first.promise);
     start(); competition.submit(ticket('a'), replay); competition.submit(ticket('b'), replay);

@@ -6,19 +6,11 @@ internal static class GameArcadeTests
 {
     internal static void Run()
     {
-        var vectorPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "spark-v1.json");
-        using var vectorDocument = JsonDocument.Parse(File.ReadAllText(vectorPath));
-        Require(vectorDocument.RootElement.GetProperty("rulesVersion").GetString() == GameArcadeRules.Version,
-            "shared replay vectors use the backend rules version");
-        foreach (var vector in vectorDocument.RootElement.GetProperty("vectors").EnumerateArray())
+        foreach (var version in new[] { GameArcadeRules.Version, GameArcadeRules.HarderVersion })
         {
-            var seed = vector.GetProperty("seed").GetUInt32();
-            var endTick = vector.GetProperty("endTick").GetInt32();
-            var taps = vector.GetProperty("taps").EnumerateArray().Select(tap => tap.GetInt32()).ToArray();
-            var expectedScore = vector.GetProperty("score").GetInt32();
-            Require(GameArcadeRules.Verify(seed, endTick, taps) == expectedScore,
-                $"shared replay vector seed={seed}, endTick={endTick} matches expected score");
+            VerifyVectors(version);
         }
+        VerifyVersionedRankings();
 
         var fixtureTaps = Enumerable.Range(0, 65).Select(index => index * 5).ToArray();
         Require(GameArcadeRules.Verify(1, 321, fixtureTaps) == 3,
@@ -27,6 +19,33 @@ internal static class GameArcadeTests
         ExpectFault(() => GameArcadeRules.Verify(1, 321, [0, 0, 1]), "unused taps are rejected");
         ExpectFault(() => GameArcadeRules.Verify(1, 321, [5, 4]), "descending taps are rejected");
 
+        RunLegacyStoreChecks(fixtureTaps);
+    }
+
+    private static void VerifyVectors(string version)
+    {
+        var vectorPath = Path.Combine(AppContext.BaseDirectory, "fixtures", version + ".json");
+        using var vectorDocument = JsonDocument.Parse(File.ReadAllText(vectorPath));
+        Require(vectorDocument.RootElement.GetProperty("rulesVersion").GetString() == version,
+            "shared replay vectors use the backend rules version");
+        foreach (var vector in vectorDocument.RootElement.GetProperty("vectors").EnumerateArray())
+        {
+            var seed = vector.GetProperty("seed").GetUInt32();
+            var endTick = vector.GetProperty("endTick").GetInt32();
+            var taps = vector.GetProperty("taps").EnumerateArray().Select(tap => tap.GetInt32()).ToArray();
+            var expectedScore = vector.GetProperty("score").GetInt32();
+            Require(GameArcadeRules.Verify(seed, endTick, taps, version) == expectedScore,
+                $"{version} shared replay vector seed={seed}, endTick={endTick} matches expected score");
+            if (version == GameArcadeRules.Version && endTick == GameArcadeRules.MaximumTick)
+            {
+                ExpectFault(() => GameArcadeRules.Verify(seed, endTick, taps, GameArcadeRules.HarderVersion),
+                    "legacy edge trajectories collide earlier under narrower v2 rules");
+            }
+        }
+    }
+
+    private static void RunLegacyStoreChecks(int[] fixtureTaps)
+    {
         var root = Path.Combine(Path.GetTempPath(), "arcade-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
@@ -103,6 +122,70 @@ internal static class GameArcadeTests
             Require(Convert.ToInt32(erased.ExecuteScalar()) == 0, "account erasure removes arcade tickets, receipts and bests");
             var untouchedRoot = Path.Combine(root, "without-arcade-tables");
             new GameStore(untouchedRoot).DeleteAccount("account-without-arcade");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static void VerifyVersionedRankings()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "arcade-versions-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            // Simulate a database created by the released v1 server.
+            using var connection = new SqliteConnection($"Data Source={Path.Combine(root, "mobile-game.sqlite")}");
+            connection.Open();
+            using (var legacy = connection.CreateCommand())
+            {
+                legacy.CommandText = """
+                    CREATE TABLE game_arcade_bests(group_id TEXT NOT NULL,user_id TEXT NOT NULL,score INTEGER NOT NULL,PRIMARY KEY(group_id,user_id));
+                    INSERT INTO game_arcade_bests VALUES('group-a','alice',100);
+                    """;
+                legacy.ExecuteNonQuery();
+            }
+            var store = new GameStore(root);
+            var members = new[] { ("alice", "Alice") };
+            Require(store.ReadArcadeRanking("group-a", "alice", members).Best == 100, "existing v1 best survives upgrade");
+            Require(store.ReadArcadeRanking("group-a", "alice", members, "spark-v2").Best == 0, "v2 starts with its own record");
+            var pending = store.IssueArcadeRun("group-a", "alice", "pending-legacy", 1000);
+            var harder = store.IssueArcadeRun("group-a", "alice", "harder-operation", 1000, "spark-v2");
+            Require(pending.RulesVersion == "spark-v1" && harder.RulesVersion == "spark-v2", "omitted version remains v1");
+            Require(store.IssueArcadeRun("group-a", "alice", "harder-operation", 1001, "spark-v2") == harder,
+                "v2 issuance retry returns the same ticket");
+            try
+            {
+                store.IssueArcadeRun("group-a", "alice", "harder-operation", 1001);
+                throw new InvalidOperationException("cross-version operation retry must fail");
+            }
+            catch (GameFault fault)
+            {
+                Require(fault.Status == 409 && fault.Code == "arcade_rules_conflict", "cross-version retry is an explicit conflict");
+            }
+            ExpectFault(() => store.IssueArcadeRun("group-a", "alice", "unknown-version", 1001, "spark-v3"),
+                "unknown rules cannot issue a ticket");
+            using (var seed = connection.CreateCommand())
+            {
+                seed.CommandText = "UPDATE game_arcade_runs SET seed=1";
+                seed.ExecuteNonQuery();
+            }
+            var harderReceipt = store.FinishArcadeRun("group-a", "alice", harder.RunId, 72, [], 1100);
+            Require(harderReceipt == new ArcadeFinishReceipt(1, 1, true), "v2 finish ignores the easier v1 record");
+            var legacyTaps = Enumerable.Range(0, 65).Select(index => index * 5).ToArray();
+            Require(store.FinishArcadeRun("group-a", "alice", pending.RunId, 321, legacyTaps, 1100)
+                == new ArcadeFinishReceipt(3, 100, false), "pending v1 finishes against its own rules and record");
+            Require(store.FinishArcadeRun("group-a", "alice", harder.RunId, 72, [], 1200) == harderReceipt,
+                "v2 replay retry preserves its receipt");
+            Require(store.ReadArcadeRanking("group-a", "alice", members, "spark-v2").Best == 1,
+                "pending v1 completion does not inflate the v2 board");
+            Require(store.ReadArcadeRanking("group-a", "alice", members).Best == 100, "v2 completion preserves the legacy board");
+            store.DeleteAccount("alice");
+            using var erased = connection.CreateCommand();
+            erased.CommandText = "SELECT (SELECT COUNT(*) FROM game_arcade_runs WHERE user_id='alice')+(SELECT COUNT(*) FROM game_arcade_bests WHERE user_id='alice')+(SELECT COUNT(*) FROM game_arcade_bests_v2 WHERE user_id='alice')";
+            Require(Convert.ToInt32(erased.ExecuteScalar()) == 0, "erasure covers runs and both rule versions' records");
         }
         finally
         {

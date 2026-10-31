@@ -692,7 +692,8 @@ enum AccountTransportPolicy {
         if path == "/app/v1/customer/wand/sessions" { return method == "POST" }
         if path.range(of: "^/app/v1/customer/wand/sessions/[0-9a-f]{32}/ticket\\z", options: .regularExpression) != nil { return method == "POST" }
         if path == "/app/v1/game" { return method == "GET" }
-        if path == "/app/v1/game/arcade" { return method == "GET" }
+        if ["/app/v1/game/arcade", "/app/v1/game/arcade?rulesVersion=spark-v1",
+            "/app/v1/game/arcade?rulesVersion=spark-v2"].contains(path) { return method == "GET" }
         if path == "/app/v1/game/arcade/runs" { return method == "POST" }
         if path.range(of: "^/app/v1/game/arcade/runs/[0-9a-f]{32}/finish\\z", options: .regularExpression) != nil { return method == "POST" }
         if path == "/app/v1/game/matches" { return method == "POST" }

@@ -39,6 +39,14 @@ for body in ["", "[]", "{", String(repeating: "x", count: NativePasskeyOptionsRe
 
 // Ranked arcade needs the same narrowly scoped routes as the web client.
 let arcadeRoot = "/app/v1/game/arcade"
+for version in ["spark-v1", "spark-v2"] {
+    require(AccountTransportPolicy.account(path: arcadeRoot + "?rulesVersion=" + version, method: "GET"), "versioned arcade ranking denied")
+    require(!AccountTransportPolicy.account(path: arcadeRoot + "?rulesVersion=" + version, method: "POST"), "versioned arcade accepted wrong method")
+}
+for query in ["rulesVersion=spark-v3", "rulesVersion=", "rulesVersion=spark-v2&extra=1",
+              "rulesVersion=spark-v1&rulesVersion=spark-v2", "rulesVersion=spark-v2%00"] {
+    require(!AccountTransportPolicy.account(path: arcadeRoot + "?" + query, method: "GET"), "arcade accepted invalid version query")
+}
 let arcadeFinish = arcadeRoot + "/runs/" + String(repeating: "a", count: 32) + "/finish"
 for (path, method) in [(arcadeRoot, "GET"), (arcadeRoot + "/runs", "POST"), (arcadeFinish, "POST")] {
     require(AccountTransportPolicy.account(path: path, method: method), "ranked arcade route denied")

@@ -16,6 +16,14 @@ import org.junit.Test;
 public final class NativeAccountRequestPolicyTest {
     @Test public void rankedArcadeAllowsOnlyItsExactMethodsAndBoundsReplayBodies() {
         String root = "/app/v1/game/arcade";
+        for (String version : Arrays.asList("spark-v1", "spark-v2")) {
+            assertTrue(NativeAccountRequestPolicy.allows(root + "?rulesVersion=" + version, "GET"));
+            assertFalse(NativeAccountRequestPolicy.allows(root + "?rulesVersion=" + version, "POST"));
+        }
+        for (String query : Arrays.asList("rulesVersion=spark-v3", "rulesVersion=", "rulesVersion=spark-v2&extra=1",
+            "rulesVersion=spark-v1&rulesVersion=spark-v2", "rulesVersion=spark-v2%00")) {
+            assertFalse(NativeAccountRequestPolicy.allows(root + "?" + query, "GET"));
+        }
         String finish = root + "/runs/" + String.join("", Collections.nCopies(32, "a")) + "/finish";
         String[][] routes = {{root, "GET"}, {root + "/runs", "POST"}, {finish, "POST"}};
         for (String[] route : routes) {

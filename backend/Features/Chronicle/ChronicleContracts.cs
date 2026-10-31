@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Kufr.Backend.Features.Chronicle;
 
 internal sealed record ChronicleParticipant(string AccountId, string DisplayName, string Role,
@@ -11,7 +13,12 @@ internal sealed record ChronicleAward(string Id, string Title, string Scope, str
     string EventId = "", long AcquiredAt = 0);
 
 internal sealed record ChronicleParticipantView(string AccountId, string DisplayName, string Role,
-    string? CharacterName, string? WandName, string VisualReferenceVersion);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CharacterName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WandName,
+    string VisualReferenceVersion);
+
+internal sealed record ChronicleDecisionView(string AccountId, string Choice, string Consequence,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Evidence);
 
 /// <summary>Immutable, public-to-participants facts captured at the source event.</summary>
 internal sealed record ChronicleEventInput(string SourceKind, string SourceId, string GroupId,
@@ -31,10 +38,13 @@ internal interface IChronicleIllustrator
 
 internal sealed record ChronicleEventView(string Id, string SourceKind, string SourceId, string GroupId,
     long OccurredAt, string Title, string Summary, IReadOnlyList<ChronicleParticipantView> Participants,
-    string? Result, string? WinnerId,
-    IReadOnlyList<string> Story, IReadOnlyList<ChronicleDecision> Decisions,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Result,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WinnerId,
+    IReadOnlyList<string> Story, IReadOnlyList<ChronicleDecisionView> Decisions,
     IReadOnlyList<ChronicleAward> Awards, string IllustrationState, bool Revealed,
-    string? ShareText, int Revision, string? DecisiveChoice = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ShareText,
+    int Revision,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DecisiveChoice = null,
     bool IllustrationSynthetic = false, bool ShareAllowed = false, string? GroupName = null);
 
 internal sealed record ChroniclePage(IReadOnlyList<ChronicleEventView> Items, string? NextCursor,

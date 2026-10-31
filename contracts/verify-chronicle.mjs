@@ -12,12 +12,18 @@ const event = {
   id: '00000000-0000-4000-8000-000000000001', sourceKind: 'case', sourceId: 'case-1', groupId: 'group-1',
   occurredAt: 1793275200, title: 'Uzavřený případ', summary: 'Uvolněná rekonstrukce.',
   participants: Array.from({ length: 30 }, (_, index) => ({ accountId: `guest-${index}`, displayName: `Postava ${index}`,
-    role: 'participant', characterName: null, wandName: null, visualReferenceVersion: 'unknown' })),
-  result: null, winnerId: null, story: ['Potvrzený příběh.'], decisions: [], awards: [],
-  illustrationState: 'pending', revealed: true, shareText: null, revision: 1, decisiveChoice: null,
+    role: 'participant', visualReferenceVersion: 'unknown' })),
+  story: ['Potvrzený příběh.'], decisions: [], awards: [],
+  illustrationState: 'pending', revealed: true, revision: 1,
   illustrationSynthetic: false, shareAllowed: true,
 };
 assert(validate(event), ajv.errorsText(validate.errors));
+for (const field of ['result', 'winnerId', 'shareText', 'decisiveChoice']) {
+  assert(!validate({ ...event, [field]: null }), `Absent ${field} must be omitted for released mobile clients.`);
+  assert(validate({ ...event, [field]: 'recorded-value' }), `Present ${field} remains supported.`);
+}
+const page = ajv.compile({ $ref: 'chronicle#/components/schemas/Page' });
+assert(page({ items: [event], nextCursor: null, badges: [] }), 'The page cursor remains explicitly nullable.');
 const leaked = structuredClone(event);
 leaked.participants[0].visualSnapshotJson = '{"portraitReferenceBase64":"private"}';
 assert(!validate(leaked), 'Public contract must reject private frozen references.');
