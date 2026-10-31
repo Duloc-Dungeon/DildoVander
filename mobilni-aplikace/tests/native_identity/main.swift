@@ -37,6 +37,25 @@ for body in ["", "[]", "{", String(repeating: "x", count: NativePasskeyOptionsRe
     catch { fatalError("Invalid passkey options produced an unexpected failure: \(error)") }
 }
 
+// Ranked arcade needs the same narrowly scoped routes as the web client.
+let arcadeRoot = "/app/v1/game/arcade"
+let arcadeFinish = arcadeRoot + "/runs/" + String(repeating: "a", count: 32) + "/finish"
+for (path, method) in [(arcadeRoot, "GET"), (arcadeRoot + "/runs", "POST"), (arcadeFinish, "POST")] {
+    require(AccountTransportPolicy.account(path: path, method: method), "ranked arcade route denied")
+    for wrongMethod in ["GET", "POST", "PUT", "DELETE"].filter({ $0 != method }) {
+        require(!AccountTransportPolicy.account(path: path, method: wrongMethod), "arcade accepted wrong method")
+    }
+    for suffix in ["/", "?extra=1", "#fragment", "\n"] {
+        require(!AccountTransportPolicy.account(path: path + suffix, method: method), "arcade accepted malformed route")
+    }
+}
+for invalid in [arcadeRoot + "/runs/short/finish", arcadeFinish.replacingOccurrences(of: String(repeating: "a", count: 32), with: String(repeating: "A", count: 32)), arcadeRoot + "/runs/" + String(repeating: "a", count: 32) + "/cancel"] {
+    require(!AccountTransportPolicy.account(path: invalid, method: "POST"), "arcade accepted unknown command")
+}
+require(AccountTransportPolicy.accountRequestBodyAllowed(path: arcadeFinish, method: "POST", contentType: "application/json", size: 512 * 1024), "arcade replay limit too small")
+require(!AccountTransportPolicy.accountRequestBodyAllowed(path: arcadeFinish, method: "POST", contentType: "application/json", size: 512 * 1024 + 1), "arcade replay limit unbounded")
+require(AccountTransportPolicy.accountRequestBodyLimit(path: arcadeRoot + "/runs", method: "POST", contentType: "application/json") == 256 * 1024, "arcade issue received replay exception")
+
 let opponentArtwork = "/app/v1/game/matches/" + String(repeating: "a", count: 32) + "/opponent/wand-artwork?revision=" + String(repeating: "b", count: 64)
 require(AccountTransportPolicy.account(path: opponentArtwork, method: "GET"), "approved opponent art route unavailable")
 require(AccountTransportPolicy.accountResponseLimit(path: opponentArtwork, method: "GET") == 32 * 1024 * 1024, "opponent PNG size cap changed")

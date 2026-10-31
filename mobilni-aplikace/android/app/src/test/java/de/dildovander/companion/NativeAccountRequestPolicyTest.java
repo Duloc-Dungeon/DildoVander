@@ -14,6 +14,26 @@ import okhttp3.Request;
 import org.junit.Test;
 
 public final class NativeAccountRequestPolicyTest {
+    @Test public void rankedArcadeAllowsOnlyItsExactMethodsAndBoundsReplayBodies() {
+        String root = "/app/v1/game/arcade";
+        String finish = root + "/runs/" + String.join("", Collections.nCopies(32, "a")) + "/finish";
+        String[][] routes = {{root, "GET"}, {root + "/runs", "POST"}, {finish, "POST"}};
+        for (String[] route : routes) {
+            assertTrue(NativeAccountRequestPolicy.allows(route[0], route[1]));
+            for (String method : Arrays.asList("GET", "POST", "PUT", "DELETE")) {
+                if (!method.equals(route[1])) assertFalse(NativeAccountRequestPolicy.allows(route[0], method));
+            }
+            for (String suffix : Arrays.asList("/", "?extra=1", "#fragment", "\n")) {
+                assertFalse(NativeAccountRequestPolicy.allows(route[0] + suffix, route[1]));
+            }
+        }
+        for (String invalid : Arrays.asList(root + "/runs/short/finish", finish.replace("aaaaaaaa", "AAAAAAAA"), finish.replace("/finish", "/cancel"))) {
+            assertFalse(NativeAccountRequestPolicy.allows(invalid, "POST"));
+        }
+        assertEquals(512 * 1024, NativeAccountRequestPolicy.requestBodyLimit(finish, "POST", "application/json"));
+        assertEquals(32 * 1024 * 1024, NativeAccountRequestPolicy.requestBodyLimit(root + "/runs", "POST", "application/json"));
+    }
+
     @Test public void rickrollUsesNarrowMetadataAndBossCommandsWithoutBufferingVideoInTheBridge() {
         String group = "0123456789abcdef0123456789abcdef";
         assertTrue(NativeAccountRequestPolicy.allows("/app/v1/launch/rickroll", "GET"));

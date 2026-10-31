@@ -49,6 +49,7 @@ function matchesExactTransportPath(pattern: RegExp, path: string): boolean {
 }
 
 export function accountTransportBodyLimit(path: string, method: string, contentType: string | null): number {
+  if (method === 'POST' && matchesExactTransportPath(/^\/app\/v1\/game\/arcade\/runs\/[0-9a-f]{32}\/finish$/, path)) return 512 * 1024;
   const mediaType = contentType?.split(';', 1)[0].trim().toLowerCase();
   if (method === 'PUT' && matchesExactTransportPath(adminCharacterProfile, path)) return 262144;
   if (method === 'PUT' && matchesExactTransportPath(adminCharacterPortrait, path)) {
