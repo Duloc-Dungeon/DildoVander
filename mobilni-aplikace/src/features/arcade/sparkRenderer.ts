@@ -2,7 +2,7 @@
 import 'pixi.js/unsafe-eval';
 import { Application, Assets, Graphics, Sprite, type Texture } from 'pixi.js';
 import sparkUrl from '../../assets/arcade/spark.webp';
-import { FIELD, gateY, type Gate, type SparkState } from './sparkEngine';
+import { FIELD, gateCenterAt, gateY, scrollAt, type Gate, type SparkState } from './sparkEngine';
 
 export interface SparkRenderer { draw(state: SparkState, course: readonly Gate[], reduced: boolean): void; destroy(): void }
 
@@ -45,7 +45,7 @@ export async function createSparkRenderer(host: HTMLElement, onContextLost: () =
       const advance = state.tick - previousTick;
       if (advance < 0) { trail.length = 0; previousScore = 0; scoredAt = -100; }
       if (advance > 0 && !reduced) {
-        for (const point of trail) point.y += advance * 2;
+        for (const point of trail) point.y += scrollAt(state.tick) - scrollAt(previousTick);
         trail.unshift({ x: state.x, y: FIELD.playerY });
         trail.length = Math.min(trail.length, 18);
       }
@@ -59,10 +59,30 @@ export async function createSparkRenderer(host: HTMLElement, onContextLost: () =
         const gate = course[i]!;
         const y = gateY(gate, state.tick) - gate.height / 2;
         if (y > 660 || y + gate.height < -20) continue;
-        const gapLeft = gate.center - gate.width / 2;
-        const gapRight = gate.center + gate.width / 2;
+        const center = gateCenterAt(gate, state.tick);
+        const gapLeft = center - gate.width / 2;
+        const gapRight = center + gate.width / 2;
         const cleared = i < state.score;
         const edge = cleared ? 0xb8f3d4 : 0xffc662;
+        if (gate.motion) {
+          // Rails show the full travel range. They stay outside the playable
+          // opening and remain visible with reduced decorative motion.
+          for (const side of [-1, 1]) {
+            const railCenter = gate.center + side * gate.width / 2;
+            const left = railCenter - gate.motion.amplitude;
+            const right = railCenter + gate.motion.amplitude;
+            shelves.moveTo(left, y - 7).lineTo(right, y - 7)
+              .moveTo(left, y - 11).lineTo(left, y - 3)
+              .moveTo(right, y - 11).lineTo(right, y - 3)
+              .stroke({ color: 0xb8f3d4, width: 2 });
+          }
+          const direction = gateCenterAt(gate, state.tick + 8) >= center ? 1 : -1;
+          const arrow = center;
+          shelves.moveTo(arrow - direction * 4, y - 11)
+            .lineTo(arrow, y - 7)
+            .lineTo(arrow - direction * 4, y - 3)
+            .stroke({ color: 0xb8f3d4, width: 2 });
+        }
         for (const [x, width] of [[16, gapLeft - 16], [gapRight, 344 - gapRight]]) {
           shelves.rect(x!, y, width!, gate.height).fill({ color: 0x3e2e24, alpha: .98 });
           shelves.rect(x!, y, width!, gate.height).stroke({ color: edge, width: 2, alignment: 1 });
@@ -75,6 +95,34 @@ export async function createSparkRenderer(host: HTMLElement, onContextLost: () =
         shelves.moveTo(gapLeft + 4, y + gate.height / 2).lineTo(gapLeft + 10, y + gate.height / 2)
           .moveTo(gapRight - 4, y + gate.height / 2).lineTo(gapRight - 10, y + gate.height / 2)
           .stroke({ color: 0xb8f3d4, width: 2, alpha: .8 });
+        if (gate.pattern) {
+          // Distinct engraved silhouettes identify the three learned families.
+          const x = FIELD.left + 14;
+          const middle = y + gate.height / 2;
+          if (gate.pattern === 'stairs') shelves.moveTo(x, middle + 4).lineTo(x + 4, middle + 4)
+            .lineTo(x + 4, middle).lineTo(x + 8, middle).lineTo(x + 8, middle - 4).lineTo(x + 12, middle - 4);
+          else if (gate.pattern === 's') shelves.moveTo(x + 12, middle - 4).lineTo(x, middle - 4)
+            .lineTo(x, middle).lineTo(x + 12, middle).lineTo(x + 12, middle + 4).lineTo(x, middle + 4);
+          else shelves.moveTo(x, middle - 6).lineTo(x, middle + 6)
+            .moveTo(x + 10, middle - 6).lineTo(x + 10, middle + 6);
+          shelves.stroke({ color: 0xffc662, width: 2 });
+        }
+        if (gate.echoTarget !== undefined || gate.echoSource !== undefined) {
+          for (const x of [gapLeft - 12, gapRight + 12]) {
+            const middle = y + gate.height / 2;
+            shelves.poly([x, middle - 5, x + 5, middle, x, middle + 5, x - 5, middle], true)
+              .stroke({ color: 0xf8b5a5, width: 2 });
+            if (gate.echoTarget !== undefined) shelves.fill(0xf8b5a5);
+          }
+        }
+        const echo = state.echoes.find(value => value.target === gate.index);
+        if (echo) {
+          shelves.rect(echo.x - echo.halfWidth, y, echo.halfWidth * 2, gate.height)
+            .fill({ color: 0x653b48, alpha: .95 }).stroke({ color: 0xf8b5a5, width: 2, alignment: 1 });
+          shelves.moveTo(echo.x - 4, y + 5).lineTo(echo.x + 4, y + gate.height - 5)
+            .moveTo(echo.x + 4, y + 5).lineTo(echo.x - 4, y + gate.height - 5)
+            .stroke({ color: 0xf8b5a5, width: 2 });
+        }
       }
       if (!reduced) {
         trail.forEach((point, i) => effects.circle(point.x, point.y, Math.max(.8, 4 - i / 5))

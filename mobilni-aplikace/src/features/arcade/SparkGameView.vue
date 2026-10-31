@@ -8,7 +8,7 @@ import sparkUrl from '../../assets/arcade/spark.webp';
 import { createCourse, createSpark, FIELD, MAX_GATES, MAX_TAPS, PRACTICE_SEED, RULES_VERSION, stepSpark, TICK_MS } from './sparkEngine';
 import { createSparkRenderer, type SparkRenderer } from './sparkRenderer';
 import { createSparkAudio } from './sparkAudio';
-import { gatesLabel, resultCopy } from './sparkCopy';
+import { gatesLabel, progressionHint, resultCopy } from './sparkCopy';
 import type { SparkTicket } from './sparkApi';
 import { useSparkCompetition } from './useSparkCompetition';
 import './spark.css';
@@ -50,6 +50,7 @@ let media: MediaQueryList | undefined;
 const verified = computed(() => receipt.value?.runId === resultRunId.value ? receipt.value.value : undefined);
 const result = computed(() => resultCopy(resultState.value, runIsRanked.value ? Boolean(verified.value?.newBest) : practiceRecord.value));
 const target = computed(() => best.value > 0 ? `Tvůj rekord ${best.value}` : next.value ? `${next.value.displayName}: ${next.value.score}` : 'Každá brána = 1 bod');
+const lesson = computed(() => progressionHint(score.value));
 const resultSaved = computed(() => !runIsRanked.value ? 'Trénink se do skupinového žebříčku nezapisuje.'
   : verified.value ? 'Výsledek ověřený a zapsaný v žebříčku.'
     : pending.value.some(run => run.ticket.runId === resultRunId.value) ? 'Výsledek čeká na ověření. Můžeš hrát dál.' : 'Výsledek se do žebříčku nezapsal.');
@@ -205,10 +206,10 @@ onBeforeUnmount(() => {
           <button v-if="runIsRanked" class="spark-secondary" :disabled="!graphicsReady" @click="start(false)">Trénovat hned</button>
           <small v-else>Tréninkový rekord: {{ practiceBest }}</small>
         </div>
-        <p v-if="phase === 'playing'" class="spark-touch-hint" aria-hidden="true">Klepni kdekoliv v herní ploše ↔</p>
+        <p v-if="phase === 'playing'" class="spark-touch-hint" aria-hidden="true">{{ lesson }}<br />Klepnutím obrať směr ↔</p>
       </div>
       <aside class="spark-companion" aria-label="Výsledky a nastavení">
-        <p class="spark-score-sr" role="status">{{ phase === 'paused' ? 'Hra pozastavena.' : phase === 'result' ? `${gatesLabel(score)}. ${resultSaved}` : phase === 'playing' ? 'Hra běží.' : 'Hra připravena.' }}</p>
+        <p class="spark-score-sr" role="status">{{ phase === 'paused' ? 'Hra pozastavena.' : phase === 'result' ? `${gatesLabel(score)}. ${resultSaved}` : phase === 'playing' ? `Hra běží. ${lesson}` : 'Hra připravena.' }}</p>
         <div class="spark-records"><span>Tvůj rekord ve skupině<strong>{{ best }}</strong></span><RouterLink to="/play/ranking#spark">Žebříček <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M4 12 12 4M5 4h7v7" /></svg></RouterLink></div>
         <p v-if="next" class="spark-next">Další cíl: {{ next.displayName }} · {{ gatesLabel(next.score) }}</p>
         <p v-if="phase === 'result'" class="spark-delivery" role="status">{{ resultSaved }}</p>
@@ -219,7 +220,14 @@ onBeforeUnmount(() => {
         </div>
         <details class="spark-guide"><summary>Jak hrát a co se počítá</summary>
           <p>Jiskra letí sama. Každé klepnutí obrátí její boční směr. Nejdřív tref otvor, pak si připrav nájezd do dalšího. Světlé jádro je přesná velikost jiskry pro náraz; záře kolem se nepočítá.</p>
-          <p>Do skupinového žebříčku jde nejlepší ověřený pokus, nikoli součet. Ve skupině máte stejnou trať a fyziku. Po skrytí aplikace se čas zastaví. Trénink má vlastní rekord a do pořadí se nezapisuje.</p>
+          <p>Noční inventura: regály se daly do úklidu. Začaly tebou.</p>
+          <ul>
+            <li>Schody, esíčko a rukáv tvoří krátké sestavy. Sleduj výjezd i další dva otvory.</li>
+            <li>Od 15 bodů se některé otvory pohybují. Kolejnice ukazují celý rozkmit a šipka směr. Později se přidají společné i protiběžné dvojice a dlouhé pohyblivé průlety.</li>
+            <li>Od 20 bodů potkáš plný kosočtverec. Otiskne polohu jiskry do pečeti o dvě brány dál. Pečeť uvidíš hned a její poloha už zůstane stejná. Oblétni ji.</li>
+            <li>Od 100 bodů mohou navazovat dvě ozvěny. Mezi sestavami zůstávají širší klidné průlety.</li>
+          </ul>
+          <p>Do skupinového žebříčku jde nejlepší ověřený pokus, nikoli součet. Ve skupině máte stejný základ tratě a fyziku; polohu pečetí určuje tvůj průlet. Noční inventura má vlastní rekordy. Po skrytí aplikace se čas zastaví. Trénink má vlastní rekord a do pořadí se nezapisuje.</p>
           <p>Na klávesnici použij mezerník nebo Enter; Escape hru pozastaví. Směr ukazuje malá šipka u jiskry.</p>
           <label><input v-model="haptics" type="checkbox" /> Krátké vibrace, pokud je telefon podporuje</label>
         </details>
